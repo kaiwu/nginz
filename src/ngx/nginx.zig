@@ -28,6 +28,11 @@ pub const ngx_http_core_srv_conf_t = ngx.ngx_http_core_srv_conf_t;
 pub const ngx_http_addr_conf_t = ngx.ngx_http_addr_conf_t;
 pub const ngx_http_conf_addr_t = ngx.ngx_http_conf_addr_t;
 pub const ngx_http_core_loc_conf_t = ngx.ngx_http_core_loc_conf_t;
+pub const ngx_http_headers_in_t = ngx.ngx_http_headers_in_t;
+pub const ngx_http_request_body_t = ngx.ngx_http_request_body_t;
+pub const ngx_http_connection_t = ngx.ngx_http_connection_t;
+pub const ngx_http_request_t = ngx.ngx_http_request_t;
+pub const ngx_http_header_out_t = ngx.ngx_http_header_out_t;
 
 pub const ngx_array_t = ngx.ngx_array_t;
 
@@ -58,4 +63,9 @@ test "ngx data types" {
     try expectEqual(@sizeOf(ngx_http_addr_conf_t), 24);
     try expectEqual(@sizeOf(ngx_http_conf_addr_t), 176);
     try expectEqual(@sizeOf(ngx_http_core_loc_conf_t), 704);
+    try expectEqual(@sizeOf(ngx_http_headers_in_t), 312);
+    try expectEqual(@sizeOf(ngx_http_request_body_t), 80);
+    try expectEqual(@sizeOf(ngx_http_connection_t), 48);
+    try expectEqual(@sizeOf(ngx_http_header_out_t), 24);
+    try expectEqual(@sizeOf(ngx_http_request_t), 1328); // 1320
 }
