@@ -4598,6 +4598,14 @@ pub const ngx_url_t = extern struct {
     default_port: in_port_t = @import("std").mem.zeroes(in_port_t),
     last_port: in_port_t = @import("std").mem.zeroes(in_port_t),
     family: c_int = @import("std").mem.zeroes(c_int),
+    flags: packed struct {
+        listen: bool,
+        uri_part: bool,
+        no_resolve: bool,
+        no_port: bool,
+        wildcard: bool,
+        padding: u27,
+    } = @import("std").mem.zeroes(c_uint),
     socklen: socklen_t = @import("std").mem.zeroes(socklen_t),
     sockaddr: ngx_sockaddr_t = @import("std").mem.zeroes(ngx_sockaddr_t),
     addrs: [*c]ngx_addr_t = @import("std").mem.zeroes([*c]ngx_addr_t),
@@ -4688,6 +4696,11 @@ pub const struct_ngx_resolver_s = extern struct {
     name_expire_queue: ngx_queue_t = @import("std").mem.zeroes(ngx_queue_t),
     srv_expire_queue: ngx_queue_t = @import("std").mem.zeroes(ngx_queue_t),
     addr_expire_queue: ngx_queue_t = @import("std").mem.zeroes(ngx_queue_t),
+    flags: packed struct {
+        ipv4: bool,
+        ipv6: bool,
+        padding: u30,
+    } = @import("std").mem.zeroes(c_uint),
     addr6_rbtree: ngx_rbtree_t = @import("std").mem.zeroes(ngx_rbtree_t),
     addr6_sentinel: ngx_rbtree_node_t = @import("std").mem.zeroes(ngx_rbtree_node_t),
     addr6_resend_queue: ngx_queue_t = @import("std").mem.zeroes(ngx_queue_t),
@@ -4731,6 +4744,12 @@ pub const struct_ngx_resolver_ctx_s = extern struct {
     handler: ngx_resolver_handler_pt = @import("std").mem.zeroes(ngx_resolver_handler_pt),
     data: ?*anyopaque = @import("std").mem.zeroes(?*anyopaque),
     timeout: ngx_msec_t = @import("std").mem.zeroes(ngx_msec_t),
+    flags: packed struct {
+        quick: bool,
+        @"async": bool,
+        cancelable: bool,
+        padding: u29,
+    } = @import("std").mem.zeroes(c_uint),
     recursion: ngx_uint_t = @import("std").mem.zeroes(ngx_uint_t),
     event: [*c]ngx_event_t = @import("std").mem.zeroes([*c]ngx_event_t),
 };
@@ -4786,6 +4805,11 @@ pub const ngx_resolver_node_t = extern struct {
     expire: time_t = @import("std").mem.zeroes(time_t),
     valid: time_t = @import("std").mem.zeroes(time_t),
     ttl: u32 = @import("std").mem.zeroes(u32),
+    flags: packed struct {
+        tcp: bool,
+        tcp6: bool,
+        padding: u30,
+    } = @import("std").mem.zeroes(c_uint),
     last_connection: ngx_uint_t = @import("std").mem.zeroes(ngx_uint_t),
     waiting: [*c]ngx_resolver_ctx_t = @import("std").mem.zeroes([*c]ngx_resolver_ctx_t),
 };
@@ -4901,6 +4925,20 @@ pub const ngx_open_file_info_t = extern struct {
     valid: time_t = @import("std").mem.zeroes(time_t),
     min_uses: ngx_uint_t = @import("std").mem.zeroes(ngx_uint_t),
     disable_symlinks_from: usize = @import("std").mem.zeroes(usize),
+    flags: packed struct {
+        disable_symlinks: u2,
+        test_dir: bool,
+        test_only: bool,
+        log: bool,
+        errors: bool,
+        events: bool,
+        is_dir: bool,
+        is_file: bool,
+        is_link: bool,
+        is_exec: bool,
+        is_directio: bool,
+        padding: u20,
+    } = @import("std").mem.zeroes(c_uint),
 };
 pub const struct_ngx_cached_open_file_s = extern struct {
     node: ngx_rbtree_node_t = @import("std").mem.zeroes(ngx_rbtree_node_t),
@@ -4915,6 +4953,19 @@ pub const struct_ngx_cached_open_file_s = extern struct {
     err: ngx_err_t = @import("std").mem.zeroes(ngx_err_t),
     uses: u32 = @import("std").mem.zeroes(u32),
     disable_symlinks_from: usize = @import("std").mem.zeroes(usize),
+    flags: packed struct {
+        disable_symlinks: u2,
+        count: u24,
+        close: bool,
+        use_event: bool,
+        is_dir: bool,
+        is_file: bool,
+        is_link: bool,
+        is_exec: bool,
+        is_directio: bool,
+        padding: u31,
+    } = @import("std").mem.zeroes(c_ulong),
+
     event: [*c]ngx_event_t = @import("std").mem.zeroes([*c]ngx_event_t),
 };
 pub const ngx_cached_open_file_t = struct_ngx_cached_open_file_s;
