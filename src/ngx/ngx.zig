@@ -7094,10 +7094,10 @@ pub const struct_ngx_http_request_s = extern struct {
     schema_end: [*c]u_char = @import("std").mem.zeroes([*c]u_char),
     host_start: [*c]u_char = @import("std").mem.zeroes([*c]u_char),
     host_end: [*c]u_char = @import("std").mem.zeroes([*c]u_char),
-    flags1: packed struct {
-        http_minor: u16,
-        http_major: u16,
-    } = @import("std").mem.zeroes(c_uint),
+    // flags1: packed struct {
+    //     http_minor: u16,
+    //     http_major: u16,
+    // } = @import("std").mem.zeroes(c_uint),
 };
 pub const struct_ngx_http_log_ctx_s = extern struct {
     connection: [*c]ngx_connection_t = @import("std").mem.zeroes([*c]ngx_connection_t),
