@@ -3097,6 +3097,11 @@ pub const struct_ngx_file_s = extern struct {
     offset: off_t = @import("std").mem.zeroes(off_t),
     sys_offset: off_t = @import("std").mem.zeroes(off_t),
     log: [*c]ngx_log_t = @import("std").mem.zeroes([*c]ngx_log_t),
+    flags: packed struct {
+        valid_info: bool,
+        directio: bool,
+        padding: u30,
+    } = @import("std").mem.zeroes(c_uint),
 };
 pub const ngx_file_t = struct_ngx_file_s;
 pub const struct_ngx_buf_s = extern struct {
@@ -3109,6 +3114,20 @@ pub const struct_ngx_buf_s = extern struct {
     tag: ngx_buf_tag_t = @import("std").mem.zeroes(ngx_buf_tag_t),
     file: [*c]ngx_file_t = @import("std").mem.zeroes([*c]ngx_file_t),
     shadow: [*c]ngx_buf_t = @import("std").mem.zeroes([*c]ngx_buf_t),
+    flags: packed struct {
+        temporary: bool,
+        memory: bool,
+        mmap: bool,
+        recycled: bool,
+        in_file: bool,
+        flush: bool,
+        sync: bool,
+        last_buf: bool,
+        last_in_chain: bool,
+        last_shadow: bool,
+        temp_file: bool,
+        padding: u21,
+    } = @import("std").mem.zeroes(c_uint),
     num: c_int = @import("std").mem.zeroes(c_int),
 };
 pub const ngx_buf_t = struct_ngx_buf_s;
@@ -3202,6 +3221,28 @@ pub const struct_ngx_listening_s = extern struct {
     rbtree: ngx_rbtree_t = @import("std").mem.zeroes(ngx_rbtree_t),
     sentinel: ngx_rbtree_node_t = @import("std").mem.zeroes(ngx_rbtree_node_t),
     worker: ngx_uint_t = @import("std").mem.zeroes(ngx_uint_t),
+    flags: packed struct {
+        open: bool,
+        remain: bool,
+        ignore: bool,
+        bound: bool,
+        inherited: bool,
+        nonblocking_accept: bool,
+        listen: bool,
+        nonblocking: bool,
+        shared: bool,
+        addr_ntop: bool,
+        wildcard: bool,
+        ipv6only: bool,
+        reuseport: bool,
+        add_reuseport: bool,
+        keepalive: u2,
+        quic: bool,
+        deferred_accept: bool,
+        delete_deferred: bool,
+        add_deferred: bool,
+        padding: u12,
+    } = @import("std").mem.zeroes(c_uint),
     fastopen: c_int = @import("std").mem.zeroes(c_int),
 };
 pub const ngx_listening_t = struct_ngx_listening_s;
@@ -3247,6 +3288,25 @@ pub const struct_ngx_connection_s = extern struct {
     number: ngx_atomic_uint_t = @import("std").mem.zeroes(ngx_atomic_uint_t),
     start_time: ngx_msec_t = @import("std").mem.zeroes(ngx_msec_t),
     requests: ngx_uint_t = @import("std").mem.zeroes(ngx_uint_t),
+    flags: packed struct {
+        buffered: u8,
+        log_error: u3,
+        timedout: bool,
+        @"error": bool,
+        destroyed: bool,
+        pipeline: bool,
+        idle: bool,
+        resuable: bool,
+        close: bool,
+        shared: bool,
+        snedfile: bool,
+        sndlowat: bool,
+        tcp_nodelay: u2,
+        tcp_nopush: u2,
+        need_last_buf: bool,
+        need_flush_buf: bool,
+        padding: u5,
+    } = @import("std").mem.zeroes(c_uint),
 };
 pub const ngx_connection_t = struct_ngx_connection_s;
 pub const ngx_module_t = struct_ngx_module_s;
@@ -3618,6 +3678,15 @@ pub const struct_ngx_output_chain_ctx_s = extern struct {
     in: [*c]ngx_chain_t = @import("std").mem.zeroes([*c]ngx_chain_t),
     free: [*c]ngx_chain_t = @import("std").mem.zeroes([*c]ngx_chain_t),
     busy: [*c]ngx_chain_t = @import("std").mem.zeroes([*c]ngx_chain_t),
+    flags: packed struct {
+        sendfile: bool,
+        directio: bool,
+        unaligned: bool,
+        need_in_memory: bool,
+        need_in_temp: bool,
+        aio: bool,
+        padding: u26,
+    } = @import("std").mem.zeroes(c_uint),
     alignment: off_t = @import("std").mem.zeroes(off_t),
     pool: [*c]ngx_pool_t = @import("std").mem.zeroes([*c]ngx_pool_t),
     allocated: ngx_int_t = @import("std").mem.zeroes(ngx_int_t),
@@ -3801,12 +3870,24 @@ pub const ngx_temp_file_t = extern struct {
     pool: [*c]ngx_pool_t = @import("std").mem.zeroes([*c]ngx_pool_t),
     warn: [*c]u8 = @import("std").mem.zeroes([*c]u8),
     access: ngx_uint_t = @import("std").mem.zeroes(ngx_uint_t),
+    flags: packed struct {
+        log_level: u8,
+        persistent: bool,
+        clean: bool,
+        thread_write: bool,
+        padding: u21,
+    } = @import("std").mem.zeroes(c_uint),
 };
 pub const ngx_ext_rename_file_t = extern struct {
     access: ngx_uint_t = @import("std").mem.zeroes(ngx_uint_t),
     path_access: ngx_uint_t = @import("std").mem.zeroes(ngx_uint_t),
     time: time_t = @import("std").mem.zeroes(time_t),
     fd: ngx_fd_t = @import("std").mem.zeroes(ngx_fd_t),
+    flags: packed struct {
+        create_path: bool,
+        delete_file: bool,
+        padding: u30,
+    } = @import("std").mem.zeroes(c_uint),
     log: [*c]ngx_log_t = @import("std").mem.zeroes([*c]ngx_log_t),
 };
 pub const ngx_copy_file_t = extern struct {
@@ -3916,12 +3997,14 @@ pub fn ngx_crc32_long(arg_p: [*c]u_char, arg_len: usize) callconv(.C) u32 {
         ref.* -%= 1;
         break :blk tmp;
     }) != 0) {
-        crc = ngx_crc32_table256[(crc ^ @as(u32, @bitCast(@as(c_uint, (blk: {
+        crc = ngx_crc32_table256[
+            (crc ^ @as(u32, @bitCast(@as(c_uint, (blk: {
                 const ref = &p;
                 const tmp = ref.*;
                 ref.* += 1;
                 break :blk tmp;
-            }).*)))) & @as(u32, @bitCast(@as(c_int, 255)))] ^ (crc >> @intCast(8));
+            }).*)))) & @as(u32, @bitCast(@as(c_int, 255)))
+        ] ^ (crc >> @intCast(8));
     }
     return crc ^ @as(c_uint, 4294967295);
 }
@@ -3941,12 +4024,14 @@ pub fn ngx_crc32_update(arg_crc: [*c]u32, arg_p: [*c]u_char, arg_len: usize) cal
         ref.* -%= 1;
         break :blk tmp;
     }) != 0) {
-        c = ngx_crc32_table256[(c ^ @as(u32, @bitCast(@as(c_uint, (blk: {
+        c = ngx_crc32_table256[
+            (c ^ @as(u32, @bitCast(@as(c_uint, (blk: {
                 const ref = &p;
                 const tmp = ref.*;
                 ref.* += 1;
                 break :blk tmp;
-            }).*)))) & @as(u32, @bitCast(@as(c_int, 255)))] ^ (c >> @intCast(8));
+            }).*)))) & @as(u32, @bitCast(@as(c_int, 255)))
+        ] ^ (c >> @intCast(8));
     }
     crc.* = c;
 }
