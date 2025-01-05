@@ -15,6 +15,12 @@ pub const ngx_cached_open_file_t = ngx.ngx_cached_open_file_t;
 pub const ngx_resolver_node_t = ngx.ngx_resolver_node_t;
 pub const ngx_resolver_t = ngx.ngx_resolver_t;
 pub const ngx_resolver_ctx_t = ngx.ngx_resolver_ctx_t;
+pub const ngx_slab_pool_t = ngx.ngx_slab_pool_t;
+pub const ngx_variable_value_t = ngx.ngx_variable_value_t;
+pub const ngx_syslog_peer_t = ngx.ngx_syslog_peer_t;
+pub const ngx_event_t = ngx.ngx_event_t;
+pub const ngx_peer_connection_t = ngx.ngx_peer_connection_t;
+pub const ngx_event_pipe_t = ngx.ngx_event_pipe_t;
 
 pub const ngx_array_t = ngx.ngx_array_t;
 
@@ -32,4 +38,10 @@ test "ngx data types" {
     try expectEqual(@sizeOf(ngx_resolver_node_t), 184);
     try expectEqual(@sizeOf(ngx_resolver_t), 512);
     try expectEqual(@sizeOf(ngx_resolver_ctx_t), 224);
+    try expectEqual(@sizeOf(ngx_slab_pool_t), 200);
+    try expectEqual(@sizeOf(ngx_variable_value_t), 16);
+    try expectEqual(@sizeOf(ngx_syslog_peer_t), 392);
+    try expectEqual(@sizeOf(ngx_event_t), 96);
+    try expectEqual(@sizeOf(ngx_peer_connection_t), 112);
+    try expectEqual(@sizeOf(ngx_event_pipe_t), 280);
 }

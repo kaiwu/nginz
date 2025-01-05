@@ -3176,6 +3176,29 @@ pub const struct_ngx_queue_s = extern struct {
 pub const ngx_queue_t = struct_ngx_queue_s;
 pub const struct_ngx_event_s = extern struct {
     data: ?*anyopaque = @import("std").mem.zeroes(?*anyopaque),
+    flags: packed struct {
+        write: bool,
+        accept: bool,
+        instance: bool,
+        active: bool,
+        disabled: bool,
+        ready: bool,
+        oneshot: bool,
+        complete: bool,
+        eof: bool,
+        @"error": bool,
+        timeout: bool,
+        timer_set: bool,
+        delayed: bool,
+        deferred_accept: bool,
+        pending_eof: bool,
+        posted: bool,
+        closed: bool,
+        channel: bool,
+        resovler: bool,
+        cancelable: bool,
+        padding: u12,
+    } = @import("std").mem.zeroes(c_uint),
     available: c_int = @import("std").mem.zeroes(c_int),
     handler: ngx_event_handler_pt = @import("std").mem.zeroes(ngx_event_handler_pt),
     index: ngx_uint_t = @import("std").mem.zeroes(ngx_uint_t),
@@ -3450,6 +3473,13 @@ pub const ngx_keyval_t = extern struct {
     value: ngx_str_t = @import("std").mem.zeroes(ngx_str_t),
 };
 pub const ngx_variable_value_t = extern struct {
+    flags: packed struct {
+        len: u28,
+        valid: bool,
+        no_cacheable: bool,
+        not_found: bool,
+        escape: bool,
+    } = @import("std").mem.zeroes(c_uint),
     data: [*c]u_char = @import("std").mem.zeroes([*c]u_char),
 };
 pub extern fn ngx_strlow(dst: [*c]u_char, src: [*c]u_char, n: usize) void;
@@ -4551,6 +4581,10 @@ pub const ngx_slab_pool_t = extern struct {
     mutex: ngx_shmtx_t = @import("std").mem.zeroes(ngx_shmtx_t),
     log_ctx: [*c]u_char = @import("std").mem.zeroes([*c]u_char),
     zero: u_char = @import("std").mem.zeroes(u_char),
+    flags: packed struct {
+        log_nomem: bool,
+        padding: u31,
+    } = @import("std").mem.zeroes(c_uint),
     data: ?*anyopaque = @import("std").mem.zeroes(?*anyopaque),
     addr: ?*anyopaque = @import("std").mem.zeroes(?*anyopaque),
 };
@@ -5068,6 +5102,11 @@ pub const ngx_syslog_peer_t = extern struct {
     conn: ngx_connection_t = @import("std").mem.zeroes(ngx_connection_t),
     log: ngx_log_t = @import("std").mem.zeroes(ngx_log_t),
     logp: [*c]ngx_log_t = @import("std").mem.zeroes([*c]ngx_log_t),
+    flags: packed struct {
+        busy: bool,
+        nohostname: bool,
+        padding: u30,
+    } = @import("std").mem.zeroes(c_uint),
 };
 pub extern fn ngx_syslog_process_conf(cf: [*c]ngx_conf_t, peer: [*c]ngx_syslog_peer_t) [*c]u8;
 pub extern fn ngx_syslog_add_header(peer: [*c]ngx_syslog_peer_t, buf: [*c]u_char) [*c]u_char;
@@ -6752,6 +6791,14 @@ pub const struct_ngx_peer_connection_s = extern struct {
     type: c_int = @import("std").mem.zeroes(c_int),
     rcvbuf: c_int = @import("std").mem.zeroes(c_int),
     log: [*c]ngx_log_t = @import("std").mem.zeroes([*c]ngx_log_t),
+    flags: packed struct {
+        cached: bool,
+        transparent: bool,
+        so_keepalive: bool,
+        down: bool,
+        log_error: u2,
+        padding: u26,
+    } = @import("std").mem.zeroes(c_uint),
 };
 pub const ngx_peer_connection_t = struct_ngx_peer_connection_s;
 pub const ngx_event_pipe_input_filter_pt = ?*const fn ([*c]ngx_event_pipe_t, [*c]ngx_buf_t) callconv(.C) ngx_int_t;
@@ -6770,6 +6817,21 @@ pub const struct_ngx_event_pipe_s = extern struct {
     input_ctx: ?*anyopaque = @import("std").mem.zeroes(?*anyopaque),
     output_filter: ngx_event_pipe_output_filter_pt = @import("std").mem.zeroes(ngx_event_pipe_output_filter_pt),
     output_ctx: ?*anyopaque = @import("std").mem.zeroes(?*anyopaque),
+    flags: packed struct {
+        read: bool,
+        cacheable: bool,
+        single_buf: bool,
+        free_bufs: bool,
+        upstream_done: bool,
+        upstream_error: bool,
+        upstream_eof: bool,
+        upstream_blocked: bool,
+        downstream_done: bool,
+        downstream_error: bool,
+        cyclic_temp_file: bool,
+        aio: bool,
+        padding: u20,
+    } = @import("std").mem.zeroes(c_uint),
     allocated: ngx_int_t = @import("std").mem.zeroes(ngx_int_t),
     bufs: ngx_bufs_t = @import("std").mem.zeroes(ngx_bufs_t),
     tag: ngx_buf_tag_t = @import("std").mem.zeroes(ngx_buf_tag_t),
