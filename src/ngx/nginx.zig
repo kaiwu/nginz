@@ -21,6 +21,13 @@ pub const ngx_syslog_peer_t = ngx.ngx_syslog_peer_t;
 pub const ngx_event_t = ngx.ngx_event_t;
 pub const ngx_peer_connection_t = ngx.ngx_peer_connection_t;
 pub const ngx_event_pipe_t = ngx.ngx_event_pipe_t;
+pub const ngx_http_file_cache_node_t = ngx.ngx_http_file_cache_node_t;
+pub const ngx_http_cache_t = ngx.ngx_http_cache_t;
+pub const ngx_http_listen_opt_t = ngx.ngx_http_listen_opt_t;
+pub const ngx_http_core_srv_conf_t = ngx.ngx_http_core_srv_conf_t;
+pub const ngx_http_addr_conf_t = ngx.ngx_http_addr_conf_t;
+pub const ngx_http_conf_addr_t = ngx.ngx_http_conf_addr_t;
+pub const ngx_http_core_loc_conf_t = ngx.ngx_http_core_loc_conf_t;
 
 pub const ngx_array_t = ngx.ngx_array_t;
 
@@ -44,4 +51,11 @@ test "ngx data types" {
     try expectEqual(@sizeOf(ngx_event_t), 96);
     try expectEqual(@sizeOf(ngx_peer_connection_t), 112);
     try expectEqual(@sizeOf(ngx_event_pipe_t), 280);
+    try expectEqual(@sizeOf(ngx_http_file_cache_node_t), 120);
+    try expectEqual(@sizeOf(ngx_http_cache_t), 608);
+    try expectEqual(@sizeOf(ngx_http_listen_opt_t), 72);
+    try expectEqual(@sizeOf(ngx_http_core_srv_conf_t), 168);
+    try expectEqual(@sizeOf(ngx_http_addr_conf_t), 24);
+    try expectEqual(@sizeOf(ngx_http_conf_addr_t), 176);
+    try expectEqual(@sizeOf(ngx_http_core_loc_conf_t), 704);
 }

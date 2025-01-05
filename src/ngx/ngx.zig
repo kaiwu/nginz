@@ -6770,6 +6770,22 @@ pub const struct_ngx_http_cache_s = extern struct {
     lock_time: ngx_msec_t = @import("std").mem.zeroes(ngx_msec_t),
     wait_time: ngx_msec_t = @import("std").mem.zeroes(ngx_msec_t),
     wait_event: ngx_event_t = @import("std").mem.zeroes(ngx_event_t),
+    flags: packed struct {
+        lock: bool,
+        waiting: bool,
+        updated: bool,
+        updating: bool,
+        exists: bool,
+        temp_file: bool,
+        purged: bool,
+        reading: bool,
+        secondary: bool,
+        update_variant: bool,
+        background: bool,
+        stale_updating: bool,
+        stale_error: bool,
+        padding: u19,
+    } = @import("std").mem.zeroes(c_uint),
 };
 pub const ngx_http_cache_t = struct_ngx_http_cache_s;
 pub const ngx_http_upstream_handler_pt = ?*const fn ([*c]ngx_http_request_t, [*c]ngx_http_upstream_t) callconv(.C) void;
@@ -6969,7 +6985,7 @@ pub const struct_ngx_http_request_s = extern struct {
     post_subrequest: [*c]ngx_http_post_subrequest_t = @import("std").mem.zeroes([*c]ngx_http_post_subrequest_t),
     posted_requests: [*c]ngx_http_posted_request_t = @import("std").mem.zeroes([*c]ngx_http_posted_request_t),
     phase_handler: ngx_int_t = @import("std").mem.zeroes(ngx_int_t),
-    content_handler: ngx_http_handler_pt = @import("std").mem.zeroes(ngx_http_handler_pt),
+    content_handler: ?*const fn ([*c]ngx_http_request_t) callconv(.C) ngx_int_t = @import("std").mem.zeroes(ngx_http_handler_pt),
     access_code: ngx_uint_t = @import("std").mem.zeroes(ngx_uint_t),
     variables: [*c]ngx_http_variable_value_t = @import("std").mem.zeroes([*c]ngx_http_variable_value_t),
     ncaptures: ngx_uint_t = @import("std").mem.zeroes(ngx_uint_t),
@@ -7174,6 +7190,13 @@ pub const ngx_http_request_body_t = extern struct {
 pub const struct_ngx_http_addr_conf_s = extern struct {
     default_server: [*c]ngx_http_core_srv_conf_t = @import("std").mem.zeroes([*c]ngx_http_core_srv_conf_t),
     virtual_names: [*c]ngx_http_virtual_names_t = @import("std").mem.zeroes([*c]ngx_http_virtual_names_t),
+    flags: packed struct {
+        ssl: bool,
+        http2: bool,
+        quic: bool,
+        proxy_protocol: bool,
+        padding: u28,
+    } = @import("std").mem.zeroes(c_uint),
 };
 pub const ngx_http_addr_conf_t = struct_ngx_http_addr_conf_s;
 pub const ngx_http_connection_t = extern struct {
@@ -7598,6 +7621,17 @@ pub const struct_ngx_http_core_loc_conf_s = extern struct {
     name: ngx_str_t = @import("std").mem.zeroes(ngx_str_t),
     escaped_name: ngx_str_t = @import("std").mem.zeroes(ngx_str_t),
     regex: [*c]ngx_http_regex_t = @import("std").mem.zeroes([*c]ngx_http_regex_t),
+    flags: packed struct {
+        noname: bool,
+        lmt_excpt: bool,
+        named: bool,
+        exact_match: bool,
+        noregex: bool,
+        auto_redirect: bool,
+        gzip_disable_msie6: u2,
+        gzip_disalbe_degradation: u2,
+        padding: u22,
+    } = @import("std").mem.zeroes(c_uint),
     static_locations: [*c]ngx_http_location_tree_node_t = @import("std").mem.zeroes([*c]ngx_http_location_tree_node_t),
     regex_locations: [*c][*c]ngx_http_core_loc_conf_t = @import("std").mem.zeroes([*c][*c]ngx_http_core_loc_conf_t),
     loc_conf: [*c]?*anyopaque = @import("std").mem.zeroes([*c]?*anyopaque),
@@ -7692,6 +7726,21 @@ pub const ngx_http_listen_opt_t = extern struct {
     sockaddr: [*c]struct_sockaddr = @import("std").mem.zeroes([*c]struct_sockaddr),
     socklen: socklen_t = @import("std").mem.zeroes(socklen_t),
     addr_text: ngx_str_t = @import("std").mem.zeroes(ngx_str_t),
+    flags: packed struct {
+        set: bool,
+        default_server: bool,
+        bind: bool,
+        wildcard: bool,
+        ssl: bool,
+        http2: bool,
+        quic: bool,
+        ipv6only: bool,
+        deferred_accept: bool,
+        reuseport: bool,
+        so_keepalive: u2,
+        proxy_protocol: bool,
+        padding: u19,
+    } = @import("std").mem.zeroes(c_uint),
     backlog: c_int = @import("std").mem.zeroes(c_int),
     rcvbuf: c_int = @import("std").mem.zeroes(c_int),
     sndbuf: c_int = @import("std").mem.zeroes(c_int),
@@ -7758,6 +7807,11 @@ pub const ngx_http_core_srv_conf_t = extern struct {
     ignore_invalid_headers: ngx_flag_t = @import("std").mem.zeroes(ngx_flag_t),
     merge_slashes: ngx_flag_t = @import("std").mem.zeroes(ngx_flag_t),
     underscores_in_headers: ngx_flag_t = @import("std").mem.zeroes(ngx_flag_t),
+    flags: packed struct {
+        listen: bool,
+        captures: bool,
+        padding: u30,
+    } = @import("std").mem.zeroes(c_uint),
     named_locations: [*c][*c]ngx_http_core_loc_conf_t = @import("std").mem.zeroes([*c][*c]ngx_http_core_loc_conf_t),
 };
 pub const ngx_http_server_name_t = extern struct {
@@ -7790,6 +7844,12 @@ pub const ngx_http_conf_port_t = extern struct {
 };
 pub const ngx_http_conf_addr_t = extern struct {
     opt: ngx_http_listen_opt_t = @import("std").mem.zeroes(ngx_http_listen_opt_t),
+    flags: packed struct {
+        protocols: u3,
+        protocols_set: bool,
+        protocols_changed: bool,
+        padding: u27,
+    } = @import("std").mem.zeroes(c_uint),
     hash: ngx_hash_t = @import("std").mem.zeroes(ngx_hash_t),
     wc_head: [*c]ngx_hash_wildcard_t = @import("std").mem.zeroes([*c]ngx_hash_wildcard_t),
     wc_tail: [*c]ngx_hash_wildcard_t = @import("std").mem.zeroes([*c]ngx_hash_wildcard_t),
@@ -7854,6 +7914,17 @@ pub const ngx_http_file_cache_node_t = extern struct {
     node: ngx_rbtree_node_t = @import("std").mem.zeroes(ngx_rbtree_node_t),
     queue: ngx_queue_t = @import("std").mem.zeroes(ngx_queue_t),
     key: [8]u_char = @import("std").mem.zeroes([8]u_char),
+    flags: packed struct {
+        count: u20,
+        uses: u10,
+        valid_msec: u10,
+        @"error": u10,
+        exists: bool,
+        updating: bool,
+        deleting: bool,
+        purged: bool,
+        padding: u10,
+    } = @import("std").mem.zeroes(c_ulong),
     uniq: ngx_file_uniq_t = @import("std").mem.zeroes(ngx_file_uniq_t),
     expire: time_t = @import("std").mem.zeroes(time_t),
     valid_sec: time_t = @import("std").mem.zeroes(time_t),
