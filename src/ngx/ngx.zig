@@ -3298,6 +3298,24 @@ pub const struct_ngx_ssl_connection_s = extern struct {
     saved_write_handler: ngx_event_handler_pt = @import("std").mem.zeroes(ngx_event_handler_pt),
     ocsp: ?*ngx_ssl_ocsp_t = @import("std").mem.zeroes(?*ngx_ssl_ocsp_t),
     early_buf: u_char = @import("std").mem.zeroes(u_char),
+    flags: packed struct {
+        handshaked: bool,
+        handshake_rejected: bool,
+        renegotiation: bool,
+        buffer: bool,
+        sendilfe: bool,
+        no_wait_shutdown: bool,
+        no_send_shutdown: bool,
+        shutdown_without_free: bool,
+        handshake_buffer_set: bool,
+        session_timeout_set: bool,
+        try_early_data: bool,
+        in_early: bool,
+        in_ocsp: bool,
+        early_preread: bool,
+        write_blocked: bool,
+        padding: u17,
+    } = @import("std").mem.zeros(c_uint),
 };
 pub const ngx_ssl_connection_t = struct_ngx_ssl_connection_s;
 pub const struct_ngx_udp_connection_s = extern struct {
@@ -15138,6 +15156,11 @@ pub const ngx_ssl_ticket_key_t = extern struct {
     hmac_key: [32]u_char = @import("std").mem.zeroes([32]u_char),
     aes_key: [32]u_char = @import("std").mem.zeroes([32]u_char),
     expire: time_t = @import("std").mem.zeroes(time_t),
+    flags: packed struct {
+        size: u8,
+        shared: bool,
+        padding: u23,
+    } = @import("std").mem.zeros(c_uint),
 };
 pub const ngx_ssl_session_cache_t = extern struct {
     session_rbtree: ngx_rbtree_t = @import("std").mem.zeroes(ngx_rbtree_t),

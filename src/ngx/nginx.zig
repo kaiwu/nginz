@@ -110,6 +110,8 @@ pub const ngx_http_upstream_t = ngx.ngx_http_upstream_t;
 pub const ngx_http_upstream_rr_peer_t = ngx.ngx_http_upstream_rr_peer_t;
 pub const ngx_http_upstream_rr_peers_t = ngx.ngx_http_upstream_rr_peers_t;
 pub const ngx_http_conf_ctx_t = ngx.ngx_http_conf_ctx_t;
+pub const ngx_ssl_connection_t = ngx.ngx_ssl_connection_t;
+pub const ngx_ssl_ticket_key_t = ngx.ngx_ssl_ticket_key_t;
 
 pub const off_t = ngx.off_t;
 pub const u_char = ngx.u_char;
@@ -197,6 +199,9 @@ test "ngx data types" {
     try expectEqual(@sizeOf(ngx_http_upstream_t), 1024);
     try expectEqual(@sizeOf(ngx_http_upstream_rr_peer_t), 200);
     try expectEqual(@sizeOf(ngx_http_upstream_rr_peers_t), 96);
+
+    try expectEqual(@sizeOf(ngx_ssl_connection_t), 96);
+    try expectEqual(@sizeOf(ngx_ssl_ticket_key_t), 96);
 
     try expectEqual(@sizeOf(c_uint), 4);
     try expectEqual(@sizeOf([4]c_uint), 16);
