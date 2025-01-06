@@ -38,6 +38,10 @@ pub const ngx_http_script_compile_t = ngx.ngx_http_script_compile_t;
 pub const ngx_http_script_regex_code_t = ngx.ngx_http_script_regex_code_t;
 pub const ngx_http_script_regex_end_code_t = ngx.ngx_http_script_regex_end_code_t;
 pub const ngx_http_compile_complex_value_t = ngx.ngx_http_compile_complex_value_t;
+pub const ngx_http_upstream_server_t = ngx.ngx_http_upstream_server_t;
+pub const ngx_http_upstream_conf_t = ngx.ngx_http_upstream_conf_t;
+pub const ngx_http_upstream_headers_in_t = ngx.ngx_http_upstream_headers_in_t;
+pub const ngx_http_upstream_t = ngx.ngx_http_upstream_t;
 
 pub const ngx_array_t = ngx.ngx_array_t;
 
@@ -87,6 +91,11 @@ test "ngx data types" {
     try expectEqual(@sizeOf(ngx_http_compile_complex_value_t), 32);
     try expectEqual(@sizeOf(ngx_http_script_regex_code_t), 72);
     try expectEqual(@sizeOf(ngx_http_script_regex_end_code_t), 16);
+
+    try expectEqual(@sizeOf(ngx_http_upstream_server_t), 120);
+    try expectEqual(@sizeOf(ngx_http_upstream_conf_t), 456);
+    try expectEqual(@sizeOf(ngx_http_upstream_headers_in_t), 312);
+    try expectEqual(@sizeOf(ngx_http_upstream_t), 992);
 
     try expectEqual(@sizeOf(c_uint), 4);
     try expectEqual(@sizeOf([4]c_uint), 16);
