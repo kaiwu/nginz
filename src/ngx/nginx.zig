@@ -28,11 +28,16 @@ pub const ngx_http_core_srv_conf_t = ngx.ngx_http_core_srv_conf_t;
 pub const ngx_http_addr_conf_t = ngx.ngx_http_addr_conf_t;
 pub const ngx_http_conf_addr_t = ngx.ngx_http_conf_addr_t;
 pub const ngx_http_core_loc_conf_t = ngx.ngx_http_core_loc_conf_t;
+pub const ngx_http_header_out_t = ngx.ngx_http_header_out_t;
 pub const ngx_http_headers_in_t = ngx.ngx_http_headers_in_t;
 pub const ngx_http_request_body_t = ngx.ngx_http_request_body_t;
 pub const ngx_http_connection_t = ngx.ngx_http_connection_t;
 pub const ngx_http_request_t = ngx.ngx_http_request_t;
-pub const ngx_http_header_out_t = ngx.ngx_http_header_out_t;
+pub const ngx_http_script_engine_t = ngx.ngx_http_script_engine_t;
+pub const ngx_http_script_compile_t = ngx.ngx_http_script_compile_t;
+pub const ngx_http_script_regex_code_t = ngx.ngx_http_script_regex_code_t;
+pub const ngx_http_script_regex_end_code_t = ngx.ngx_http_script_regex_end_code_t;
+pub const ngx_http_compile_complex_value_t = ngx.ngx_http_compile_complex_value_t;
 
 pub const ngx_array_t = ngx.ngx_array_t;
 
@@ -67,14 +72,22 @@ test "ngx data types" {
     try expectEqual(@sizeOf(ngx_http_request_body_t), 80);
     try expectEqual(@sizeOf(ngx_http_connection_t), 48);
     try expectEqual(@sizeOf(ngx_http_header_out_t), 24);
+
+    try expectEqual(@sizeOf(ngx_http_request_t), 1320);
     try expectEqual(@offsetOf(ngx_http_request_t, "connection"), 8);
     try expectEqual(@offsetOf(ngx_http_request_t, "cleanup"), 1112);
     try expectEqual(@offsetOf(ngx_http_request_t, "flags0"), 1120);
+    try expectEqual(@offsetOf(ngx_http_request_t, "flags1"), 1128);
     try expectEqual(@offsetOf(ngx_http_request_t, "state"), 1136);
     try expectEqual(@offsetOf(ngx_http_request_t, "host_end"), 1304);
-    try expectEqual(@offsetOf(ngx_http_request_t, "flags1"), 1128);
     try expectEqual(@offsetOf(ngx_http_request_t, "flags2"), 1312);
-    try expectEqual(@sizeOf(ngx_http_request_t), 1320);
+
+    try expectEqual(@sizeOf(ngx_http_script_engine_t), 88);
+    try expectEqual(@sizeOf(ngx_http_script_compile_t), 88);
+    try expectEqual(@sizeOf(ngx_http_compile_complex_value_t), 32);
+    try expectEqual(@sizeOf(ngx_http_script_regex_code_t), 72);
+    try expectEqual(@sizeOf(ngx_http_script_regex_end_code_t), 16);
+
     try expectEqual(@sizeOf(c_uint), 4);
     try expectEqual(@sizeOf([4]c_uint), 16);
 }

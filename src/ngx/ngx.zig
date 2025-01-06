@@ -7332,6 +7332,14 @@ pub const ngx_http_script_engine_t = extern struct {
     buf: ngx_str_t = @import("std").mem.zeroes(ngx_str_t),
     line: ngx_str_t = @import("std").mem.zeroes(ngx_str_t),
     args: [*c]u_char = @import("std").mem.zeroes([*c]u_char),
+    flags: packed struct {
+        flushed: bool,
+        skip: bool,
+        quote: bool,
+        is_args: bool,
+        log: bool,
+        padding: u27,
+    } = @import("std").mem.zeros(c_uint),
     status: ngx_int_t = @import("std").mem.zeroes(ngx_int_t),
     request: [*c]ngx_http_request_t = @import("std").mem.zeroes([*c]ngx_http_request_t),
 };
@@ -7346,6 +7354,17 @@ pub const ngx_http_script_compile_t = extern struct {
     captures_mask: ngx_uint_t = @import("std").mem.zeroes(ngx_uint_t),
     size: ngx_uint_t = @import("std").mem.zeroes(ngx_uint_t),
     main: ?*anyopaque = @import("std").mem.zeroes(?*anyopaque),
+    flags: packed struct {
+        compile_args: bool,
+        complete_lengths: bool,
+        complete_values: bool,
+        zero: bool,
+        conf_prefix: bool,
+        root_prefix: bool,
+        dup_capture: bool,
+        args: bool,
+        padding: u24,
+    } = @import("std").mem.zeros(c_uint),
 };
 const union_unnamed_233 = extern union {
     size: usize,
@@ -7361,6 +7380,12 @@ pub const ngx_http_compile_complex_value_t = extern struct {
     cf: [*c]ngx_conf_t = @import("std").mem.zeroes([*c]ngx_conf_t),
     value: [*c]ngx_str_t = @import("std").mem.zeroes([*c]ngx_str_t),
     complex_value: [*c]ngx_http_complex_value_t = @import("std").mem.zeroes([*c]ngx_http_complex_value_t),
+    flags: packed struct {
+        zero: bool,
+        conf_prefix: bool,
+        root_prefix: bool,
+        padding: u29,
+    } = @import("std").mem.zeros(c_uint),
 };
 pub const ngx_http_script_code_pt = ?*const fn ([*c]ngx_http_script_engine_t) callconv(.C) void;
 pub const ngx_http_script_len_code_pt = ?*const fn ([*c]ngx_http_script_engine_t) callconv(.C) usize;
@@ -7388,10 +7413,27 @@ pub const ngx_http_script_regex_code_t = extern struct {
     size: usize = @import("std").mem.zeroes(usize),
     status: usize = @import("std").mem.zeroes(usize),
     next: usize = @import("std").mem.zeroes(usize),
+    flags: packed struct {
+        @"test": bool,
+        negative_test: bool,
+        uri: bool,
+        args: bool,
+        add_args: bool,
+        redirect: bool,
+        break_cycle: bool,
+        padding: u25,
+    } = @import("std").mem.zeros(c_uint),
     name: ngx_str_t = @import("std").mem.zeroes(ngx_str_t),
 };
 pub const ngx_http_script_regex_end_code_t = extern struct {
     code: ngx_http_script_code_pt = @import("std").mem.zeroes(ngx_http_script_code_pt),
+    flags: packed struct {
+        uri: bool,
+        args: bool,
+        add_args: bool,
+        redirect: bool,
+        padding: u28,
+    } = @import("std").mem.zeros(c_uint),
 };
 pub const ngx_http_script_full_name_code_t = extern struct {
     code: ngx_http_script_code_pt = @import("std").mem.zeroes(ngx_http_script_code_pt),
