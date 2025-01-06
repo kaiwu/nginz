@@ -7029,6 +7029,8 @@ pub const struct_ngx_http_request_s = extern struct {
         cached: bool,
         gzip_tested: bool,
         gzip_ok: bool,
+    } = @import("std").mem.zeroes(c_ulong),
+    flags1: packed struct {
         gzip_vary: bool,
         realloc_captures: bool,
         proxy: bool,
@@ -7074,7 +7076,7 @@ pub const struct_ngx_http_request_s = extern struct {
         background: bool,
         health_check: bool,
         padding: u14,
-    } = @import("std").mem.zeroes([4]c_uint),
+    } = @import("std").mem.zeroes(c_ulong),
     state: ngx_uint_t = @import("std").mem.zeroes(ngx_uint_t),
     header_hash: ngx_uint_t = @import("std").mem.zeroes(ngx_uint_t),
     lowcase_index: ngx_uint_t = @import("std").mem.zeroes(ngx_uint_t),
@@ -7094,7 +7096,7 @@ pub const struct_ngx_http_request_s = extern struct {
     schema_end: [*c]u_char = @import("std").mem.zeroes([*c]u_char),
     host_start: [*c]u_char = @import("std").mem.zeroes([*c]u_char),
     host_end: [*c]u_char = @import("std").mem.zeroes([*c]u_char),
-    flags1: packed struct {
+    flags2: packed struct {
         http_minor: u16,
         http_major: u16,
     } = @import("std").mem.zeroes(c_uint),

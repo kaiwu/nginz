@@ -72,8 +72,9 @@ test "ngx data types" {
     try expectEqual(@offsetOf(ngx_http_request_t, "flags0"), 1120);
     try expectEqual(@offsetOf(ngx_http_request_t, "state"), 1136);
     try expectEqual(@offsetOf(ngx_http_request_t, "host_end"), 1304);
-    try expectEqual(@offsetOf(ngx_http_request_t, "flags1"), 1312);
-    try expectEqual(@sizeOf(ngx_http_request_t), 1328); // 1320
+    try expectEqual(@offsetOf(ngx_http_request_t, "flags1"), 1128);
+    try expectEqual(@offsetOf(ngx_http_request_t, "flags2"), 1312);
+    try expectEqual(@sizeOf(ngx_http_request_t), 1320);
     try expectEqual(@sizeOf(c_uint), 4);
     try expectEqual(@sizeOf([4]c_uint), 16);
 }
