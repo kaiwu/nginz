@@ -148,7 +148,7 @@ test "ngx data types" {
     try expectEqual(@sizeOf(ngx_buf_t), 80);
     try expectEqual(@sizeOf(ngx_output_chain_ctx_t), 104);
     try expectEqual(@sizeOf(ngx_listening_t), 296);
-    try expectEqual(@sizeOf(ngx_connection_t), 224);
+    try expectEqual(@sizeOf(ngx_connection_t), 232);
     try expectEqual(@sizeOf(ngx_file_t), 200);
     try expectEqual(@sizeOf(ngx_temp_file_t), 248);
     try expectEqual(@sizeOf(ngx_ext_rename_file_t), 40);
@@ -160,9 +160,9 @@ test "ngx data types" {
     try expectEqual(@sizeOf(ngx_resolver_ctx_t), 224);
     try expectEqual(@sizeOf(ngx_slab_pool_t), 200);
     try expectEqual(@sizeOf(ngx_variable_value_t), 16);
-    try expectEqual(@sizeOf(ngx_syslog_peer_t), 392);
+    try expectEqual(@sizeOf(ngx_syslog_peer_t), 400);
     try expectEqual(@sizeOf(ngx_event_t), 96);
-    try expectEqual(@sizeOf(ngx_peer_connection_t), 112);
+    try expectEqual(@sizeOf(ngx_peer_connection_t), 128);
     try expectEqual(@sizeOf(ngx_event_pipe_t), 280);
     try expectEqual(@sizeOf(ngx_http_file_cache_node_t), 120);
     try expectEqual(@sizeOf(ngx_http_cache_t), 608);
@@ -173,7 +173,7 @@ test "ngx data types" {
     try expectEqual(@sizeOf(ngx_http_core_loc_conf_t), 704);
     try expectEqual(@sizeOf(ngx_http_headers_in_t), 312);
     try expectEqual(@sizeOf(ngx_http_request_body_t), 80);
-    try expectEqual(@sizeOf(ngx_http_connection_t), 48);
+    try expectEqual(@sizeOf(ngx_http_connection_t), 64);
     try expectEqual(@sizeOf(ngx_http_header_out_t), 24);
 
     try expectEqual(@sizeOf(ngx_http_request_t), 1320);
@@ -192,10 +192,10 @@ test "ngx data types" {
     try expectEqual(@sizeOf(ngx_http_script_regex_end_code_t), 16);
 
     try expectEqual(@sizeOf(ngx_http_upstream_server_t), 120);
-    try expectEqual(@sizeOf(ngx_http_upstream_conf_t), 456);
+    try expectEqual(@sizeOf(ngx_http_upstream_conf_t), 520);
     try expectEqual(@sizeOf(ngx_http_upstream_headers_in_t), 312);
-    try expectEqual(@sizeOf(ngx_http_upstream_t), 992);
-    try expectEqual(@sizeOf(ngx_http_upstream_rr_peer_t), 192);
+    try expectEqual(@sizeOf(ngx_http_upstream_t), 1024);
+    try expectEqual(@sizeOf(ngx_http_upstream_rr_peer_t), 200);
     try expectEqual(@sizeOf(ngx_http_upstream_rr_peers_t), 96);
 
     try expectEqual(@sizeOf(c_uint), 4);
