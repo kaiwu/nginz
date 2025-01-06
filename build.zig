@@ -40,10 +40,8 @@ pub fn build(b: *std.Build) void {
 
         t.linkLibC();
         t.linkSystemLibrary("z");
-        t.linkSystemLibrary("m");
         t.linkSystemLibrary("ssl");
-        t.linkSystemLibrary("dl");
-        t.linkSystemLibrary("crypt");
+        t.linkSystemLibrary("crypto");
         t.linkSystemLibrary("pcre2-8");
         t.addObjectFile(b.path("libs/libngx_core.a"));
         t.addObjectFile(b.path("libs/libngx_http.a"));
