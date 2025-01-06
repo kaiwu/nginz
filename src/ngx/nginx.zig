@@ -42,8 +42,26 @@ pub const ngx_http_upstream_server_t = ngx.ngx_http_upstream_server_t;
 pub const ngx_http_upstream_conf_t = ngx.ngx_http_upstream_conf_t;
 pub const ngx_http_upstream_headers_in_t = ngx.ngx_http_upstream_headers_in_t;
 pub const ngx_http_upstream_t = ngx.ngx_http_upstream_t;
+pub const ngx_http_upstream_rr_peer_t = ngx.ngx_http_upstream_rr_peer_t;
+pub const ngx_http_upstream_rr_peers_t = ngx.ngx_http_upstream_rr_peers_t;
 
+pub const ngx_dir_t = ngx.ngx_dir_t;
+pub const ngx_process_t = ngx.ngx_process_t;
+
+pub const ngx_str_t = ngx.ngx_str_t;
+pub const ngx_log_t = ngx.ngx_log_t;
+pub const ngx_int_t = ngx.ngx_int_t;
+pub const ngx_uint_t = ngx.ngx_uint_t;
+pub const ngx_msec_t = ngx.ngx_msec_t;
+pub const ngx_pool_t = ngx.ngx_pool_t;
+pub const ngx_hash_t = ngx.ngx_hash_t;
+pub const ngx_list_t = ngx.ngx_list_t;
+pub const ngx_conf_t = ngx.ngx_conf_t;
+pub const ngx_cycle_t = ngx.ngx_cycle_t;
+pub const ngx_queue_t = ngx.ngx_queue_t;
 pub const ngx_array_t = ngx.ngx_array_t;
+pub const ngx_rbtree_t = ngx.ngx_rbtree_t;
+pub const ngx_module_t = ngx.ngx_module_t;
 
 test "ngx data types" {
     try expectEqual(@sizeOf(ngx_buf_t), 80);
@@ -96,7 +114,26 @@ test "ngx data types" {
     try expectEqual(@sizeOf(ngx_http_upstream_conf_t), 456);
     try expectEqual(@sizeOf(ngx_http_upstream_headers_in_t), 312);
     try expectEqual(@sizeOf(ngx_http_upstream_t), 992);
+    try expectEqual(@sizeOf(ngx_http_upstream_rr_peer_t), 192);
+    try expectEqual(@sizeOf(ngx_http_upstream_rr_peers_t), 96);
 
     try expectEqual(@sizeOf(c_uint), 4);
     try expectEqual(@sizeOf([4]c_uint), 16);
+    try expectEqual(@sizeOf(ngx_dir_t), 168);
+    try expectEqual(@sizeOf(ngx_process_t), 48);
+
+    try expectEqual(@sizeOf(ngx_str_t), 16);
+    try expectEqual(@sizeOf(ngx_log_t), 80);
+    try expectEqual(@sizeOf(ngx_int_t), 8);
+    try expectEqual(@sizeOf(ngx_uint_t), 8);
+    try expectEqual(@sizeOf(ngx_msec_t), 8);
+    try expectEqual(@sizeOf(ngx_pool_t), 80);
+    try expectEqual(@sizeOf(ngx_hash_t), 16);
+    try expectEqual(@sizeOf(ngx_list_t), 56);
+    try expectEqual(@sizeOf(ngx_conf_t), 96);
+    try expectEqual(@sizeOf(ngx_cycle_t), 648);
+    try expectEqual(@sizeOf(ngx_queue_t), 16);
+    try expectEqual(@sizeOf(ngx_array_t), 40);
+    try expectEqual(@sizeOf(ngx_rbtree_t), 24);
+    try expectEqual(@sizeOf(ngx_module_t), 200);
 }

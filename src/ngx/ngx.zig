@@ -3554,6 +3554,11 @@ pub const ngx_dir_t = extern struct {
     dir: ?*DIR = @import("std").mem.zeroes(?*DIR),
     de: [*c]struct_dirent = @import("std").mem.zeroes([*c]struct_dirent),
     info: struct_stat = @import("std").mem.zeroes(struct_stat),
+    flags: packed struct {
+        type: u8,
+        valid_info: bool,
+        padding: u23,
+    } = @import("std").mem.zeros(c_uint),
 };
 pub const ngx_glob_t = extern struct {
     n: usize = @import("std").mem.zeroes(usize),
@@ -3620,6 +3625,14 @@ pub const ngx_process_t = extern struct {
     proc: ngx_spawn_proc_pt = @import("std").mem.zeroes(ngx_spawn_proc_pt),
     data: ?*anyopaque = @import("std").mem.zeroes(?*anyopaque),
     name: [*c]u8 = @import("std").mem.zeroes([*c]u8),
+    flags: packed struct {
+        respawn: bool,
+        just_spawn: bool,
+        detached: bool,
+        exiting: bool,
+        exited: bool,
+        padding: u27,
+    } = @import("std").mem.zeros(c_uint),
 };
 pub const ngx_exec_ctx_t = extern struct {
     path: [*c]u8 = @import("std").mem.zeroes([*c]u8),
@@ -7810,6 +7823,10 @@ pub const struct_ngx_http_upstream_rr_peer_s = extern struct {
     slow_start: ngx_msec_t = @import("std").mem.zeroes(ngx_msec_t),
     start_time: ngx_msec_t = @import("std").mem.zeroes(ngx_msec_t),
     down: ngx_uint_t = @import("std").mem.zeroes(ngx_uint_t),
+    flags: packed struct {
+        zombie: bool,
+        padding: u31,
+    } = @import("std").mem.zeros(c_uint),
     lock: ngx_atomic_t = @import("std").mem.zeroes(ngx_atomic_t),
     refs: ngx_uint_t = @import("std").mem.zeroes(ngx_uint_t),
     host: [*c]ngx_http_upstream_host_t = @import("std").mem.zeroes([*c]ngx_http_upstream_host_t),
@@ -7826,6 +7843,11 @@ pub const struct_ngx_http_upstream_rr_peers_s = extern struct {
     zone_next: [*c]ngx_http_upstream_rr_peers_t = @import("std").mem.zeroes([*c]ngx_http_upstream_rr_peers_t),
     total_weight: ngx_uint_t = @import("std").mem.zeroes(ngx_uint_t),
     tries: ngx_uint_t = @import("std").mem.zeroes(ngx_uint_t),
+    flags: packed struct {
+        single: bool,
+        weighted: bool,
+        padding: u30,
+    } = @import("std").mem.zeros(c_uint),
     name: [*c]ngx_str_t = @import("std").mem.zeroes([*c]ngx_str_t),
     next: [*c]ngx_http_upstream_rr_peers_t = @import("std").mem.zeroes([*c]ngx_http_upstream_rr_peers_t),
     peer: [*c]ngx_http_upstream_rr_peer_t = @import("std").mem.zeroes([*c]ngx_http_upstream_rr_peer_t),
