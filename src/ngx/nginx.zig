@@ -52,7 +52,7 @@ pub inline fn make_slice(p: [*c]u8, len: usize) []u8 {
 
 pub inline fn castPtr(comptime T: type, p: ?*anyopaque) ?[*c]T {
     if (p) |p0| {
-        return @as([*c]T, @ptrCast(p0));
+        return @ptrCast(p0);
     }
     return null;
 }
@@ -518,23 +518,34 @@ pub const NGX_MODULE_SIGNATURE_33 = "1";
 pub const NGX_MODULE_SIGNATURE_34 = "0";
 pub const NGX_MODULE_SIGNATURE = NGX_MODULE_SIGNATURE_0 ++ NGX_MODULE_SIGNATURE_1 ++ NGX_MODULE_SIGNATURE_2 ++ NGX_MODULE_SIGNATURE_3 ++ NGX_MODULE_SIGNATURE_4 ++ NGX_MODULE_SIGNATURE_5 ++ NGX_MODULE_SIGNATURE_6 ++ NGX_MODULE_SIGNATURE_7 ++ NGX_MODULE_SIGNATURE_8 ++ NGX_MODULE_SIGNATURE_9 ++ NGX_MODULE_SIGNATURE_10 ++ NGX_MODULE_SIGNATURE_11 ++ NGX_MODULE_SIGNATURE_12 ++ NGX_MODULE_SIGNATURE_13 ++ NGX_MODULE_SIGNATURE_14 ++ NGX_MODULE_SIGNATURE_15 ++ NGX_MODULE_SIGNATURE_16 ++ NGX_MODULE_SIGNATURE_17 ++ NGX_MODULE_SIGNATURE_18 ++ NGX_MODULE_SIGNATURE_19 ++ NGX_MODULE_SIGNATURE_20 ++ NGX_MODULE_SIGNATURE_21 ++ NGX_MODULE_SIGNATURE_22 ++ NGX_MODULE_SIGNATURE_23 ++ NGX_MODULE_SIGNATURE_24 ++ NGX_MODULE_SIGNATURE_25 ++ NGX_MODULE_SIGNATURE_26 ++ NGX_MODULE_SIGNATURE_27 ++ NGX_MODULE_SIGNATURE_28 ++ NGX_MODULE_SIGNATURE_29 ++ NGX_MODULE_SIGNATURE_30 ++ NGX_MODULE_SIGNATURE_31 ++ NGX_MODULE_SIGNATURE_32 ++ NGX_MODULE_SIGNATURE_33 ++ NGX_MODULE_SIGNATURE_34;
 
-pub inline fn make_module() ngx_module_t {
-    var m = ngx_module_t{};
-    m.ctx_index = NGX_MODULE_UNSET_INDEX;
-    m.index = NGX_MODULE_UNSET_INDEX;
-    m.version = nginx_version;
-    m.signature = NGX_MODULE_SIGNATURE;
-
-    return m;
-}
-
-test "module" {
-    const m = make_module();
-    try expectEqual(m.ctx_index, NGX_MODULE_UNSET_INDEX);
-
-    const len = std.zig.c_translation.sizeof(NGX_MODULE_SIGNATURE) - 1;
-    const slice = make_slice(@constCast(m.signature), len);
-    try expectEqual(slice.len, 40);
+pub inline fn make_module(cmds: [*c]ngx_command_t, ctx: ?*anyopaque) ngx_module_t {
+    return ngx_module_t{
+        .ctx_index = NGX_MODULE_UNSET_INDEX,
+        .index = NGX_MODULE_UNSET_INDEX,
+        .name = @ptrCast(NULL),
+        .signature = NGX_MODULE_SIGNATURE,
+        .spare0 = 0,
+        .spare1 = 0,
+        .version = nginx_version,
+        .ctx = ctx,
+        .commands = cmds,
+        .type = NGX_HTTP_MODULE,
+        .init_master = @ptrCast(NULL),
+        .init_module = @ptrCast(NULL),
+        .init_process = @ptrCast(NULL),
+        .init_thread = @ptrCast(NULL),
+        .exit_thread = @ptrCast(NULL),
+        .exit_process = @ptrCast(NULL),
+        .exit_master = @ptrCast(NULL),
+        .spare_hook0 = 0,
+        .spare_hook1 = 0,
+        .spare_hook2 = 0,
+        .spare_hook3 = 0,
+        .spare_hook4 = 0,
+        .spare_hook5 = 0,
+        .spare_hook6 = 0,
+        .spare_hook7 = 0,
+    };
 }
 
 pub inline fn ngx_queue_init(q: [*c]ngx_queue_t) void {

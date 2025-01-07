@@ -19,12 +19,15 @@ export const ngx_http_echoz_module_ctx = ngx_http_module_t{
 };
 
 export const ngx_http_echoz_commands = [_]ngx_command_t{};
-export const ngx_http_echoz_module = ngx_module_t{
-    .commands = &ngx_http_echoz_commands,
-    .ctx = @constCast(&ngx_http_echoz_module_ctx),
-    .type = NGX_HTTP_MODULE,
-};
 
-test "version" {
-    try std.testing.expectEqual(ngx.nginx_version, 1027003);
+export const ngx_http_echoz_module = ngx.make_module(
+    &ngx_http_echoz_commands,
+    @constCast(&ngx_http_echoz_module_ctx),
+);
+
+test "module" {
+    try std.testing.expectEqual(ngx_http_echoz_module.version, 1027003);
+    const len = ngx.sizeof(ngx.NGX_MODULE_SIGNATURE);
+    const slice = ngx.make_slice(@constCast(ngx_http_echoz_module.signature), len);
+    try std.testing.expectEqual(slice.len, 40);
 }
