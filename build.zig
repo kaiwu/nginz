@@ -1,39 +1,72 @@
 const std = @import("std");
 
-const ngx_module = struct {
-    source: []const u8,
-    module: ?*std.Build.Module = null,
+const NGINX = "src/ngx/nginx.zig";
+
+var modules = [_][]const u8{
+    "src/modules/echoz-nginx-module/ngx_http_echoz.zig",
+    NGINX,
 };
 
-var ngx = [_]ngx_module{
-    .{ .source = "src/ngx/nginx.zig" },
+const PN = struct {
+    p: []const u8,
+    n: []const u8,
 };
 
-fn module_name(path: []const u8) []const u8 {
-    var b: usize = 0;
-    var e: usize = 0;
-    for (path, 0..) |c, i| {
+fn obj(f: []const u8) []const u8 {
+    const file = struct {
+        var buf: [256]u8 = undefined;
+    };
+    @memcpy(file.buf[0..f.len], f);
+    file.buf[f.len] = '.';
+    file.buf[f.len + 1] = 'o';
+    return file.buf[0 .. f.len + 2];
+}
+
+fn module_path(f: []const u8) PN {
+    var l: usize = 0;
+    var d: usize = 0;
+    for (f, 0..) |c, i| {
         if (c == '/') {
-            b = i;
+            l = i;
         }
         if (c == '.') {
-            e = i;
+            d = i;
         }
     }
-    return path[b + 1 .. e];
+    return PN{ .p = f[0..l], .n = f[l + 1 .. d] };
 }
 
 pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
+    const nginx = b.addModule("nginx", .{
+        .root_source_file = b.path(NGINX),
+        .target = target,
+        .optimize = optimize,
+    });
+
+    for (modules) |m| {
+        if (std.mem.eql(u8, m, NGINX)) {
+            continue;
+        }
+        const pn = module_path(m);
+        const o = b.addObject(.{
+            .name = pn.n,
+            .root_source_file = b.path(m),
+            .target = target,
+            .optimize = optimize,
+        });
+        o.addIncludePath(b.path(pn.p));
+        o.root_module.addImport("nginx", nginx);
+        const install_object = b.addInstallFile(o.getEmittedBin(), obj(pn.n));
+        b.getInstallStep().dependOn(&install_object.step);
+    }
+
     const test_step = b.step("test", "Run unit tests");
-
-    const nginx = b.addModule("nginx", .{ .root_source_file = b.path("src/ngx/nginx.zig"), .target = target, .optimize = optimize });
-
-    for (ngx) |m| {
+    for (modules) |case| {
         const t = b.addTest(.{
-            .root_source_file = b.path(m.source),
+            .root_source_file = b.path(case),
             .target = target,
             .optimize = optimize,
         });

@@ -15,8 +15,12 @@ pub const NGX_DONE = @as(c_int, -4);
 pub const NGX_DECLINED = @as(c_int, -5);
 pub const NGX_ABORT = @as(c_int, -6);
 
-pub fn sizeof(comptime s: []const u8) usize {
+pub inline fn sizeof(comptime s: []const u8) usize {
     return s.len;
+}
+
+pub inline fn c_str(s: []const u8) [*c]u_char {
+    return @constCast(s.ptr);
 }
 
 pub const NGX_INT32_LEN = sizeof("-2147483648");
@@ -112,6 +116,7 @@ pub const ngx_http_upstream_rr_peers_t = ngx.ngx_http_upstream_rr_peers_t;
 pub const ngx_http_conf_ctx_t = ngx.ngx_http_conf_ctx_t;
 pub const ngx_ssl_connection_t = ngx.ngx_ssl_connection_t;
 pub const ngx_ssl_ticket_key_t = ngx.ngx_ssl_ticket_key_t;
+pub const ngx_http_module_t = ngx.ngx_http_module_t;
 
 pub const off_t = ngx.off_t;
 pub const u_char = ngx.u_char;
@@ -138,9 +143,10 @@ pub const ngx_command_t = ngx.ngx_command_t;
 pub const ngx_chain_t = ngx.ngx_chain_t;
 
 pub const NULL = ngx.NULL;
-pub const ngx_pallc = ngx.ngx_palloc;
 pub const ngx_palloc = ngx.ngx_palloc;
 pub const ngx_pcalloc = ngx.ngx_pcalloc;
+pub const ngx_pmemalign = ngx.ngx_pmemalign;
+pub const ngx_pfree = ngx.ngx_pfree;
 pub const ngx_log_error_core = ngx.ngx_log_error_core;
 pub const ngx_log_init = ngx.ngx_log_init;
 pub const ngx_time_init = ngx.ngx_time_init;
@@ -202,6 +208,7 @@ test "ngx data types" {
 
     try expectEqual(@sizeOf(ngx_ssl_connection_t), 96);
     try expectEqual(@sizeOf(ngx_ssl_ticket_key_t), 96);
+    try expectEqual(@sizeOf(ngx_http_module_t), 64);
 
     try expectEqual(@sizeOf(c_uint), 4);
     try expectEqual(@sizeOf([4]c_uint), 16);
@@ -465,7 +472,7 @@ pub fn ngz_log_debug(level: ngx_uint_t, log: [*c]ngx_log_t, err: ngx_err_t, fmt:
 }
 
 test "log" {
-    const log = ngx_log_init(@as([*c]u_char, @constCast("")), @as([*c]u_char, @constCast("")));
+    const log = ngx_log_init(c_str(""), c_str(""));
     try expectEqual(log.*.log_level, NGX_LOG_NOTICE);
 
     log.*.log_level |= NGX_LOG_DEBUG_CORE;
@@ -498,7 +505,7 @@ pub const NGX_MODULE_SIGNATURE_20 = "1";
 pub const NGX_MODULE_SIGNATURE_21 = "1";
 pub const NGX_MODULE_SIGNATURE_22 = "0";
 pub const NGX_MODULE_SIGNATURE_23 = "1";
-pub const NGX_MODULE_SIGNATURE_24 = "0";
+pub const NGX_MODULE_SIGNATURE_24 = "1";
 pub const NGX_MODULE_SIGNATURE_25 = "1";
 pub const NGX_MODULE_SIGNATURE_26 = "1";
 pub const NGX_MODULE_SIGNATURE_27 = "1";

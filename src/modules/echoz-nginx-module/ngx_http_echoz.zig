@@ -1,0 +1,30 @@
+const std = @import("std");
+const ngx = @import("nginx");
+
+const NULL = ngx.NULL;
+const NGX_HTTP_MODULE = ngx.NGX_HTTP_MODULE;
+const ngx_module_t = ngx.ngx_module_t;
+const ngx_command_t = ngx.ngx_command_t;
+const ngx_http_module_t = ngx.ngx_http_module_t;
+
+export const ngx_http_echoz_module_ctx = ngx_http_module_t{
+    .preconfiguration = @ptrCast(NULL),
+    .postconfiguration = @ptrCast(NULL),
+    .create_main_conf = @ptrCast(NULL),
+    .init_main_conf = @ptrCast(NULL),
+    .create_srv_conf = @ptrCast(NULL),
+    .merge_srv_conf = @ptrCast(NULL),
+    .create_loc_conf = @ptrCast(NULL),
+    .merge_loc_conf = @ptrCast(NULL),
+};
+
+export const ngx_http_echoz_commands = [_]ngx_command_t{};
+export const ngx_http_echoz_module = ngx_module_t{
+    .commands = &ngx_http_echoz_commands,
+    .ctx = @constCast(&ngx_http_echoz_module_ctx),
+    .type = NGX_HTTP_MODULE,
+};
+
+test "version" {
+    try std.testing.expectEqual(ngx.nginx_version, 1027003);
+}
