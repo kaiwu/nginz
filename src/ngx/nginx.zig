@@ -52,7 +52,7 @@ pub inline fn make_slice(p: [*c]u8, len: usize) []u8 {
 
 pub inline fn castPtr(comptime T: type, p: ?*anyopaque) ?[*c]T {
     if (p) |p0| {
-        return @ptrCast(p0);
+        return @alignCast(@ptrCast(p0));
     }
     return null;
 }
@@ -127,6 +127,7 @@ pub const ngx_err_t = ngx.ngx_err_t;
 pub const ngx_str_t = ngx.ngx_str_t;
 pub const ngx_log_t = ngx.ngx_log_t;
 pub const ngx_int_t = ngx.ngx_int_t;
+pub const ngx_flag_t = ngx.ngx_flag_t;
 pub const ngx_uint_t = ngx.ngx_uint_t;
 pub const ngx_msec_t = ngx.ngx_msec_t;
 pub const ngx_pool_t = ngx.ngx_pool_t;
@@ -151,6 +152,13 @@ pub const ngx_log_error_core = ngx.ngx_log_error_core;
 pub const ngx_log_init = ngx.ngx_log_init;
 pub const ngx_time_init = ngx.ngx_time_init;
 pub const ngx_rbtree_insert_pt = ngx.ngx_rbtree_insert_pt;
+
+pub inline fn ngz_pcalloc(comptime T: type, p: [*c]ngx_pool_t) ?[*c]T {
+    if (ngx_pcalloc(p, @sizeOf(T))) |p0| {
+        return @alignCast(@ptrCast(p0));
+    }
+    return null;
+}
 
 test "ngx data types" {
     try expectEqual(@sizeOf(ngx_buf_t), 80);
@@ -274,7 +282,7 @@ pub inline fn ngx_free_chain(pool: [*c]ngx_pool_t, cl: [*c]ngx_chain_t) void {
 }
 
 pub inline fn ngx_string(str: []const u8) ngx_str_t {
-    return ngx_str_t{ .len = str.len, .data = str.ptr };
+    return ngx_str_t{ .len = str.len, .data = @constCast(str.ptr) };
 }
 
 pub const ngx_null_str = ngx_str_t{ .len = 0, .data = NULL };
@@ -364,33 +372,36 @@ pub const NGX_HTTP_MAIN_CONF_OFFSET = @offsetOf(ngx_http_conf_ctx_t, "main_conf"
 pub const NGX_HTTP_SRV_CONF_OFFSET = @offsetOf(ngx_http_conf_ctx_t, "srv_conf");
 pub const NGX_HTTP_LOC_CONF_OFFSET = @offsetOf(ngx_http_conf_ctx_t, "loc_conf");
 
-pub inline fn ngx_http_get_module_main_conf(r: [*c]ngx_http_request_t, m: ngx_module_t) ?*anyopaque {
+pub const NGX_CONF_UNSET = ngx.NGX_CONF_UNSET;
+pub const ngx_conf_set_flag_slot = ngx.ngx_conf_set_flag_slot;
+
+pub inline fn ngx_http_get_module_main_conf(r: [*c]ngx_http_request_t, m: *ngx_module_t) ?*anyopaque {
     return r.*.main_conf[m.ctx_index];
 }
 
-pub inline fn ngx_http_get_module_srv_conf(r: [*c]ngx_http_request_t, m: ngx_module_t) ?*anyopaque {
+pub inline fn ngx_http_get_module_srv_conf(r: [*c]ngx_http_request_t, m: *ngx_module_t) ?*anyopaque {
     return r.*.srv_conf[m.ctx_index];
 }
 
-pub inline fn ngx_http_get_module_loc_conf(r: [*c]ngx_http_request_t, m: ngx_module_t) ?*anyopaque {
+pub inline fn ngx_http_get_module_loc_conf(r: [*c]ngx_http_request_t, m: *ngx_module_t) ?*anyopaque {
     return r.*.loc_conf[m.ctx_index];
 }
 
-pub inline fn ngx_http_conf_get_module_main_conf(cf: [*c]ngx_conf_t, m: ngx_module_t) ?*anyopaque {
+pub inline fn ngx_http_conf_get_module_main_conf(cf: [*c]ngx_conf_t, m: *ngx_module_t) ?*anyopaque {
     if (castPtr(ngx_http_conf_ctx_t, cf.*.ctx)) |p| {
         return p.*.main_conf[m.ctx_index];
     }
     return null;
 }
 
-pub inline fn ngx_http_conf_get_module_srv_conf(cf: [*c]ngx_conf_t, m: ngx_module_t) ?*anyopaque {
+pub inline fn ngx_http_conf_get_module_srv_conf(cf: [*c]ngx_conf_t, m: *ngx_module_t) ?*anyopaque {
     if (castPtr(ngx_http_conf_ctx_t, cf.*.ctx)) |p| {
         return p.*.srv_conf[m.ctx_index];
     }
     return null;
 }
 
-pub inline fn ngx_http_conf_get_module_loc_conf(cf: [*c]ngx_conf_t, m: ngx_module_t) ?*anyopaque {
+pub inline fn ngx_http_conf_get_module_loc_conf(cf: [*c]ngx_conf_t, m: *ngx_module_t) ?*anyopaque {
     if (castPtr(ngx_http_conf_ctx_t, cf.*.ctx)) |p| {
         return p.*.loc_conf[m.ctx_index];
     }
