@@ -692,3 +692,16 @@ pub inline fn ngx_rbtree_min(node: [*c]ngx_rbtree_node_t, sentinel: [*c]ngx_rbtr
     }
     return n;
 }
+
+pub fn PointerIterator(comptime T: type) type {
+    return struct {
+        const Self = @This();
+        p: [*][*c]T,
+        i: usize = 0,
+
+        pub fn next(self: *Self) ?[*c]T {
+            defer self.i += 1;
+            return if (self.p[self.i] != @as([*c]T, @alignCast(@ptrCast(NULL)))) self.p[self.i] else null;
+        }
+    };
+}
