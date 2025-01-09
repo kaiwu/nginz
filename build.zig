@@ -59,6 +59,7 @@ pub fn build(b: *std.Build) void {
         o.addIncludePath(b.path(pn.p));
         o.root_module.addImport("nginx", nginx);
         o.pie = true;
+        // o.bundle_compiler_rt = true;
         const install_object = b.addInstallFile(o.getEmittedBin(), obj(pn.n));
         b.getInstallStep().dependOn(&install_object.step);
     }

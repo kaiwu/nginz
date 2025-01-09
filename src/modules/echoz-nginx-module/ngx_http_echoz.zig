@@ -11,8 +11,9 @@ const ngx_conf_t = ngx.ngx_conf_t;
 const ngx_module_t = ngx.ngx_module_t;
 const ngx_command_t = ngx.ngx_command_t;
 const ngx_http_module_t = ngx.ngx_http_module_t;
-
 const ngx_string = ngx.ngx_string;
+
+extern var ngx_http_core_module: ngx_module_t;
 
 const loc_conf = extern struct {
     flag: ngx_flag_t,
