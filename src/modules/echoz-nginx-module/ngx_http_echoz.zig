@@ -19,7 +19,7 @@ const loc_conf = extern struct {
 };
 
 fn postconfiguration(cf: [*c]ngx_conf_t) callconv(.C) ngx_int_t {
-    ngx.ngz_log_error(NGX_LOG_ERR, cf.*.log, 0, "echoz {}", .{ngx_http_echoz_module.ctx_index});
+    ngx.ngz_log_error(NGX_LOG_ERR, cf.*.log, 0, "echoz %d", .{ngx_http_echoz_module.ctx_index});
     return NGX_OK;
 }
 
@@ -45,7 +45,7 @@ export const ngx_http_echoz_module_ctx = ngx_http_module_t{
 export const ngx_http_echoz_commands = [_]ngx_command_t{
     ngx_command_t{
         .name = ngx_string("echoz"),
-        .type = ngx.NGX_HTTP_LOC_CONF,
+        .type = ngx.NGX_HTTP_LOC_CONF | ngx.NGX_CONF_FLAG,
         .set = ngx.ngx_conf_set_flag_slot,
         .conf = ngx.NGX_HTTP_LOC_CONF_OFFSET,
         .offset = @offsetOf(loc_conf, "flag"),

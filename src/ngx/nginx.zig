@@ -373,6 +373,19 @@ pub const NGX_HTTP_SRV_CONF_OFFSET = @offsetOf(ngx_http_conf_ctx_t, "srv_conf");
 pub const NGX_HTTP_LOC_CONF_OFFSET = @offsetOf(ngx_http_conf_ctx_t, "loc_conf");
 
 pub const NGX_CONF_UNSET = ngx.NGX_CONF_UNSET;
+pub const NGX_CONF_NOARGS = ngx.NGX_CONF_NOARGS;
+pub const NGX_CONF_TAKE1 = ngx.NGX_CONF_TAKE1;
+pub const NGX_CONF_TAKE2 = ngx.NGX_CONF_TAKE2;
+pub const NGX_CONF_TAKE3 = ngx.NGX_CONF_TAKE3;
+pub const NGX_CONF_TAKE4 = ngx.NGX_CONF_TAKE4;
+pub const NGX_CONF_TAKE12 = ngx.NGX_CONF_TAKE12;
+pub const NGX_CONF_TAKE13 = ngx.NGX_CONF_TAKE13;
+pub const NGX_CONF_TAKE23 = ngx.NGX_CONF_TAKE23;
+pub const NGX_CONF_TAKE123 = ngx.NGX_CONF_TAKE123;
+pub const NGX_CONF_FLAG = ngx.NGX_CONF_FLAG;
+pub const NGX_CONF_ANY = ngx.NGX_CONF_ANY;
+pub const NGX_CONF_1MORE = ngx.NGX_CONF_1MORE;
+pub const NGX_CONF_2MORE = ngx.NGX_CONF_2MORE;
 pub const ngx_conf_set_flag_slot = ngx.ngx_conf_set_flag_slot;
 
 pub inline fn ngx_http_get_module_main_conf(r: [*c]ngx_http_request_t, m: *ngx_module_t) ?*anyopaque {

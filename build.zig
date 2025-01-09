@@ -17,9 +17,8 @@ fn obj(f: []const u8) []const u8 {
         var buf: [256]u8 = undefined;
     };
     @memcpy(file.buf[0..f.len], f);
-    file.buf[f.len] = '.';
-    file.buf[f.len + 1] = 'o';
-    return file.buf[0 .. f.len + 2];
+    @memcpy(file.buf[f.len .. f.len + 9], "_module.o");
+    return file.buf[0 .. f.len + 9];
 }
 
 fn module_path(f: []const u8) PN {
@@ -59,6 +58,7 @@ pub fn build(b: *std.Build) void {
         });
         o.addIncludePath(b.path(pn.p));
         o.root_module.addImport("nginx", nginx);
+        o.pie = true;
         const install_object = b.addInstallFile(o.getEmittedBin(), obj(pn.n));
         b.getInstallStep().dependOn(&install_object.step);
     }
