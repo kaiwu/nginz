@@ -646,8 +646,8 @@ pub inline fn ngx_queue_prev(q: [*c]ngx_queue_t) [*c]ngx_queue_t {
 pub inline fn ngx_queue_remove(x: [*c]ngx_queue_t) void {
     x.*.next.*.prev = x.*.prev;
     x.*.prev.*.next = x.*.next;
-    x.*.prev = NULL;
-    x.*.next = NULL;
+    x.*.prev = x;
+    x.*.next = x;
 }
 
 pub inline fn ngx_queue_sentinel(q: [*c]ngx_queue_t) [*c]ngx_queue_t {
@@ -661,7 +661,7 @@ pub inline fn ngx_queue_insert_head(h: [*c]ngx_queue_t, x: [*c]ngx_queue_t) void
     h.*.next = x;
 }
 
-pub inline fn ngx_queue_insert_after(h: [*c]ngx_queue_t, x: [*c]ngx_queue_t) void {
+pub inline fn ngx_queue_insert_before(h: [*c]ngx_queue_t, x: [*c]ngx_queue_t) void {
     ngx_queue_insert_head(h, x);
 }
 
@@ -672,7 +672,7 @@ pub inline fn ngx_queue_insert_tail(h: [*c]ngx_queue_t, x: [*c]ngx_queue_t) void
     h.*.prev = x;
 }
 
-pub inline fn ngx_queue_insert_before(h: [*c]ngx_queue_t, x: [*c]ngx_queue_t) void {
+pub inline fn ngx_queue_insert_after(h: [*c]ngx_queue_t, x: [*c]ngx_queue_t) void {
     ngx_queue_insert_tail(h, x);
 }
 
@@ -693,11 +693,13 @@ pub inline fn ngx_queue_add(h: [*c]ngx_queue_t, n: [*c]ngx_queue_t) void {
 }
 
 pub inline fn ngz_queue_data(comptime T: type, comptime field: []const u8, q: [*c]ngx_queue_t) [*c]T {
-    return @as([*c]T, @ptrCast(@as([*c]u8, @ptrCast(q)) - @offsetOf(T, field)));
+    return @as([*c]T, @alignCast(@ptrCast(@as([*c]u8, @alignCast(@ptrCast(q))) - @offsetOf(T, field))));
 }
 
-pub fn ngz_queue_next(comptime T: type, comptime field: []const u8, q: [*c]ngx_queue_t, n: *[*c]ngx_queue_t) ?[*c]T {
-    if (n.* != q) {
+// ngx_queue_init(s)
+// n = ngx_queue_next(s)
+pub fn ngz_queue_next(comptime T: type, comptime field: []const u8, s: [*c]ngx_queue_t, n: *[*c]ngx_queue_t) ?[*c]T {
+    if (n.* != s) {
         defer n.* = ngx_queue_next(n.*);
         return ngz_queue_data(T, field, n.*);
     }
@@ -718,30 +720,34 @@ pub fn NQueue(comptime T: type, comptime field: []const u8) type {
                 return null;
             }
             defer self.n = ngx_queue_next(self.n);
-            return @as([*c]T, @ptrCast(@as([*c]u8, @ptrCast(self.n)) - OFFSET));
+            return @as([*c]T, @alignCast(@ptrCast(@as([*c]u8, @alignCast(@ptrCast(self.n))) - OFFSET)));
         }
     };
 
     return extern struct {
         const Self = @This();
         sentinel: [*c]ngx_queue_t,
+        len: ngx_uint_t = 0,
 
         inline fn queue(pt: [*c]T) [*c]ngx_queue_t {
-            return @as([*c]ngx_queue_t, @ptrCast(@as([*c]u8, @ptrCast(pt)) + OFFSET));
+            return @as([*c]ngx_queue_t, @alignCast(@ptrCast(@as([*c]u8, @alignCast(@ptrCast(pt))) + OFFSET)));
         }
 
         inline fn data(q: [*c]ngx_queue_t) [*c]T {
-            return @as([*c]T, @ptrCast(@as([*c]u8, @ptrCast(q)) - OFFSET));
+            return @as([*c]T, @alignCast(@ptrCast(@as([*c]u8, @alignCast(@ptrCast(q))) - OFFSET)));
         }
 
-        pub fn init(pt: [*c]T) Self {
-            const s = queue(pt);
+        pub fn init(s: [*c]ngx_queue_t) Self {
             ngx_queue_init(s);
             return Self{ .sentinel = s };
         }
 
         pub fn iterator(self: *Self) Iterator {
             return Iterator{ .q = self.sentinel, .n = ngx_queue_next(self.sentinel) };
+        }
+
+        pub fn size(self: *Self) ngx_uint_t {
+            return self.len;
         }
 
         pub fn head(self: *Self) [*c]T {
@@ -752,27 +758,68 @@ pub fn NQueue(comptime T: type, comptime field: []const u8) type {
             return data(ngx_queue_tail(self.sentinel));
         }
 
-        pub fn insert_before(pt0: [*c]T, pt1: [*c]T) void {
-            const q0 = queue(pt0);
+        pub fn insert_before(self: *Self, q0: [*c]ngx_queue_t, pt1: [*c]T) void {
+            defer self.len += 1;
             const q1 = queue(pt1);
             ngx_queue_insert_before(q0, q1);
         }
 
-        pub fn insert_after(pt0: [*c]T, pt1: [*c]T) void {
-            const q0 = queue(pt0);
+        pub fn insert_after(self: *Self, q0: [*c]ngx_queue_t, pt1: [*c]T) void {
+            defer self.len += 1;
             const q1 = queue(pt1);
             ngx_queue_insert_after(q0, q1);
         }
 
-        pub fn remove(pt: [*c]T) void {
-            const q = queue(pt);
-            ngx_queue_remove(q);
+        pub fn insert_head(self: *Self, pt: [*c]T) void {
+            insert_before(self, self.sentinel, pt);
+        }
+
+        pub fn insert_tail(self: *Self, pt: [*c]T) void {
+            insert_after(self, self.sentinel, pt);
+        }
+
+        pub fn remove(self: *Self, pt: [*c]T) void {
+            if (!empty(self)) {
+                defer self.len -= 1;
+                const q = queue(pt);
+                ngx_queue_remove(q);
+            }
         }
 
         pub fn empty(self: *Self) bool {
             return ngx_queue_empty(self.sentinel);
         }
     };
+}
+
+test "queue" {
+    const QT = extern struct {
+        n: ngx_uint_t,
+        q: ngx_queue_t = undefined,
+    };
+
+    var qt: ngx_queue_t = undefined;
+    var q0 = NQueue(QT, "q").init(@ptrCast(&qt));
+    try expectEqual(q0.size(), 0);
+
+    var q4 = [_]QT{
+        QT{ .n = 1 },
+        QT{ .n = 2 },
+        QT{ .n = 3 },
+        QT{ .n = 4 },
+        QT{ .n = 5 },
+    };
+    for (&q4) |*qx| {
+        // ngx_queue_init(&qx.q);
+        q0.insert_tail(qx);
+    }
+
+    var it = q0.iterator();
+    var total: usize = 0;
+    while (it.next()) |_| {
+        total += 1;
+    }
+    try expectEqual(q0.size(), total);
 }
 
 pub inline fn ngx_rbtree_init(tree: [*c]ngx_rbtree_t, s: [*c]ngx_rbtree_node_t, i: ngx_rbtree_insert_pt) void {
