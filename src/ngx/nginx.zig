@@ -15,14 +15,6 @@ pub const NGX_DONE = @as(c_int, -4);
 pub const NGX_DECLINED = @as(c_int, -5);
 pub const NGX_ABORT = @as(c_int, -6);
 
-pub inline fn sizeof(comptime s: []const u8) usize {
-    return s.len;
-}
-
-pub inline fn c_str(s: []const u8) [*c]u_char {
-    return @constCast(s.ptr);
-}
-
 pub const NGX_INT32_LEN = sizeof("-2147483648");
 pub const NGX_INT64_LEN = sizeof("-9223372036854775808");
 pub const NGX_ALIGNMENT = std.zig.c_translation.sizeof(c_ulong);
@@ -34,42 +26,6 @@ pub const NGX_MAX_INT32_VALUE = @as(c_int, 0x7fffffff);
 pub const NGX_PTR_SIZE = @as(c_int, 8);
 pub const NGX_SIG_ATOMIC_T_SIZE = @as(c_int, 4);
 pub const NGX_TIME_T_SIZE = @as(c_int, 8);
-
-pub inline fn ngx_align(d: ngx_uint_t, comptime a: ngx_uint_t) ngx_uint_t {
-    if (a < 1) {
-        @compileError("cannot align to 0");
-    }
-    return (d + (a - 1)) & ~(a - 1);
-}
-
-pub inline fn slicify(comptime T: type, p: [*c]T, len: usize) []T {
-    return p[0..len];
-}
-
-pub inline fn make_slice(p: [*c]u8, len: usize) []u8 {
-    return slicify(u8, p, len);
-}
-
-pub inline fn castPtr(comptime T: type, p: ?*anyopaque) ?[*c]T {
-    if (p) |p0| {
-        return @alignCast(@ptrCast(p0));
-    }
-    return null;
-}
-
-test "core" {
-    try expectEqual(sizeof("-2147483648"), 11);
-    try expectEqual(sizeof("-9223372036854775808"), 20);
-    try expectEqual(NGX_MAX_INT_T_VALUE, std.math.maxInt(c_long));
-    try expectEqual(NGX_MAX_UINT32_VALUE, std.math.maxInt(c_uint));
-    try expectEqual(NGX_MAX_INT32_VALUE, std.math.maxInt(c_int));
-    try expectEqual(NGX_ALIGNMENT, 8);
-    try expectEqual(ngx_align(5, 1), 5);
-    try expectEqual(ngx_align(5, 4), 8);
-    try expectEqual(ngx_align(6, 4), 8);
-    try expectEqual(ngx_align(8, 8), 8);
-    try expectEqual(ngx_align(10, 8), 16);
-}
 
 pub const ngx_buf_t = ngx.ngx_buf_t;
 pub const ngx_output_chain_ctx_t = ngx.ngx_output_chain_ctx_t;
@@ -153,91 +109,46 @@ pub const ngx_log_init = ngx.ngx_log_init;
 pub const ngx_time_init = ngx.ngx_time_init;
 pub const ngx_rbtree_insert_pt = ngx.ngx_rbtree_insert_pt;
 
+pub inline fn sizeof(comptime s: []const u8) usize {
+    return s.len;
+}
+
+pub inline fn c_str(s: []const u8) [*c]u_char {
+    return @constCast(s.ptr);
+}
+
+pub inline fn ngx_align(d: ngx_uint_t, comptime a: ngx_uint_t) ngx_uint_t {
+    if (a < 1) {
+        @compileError("cannot align to 0");
+    }
+    return (d + (a - 1)) & ~(a - 1);
+}
+
+pub inline fn slicify(comptime T: type, p: [*c]T, len: usize) []T {
+    return p[0..len];
+}
+
+pub inline fn make_slice(p: [*c]u8, len: usize) []u8 {
+    return slicify(u8, p, len);
+}
+
+pub inline fn nonNullPtr(comptime T: type, p: [*c]T) ?[*c]T {
+    return if (p != @as([*c]T, @alignCast(@ptrCast(NULL)))) p else null;
+}
+
+pub inline fn castPtr(comptime T: type, p: ?*anyopaque) ?[*c]T {
+    const p0 = @as([*c]T, @alignCast(@ptrCast(p)));
+    if (nonNullPtr(T, p0)) |_| {
+        return p0;
+    }
+    return null;
+}
+
 pub inline fn ngz_pcalloc(comptime T: type, p: [*c]ngx_pool_t) ?[*c]T {
     if (ngx_pcalloc(p, @sizeOf(T))) |p0| {
         return @alignCast(@ptrCast(p0));
     }
     return null;
-}
-
-test "ngx data types" {
-    try expectEqual(@sizeOf(ngx_buf_t), 80);
-    try expectEqual(@sizeOf(ngx_output_chain_ctx_t), 104);
-    try expectEqual(@sizeOf(ngx_listening_t), 296);
-    try expectEqual(@sizeOf(ngx_connection_t), 232);
-    try expectEqual(@sizeOf(ngx_file_t), 200);
-    try expectEqual(@sizeOf(ngx_temp_file_t), 248);
-    try expectEqual(@sizeOf(ngx_ext_rename_file_t), 40);
-    try expectEqual(@sizeOf(ngx_url_t), 224);
-    try expectEqual(@sizeOf(ngx_open_file_info_t), 104);
-    try expectEqual(@sizeOf(ngx_cached_open_file_t), 144);
-    try expectEqual(@sizeOf(ngx_resolver_node_t), 184);
-    try expectEqual(@sizeOf(ngx_resolver_t), 512);
-    try expectEqual(@sizeOf(ngx_resolver_ctx_t), 224);
-    try expectEqual(@sizeOf(ngx_slab_pool_t), 200);
-    try expectEqual(@sizeOf(ngx_variable_value_t), 16);
-    try expectEqual(@sizeOf(ngx_syslog_peer_t), 400);
-    try expectEqual(@sizeOf(ngx_event_t), 96);
-    try expectEqual(@sizeOf(ngx_peer_connection_t), 128);
-    try expectEqual(@sizeOf(ngx_event_pipe_t), 280);
-    try expectEqual(@sizeOf(ngx_http_file_cache_node_t), 120);
-    try expectEqual(@sizeOf(ngx_http_cache_t), 608);
-    try expectEqual(@sizeOf(ngx_http_listen_opt_t), 72);
-    try expectEqual(@sizeOf(ngx_http_core_srv_conf_t), 168);
-    try expectEqual(@sizeOf(ngx_http_addr_conf_t), 24);
-    try expectEqual(@sizeOf(ngx_http_conf_addr_t), 176);
-    try expectEqual(@sizeOf(ngx_http_core_loc_conf_t), 704);
-    try expectEqual(@sizeOf(ngx_http_headers_in_t), 312);
-    try expectEqual(@sizeOf(ngx_http_request_body_t), 80);
-    try expectEqual(@sizeOf(ngx_http_connection_t), 64);
-    try expectEqual(@sizeOf(ngx_http_header_out_t), 24);
-
-    try expectEqual(@sizeOf(ngx_http_request_t), 1320);
-    try expectEqual(@offsetOf(ngx_http_request_t, "connection"), 8);
-    try expectEqual(@offsetOf(ngx_http_request_t, "cleanup"), 1112);
-    try expectEqual(@offsetOf(ngx_http_request_t, "flags0"), 1120);
-    try expectEqual(@offsetOf(ngx_http_request_t, "flags1"), 1128);
-    try expectEqual(@offsetOf(ngx_http_request_t, "state"), 1136);
-    try expectEqual(@offsetOf(ngx_http_request_t, "host_end"), 1304);
-    try expectEqual(@offsetOf(ngx_http_request_t, "flags2"), 1312);
-
-    try expectEqual(@sizeOf(ngx_http_script_engine_t), 88);
-    try expectEqual(@sizeOf(ngx_http_script_compile_t), 88);
-    try expectEqual(@sizeOf(ngx_http_compile_complex_value_t), 32);
-    try expectEqual(@sizeOf(ngx_http_script_regex_code_t), 72);
-    try expectEqual(@sizeOf(ngx_http_script_regex_end_code_t), 16);
-
-    try expectEqual(@sizeOf(ngx_http_upstream_server_t), 120);
-    try expectEqual(@sizeOf(ngx_http_upstream_conf_t), 520);
-    try expectEqual(@sizeOf(ngx_http_upstream_headers_in_t), 312);
-    try expectEqual(@sizeOf(ngx_http_upstream_t), 1024);
-    try expectEqual(@sizeOf(ngx_http_upstream_rr_peer_t), 200);
-    try expectEqual(@sizeOf(ngx_http_upstream_rr_peers_t), 96);
-
-    try expectEqual(@sizeOf(ngx_ssl_connection_t), 96);
-    try expectEqual(@sizeOf(ngx_ssl_ticket_key_t), 96);
-    try expectEqual(@sizeOf(ngx_http_module_t), 64);
-
-    try expectEqual(@sizeOf(c_uint), 4);
-    try expectEqual(@sizeOf([4]c_uint), 16);
-    try expectEqual(@sizeOf(ngx_dir_t), 168);
-    try expectEqual(@sizeOf(ngx_process_t), 48);
-
-    try expectEqual(@sizeOf(ngx_str_t), 16);
-    try expectEqual(@sizeOf(ngx_log_t), 80);
-    try expectEqual(@sizeOf(ngx_int_t), 8);
-    try expectEqual(@sizeOf(ngx_uint_t), 8);
-    try expectEqual(@sizeOf(ngx_msec_t), 8);
-    try expectEqual(@sizeOf(ngx_pool_t), 80);
-    try expectEqual(@sizeOf(ngx_hash_t), 16);
-    try expectEqual(@sizeOf(ngx_list_t), 56);
-    try expectEqual(@sizeOf(ngx_conf_t), 96);
-    try expectEqual(@sizeOf(ngx_cycle_t), 648);
-    try expectEqual(@sizeOf(ngx_queue_t), 16);
-    try expectEqual(@sizeOf(ngx_array_t), 40);
-    try expectEqual(@sizeOf(ngx_rbtree_t), 24);
-    try expectEqual(@sizeOf(ngx_module_t), 200);
-    try expectEqual(@sizeOf(ngx_command_t), 56);
 }
 
 pub inline fn ngx_buf_in_memory(b: [*c]ngx_buf_t) bool {
@@ -324,6 +235,49 @@ pub inline fn ngx_base64_decoded_length(len: usize) usize {
     return ((len + 3) / 4) * 3;
 }
 
+// http{}
+pub inline fn ngx_http_get_module_main_conf(r: [*c]ngx_http_request_t, m: *ngx_module_t) ?*anyopaque {
+    return r.*.main_conf[m.ctx_index];
+}
+
+// server{}
+pub inline fn ngx_http_get_module_srv_conf(r: [*c]ngx_http_request_t, m: *ngx_module_t) ?*anyopaque {
+    return r.*.srv_conf[m.ctx_index];
+}
+
+// loc{}
+pub inline fn ngx_http_get_module_loc_conf(r: [*c]ngx_http_request_t, m: *ngx_module_t) ?*anyopaque {
+    return r.*.loc_conf[m.ctx_index];
+}
+
+// http{}
+pub inline fn ngx_http_conf_get_module_main_conf(cf: [*c]ngx_conf_t, m: *ngx_module_t) ?*anyopaque {
+    if (castPtr(ngx_http_conf_ctx_t, cf.*.ctx)) |p| {
+        return p.*.main_conf[m.ctx_index];
+    }
+    return null;
+}
+
+// http{}
+pub inline fn ngx_http_conf_get_module_srv_conf(cf: [*c]ngx_conf_t, m: *ngx_module_t) ?*anyopaque {
+    if (castPtr(ngx_http_conf_ctx_t, cf.*.ctx)) |p| {
+        return p.*.srv_conf[m.ctx_index];
+    }
+    return null;
+}
+
+// http{}
+pub inline fn ngx_http_conf_get_module_loc_conf(cf: [*c]ngx_conf_t, m: *ngx_module_t) ?*anyopaque {
+    if (castPtr(ngx_http_conf_ctx_t, cf.*.ctx)) |p| {
+        return p.*.loc_conf[m.ctx_index];
+    }
+    return null;
+}
+
+pub const NError = error{
+    OOM,
+};
+
 pub const NGX_ESCAPE_URI = @as(c_int, 0);
 pub const NGX_ESCAPE_ARGS = @as(c_int, 1);
 pub const NGX_ESCAPE_URI_COMPONENT = @as(c_int, 2);
@@ -373,59 +327,46 @@ pub const NGX_HTTP_SRV_CONF_OFFSET = @offsetOf(ngx_http_conf_ctx_t, "srv_conf");
 pub const NGX_HTTP_LOC_CONF_OFFSET = @offsetOf(ngx_http_conf_ctx_t, "loc_conf");
 
 pub const NGX_CONF_UNSET = ngx.NGX_CONF_UNSET;
+pub const NGX_CONF_UNSET_UINT = ngx.NGX_CONF_UNSET_UINT;
+pub const NGX_CONF_UNSET_PTR = ngx.NGX_CONF_UNSET_PTR;
+pub const NGX_CONF_UNSET_SIZE = ngx.NGX_CONF_UNSET_SIZE;
+pub const NGX_CONF_UNSET_MSEC = ngx.NGX_CONF_UNSET_MSEC;
+
 pub const NGX_CONF_NOARGS = ngx.NGX_CONF_NOARGS;
 pub const NGX_CONF_TAKE1 = ngx.NGX_CONF_TAKE1;
 pub const NGX_CONF_TAKE2 = ngx.NGX_CONF_TAKE2;
 pub const NGX_CONF_TAKE3 = ngx.NGX_CONF_TAKE3;
 pub const NGX_CONF_TAKE4 = ngx.NGX_CONF_TAKE4;
+pub const NGX_CONF_TAKE5 = ngx.NGX_CONF_TAKE5;
+pub const NGX_CONF_TAKE6 = ngx.NGX_CONF_TAKE6;
+pub const NGX_CONF_TAKE7 = ngx.NGX_CONF_TAKE7;
 pub const NGX_CONF_TAKE12 = ngx.NGX_CONF_TAKE12;
 pub const NGX_CONF_TAKE13 = ngx.NGX_CONF_TAKE13;
 pub const NGX_CONF_TAKE23 = ngx.NGX_CONF_TAKE23;
 pub const NGX_CONF_TAKE123 = ngx.NGX_CONF_TAKE123;
+pub const NGX_CONF_TAKE1234 = ngx.NGX_CONF_TAKE1234;
+
+pub const NGX_CONF_BLOCK = ngx.NGX_CONF_BLOCK;
 pub const NGX_CONF_FLAG = ngx.NGX_CONF_FLAG;
 pub const NGX_CONF_ANY = ngx.NGX_CONF_ANY;
 pub const NGX_CONF_1MORE = ngx.NGX_CONF_1MORE;
 pub const NGX_CONF_2MORE = ngx.NGX_CONF_2MORE;
+
+pub const NGX_CONF_OK = ngx.NGX_CONF_OK;
+pub const NGX_CONF_ERROR = ngx.NGX_CONF_ERROR;
+
 pub const ngx_conf_set_flag_slot = ngx.ngx_conf_set_flag_slot;
-
-// http{}
-pub inline fn ngx_http_get_module_main_conf(r: [*c]ngx_http_request_t, m: *ngx_module_t) ?*anyopaque {
-    return r.*.main_conf[m.ctx_index];
-}
-
-// server{}
-pub inline fn ngx_http_get_module_srv_conf(r: [*c]ngx_http_request_t, m: *ngx_module_t) ?*anyopaque {
-    return r.*.srv_conf[m.ctx_index];
-}
-
-// loc{}
-pub inline fn ngx_http_get_module_loc_conf(r: [*c]ngx_http_request_t, m: *ngx_module_t) ?*anyopaque {
-    return r.*.loc_conf[m.ctx_index];
-}
-
-// http{}
-pub inline fn ngx_http_conf_get_module_main_conf(cf: [*c]ngx_conf_t, m: *ngx_module_t) ?*anyopaque {
-    if (castPtr(ngx_http_conf_ctx_t, cf.*.ctx)) |p| {
-        return p.*.main_conf[m.ctx_index];
-    }
-    return null;
-}
-
-// http{}
-pub inline fn ngx_http_conf_get_module_srv_conf(cf: [*c]ngx_conf_t, m: *ngx_module_t) ?*anyopaque {
-    if (castPtr(ngx_http_conf_ctx_t, cf.*.ctx)) |p| {
-        return p.*.srv_conf[m.ctx_index];
-    }
-    return null;
-}
-
-// http{}
-pub inline fn ngx_http_conf_get_module_loc_conf(cf: [*c]ngx_conf_t, m: *ngx_module_t) ?*anyopaque {
-    if (castPtr(ngx_http_conf_ctx_t, cf.*.ctx)) |p| {
-        return p.*.loc_conf[m.ctx_index];
-    }
-    return null;
-}
+pub const ngx_conf_set_str_slot = ngx.ngx_conf_set_str_slot;
+pub const ngx_conf_set_str_array_slot = ngx.ngx_conf_set_str_array_slot;
+pub const ngx_conf_set_keyval_slot = ngx.ngx_conf_set_keyval_slot;
+pub const ngx_conf_set_num_slot = ngx.ngx_conf_set_num_slot;
+pub const ngx_conf_set_size_slot = ngx.ngx_conf_set_size_slot;
+pub const ngx_conf_set_off_slot = ngx.ngx_conf_set_off_slot;
+pub const ngx_conf_set_msec_slot = ngx.ngx_conf_set_msec_slot;
+pub const ngx_conf_set_sec_slot = ngx.ngx_conf_set_sec_slot;
+pub const ngx_conf_set_bufs_slot = ngx.ngx_conf_set_bufs_slot;
+pub const ngx_conf_set_enum_slot = ngx.ngx_conf_set_enum_slot;
+pub const ngx_conf_set_bitmask_slot = ngx.ngx_conf_set_bitmask_slot;
 
 pub const NGX_LOG_STDERR = @as(c_int, 0);
 pub const NGX_LOG_EMERG = @as(c_int, 1);
@@ -450,6 +391,138 @@ pub const NGX_LOG_DEBUG_CONNECTION = @as(c_uint, 0x80000000);
 
 pub const NGX_LOG_DEBUG_ALL = @as(c_int, 0x7ffffff0);
 pub const NGX_MAX_ERROR_STR = @as(c_int, 2048);
+
+pub const NGX_MODULE_UNSET_INDEX = std.math.maxInt(ngx_uint_t);
+pub const NGX_MODULE_SIGNATURE_0 = "8,4,8,";
+pub const NGX_MODULE_SIGNATURE_1 = "0";
+pub const NGX_MODULE_SIGNATURE_2 = "0";
+pub const NGX_MODULE_SIGNATURE_3 = "0";
+pub const NGX_MODULE_SIGNATURE_4 = "0";
+pub const NGX_MODULE_SIGNATURE_5 = "1";
+pub const NGX_MODULE_SIGNATURE_6 = "1";
+pub const NGX_MODULE_SIGNATURE_7 = "1";
+pub const NGX_MODULE_SIGNATURE_8 = "1";
+pub const NGX_MODULE_SIGNATURE_9 = "1";
+pub const NGX_MODULE_SIGNATURE_10 = "1";
+pub const NGX_MODULE_SIGNATURE_11 = "0";
+pub const NGX_MODULE_SIGNATURE_12 = "1";
+pub const NGX_MODULE_SIGNATURE_13 = "0";
+pub const NGX_MODULE_SIGNATURE_14 = "1";
+pub const NGX_MODULE_SIGNATURE_15 = "1";
+pub const NGX_MODULE_SIGNATURE_16 = "1";
+pub const NGX_MODULE_SIGNATURE_17 = "0";
+pub const NGX_MODULE_SIGNATURE_18 = "0";
+pub const NGX_MODULE_SIGNATURE_19 = "1";
+pub const NGX_MODULE_SIGNATURE_20 = "1";
+pub const NGX_MODULE_SIGNATURE_21 = "1";
+pub const NGX_MODULE_SIGNATURE_22 = "0";
+pub const NGX_MODULE_SIGNATURE_23 = "1";
+pub const NGX_MODULE_SIGNATURE_24 = "1";
+pub const NGX_MODULE_SIGNATURE_25 = "1";
+pub const NGX_MODULE_SIGNATURE_26 = "1";
+pub const NGX_MODULE_SIGNATURE_27 = "1";
+pub const NGX_MODULE_SIGNATURE_28 = "1";
+pub const NGX_MODULE_SIGNATURE_29 = "0";
+pub const NGX_MODULE_SIGNATURE_30 = "0";
+pub const NGX_MODULE_SIGNATURE_31 = "0";
+pub const NGX_MODULE_SIGNATURE_32 = "1";
+pub const NGX_MODULE_SIGNATURE_33 = "1";
+pub const NGX_MODULE_SIGNATURE_34 = "0";
+pub const NGX_MODULE_SIGNATURE = NGX_MODULE_SIGNATURE_0 ++ NGX_MODULE_SIGNATURE_1 ++ NGX_MODULE_SIGNATURE_2 ++ NGX_MODULE_SIGNATURE_3 ++ NGX_MODULE_SIGNATURE_4 ++ NGX_MODULE_SIGNATURE_5 ++ NGX_MODULE_SIGNATURE_6 ++ NGX_MODULE_SIGNATURE_7 ++ NGX_MODULE_SIGNATURE_8 ++ NGX_MODULE_SIGNATURE_9 ++ NGX_MODULE_SIGNATURE_10 ++ NGX_MODULE_SIGNATURE_11 ++ NGX_MODULE_SIGNATURE_12 ++ NGX_MODULE_SIGNATURE_13 ++ NGX_MODULE_SIGNATURE_14 ++ NGX_MODULE_SIGNATURE_15 ++ NGX_MODULE_SIGNATURE_16 ++ NGX_MODULE_SIGNATURE_17 ++ NGX_MODULE_SIGNATURE_18 ++ NGX_MODULE_SIGNATURE_19 ++ NGX_MODULE_SIGNATURE_20 ++ NGX_MODULE_SIGNATURE_21 ++ NGX_MODULE_SIGNATURE_22 ++ NGX_MODULE_SIGNATURE_23 ++ NGX_MODULE_SIGNATURE_24 ++ NGX_MODULE_SIGNATURE_25 ++ NGX_MODULE_SIGNATURE_26 ++ NGX_MODULE_SIGNATURE_27 ++ NGX_MODULE_SIGNATURE_28 ++ NGX_MODULE_SIGNATURE_29 ++ NGX_MODULE_SIGNATURE_30 ++ NGX_MODULE_SIGNATURE_31 ++ NGX_MODULE_SIGNATURE_32 ++ NGX_MODULE_SIGNATURE_33 ++ NGX_MODULE_SIGNATURE_34;
+
+test "ngx data types" {
+    try expectEqual(@sizeOf(ngx_buf_t), 80);
+    try expectEqual(@sizeOf(ngx_output_chain_ctx_t), 104);
+    try expectEqual(@sizeOf(ngx_listening_t), 296);
+    try expectEqual(@sizeOf(ngx_connection_t), 232);
+    try expectEqual(@sizeOf(ngx_file_t), 200);
+    try expectEqual(@sizeOf(ngx_temp_file_t), 248);
+    try expectEqual(@sizeOf(ngx_ext_rename_file_t), 40);
+    try expectEqual(@sizeOf(ngx_url_t), 224);
+    try expectEqual(@sizeOf(ngx_open_file_info_t), 104);
+    try expectEqual(@sizeOf(ngx_cached_open_file_t), 144);
+    try expectEqual(@sizeOf(ngx_resolver_node_t), 184);
+    try expectEqual(@sizeOf(ngx_resolver_t), 512);
+    try expectEqual(@sizeOf(ngx_resolver_ctx_t), 224);
+    try expectEqual(@sizeOf(ngx_slab_pool_t), 200);
+    try expectEqual(@sizeOf(ngx_variable_value_t), 16);
+    try expectEqual(@sizeOf(ngx_syslog_peer_t), 400);
+    try expectEqual(@sizeOf(ngx_event_t), 96);
+    try expectEqual(@sizeOf(ngx_peer_connection_t), 128);
+    try expectEqual(@sizeOf(ngx_event_pipe_t), 280);
+    try expectEqual(@sizeOf(ngx_http_file_cache_node_t), 120);
+    try expectEqual(@sizeOf(ngx_http_cache_t), 608);
+    try expectEqual(@sizeOf(ngx_http_listen_opt_t), 72);
+    try expectEqual(@sizeOf(ngx_http_core_srv_conf_t), 168);
+    try expectEqual(@sizeOf(ngx_http_addr_conf_t), 24);
+    try expectEqual(@sizeOf(ngx_http_conf_addr_t), 176);
+    try expectEqual(@sizeOf(ngx_http_core_loc_conf_t), 704);
+    try expectEqual(@sizeOf(ngx_http_headers_in_t), 312);
+    try expectEqual(@sizeOf(ngx_http_request_body_t), 80);
+    try expectEqual(@sizeOf(ngx_http_connection_t), 64);
+    try expectEqual(@sizeOf(ngx_http_header_out_t), 24);
+
+    try expectEqual(@sizeOf(ngx_http_request_t), 1320);
+    try expectEqual(@offsetOf(ngx_http_request_t, "connection"), 8);
+    try expectEqual(@offsetOf(ngx_http_request_t, "cleanup"), 1112);
+    try expectEqual(@offsetOf(ngx_http_request_t, "flags0"), 1120);
+    try expectEqual(@offsetOf(ngx_http_request_t, "flags1"), 1128);
+    try expectEqual(@offsetOf(ngx_http_request_t, "state"), 1136);
+    try expectEqual(@offsetOf(ngx_http_request_t, "host_end"), 1304);
+    try expectEqual(@offsetOf(ngx_http_request_t, "flags2"), 1312);
+
+    try expectEqual(@sizeOf(ngx_http_script_engine_t), 88);
+    try expectEqual(@sizeOf(ngx_http_script_compile_t), 88);
+    try expectEqual(@sizeOf(ngx_http_compile_complex_value_t), 32);
+    try expectEqual(@sizeOf(ngx_http_script_regex_code_t), 72);
+    try expectEqual(@sizeOf(ngx_http_script_regex_end_code_t), 16);
+
+    try expectEqual(@sizeOf(ngx_http_upstream_server_t), 120);
+    try expectEqual(@sizeOf(ngx_http_upstream_conf_t), 520);
+    try expectEqual(@sizeOf(ngx_http_upstream_headers_in_t), 312);
+    try expectEqual(@sizeOf(ngx_http_upstream_t), 1024);
+    try expectEqual(@sizeOf(ngx_http_upstream_rr_peer_t), 200);
+    try expectEqual(@sizeOf(ngx_http_upstream_rr_peers_t), 96);
+
+    try expectEqual(@sizeOf(ngx_ssl_connection_t), 96);
+    try expectEqual(@sizeOf(ngx_ssl_ticket_key_t), 96);
+    try expectEqual(@sizeOf(ngx_http_module_t), 64);
+
+    try expectEqual(@sizeOf(c_uint), 4);
+    try expectEqual(@sizeOf([4]c_uint), 16);
+    try expectEqual(@sizeOf(ngx_dir_t), 168);
+    try expectEqual(@sizeOf(ngx_process_t), 48);
+
+    try expectEqual(@sizeOf(ngx_str_t), 16);
+    try expectEqual(@sizeOf(ngx_log_t), 80);
+    try expectEqual(@sizeOf(ngx_int_t), 8);
+    try expectEqual(@sizeOf(ngx_uint_t), 8);
+    try expectEqual(@sizeOf(ngx_msec_t), 8);
+    try expectEqual(@sizeOf(ngx_pool_t), 80);
+    try expectEqual(@sizeOf(ngx_hash_t), 16);
+    try expectEqual(@sizeOf(ngx_list_t), 56);
+    try expectEqual(@sizeOf(ngx_conf_t), 96);
+    try expectEqual(@sizeOf(ngx_cycle_t), 648);
+    try expectEqual(@sizeOf(ngx_queue_t), 16);
+    try expectEqual(@sizeOf(ngx_array_t), 40);
+    try expectEqual(@sizeOf(ngx_rbtree_t), 24);
+    try expectEqual(@sizeOf(ngx_module_t), 200);
+    try expectEqual(@sizeOf(ngx_command_t), 56);
+}
+
+test "core" {
+    try expectEqual(sizeof("-2147483648"), 11);
+    try expectEqual(sizeof("-9223372036854775808"), 20);
+    try expectEqual(NGX_MAX_INT_T_VALUE, std.math.maxInt(c_long));
+    try expectEqual(NGX_MAX_UINT32_VALUE, std.math.maxInt(c_uint));
+    try expectEqual(NGX_MAX_INT32_VALUE, std.math.maxInt(c_int));
+    try expectEqual(NGX_ALIGNMENT, 8);
+    try expectEqual(ngx_align(5, 1), 5);
+    try expectEqual(ngx_align(5, 4), 8);
+    try expectEqual(ngx_align(6, 4), 8);
+    try expectEqual(ngx_align(8, 8), 8);
+    try expectEqual(ngx_align(10, 8), 16);
+}
 
 pub fn ngz_log_error(level: ngx_uint_t, log: [*c]ngx_log_t, err: ngx_err_t, fmt: [*c]const u8, args: anytype) void {
     const ArgsType = @TypeOf(args);
@@ -509,44 +582,6 @@ test "log" {
     ngx_time_init();
     ngz_log_debug(NGX_LOG_DEBUG_HTTP, log, 0, "this never shows", .{});
 }
-
-pub const NGX_MODULE_UNSET_INDEX = std.math.maxInt(ngx_uint_t);
-pub const NGX_MODULE_SIGNATURE_0 = "8,4,8,";
-pub const NGX_MODULE_SIGNATURE_1 = "0";
-pub const NGX_MODULE_SIGNATURE_2 = "0";
-pub const NGX_MODULE_SIGNATURE_3 = "0";
-pub const NGX_MODULE_SIGNATURE_4 = "0";
-pub const NGX_MODULE_SIGNATURE_5 = "1";
-pub const NGX_MODULE_SIGNATURE_6 = "1";
-pub const NGX_MODULE_SIGNATURE_7 = "1";
-pub const NGX_MODULE_SIGNATURE_8 = "1";
-pub const NGX_MODULE_SIGNATURE_9 = "1";
-pub const NGX_MODULE_SIGNATURE_10 = "1";
-pub const NGX_MODULE_SIGNATURE_11 = "0";
-pub const NGX_MODULE_SIGNATURE_12 = "1";
-pub const NGX_MODULE_SIGNATURE_13 = "0";
-pub const NGX_MODULE_SIGNATURE_14 = "1";
-pub const NGX_MODULE_SIGNATURE_15 = "1";
-pub const NGX_MODULE_SIGNATURE_16 = "1";
-pub const NGX_MODULE_SIGNATURE_17 = "0";
-pub const NGX_MODULE_SIGNATURE_18 = "0";
-pub const NGX_MODULE_SIGNATURE_19 = "1";
-pub const NGX_MODULE_SIGNATURE_20 = "1";
-pub const NGX_MODULE_SIGNATURE_21 = "1";
-pub const NGX_MODULE_SIGNATURE_22 = "0";
-pub const NGX_MODULE_SIGNATURE_23 = "1";
-pub const NGX_MODULE_SIGNATURE_24 = "1";
-pub const NGX_MODULE_SIGNATURE_25 = "1";
-pub const NGX_MODULE_SIGNATURE_26 = "1";
-pub const NGX_MODULE_SIGNATURE_27 = "1";
-pub const NGX_MODULE_SIGNATURE_28 = "1";
-pub const NGX_MODULE_SIGNATURE_29 = "0";
-pub const NGX_MODULE_SIGNATURE_30 = "0";
-pub const NGX_MODULE_SIGNATURE_31 = "0";
-pub const NGX_MODULE_SIGNATURE_32 = "1";
-pub const NGX_MODULE_SIGNATURE_33 = "1";
-pub const NGX_MODULE_SIGNATURE_34 = "0";
-pub const NGX_MODULE_SIGNATURE = NGX_MODULE_SIGNATURE_0 ++ NGX_MODULE_SIGNATURE_1 ++ NGX_MODULE_SIGNATURE_2 ++ NGX_MODULE_SIGNATURE_3 ++ NGX_MODULE_SIGNATURE_4 ++ NGX_MODULE_SIGNATURE_5 ++ NGX_MODULE_SIGNATURE_6 ++ NGX_MODULE_SIGNATURE_7 ++ NGX_MODULE_SIGNATURE_8 ++ NGX_MODULE_SIGNATURE_9 ++ NGX_MODULE_SIGNATURE_10 ++ NGX_MODULE_SIGNATURE_11 ++ NGX_MODULE_SIGNATURE_12 ++ NGX_MODULE_SIGNATURE_13 ++ NGX_MODULE_SIGNATURE_14 ++ NGX_MODULE_SIGNATURE_15 ++ NGX_MODULE_SIGNATURE_16 ++ NGX_MODULE_SIGNATURE_17 ++ NGX_MODULE_SIGNATURE_18 ++ NGX_MODULE_SIGNATURE_19 ++ NGX_MODULE_SIGNATURE_20 ++ NGX_MODULE_SIGNATURE_21 ++ NGX_MODULE_SIGNATURE_22 ++ NGX_MODULE_SIGNATURE_23 ++ NGX_MODULE_SIGNATURE_24 ++ NGX_MODULE_SIGNATURE_25 ++ NGX_MODULE_SIGNATURE_26 ++ NGX_MODULE_SIGNATURE_27 ++ NGX_MODULE_SIGNATURE_28 ++ NGX_MODULE_SIGNATURE_29 ++ NGX_MODULE_SIGNATURE_30 ++ NGX_MODULE_SIGNATURE_31 ++ NGX_MODULE_SIGNATURE_32 ++ NGX_MODULE_SIGNATURE_33 ++ NGX_MODULE_SIGNATURE_34;
 
 pub inline fn make_module(cmds: [*c]ngx_command_t, ctx: ?*anyopaque) ngx_module_t {
     return ngx_module_t{
@@ -716,4 +751,83 @@ pub fn PointerIterator(comptime T: type) type {
             return if (self.p[self.i] != 0) self.p[self.i] else null;
         }
     };
+}
+
+const ngx_create_pool = ngx.ngx_create_pool;
+const ngx_destroy_pool = ngx.ngx_destroy_pool;
+const ngx_array_create = ngx.ngx_array_create;
+const ngx_array_destroy = ngx.ngx_array_destroy;
+const ngx_array_push = ngx.ngx_array_push;
+pub fn NArray(comptime T: type) type {
+    if (@alignOf(T) != NGX_ALIGNMENT) {
+        @compileError("NArray invalid element");
+    }
+
+    const Iterator = struct {
+        const Self = @This();
+
+        pa: [*c]ngx_array_t,
+        offset: ngx_uint_t = 0,
+
+        pub fn next(self: *Self) ?[*c]T {
+            defer self.offset += 1;
+            if (self.offset >= self.pa.*.nelts) {
+                return null;
+            }
+            if (castPtr(T, self.pa.*.elts)) |p0| {
+                return p0 + self.offset;
+            }
+            return null;
+        }
+    };
+
+    return extern struct {
+        const Self = @This();
+        pa: [*c]ngx_array_t,
+
+        pub fn init(p: [*c]ngx_pool_t, n: ngx_uint_t) !Self {
+            if (nonNullPtr(ngx_array_t, ngx_array_create(p, n, @sizeOf(T)))) |p0| {
+                return Self{ .pa = p0 };
+            }
+            return NError.OOM;
+        }
+
+        pub fn size(self: *Self) ngx_uint_t {
+            return self.pa.*.nelts;
+        }
+
+        pub fn iterator(self: *Self) Iterator {
+            return Iterator{ .pa = self.pa };
+        }
+
+        pub fn deinit(self: *Self) void {
+            ngx_array_destroy(self.pa);
+        }
+
+        pub fn append(self: *Self, t: T) !void {
+            if (castPtr(T, ngx_array_push(self.pa))) |p0| {
+                p0.* = t;
+            } else {
+                return NError.OOM;
+            }
+        }
+    };
+}
+
+test "array" {
+    const log = ngx_log_init(c_str(""), c_str(""));
+    const pool = ngx_create_pool(1024, log);
+    defer ngx_destroy_pool(pool);
+
+    var ns = try NArray(ngx_uint_t).init(pool, 10);
+    defer ns.deinit();
+
+    try expectEqual(ns.pa.*.size, @sizeOf(ngx_uint_t));
+    try expectEqual(ns.size(), 0);
+    try expectEqual(ns.pa.*.nalloc, 10);
+
+    for (0..20) |i| {
+        try ns.append(i);
+    }
+    try expectEqual(ns.size(), 20);
 }
