@@ -14,13 +14,18 @@ const ngx_http_module_t = ngx.ngx_http_module_t;
 const ngx_string = ngx.ngx_string;
 
 extern var ngx_http_core_module: ngx_module_t;
+// extern var ngx_module_names: [*c]c_char;
 
 const loc_conf = extern struct {
     flag: ngx_flag_t,
 };
 
-export fn postconfiguration(cf: [*c]ngx_conf_t) callconv(.C) ngx_int_t {
+fn postconfiguration(cf: [*c]ngx_conf_t) callconv(.C) ngx_int_t {
     ngx.ngz_log_error(NGX_LOG_ERR, cf.*.log, 0, "echoz %d", .{ngx_http_echoz_module.ctx_index});
+    // var it = ngx.PointerIterator([*c]c_char).init(&ngx_module_names);
+    // while (it.next()) |p| {
+    //     ngx.ngz_log_error(NGX_LOG_ERR, cf.*.log, 0, "%s", .{p});
+    // }
     return NGX_OK;
 }
 
