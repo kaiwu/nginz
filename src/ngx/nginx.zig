@@ -388,18 +388,22 @@ pub const NGX_CONF_1MORE = ngx.NGX_CONF_1MORE;
 pub const NGX_CONF_2MORE = ngx.NGX_CONF_2MORE;
 pub const ngx_conf_set_flag_slot = ngx.ngx_conf_set_flag_slot;
 
+// http{}
 pub inline fn ngx_http_get_module_main_conf(r: [*c]ngx_http_request_t, m: *ngx_module_t) ?*anyopaque {
     return r.*.main_conf[m.ctx_index];
 }
 
+// server{}
 pub inline fn ngx_http_get_module_srv_conf(r: [*c]ngx_http_request_t, m: *ngx_module_t) ?*anyopaque {
     return r.*.srv_conf[m.ctx_index];
 }
 
+// loc{}
 pub inline fn ngx_http_get_module_loc_conf(r: [*c]ngx_http_request_t, m: *ngx_module_t) ?*anyopaque {
     return r.*.loc_conf[m.ctx_index];
 }
 
+// http{}
 pub inline fn ngx_http_conf_get_module_main_conf(cf: [*c]ngx_conf_t, m: *ngx_module_t) ?*anyopaque {
     if (castPtr(ngx_http_conf_ctx_t, cf.*.ctx)) |p| {
         return p.*.main_conf[m.ctx_index];
@@ -407,6 +411,7 @@ pub inline fn ngx_http_conf_get_module_main_conf(cf: [*c]ngx_conf_t, m: *ngx_mod
     return null;
 }
 
+// http{}
 pub inline fn ngx_http_conf_get_module_srv_conf(cf: [*c]ngx_conf_t, m: *ngx_module_t) ?*anyopaque {
     if (castPtr(ngx_http_conf_ctx_t, cf.*.ctx)) |p| {
         return p.*.srv_conf[m.ctx_index];
@@ -414,6 +419,7 @@ pub inline fn ngx_http_conf_get_module_srv_conf(cf: [*c]ngx_conf_t, m: *ngx_modu
     return null;
 }
 
+// http{}
 pub inline fn ngx_http_conf_get_module_loc_conf(cf: [*c]ngx_conf_t, m: *ngx_module_t) ?*anyopaque {
     if (castPtr(ngx_http_conf_ctx_t, cf.*.ctx)) |p| {
         return p.*.loc_conf[m.ctx_index];
