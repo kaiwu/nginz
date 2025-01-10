@@ -631,12 +631,12 @@ pub inline fn ngx_queue_head(h: [*c]ngx_queue_t) [*c]ngx_queue_t {
     return h.*.next;
 }
 
-pub inline fn ngx_queue_next(q: [*c]ngx_queue_t) [*c]ngx_queue_t {
-    return q.*.next;
+pub inline fn ngx_queue_tail(h: [*c]ngx_queue_t) [*c]ngx_queue_t {
+    return h.*.prev;
 }
 
-pub inline fn ngx_queue_last(h: [*c]ngx_queue_t) [*c]ngx_queue_t {
-    return h.*.prev;
+pub inline fn ngx_queue_next(q: [*c]ngx_queue_t) [*c]ngx_queue_t {
+    return q.*.next;
 }
 
 pub inline fn ngx_queue_prev(q: [*c]ngx_queue_t) [*c]ngx_queue_t {
@@ -694,6 +694,85 @@ pub inline fn ngx_queue_add(h: [*c]ngx_queue_t, n: [*c]ngx_queue_t) void {
 
 pub inline fn ngz_queue_data(comptime T: type, comptime field: []const u8, q: [*c]ngx_queue_t) [*c]T {
     return @as([*c]T, @ptrCast(@as([*c]u8, @ptrCast(q)) - @offsetOf(T, field)));
+}
+
+pub fn ngz_queue_next(comptime T: type, comptime field: []const u8, q: [*c]ngx_queue_t, n: *[*c]ngx_queue_t) ?[*c]T {
+    if (n.* != q) {
+        defer n.* = ngx_queue_next(n.*);
+        return ngz_queue_data(T, field, n.*);
+    }
+    return null;
+}
+
+pub fn NQueue(comptime T: type, comptime field: []const u8) type {
+    const OFFSET = @offsetOf(T, field);
+
+    const Iterator = struct {
+        const Self = @This();
+
+        q: [*c]ngx_queue_t,
+        n: [*c]ngx_queue_t,
+
+        pub fn next(self: *Self) ?[*c]T {
+            if (self.n == self.q) {
+                return null;
+            }
+            defer self.n = ngx_queue_next(self.n);
+            return @as([*c]T, @ptrCast(@as([*c]u8, @ptrCast(self.n)) - OFFSET));
+        }
+    };
+
+    return extern struct {
+        const Self = @This();
+        sentinel: [*c]ngx_queue_t,
+
+        inline fn queue(pt: [*c]T) [*c]ngx_queue_t {
+            return @as([*c]ngx_queue_t, @ptrCast(@as([*c]u8, @ptrCast(pt)) + OFFSET));
+        }
+
+        inline fn data(q: [*c]ngx_queue_t) [*c]T {
+            return @as([*c]T, @ptrCast(@as([*c]u8, @ptrCast(q)) - OFFSET));
+        }
+
+        pub fn init(pt: [*c]T) Self {
+            const s = queue(pt);
+            ngx_queue_init(s);
+            return Self{ .sentinel = s };
+        }
+
+        pub fn iterator(self: *Self) Iterator {
+            return Iterator{ .q = self.sentinel, .n = ngx_queue_next(self.sentinel) };
+        }
+
+        pub fn head(self: *Self) [*c]T {
+            return data(ngx_queue_head(self.sentinel));
+        }
+
+        pub fn tail(self: *Self) [*c]T {
+            return data(ngx_queue_tail(self.sentinel));
+        }
+
+        pub fn insert_before(pt0: [*c]T, pt1: [*c]T) void {
+            const q0 = queue(pt0);
+            const q1 = queue(pt1);
+            ngx_queue_insert_before(q0, q1);
+        }
+
+        pub fn insert_after(pt0: [*c]T, pt1: [*c]T) void {
+            const q0 = queue(pt0);
+            const q1 = queue(pt1);
+            ngx_queue_insert_after(q0, q1);
+        }
+
+        pub fn remove(pt: [*c]T) void {
+            const q = queue(pt);
+            ngx_queue_remove(q);
+        }
+
+        pub fn empty(self: *Self) bool {
+            return ngx_queue_empty(self.sentinel);
+        }
+    };
 }
 
 pub inline fn ngx_rbtree_init(tree: [*c]ngx_rbtree_t, s: [*c]ngx_rbtree_node_t, i: ngx_rbtree_insert_pt) void {
