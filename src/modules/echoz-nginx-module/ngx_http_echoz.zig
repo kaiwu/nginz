@@ -11,28 +11,39 @@ const ngx_conf_t = ngx.ngx_conf_t;
 const ngx_module_t = ngx.ngx_module_t;
 const ngx_command_t = ngx.ngx_command_t;
 const ngx_http_module_t = ngx.ngx_http_module_t;
+const ngx_str_t = ngx.ngx_str_t;
 const ngx_string = ngx.ngx_string;
+const ngz_array_t = ngx.NArray(ngx_str_t);
 
 extern var ngx_http_core_module: ngx_module_t;
 
 const loc_conf = extern struct {
-    flag: ngx_flag_t,
+    params: ngz_array_t,
 };
 
 fn postconfiguration(cf: [*c]ngx_conf_t) callconv(.C) ngx_int_t {
-    ngx.ngz_log_error(NGX_LOG_ERR, cf.*.log, 0, "echoz %d", .{ngx_http_echoz_module.ctx_index});
-    if (ngx.castPtr(loc_conf, ngx.ngx_http_conf_get_module_loc_conf(cf, &ngx_http_echoz_module))) |lccf| {
-        ngx.ngz_log_error(NGX_LOG_ERR, cf.*.log, 0, "%d", .{lccf.*.flag});
-    }
+    _ = cf;
     return NGX_OK;
 }
 
 fn create_loc_conf(cf: [*c]ngx_conf_t) callconv(.C) ?*anyopaque {
     if (ngx.ngz_pcalloc(loc_conf, cf.*.pool)) |p| {
-        p.*.flag = ngx.NGX_CONF_UNSET;
         return p;
     }
     return null;
+}
+
+fn ngx_conf_set_echoz(cf: [*c]ngx_conf_t, cmd: [*c]ngx_command_t, loc: ?*anyopaque) callconv(.C) [*c]u8 {
+    _ = cmd;
+    if (ngx.castPtr(loc_conf, loc)) |lccf| {
+        lccf.*.params = ngz_array_t.init(cf.*.pool, 1) catch return ngx.NGX_CONF_ERROR;
+        var i: ngx.ngx_uint_t = 0;
+        while (ngx.ngx_array_next(ngx_str_t, cf.*.args, &i)) |arg| {
+            ngx.ngx_http_conf_debug(cf, "%V", .{arg});
+            lccf.*.params.append(arg.*) catch return ngx.NGX_CONF_ERROR;
+        }
+    }
+    return ngx.NGX_CONF_OK;
 }
 
 export const ngx_http_echoz_module_ctx = ngx_http_module_t{
@@ -49,10 +60,10 @@ export const ngx_http_echoz_module_ctx = ngx_http_module_t{
 export const ngx_http_echoz_commands = [_]ngx_command_t{
     ngx_command_t{
         .name = ngx_string("echoz"),
-        .type = ngx.NGX_HTTP_MAIN_CONF | ngx.NGX_HTTP_LOC_CONF | ngx.NGX_CONF_FLAG,
-        .set = ngx.ngx_conf_set_flag_slot,
+        .type = ngx.NGX_HTTP_LOC_CONF | ngx.NGX_CONF_ANY,
+        .set = ngx_conf_set_echoz,
         .conf = ngx.NGX_HTTP_LOC_CONF_OFFSET,
-        .offset = @offsetOf(loc_conf, "flag"),
+        .offset = 0,
         .post = NULL,
     },
 };

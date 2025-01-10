@@ -352,8 +352,8 @@ pub const NGX_CONF_ANY = ngx.NGX_CONF_ANY;
 pub const NGX_CONF_1MORE = ngx.NGX_CONF_1MORE;
 pub const NGX_CONF_2MORE = ngx.NGX_CONF_2MORE;
 
-pub const NGX_CONF_OK = ngx.NGX_CONF_OK;
-pub const NGX_CONF_ERROR = ngx.NGX_CONF_ERROR;
+pub const NGX_CONF_OK = @as([*c]u8, @ptrCast(ngx.NGX_CONF_OK));
+pub const NGX_CONF_ERROR = @as([*c]u8, @ptrCast(ngx.NGX_CONF_ERROR));
 
 pub const ngx_conf_set_flag_slot = ngx.ngx_conf_set_flag_slot;
 pub const ngx_conf_set_str_slot = ngx.ngx_conf_set_str_slot;
@@ -574,6 +574,11 @@ pub fn ngz_log_debug(level: ngx_uint_t, log: [*c]ngx_log_t, err: ngx_err_t, fmt:
     }
 }
 
+pub inline fn ngx_http_conf_debug(cf: [*c]ngx_conf_t, fmt: [*c]const u8, args: anytype) void {
+    cf.*.log.*.log_level |= NGX_LOG_DEBUG_HTTP;
+    ngz_log_debug(NGX_LOG_DEBUG_HTTP, cf.*.log, 0, fmt, args);
+}
+
 test "log" {
     const log = ngx_log_init(c_str(""), c_str(""));
     try expectEqual(log.*.log_level, NGX_LOG_NOTICE);
@@ -758,6 +763,17 @@ const ngx_destroy_pool = ngx.ngx_destroy_pool;
 const ngx_array_create = ngx.ngx_array_create;
 const ngx_array_destroy = ngx.ngx_array_destroy;
 const ngx_array_push = ngx.ngx_array_push;
+
+pub fn ngx_array_next(comptime T: type, a: [*c]ngx_array_t, i: *ngx_uint_t) ?[*c]T {
+    if (i.* < a.*.nelts) {
+        if (castPtr(T, a.*.elts)) |p| {
+            defer i.* += 1;
+            return p + i.*;
+        }
+    }
+    return null;
+}
+
 pub fn NArray(comptime T: type) type {
     if (@alignOf(T) != NGX_ALIGNMENT) {
         @compileError("NArray invalid element");
@@ -783,7 +799,7 @@ pub fn NArray(comptime T: type) type {
 
     return extern struct {
         const Self = @This();
-        pa: [*c]ngx_array_t,
+        pa: [*c]ngx_array_t = undefined,
 
         pub fn init(p: [*c]ngx_pool_t, n: ngx_uint_t) !Self {
             if (nonNullPtr(ngx_array_t, ngx_array_create(p, n, @sizeOf(T)))) |p0| {
