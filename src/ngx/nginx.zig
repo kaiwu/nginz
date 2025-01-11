@@ -124,6 +124,10 @@ pub inline fn ngx_align(d: ngx_uint_t, comptime a: ngx_uint_t) ngx_uint_t {
     return (d + (a - 1)) & ~(a - 1);
 }
 
+pub inline fn nullptr(comptime T: type) [*c]T {
+    return @as([*c]T, @alignCast(@ptrCast(NULL)));
+}
+
 pub inline fn slicify(comptime T: type, p: [*c]T, len: usize) []T {
     return p[0..len];
 }
@@ -762,6 +766,17 @@ pub fn NQueue(comptime T: type, comptime field: []const u8) type {
             return self.len;
         }
 
+        pub fn at(self: *Self, i: ngx_uint_t) ?[*c]T {
+            if (i < self.len) {
+                var n: [*c]ngx_queue_t = ngx_queue_head(self.sentinel);
+                for (0..i) |_| {
+                    n = n.*.next;
+                }
+                return data(n);
+            }
+            return null;
+        }
+
         pub fn head(self: *Self) [*c]T {
             return data(ngx_queue_head(self.sentinel));
         }
@@ -815,23 +830,25 @@ test "queue" {
     try expectEqual(q0.size(), 0);
 
     var q4 = [_]QT{
+        QT{ .n = 0 },
         QT{ .n = 1 },
         QT{ .n = 2 },
         QT{ .n = 3 },
         QT{ .n = 4 },
-        QT{ .n = 5 },
     };
     for (&q4) |*qx| {
         // ngx_queue_init(&qx.q);
         q0.insert_tail(qx);
     }
 
+    try expectEqual(q0.at(3).?.*.n, 3);
     var it = q0.iterator();
-    var total: usize = 0;
+    var total: ngx_uint_t = 0;
     while (it.next()) |_| {
         total += 1;
     }
     try expectEqual(q0.size(), total);
+    try expectEqual(q0.at(total), null);
 }
 
 pub inline fn ngx_rbtree_init(tree: [*c]ngx_rbtree_t, s: [*c]ngx_rbtree_node_t, i: ngx_rbtree_insert_pt) void {
@@ -954,6 +971,22 @@ pub fn NArray(comptime T: type) type {
             return Iterator{ .pa = self.pa };
         }
 
+        pub fn at(self: *Self, i: ngx_uint_t) ?[*c]T {
+            if (i < self.pa.*.nelts) {
+                if (castPtr(T, self.pa.*.elts)) |p0| {
+                    return p0 + i;
+                }
+            }
+            return null;
+        }
+
+        pub fn slice(self: *Self) []T {
+            if (castPtr(T, self.pa.*.elts)) |p0| {
+                return slicify(T, p0, self.pa.*.nelts);
+            }
+            unreachable;
+        }
+
         pub fn deinit(self: *Self) void {
             ngx_array_destroy(self.pa);
         }
@@ -983,6 +1016,8 @@ test "array" {
     for (0..20) |i| {
         try ns.append(i);
     }
+    try expectEqual(ns.at(10).?.*, 10);
+    try expectEqual(ns.at(20), null);
     try expectEqual(ns.size(), 20);
 }
 
@@ -1017,6 +1052,22 @@ pub fn NList(comptime T: type) type {
             }
             return null;
         }
+
+        pub fn nextSlice(self: *Self) ?[]T {
+            if (self.last == self.pl.*.last and self.offset == self.last.*.nelts) {
+                return null;
+            }
+            if (castPtr(T, self.last.*.elts)) |p0| {
+                const s = slicify(T, p0, self.last.*.nelts);
+                if (self.last != self.pl.*.last) {
+                    self.last = self.last.*.next;
+                } else {
+                    self.offset = self.last.*.nelts;
+                }
+                return s;
+            }
+            return null;
+        }
     };
 
     return extern struct {
@@ -1033,6 +1084,21 @@ pub fn NList(comptime T: type) type {
 
         pub fn size(self: *Self) ngx_uint_t {
             return self.len;
+        }
+
+        pub fn at(self: *Self, i: ngx_uint_t) ?[*c]T {
+            if (i < self.len) {
+                const n = i / self.pl.*.nalloc;
+                const m = i % self.pl.*.nalloc;
+                var part: [*c]ngx_list_part_t = @ptrCast(&self.pl.*.part);
+                for (0..n) |_| {
+                    part = part.*.next;
+                }
+                if (castPtr(T, part.*.elts)) |p0| {
+                    return p0 + m;
+                }
+            }
+            return null;
         }
 
         pub fn iterator(self: *Self) Iterator {
@@ -1055,14 +1121,16 @@ test "list" {
     const pool = ngx_create_pool(1024, log);
     defer ngx_destroy_pool(pool);
 
-    var ns = try NList(ngx_uint_t).init(pool, 7);
+    var ns = try NList(ngx_uint_t).init(pool, 6);
 
     try expectEqual(ns.pl.*.size, @sizeOf(ngx_uint_t));
     try expectEqual(ns.size(), 0);
-    try expectEqual(ns.pl.*.nalloc, 7);
+    try expectEqual(ns.pl.*.nalloc, 6);
 
     for (0..20) |i| {
         try ns.append(i);
     }
+    try expectEqual(ns.at(10).?.*, 10);
+    try expectEqual(ns.at(20), null);
     try expectEqual(ns.size(), 20);
 }
