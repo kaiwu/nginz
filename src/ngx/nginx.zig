@@ -693,7 +693,10 @@ pub inline fn ngx_queue_add(h: [*c]ngx_queue_t, n: [*c]ngx_queue_t) void {
 }
 
 pub inline fn ngz_queue_data(comptime T: type, comptime field: []const u8, q: [*c]ngx_queue_t) [*c]T {
-    return @as([*c]T, @alignCast(@ptrCast(@as([*c]u8, @alignCast(@ptrCast(q))) - @offsetOf(T, field))));
+    return @as(
+        [*c]T,
+        @alignCast(@ptrCast(@as([*c]u8, @alignCast(@ptrCast(q))) - @offsetOf(T, field))),
+    );
 }
 
 // ngx_queue_init(s)
@@ -720,7 +723,10 @@ pub fn NQueue(comptime T: type, comptime field: []const u8) type {
                 return null;
             }
             defer self.n = ngx_queue_next(self.n);
-            return @as([*c]T, @alignCast(@ptrCast(@as([*c]u8, @alignCast(@ptrCast(self.n))) - OFFSET)));
+            return @as(
+                [*c]T,
+                @alignCast(@ptrCast(@as([*c]u8, @alignCast(@ptrCast(self.n))) - OFFSET)),
+            );
         }
     };
 
@@ -729,12 +735,18 @@ pub fn NQueue(comptime T: type, comptime field: []const u8) type {
         sentinel: [*c]ngx_queue_t,
         len: ngx_uint_t = 0,
 
-        inline fn queue(pt: [*c]T) [*c]ngx_queue_t {
-            return @as([*c]ngx_queue_t, @alignCast(@ptrCast(@as([*c]u8, @alignCast(@ptrCast(pt))) + OFFSET)));
+        pub inline fn queue(pt: [*c]T) [*c]ngx_queue_t {
+            return @as(
+                [*c]ngx_queue_t,
+                @alignCast(@ptrCast(@as([*c]u8, @alignCast(@ptrCast(pt))) + OFFSET)),
+            );
         }
 
-        inline fn data(q: [*c]ngx_queue_t) [*c]T {
-            return @as([*c]T, @alignCast(@ptrCast(@as([*c]u8, @alignCast(@ptrCast(q))) - OFFSET)));
+        pub inline fn data(q: [*c]ngx_queue_t) [*c]T {
+            return @as(
+                [*c]T,
+                @alignCast(@ptrCast(@as([*c]u8, @alignCast(@ptrCast(q))) - OFFSET)),
+            );
         }
 
         pub fn init(s: [*c]ngx_queue_t) Self {
@@ -912,11 +924,11 @@ pub fn NArray(comptime T: type) type {
         offset: ngx_uint_t = 0,
 
         pub fn next(self: *Self) ?[*c]T {
-            defer self.offset += 1;
             if (self.offset >= self.pa.*.nelts) {
                 return null;
             }
             if (castPtr(T, self.pa.*.elts)) |p0| {
+                defer self.offset += 1;
                 return p0 + self.offset;
             }
             return null;
@@ -967,6 +979,87 @@ test "array" {
     try expectEqual(ns.pa.*.size, @sizeOf(ngx_uint_t));
     try expectEqual(ns.size(), 0);
     try expectEqual(ns.pa.*.nalloc, 10);
+
+    for (0..20) |i| {
+        try ns.append(i);
+    }
+    try expectEqual(ns.size(), 20);
+}
+
+const ngx_list_part_t = ngx.ngx_list_part_t;
+const ngx_list_create = ngx.ngx_list_create;
+const ngx_list_push = ngx.ngx_list_push;
+
+pub fn NList(comptime T: type) type {
+    if (@alignOf(T) != NGX_ALIGNMENT) {
+        @compileError("NList invalid element");
+    }
+
+    const Iterator = struct {
+        const Self = @This();
+
+        pl: [*c]ngx_list_t,
+        last: [*c]ngx_list_part_t,
+        offset: ngx_uint_t = 0,
+
+        pub fn next(self: *Self) ?[*c]T {
+            if (self.offset >= self.last.*.nelts) {
+                return null;
+            }
+            if (castPtr(T, self.last.*.elts)) |p0| {
+                const pt = p0 + self.offset;
+                self.offset += 1;
+                if (self.offset >= self.last.*.nelts and self.last != self.pl.*.last) {
+                    self.last = self.last.*.next;
+                    self.offset = 0;
+                }
+                return pt;
+            }
+            return null;
+        }
+    };
+
+    return extern struct {
+        const Self = @This();
+        pl: [*c]ngx_list_t = undefined,
+        len: ngx_uint_t = 0,
+
+        pub fn init(p: [*c]ngx_pool_t, n: ngx_uint_t) !Self {
+            if (nonNullPtr(ngx_list_t, ngx_list_create(p, n, @sizeOf(T)))) |p0| {
+                return Self{ .pl = p0 };
+            }
+            return NError.OOM;
+        }
+
+        pub fn size(self: *Self) ngx_uint_t {
+            return self.len;
+        }
+
+        pub fn iterator(self: *Self) Iterator {
+            return Iterator{ .pl = self.pl, .last = @ptrCast(&self.pl.*.part) };
+        }
+
+        pub fn append(self: *Self, t: T) !void {
+            if (castPtr(T, ngx_list_push(self.pl))) |p0| {
+                p0.* = t;
+                self.len += 1;
+            } else {
+                return NError.OOM;
+            }
+        }
+    };
+}
+
+test "list" {
+    const log = ngx_log_init(c_str(""), c_str(""));
+    const pool = ngx_create_pool(1024, log);
+    defer ngx_destroy_pool(pool);
+
+    var ns = try NList(ngx_uint_t).init(pool, 7);
+
+    try expectEqual(ns.pl.*.size, @sizeOf(ngx_uint_t));
+    try expectEqual(ns.size(), 0);
+    try expectEqual(ns.pl.*.nalloc, 7);
 
     for (0..20) |i| {
         try ns.append(i);
