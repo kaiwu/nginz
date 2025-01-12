@@ -1151,6 +1151,8 @@ const ngx_hash_keys_array_init = ngx.ngx_hash_keys_array_init;
 const ngx_hash_add_key = ngx.ngx_hash_add_key;
 const ngx_hash_init = ngx.ngx_hash_init;
 const ngx_hash_find = ngx.ngx_hash_find;
+const ngx_os_init = ngx.ngx_os_init;
+const ngx_memzero = ngx.ngx_memzero;
 
 pub fn NHash(comptime K: type, comptime V: type, comptime M: ngx_uint_t) type {
     const MAX_SIZE = M;
@@ -1178,22 +1180,22 @@ pub fn NHash(comptime K: type, comptime V: type, comptime M: ngx_uint_t) type {
 
         ctx: [*c]Ctx,
         hash: ngx_hash_t = undefined,
-        keys: ngx_hash_keys_array_t = undefined,
 
         // [*c]Ctx and []KV must retain
         pub fn init(ctx: [*c]Ctx, kv: []KV) !Self {
             var h = Self{ .ctx = ctx };
 
-            h.keys.temp_pool = ctx.*.temp_pool;
-            h.keys.pool = ctx.*.pool;
+            var keys: ngx_hash_keys_array_t = undefined;
+            keys.temp_pool = ctx.*.temp_pool;
+            keys.pool = ctx.*.pool;
 
-            if (ngx_hash_keys_array_init(&h.keys, @intCast(@intFromEnum(ctx.*.type))) != NGX_OK) {
+            if (ngx_hash_keys_array_init(&keys, @intCast(@intFromEnum(ctx.*.type))) != NGX_OK) {
                 return NError.HASH_ERROR;
             }
 
             for (kv) |*kv0| {
                 const str = ngx_str_t{ .len = ctx.*.len(kv0.key_ptr), .data = ctx.*.data(kv0.key_ptr) };
-                if (ngx_hash_add_key(&h.keys, @constCast(&str), @alignCast(@ptrCast(kv0)), NGX_HASH_READONLY_KEY) != NGX_OK) {
+                if (ngx_hash_add_key(&keys, @constCast(&str), @alignCast(@ptrCast(kv0)), NGX_HASH_READONLY_KEY) != NGX_OK) {
                     return NError.HASH_ERROR;
                 }
             }
@@ -1207,8 +1209,8 @@ pub fn NHash(comptime K: type, comptime V: type, comptime M: ngx_uint_t) type {
                 .key = ctx.*.key,
                 .hash = &h.hash,
             };
-            if (castPtr(ngx_hash_key_t, h.keys.keys.elts)) |ks| {
-                if (ngx_hash_init(&hash_init, ks, h.keys.keys.nelts) == NGX_OK) {
+            if (castPtr(ngx_hash_key_t, keys.keys.elts)) |ks| {
+                if (ngx_hash_init(&hash_init, ks, keys.keys.nelts) == NGX_OK) {
                     return h;
                 }
             }
@@ -1236,44 +1238,48 @@ fn str_len(k: [*c]ngx_str_t) callconv(.C) usize {
     return k.*.len;
 }
 
+extern var ngx_cacheline_size: ngx_uint_t;
 test "hash" {
-    //    const log = ngx_log_init(c_str(""), c_str(""));
-    //    const pool = ngx_create_pool(1024, log);
-    //    defer ngx_destroy_pool(pool);
-    //
-    //    const temp_pool = ngx_create_pool(1024, log);
-    //    defer ngx_destroy_pool(temp_pool);
-    //
-    //    const Hash = NHash(ngx_str_t, ngx_int_t, 100);
-    //    const KV = Hash.Hash_KV;
-    //    const Ctx = Hash.Hash_Ctx;
-    //
-    //    const ctx = Ctx{
-    //        .name = @constCast("test"),
-    //        .type = .hash_small,
-    //        .pool = pool,
-    //        .temp_pool = temp_pool,
-    //        .data = str_data,
-    //        .len = str_len,
-    //        .key = ngx_hash_key,
-    //    };
-    //
-    //    var ks = [_]ngx_str_t{
-    //        ngx_string("a"),
-    //        ngx_string("b"),
-    //        ngx_string("c"),
-    //    };
-    //    var vs = [_]ngx_int_t{ 1, 2, 3 };
-    //
-    //    var kv = [_]KV{
-    //        KV{ .key_ptr = @ptrCast(&ks[0]), .value_ptr = @ptrCast(&vs[0]) },
-    //        KV{ .key_ptr = @ptrCast(&ks[1]), .value_ptr = @ptrCast(&vs[1]) },
-    //        KV{ .key_ptr = @ptrCast(&ks[2]), .value_ptr = @ptrCast(&vs[2]) },
-    //    };
-    //
-    //    var h = try Hash.init(@constCast(&ctx), &kv);
-    //    if (h.getPtr(kv[0].key_ptr)) |d| {
-    //        try expectEqual(d.*.key_ptr, kv[0].key_ptr);
-    //        try expectEqual(d.*.value_ptr.*, 1);
-    //    }
+    const log = ngx_log_init(c_str(""), c_str(""));
+    ngx_time_init();
+
+    const pool = ngx_create_pool(1024, log);
+    defer ngx_destroy_pool(pool);
+
+    const temp_pool = ngx_create_pool(1024, log);
+    defer ngx_destroy_pool(temp_pool);
+
+    ngx_cacheline_size = NGX_CACHELINE_SIZE;
+    const Hash = NHash(ngx_str_t, ngx_int_t, 100);
+    const KV = Hash.Hash_KV;
+    const Ctx = Hash.Hash_Ctx;
+
+    const ctx = Ctx{
+        .name = @constCast("test"),
+        .type = .hash_small,
+        .pool = pool,
+        .temp_pool = temp_pool,
+        .data = str_data,
+        .len = str_len,
+        .key = ngx_hash_key,
+    };
+
+    var ks = [_]ngx_str_t{
+        ngx_string("a"),
+        ngx_string("b"),
+        ngx_string("c"),
+    };
+    var vs = [_]ngx_int_t{ 1, 2, 3 };
+
+    var kv = [_]KV{
+        KV{ .key_ptr = @ptrCast(&ks[0]), .value_ptr = @ptrCast(&vs[0]) },
+        KV{ .key_ptr = @ptrCast(&ks[1]), .value_ptr = @ptrCast(&vs[1]) },
+        KV{ .key_ptr = @ptrCast(&ks[2]), .value_ptr = @ptrCast(&vs[2]) },
+    };
+
+    var h = try Hash.init(@constCast(&ctx), &kv);
+    if (h.getPtr(kv[2].key_ptr)) |d| {
+        try expectEqual(d.*.key_ptr, kv[2].key_ptr);
+        try expectEqual(d.*.value_ptr.*, 3);
+    }
 }
