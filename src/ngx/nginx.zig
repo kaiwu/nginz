@@ -1378,3 +1378,63 @@ test "zhash" {
 
     defer m.deinit();
 }
+
+pub fn NAllocator(comptime PAGE_SIZE: ngx_uint_t) type {
+    return extern struct {
+        const Self = @This();
+        fba: ?*anyopaque,
+
+        pub fn init(p: [*c]ngx_pool_t) !Self {
+            if (ngz_pcalloc(std.heap.FixedBufferAllocator, p)) |fba| {
+                if (castPtr(u8, ngx_pmemalign(p, PAGE_SIZE, NGX_ALIGNMENT))) |buf| {
+                    fba.* = std.heap.FixedBufferAllocator.init(slicify(u8, buf, PAGE_SIZE));
+                    return Self{ .fba = @alignCast(@ptrCast(fba)) };
+                }
+            }
+            return NError.OOM;
+        }
+
+        pub fn allocator(self: *Self) std.mem.Allocator {
+            return .{
+                .ptr = self.fba.?,
+                .vtable = &.{
+                    .alloc = alloc,
+                    .resize = resize,
+                    .free = free,
+                },
+            };
+        }
+
+        fn alloc(ctx: *anyopaque, len: usize, ptr_align: u8, ret_addr: usize) ?[*]u8 {
+            var fba: *std.heap.FixedBufferAllocator = @alignCast(@ptrCast(ctx));
+            return fba.allocator().rawAlloc(len, ptr_align, ret_addr);
+        }
+
+        fn resize(ctx: *anyopaque, buf: []u8, buf_align: u8, new_len: usize, ret_addr: usize) bool {
+            var fba: *std.heap.FixedBufferAllocator = @alignCast(@ptrCast(ctx));
+            return fba.allocator().rawResize(buf, buf_align, new_len, ret_addr);
+        }
+
+        fn free(ctx: *anyopaque, buf: []u8, buf_align: u8, ret_addr: usize) void {
+            var fba: *std.heap.FixedBufferAllocator = @alignCast(@ptrCast(ctx));
+            return fba.allocator().rawFree(buf, buf_align, ret_addr);
+        }
+    };
+}
+
+test "allocator" {
+    const log = ngx_log_init(c_str(""), c_str(""));
+    ngx_time_init();
+
+    const pool = ngx_create_pool(1024, log);
+    defer ngx_destroy_pool(pool);
+
+    var fba = try NAllocator(1024).init(pool);
+    const allocator = fba.allocator();
+
+    var as = std.ArrayList(usize).init(allocator);
+    for (0..10) |i| {
+        try as.append(i);
+    }
+    try expectEqual(as.items.len, 10);
+}
