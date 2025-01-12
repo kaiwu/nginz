@@ -155,6 +155,13 @@ pub inline fn ngz_pcalloc(comptime T: type, p: [*c]ngx_pool_t) ?[*c]T {
     return null;
 }
 
+pub inline fn ngz_pcalloc_0(comptime T: type, p: [*c]ngx_pool_t) ?*T {
+    if (ngx_pcalloc(p, @sizeOf(T))) |p0| {
+        return @alignCast(@ptrCast(p0));
+    }
+    return null;
+}
+
 pub inline fn ngx_buf_in_memory(b: [*c]ngx_buf_t) bool {
     return b.*.flags.temporary or b.*.flags.memory or b.*.flags.mmap;
 }
@@ -1151,8 +1158,6 @@ const ngx_hash_keys_array_init = ngx.ngx_hash_keys_array_init;
 const ngx_hash_add_key = ngx.ngx_hash_add_key;
 const ngx_hash_init = ngx.ngx_hash_init;
 const ngx_hash_find = ngx.ngx_hash_find;
-const ngx_os_init = ngx.ngx_os_init;
-const ngx_memzero = ngx.ngx_memzero;
 
 pub fn NHash(comptime K: type, comptime V: type, comptime M: ngx_uint_t) type {
     const MAX_SIZE = M;
@@ -1175,8 +1180,8 @@ pub fn NHash(comptime K: type, comptime V: type, comptime M: ngx_uint_t) type {
 
     return extern struct {
         const Self = @This();
-        pub const Hash_Ctx = Ctx;
-        pub const Hash_KV = KV;
+        pub const HashCtx = Ctx;
+        pub const HashKV = KV;
 
         ctx: [*c]Ctx,
         hash: ngx_hash_t = undefined,
@@ -1251,8 +1256,8 @@ test "hash" {
 
     ngx_cacheline_size = NGX_CACHELINE_SIZE;
     const Hash = NHash(ngx_str_t, ngx_int_t, 100);
-    const KV = Hash.Hash_KV;
-    const Ctx = Hash.Hash_Ctx;
+    const KV = Hash.HashKV;
+    const Ctx = Hash.HashCtx;
 
     const ctx = Ctx{
         .name = @constCast("test"),
@@ -1282,4 +1287,93 @@ test "hash" {
         try expectEqual(d.*.key_ptr, kv[2].key_ptr);
         try expectEqual(d.*.value_ptr.*, 3);
     }
+}
+
+pub fn ZHash(comptime K: type, comptime V: type, comptime Ctx: type, comptime M: ngx_uint_t) type {
+    const PAGE_SIZE = 1024;
+    const HashMapType = std.HashMap(K, V, Ctx, M);
+    const IteratorType = HashMapType.Iterator;
+
+    return extern struct {
+        const Self = @This();
+        pub const HashMap = HashMapType;
+        pub const Iterator = IteratorType;
+
+        hash: ?*anyopaque,
+        fba: ?*anyopaque,
+
+        pub fn init(p: [*c]ngx_pool_t) !Self {
+            const hash: *HashMap = @alignCast(@ptrCast(ngx_pcalloc(p, @sizeOf(HashMap))));
+            const fba: *std.heap.FixedBufferAllocator = @alignCast(@ptrCast(ngx_pcalloc(p, @sizeOf(std.heap.FixedBufferAllocator))));
+
+            if (castPtr(u8, ngx_pmemalign(p, PAGE_SIZE, NGX_ALIGNMENT))) |buf| {
+                fba.* = std.heap.FixedBufferAllocator.init(slicify(u8, buf, PAGE_SIZE));
+                const allocator = fba.allocator();
+                hash.* = HashMap.init(allocator);
+                return Self{ .hash = @alignCast(@ptrCast(hash)), .fba = @alignCast(@ptrCast(fba)) };
+            }
+            return NError.OOM;
+        }
+
+        pub fn put(self: *Self, k: K, v: V) !void {
+            var h: *HashMap = @alignCast(@ptrCast(self.hash));
+            try h.put(k, v);
+        }
+
+        pub fn iterator(self: *Self) Iterator {
+            var h: *HashMap = @alignCast(@ptrCast(self.hash));
+            return h.iterator();
+        }
+
+        pub fn getPtr(self: *Self, k: K) ?*V {
+            var h: *HashMap = @alignCast(@ptrCast(self.hash));
+            return h.getPtr(k);
+        }
+
+        pub fn size(self: *Self) ngx_uint_t {
+            var h: *HashMap = @alignCast(@ptrCast(self.hash));
+            return h.count();
+        }
+
+        pub fn deinit(self: *Self) void {
+            var h: *HashMap = @alignCast(@ptrCast(self.hash));
+            h.deinit();
+        }
+    };
+}
+
+pub const ngx_str_hash_ctx = struct {
+    pub fn hash(_: @This(), s: ngx_str_t) u64 {
+        return ngx_hash_key(s.data, s.len);
+    }
+    pub fn eql(_: @This(), s0: ngx_str_t, s1: ngx_str_t) bool {
+        if (s0.len != s1.len) {
+            return false;
+        }
+        return std.mem.eql(u8, slicify(u8, s0.data, s0.len), slicify(u8, s1.data, s1.len));
+    }
+};
+
+test "zhash" {
+    const log = ngx_log_init(c_str(""), c_str(""));
+    ngx_time_init();
+
+    const pool = ngx_create_pool(4096, log);
+    defer ngx_destroy_pool(pool);
+
+    ngx_cacheline_size = NGX_CACHELINE_SIZE;
+    const Hash = ZHash(ngx_str_t, ngx_int_t, ngx_str_hash_ctx, 80);
+
+    var m = try Hash.init(pool);
+    try m.put(ngx_string("abc"), 1);
+    try m.put(ngx_string("xyz"), 2);
+    try expectEqual(m.size(), 2);
+    try expectEqual(m.getPtr(ngx_string("abc")).?.*, 1);
+
+    // var it = m.iterator();
+    // while (it.next()) |kv| {
+    //     std.debug.print("{s} {}\n", .{ slicify(u8, kv.key_ptr.data, kv.key_ptr.len), kv.value_ptr.* });
+    // }
+
+    defer m.deinit();
 }
