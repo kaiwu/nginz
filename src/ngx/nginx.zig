@@ -94,6 +94,7 @@ pub const ngx_cycle_t = ngx.ngx_cycle_t;
 pub const ngx_queue_t = ngx.ngx_queue_t;
 pub const ngx_array_t = ngx.ngx_array_t;
 pub const ngx_rbtree_t = ngx.ngx_rbtree_t;
+pub const ngx_rbtree_key_t = ngx.ngx_rbtree_key_t;
 pub const ngx_rbtree_node_t = ngx.ngx_rbtree_node_t;
 pub const ngx_module_t = ngx.ngx_module_t;
 pub const ngx_command_t = ngx.ngx_command_t;
@@ -742,6 +743,24 @@ pub fn NQueue(comptime T: type, comptime field: []const u8) type {
         }
     };
 
+    const ReverseIterator = struct {
+        const Self = @This();
+
+        q: [*c]ngx_queue_t,
+        n: [*c]ngx_queue_t,
+
+        pub fn next(self: *Self) ?[*c]T {
+            if (self.n == self.q) {
+                return null;
+            }
+            defer self.n = ngx_queue_prev(self.n);
+            return @as(
+                [*c]T,
+                @alignCast(@ptrCast(@as([*c]u8, @alignCast(@ptrCast(self.n))) - OFFSET)),
+            );
+        }
+    };
+
     return extern struct {
         const Self = @This();
         sentinel: [*c]ngx_queue_t,
@@ -768,6 +787,10 @@ pub fn NQueue(comptime T: type, comptime field: []const u8) type {
 
         pub fn iterator(self: *Self) Iterator {
             return Iterator{ .q = self.sentinel, .n = ngx_queue_next(self.sentinel) };
+        }
+
+        pub fn reverse_iterator(self: *Self) ReverseIterator {
+            return Iterator{ .q = self.sentinel, .n = ngx_queue_prev(self.sentinel) };
         }
 
         pub fn size(self: *Self) ngx_uint_t {
@@ -867,7 +890,10 @@ pub inline fn ngx_rbtree_init(tree: [*c]ngx_rbtree_t, s: [*c]ngx_rbtree_node_t, 
 }
 
 pub inline fn ngz_rbtree_data(comptime T: type, comptime field: []const u8, n: [*c]ngx_rbtree_node_t) [*c]T {
-    return @as([*c]T, @ptrCast(@as([*c]u8, @ptrCast(n)) - @offsetOf(T, field)));
+    return @as(
+        [*c]T,
+        @alignCast(@ptrCast(@as([*c]u8, @alignCast(@ptrCast(n))) - @offsetOf(T, field))),
+    );
 }
 
 pub inline fn ngx_rbt_red(node: [*c]ngx_rbtree_node_t) void {
@@ -901,6 +927,200 @@ pub inline fn ngx_rbtree_min(node: [*c]ngx_rbtree_node_t, sentinel: [*c]ngx_rbtr
     }
     return n;
 }
+
+const ngx_rbtree_insert = ngx.ngx_rbtree_insert;
+const ngx_rbtree_delete = ngx.ngx_rbtree_delete;
+pub fn NRBTree(comptime T: type, comptime field: []const u8) type {
+    const OFFSET = @offsetOf(T, field);
+    const Node = ngx_rbtree_node_t;
+    const Tree = struct {
+        pub fn isRoot(n: [*c]Node) bool {
+            return n.*.parent == nullptr(Node);
+        }
+        pub fn isLeft(n: [*c]Node) bool {
+            return !isRoot(n) and n.*.parent.*.left == n;
+        }
+        pub fn isRight(n: [*c]Node) bool {
+            return !isRoot(n) and n.*.parent.*.right == n;
+        }
+        pub fn isLeaf(n: [*c]Node, s: [*c]Node) bool {
+            return n.*.left == s and n.*.right == s;
+        }
+        pub fn sibling(n: [*c]Node, s: [*c]Node) ?[*c]Node {
+            if (isLeft(n) and n.*.parent.*.right != s) {
+                return n.*.parent.*.right;
+            }
+            if (isRight(n) and n.*.parent.*.left != s) {
+                return n.*.parent.*.left;
+            }
+            return null;
+        }
+        pub fn downLeft(n: [*c]Node, s: [*c]Node) [*c]Node {
+            if (n.*.left != s) {
+                return downLeft(n.*.left, s);
+            }
+            return n;
+        }
+        pub fn downBottom(n: [*c]Node, s: [*c]Node) [*c]Node {
+            if (n.*.left != s) {
+                return downBottom(n.*.left, s);
+            }
+            if (n.*.right != s) {
+                return downBottom(n.*.right, s);
+            }
+            return n;
+        }
+        pub fn upRight(n: [*c]Node, s: [*c]Node) ?[*c]Node {
+            if (isRoot(n)) {
+                return null;
+            }
+            if (isLeft(n)) {
+                if (sibling(n, s)) |r| {
+                    return r;
+                }
+            }
+            return upRight(n.*.parent, s);
+        }
+        pub fn upLeft(n: [*c]Node, s: [*c]Node) ?[*c]Node {
+            if (isRoot(n)) {
+                return null;
+            }
+            if (isLeft(n)) {
+                return n.*.parent;
+            }
+            return upLeft(n.*.parent, s);
+        }
+    };
+
+    const TraverseOrder = enum(u8) {
+        PreOrder,
+        InOrder,
+        PostOrder,
+    };
+
+    const Iterator = struct {
+        const Self = @This();
+        order: TraverseOrder,
+        tree: [*c]ngx_rbtree_t,
+        node: ?[*c]ngx_rbtree_node_t,
+
+        fn nextPre(it: *Self) ?[*c]Node {
+            if (it.node == null) {
+                return null;
+            }
+            const x = it.node.?;
+            if (x.*.left != it.tree.*.sentinel) {
+                it.node = x.*.left;
+            }
+            if (x.*.left == it.tree.*.sentinel) {
+                if (x.*.right != it.tree.*.sentinel) {
+                    it.node = x.*.right;
+                } else {
+                    it.node = Tree.upRight(x, it.tree.*.sentinel);
+                }
+            }
+            return x;
+        }
+
+        fn nextIn(it: *Self) ?[*c]Node {
+            if (it.node == null) {
+                return null;
+            }
+            const x = it.node.?;
+            if (x.*.right != it.tree.*.sentinel) {
+                it.node = Tree.downLeft(x.*.right, it.tree.*.sentinel);
+            } else {
+                it.node = Tree.upLeft(x, it.tree.*.sentinel);
+            }
+            return x;
+        }
+
+        fn nextPost(it: *Self) ?[*c]Node {
+            if (it.node == null) {
+                return null;
+            }
+            const x = it.node.?;
+            it.node = x.*.parent;
+            if (Tree.isLeft(x)) {
+                if (Tree.sibling(x, it.tree.*.sentinel)) |s| {
+                    it.node = Tree.downBottom(s, it.tree.*.sentinel);
+                }
+            }
+            return x;
+        }
+
+        fn next(it: *Self) ?[*c]Node {
+            return switch (it.order) {
+                .PreOrder => nextPre(it),
+                .InOrder => nextIn(it),
+                .PostOrder => nextPost(it),
+            };
+        }
+    };
+
+    return extern struct {
+        const Self = @This();
+        const TraverseOrderType = TraverseOrder;
+
+        tree: [*c]ngx_rbtree_t,
+        key: *const fn ([*c]T) ngx_rbtree_key_t,
+
+        pub inline fn node(pt: [*c]T) [*c]Node {
+            return @as(
+                [*c]Node,
+                @alignCast(@ptrCast(@as([*c]u8, @alignCast(@ptrCast(pt))) + OFFSET)),
+            );
+        }
+
+        pub inline fn data(n: [*c]Node) [*c]T {
+            return @as(
+                [*c]T,
+                @alignCast(@ptrCast(@as([*c]u8, @alignCast(@ptrCast(n))) - OFFSET)),
+            );
+        }
+
+        pub fn init(
+            t: [*c]ngx_rbtree_t,
+            p: [*c]ngx_pool_t,
+            pt: ngx_rbtree_insert_pt,
+            key: *const fn ([*c]T) ngx_rbtree_key_t,
+        ) !Self {
+            if (ngz_pcalloc_c(Node, p)) |sentinel| {
+                ngx_rbtree_init(t, sentinel, pt);
+                return Self{ .tree = t, .key = key };
+            }
+            return NError.OOM;
+        }
+
+        pub fn iterator(self: *Self, order: TraverseOrderType) Iterator {
+            var it = Iterator{
+                .tree = self.tree,
+                .node = self.tree.*.root,
+                .order = order,
+            };
+            if (order == .InOrder) {
+                it.node = Tree.downLeft(self.tree.*.root, self.tree.*.sentinel);
+            }
+            if (order == .PostOrder) {
+                it.node = Tree.downBottom(self.tree.*.root, self.tree.*.sentinel);
+            }
+            return it;
+        }
+
+        pub fn insert(self: *Self, pt: [*c]T) void {
+            const n = node(pt);
+            n.*.key = self.key(pt);
+            ngx_rbtree_insert(self.tree, n);
+        }
+
+        pub fn delete(self: *Self, pt: [*c]T) void {
+            const n = node(pt);
+            ngx_rbtree_delete(self.tree, n);
+        }
+    };
+}
+
+test "rbtree" {}
 
 pub fn PointerIterator(comptime T: type) type {
     return struct {
@@ -1370,11 +1590,6 @@ test "zhash" {
     try m.put(ngx_string("xyz"), 2);
     try expectEqual(m.size(), 2);
     try expectEqual(m.getPtr(ngx_string("abc")).?.*, 1);
-
-    // var it = m.iterator();
-    // while (it.next()) |kv| {
-    //     std.debug.print("{s} {}\n", .{ slicify(u8, kv.key_ptr.data, kv.key_ptr.len), kv.value_ptr.* });
-    // }
 
     defer m.deinit();
 }
