@@ -148,14 +148,14 @@ pub inline fn castPtr(comptime T: type, p: ?*anyopaque) ?[*c]T {
     return null;
 }
 
-pub inline fn ngz_pcalloc(comptime T: type, p: [*c]ngx_pool_t) ?[*c]T {
+pub inline fn ngz_pcalloc_c(comptime T: type, p: [*c]ngx_pool_t) ?[*c]T {
     if (ngx_pcalloc(p, @sizeOf(T))) |p0| {
         return @alignCast(@ptrCast(p0));
     }
     return null;
 }
 
-pub inline fn ngz_pcalloc_0(comptime T: type, p: [*c]ngx_pool_t) ?*T {
+pub inline fn ngz_pcalloc(comptime T: type, p: [*c]ngx_pool_t) ?*T {
     if (ngx_pcalloc(p, @sizeOf(T))) |p0| {
         return @alignCast(@ptrCast(p0));
     }
@@ -1235,11 +1235,11 @@ pub fn NHash(comptime K: type, comptime V: type, comptime M: ngx_uint_t) type {
     };
 }
 
-fn str_data(k: [*c]ngx_str_t) callconv(.C) [*c]u8 {
+pub fn ngx_str_data(k: [*c]ngx_str_t) callconv(.C) [*c]u8 {
     return k.*.data;
 }
 
-fn str_len(k: [*c]ngx_str_t) callconv(.C) usize {
+pub fn ngx_str_len(k: [*c]ngx_str_t) callconv(.C) usize {
     return k.*.len;
 }
 
@@ -1264,8 +1264,8 @@ test "hash" {
         .type = .hash_small,
         .pool = pool,
         .temp_pool = temp_pool,
-        .data = str_data,
-        .len = str_len,
+        .data = ngx_str_data,
+        .len = ngx_str_len,
         .key = ngx_hash_key,
     };
 
@@ -1303,14 +1303,15 @@ pub fn ZHash(comptime K: type, comptime V: type, comptime Ctx: type, comptime M:
         fba: ?*anyopaque,
 
         pub fn init(p: [*c]ngx_pool_t) !Self {
-            const hash: *HashMap = @alignCast(@ptrCast(ngx_pcalloc(p, @sizeOf(HashMap))));
-            const fba: *std.heap.FixedBufferAllocator = @alignCast(@ptrCast(ngx_pcalloc(p, @sizeOf(std.heap.FixedBufferAllocator))));
-
-            if (castPtr(u8, ngx_pmemalign(p, PAGE_SIZE, NGX_ALIGNMENT))) |buf| {
-                fba.* = std.heap.FixedBufferAllocator.init(slicify(u8, buf, PAGE_SIZE));
-                const allocator = fba.allocator();
-                hash.* = HashMap.init(allocator);
-                return Self{ .hash = @alignCast(@ptrCast(hash)), .fba = @alignCast(@ptrCast(fba)) };
+            if (ngz_pcalloc(HashMap, p)) |hash| {
+                if (ngz_pcalloc(std.heap.FixedBufferAllocator, p)) |fba| {
+                    if (castPtr(u8, ngx_pmemalign(p, PAGE_SIZE, NGX_ALIGNMENT))) |buf| {
+                        fba.* = std.heap.FixedBufferAllocator.init(slicify(u8, buf, PAGE_SIZE));
+                        const allocator = fba.allocator();
+                        hash.* = HashMap.init(allocator);
+                        return Self{ .hash = @alignCast(@ptrCast(hash)), .fba = @alignCast(@ptrCast(fba)) };
+                    }
+                }
             }
             return NError.OOM;
         }

@@ -27,7 +27,7 @@ fn postconfiguration(cf: [*c]ngx_conf_t) callconv(.C) ngx_int_t {
 }
 
 fn create_loc_conf(cf: [*c]ngx_conf_t) callconv(.C) ?*anyopaque {
-    if (ngx.ngz_pcalloc(loc_conf, cf.*.pool)) |p| {
+    if (ngx.ngz_pcalloc_c(loc_conf, cf.*.pool)) |p| {
         return p;
     }
     return null;
