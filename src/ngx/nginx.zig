@@ -1,5 +1,6 @@
 const std = @import("std");
 const ngx = @import("ngx.zig");
+pub const Deque = @import("deque").Deque;
 const expectEqual = std.testing.expectEqual;
 
 pub const nginx_version = @as(ngx_uint_t, 1027003);
@@ -994,7 +995,7 @@ pub fn NRBTree(
 
         pub fn depth(n: [*c]Node, s: [*c]Node, d: ngx_uint_t) ngx_uint_t {
             if (n == s) {
-                return d;
+                return d - 1;
             }
             return @max(depth(n.*.left, s, d + 1), depth(n.*.right, s, d + 1));
         }
@@ -1233,7 +1234,7 @@ test "rbtree" {
     for (&rs) |*r0| {
         tree.insert(r0, {});
     }
-    try expectEqual(tree.depth(), 5);
+    try expectEqual(tree.depth(), 4);
 
     var it = tree.iterator(RBTree.TraverseOrderType.PostOrder);
     while (it.next()) |n| {
