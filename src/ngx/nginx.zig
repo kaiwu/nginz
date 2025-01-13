@@ -930,7 +930,12 @@ pub inline fn ngx_rbtree_min(node: [*c]ngx_rbtree_node_t, sentinel: [*c]ngx_rbtr
 
 const ngx_rbtree_insert = ngx.ngx_rbtree_insert;
 const ngx_rbtree_delete = ngx.ngx_rbtree_delete;
-pub fn NRBTree(comptime T: type, comptime field: []const u8) type {
+pub fn NRBTree(
+    comptime T: type,
+    comptime field: []const u8,
+    Context: anytype,
+    comptime KeyFn: fn (@TypeOf(Context), [*c]T) ngx_rbtree_key_t,
+) type {
     const OFFSET = @offsetOf(T, field);
     const Node = ngx_rbtree_node_t;
     const Tree = struct {
@@ -946,14 +951,12 @@ pub fn NRBTree(comptime T: type, comptime field: []const u8) type {
         pub fn isLeaf(n: [*c]Node, s: [*c]Node) bool {
             return n.*.left == s and n.*.right == s;
         }
-        pub fn sibling(n: [*c]Node, s: [*c]Node) ?[*c]Node {
-            if (isLeft(n) and n.*.parent.*.right != s) {
-                return n.*.parent.*.right;
+        pub fn sibling(n: [*c]Node) [*c]Node {
+            if (isRoot(n)) {
+                // unreachable;
+                return nullptr(Node);
             }
-            if (isRight(n) and n.*.parent.*.left != s) {
-                return n.*.parent.*.left;
-            }
-            return null;
+            return if (isLeft(n)) n.*.parent.*.right else n.*.parent.*.left;
         }
         pub fn downLeft(n: [*c]Node, s: [*c]Node) [*c]Node {
             if (n.*.left != s) {
@@ -970,25 +973,37 @@ pub fn NRBTree(comptime T: type, comptime field: []const u8) type {
             }
             return n;
         }
-        pub fn upRight(n: [*c]Node, s: [*c]Node) ?[*c]Node {
+        pub fn upRight(n: [*c]Node, s: [*c]Node) [*c]Node {
             if (isRoot(n)) {
-                return null;
+                return nullptr(Node);
             }
             if (isLeft(n)) {
-                if (sibling(n, s)) |r| {
+                const r = sibling(n);
+                if (r != s) {
                     return r;
                 }
             }
             return upRight(n.*.parent, s);
         }
-        pub fn upLeft(n: [*c]Node, s: [*c]Node) ?[*c]Node {
+        pub fn upLeft(n: [*c]Node) [*c]Node {
             if (isRoot(n)) {
-                return null;
+                return nullptr(Node);
             }
-            if (isLeft(n)) {
-                return n.*.parent;
+            return if (isLeft(n)) n.*.parent else upLeft(n.*.parent);
+        }
+
+        fn insertFn(parent: [*c]Node, n: [*c]Node, sentinel: [*c]Node) void {
+            var pp: [*c][*c]Node = @ptrCast(&parent);
+            var p: [*c]Node = parent;
+            while (pp.* != sentinel) {
+                p = pp.*;
+                pp = if (n.*.key < p.*.key) &p.*.left else &p.*.right;
             }
-            return upLeft(n.*.parent, s);
+            pp.* = n;
+            n.*.parent = p;
+            n.*.left = sentinel;
+            n.*.right = sentinel;
+            ngx_rbt_red(n);
         }
     };
 
@@ -1002,13 +1017,13 @@ pub fn NRBTree(comptime T: type, comptime field: []const u8) type {
         const Self = @This();
         order: TraverseOrder,
         tree: [*c]ngx_rbtree_t,
-        node: ?[*c]ngx_rbtree_node_t,
+        node: [*c]ngx_rbtree_node_t,
 
         fn nextPre(it: *Self) ?[*c]Node {
-            if (it.node == null) {
+            if (it.node == nullptr(Node)) {
                 return null;
             }
-            const x = it.node.?;
+            const x = it.node;
             if (x.*.left != it.tree.*.sentinel) {
                 it.node = x.*.left;
             }
@@ -1023,10 +1038,10 @@ pub fn NRBTree(comptime T: type, comptime field: []const u8) type {
         }
 
         fn nextIn(it: *Self) ?[*c]Node {
-            if (it.node == null) {
+            if (it.node == nullptr(Node)) {
                 return null;
             }
-            const x = it.node.?;
+            const x = it.node;
             if (x.*.right != it.tree.*.sentinel) {
                 it.node = Tree.downLeft(x.*.right, it.tree.*.sentinel);
             } else {
@@ -1036,15 +1051,18 @@ pub fn NRBTree(comptime T: type, comptime field: []const u8) type {
         }
 
         fn nextPost(it: *Self) ?[*c]Node {
-            if (it.node == null) {
+            if (it.node == nullptr(Node)) {
                 return null;
             }
-            const x = it.node.?;
-            it.node = x.*.parent;
+            const x = it.node;
+
             if (Tree.isLeft(x)) {
-                if (Tree.sibling(x, it.tree.*.sentinel)) |s| {
+                const s = Tree.sibling(x);
+                if (s != it.tree.*.sentinel) {
                     it.node = Tree.downBottom(s, it.tree.*.sentinel);
                 }
+            } else {
+                it.node = x.*.parent;
             }
             return x;
         }
@@ -1063,7 +1081,6 @@ pub fn NRBTree(comptime T: type, comptime field: []const u8) type {
         const TraverseOrderType = TraverseOrder;
 
         tree: [*c]ngx_rbtree_t,
-        key: *const fn ([*c]T) ngx_rbtree_key_t,
 
         pub inline fn node(pt: [*c]T) [*c]Node {
             return @as(
@@ -1082,12 +1099,15 @@ pub fn NRBTree(comptime T: type, comptime field: []const u8) type {
         pub fn init(
             t: [*c]ngx_rbtree_t,
             p: [*c]ngx_pool_t,
-            pt: ngx_rbtree_insert_pt,
-            key: *const fn ([*c]T) ngx_rbtree_key_t,
+            pt: ?ngx_rbtree_insert_pt,
         ) !Self {
             if (ngz_pcalloc_c(Node, p)) |sentinel| {
-                ngx_rbtree_init(t, sentinel, pt);
-                return Self{ .tree = t, .key = key };
+                if (pt) |pt0| {
+                    ngx_rbtree_init(t, sentinel, pt0);
+                } else {
+                    ngx_rbtree_init(t, sentinel, &Tree.insertFn);
+                }
+                return Self{ .tree = t };
             }
             return NError.OOM;
         }
@@ -1098,6 +1118,12 @@ pub fn NRBTree(comptime T: type, comptime field: []const u8) type {
                 .node = self.tree.*.root,
                 .order = order,
             };
+
+            if (it.node == self.tree.*.sentinel) { //empty tree
+                it.node = nullptr(Node);
+                return it;
+            }
+
             if (order == .InOrder) {
                 it.node = Tree.downLeft(self.tree.*.root, self.tree.*.sentinel);
             }
@@ -1107,9 +1133,9 @@ pub fn NRBTree(comptime T: type, comptime field: []const u8) type {
             return it;
         }
 
-        pub fn insert(self: *Self, pt: [*c]T) void {
+        pub fn insert(self: *Self, pt: [*c]T, ctx: Context) void {
             const n = node(pt);
-            n.*.key = self.key(pt);
+            n.*.key = KeyFn(ctx, pt);
             ngx_rbtree_insert(self.tree, n);
         }
 
