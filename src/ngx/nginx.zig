@@ -1021,29 +1021,6 @@ pub fn NRBTree(
         PostOrder,
     };
 
-    const LookupIterator = struct {
-        const Self = @This();
-        key: ngx_rbtree_key_t,
-        tree: [*c]ngx_rbtree_t,
-        node: [*c]ngx_rbtree_node_t,
-
-        pub fn next(it: *Self) ?[*c]Node {
-            if (it.node == nullptr(Node)) {
-                return null;
-            }
-            const x = it.node;
-            it.node = nullptr(Node);
-            if (x.*.left != it.tree.*.sentinel and x.*.left.*.key == it.key) {
-                it.node = x.*.left;
-            }
-            if (x.*.right != it.tree.*.sentinel and x.*.right.*.key == it.key) {
-                it.node = x.*.right;
-            }
-
-            return x;
-        }
-    };
-
     const BfsIterator = struct {
         const Self = @This();
         tree: [*c]ngx_rbtree_t,
@@ -1158,21 +1135,17 @@ pub fn NRBTree(
             return NError.OOM;
         }
 
-        pub fn lookup(self: *Self, key: ngx_rbtree_key_t) LookupIterator {
-            var it = LookupIterator{
-                .key = key,
-                .node = nullptr(Node),
-                .tree = self.*.tree,
-            };
+        pub fn find(self: *Self, key: ngx_rbtree_key_t) ?[*c]T {
+            var n: ?[*c]Node = null;
             var p: [*c]Node = self.tree.*.root;
             while (p != self.tree.*.sentinel) {
-                if (p.*.key == it.key) {
-                    it.node = p;
+                if (p.*.key == key) {
+                    n = p;
                     break;
                 }
-                p = if (it.key < p.*.key) p.*.left else p.*.right;
+                p = if (key < p.*.key) p.*.left else p.*.right;
             }
-            return it;
+            return if (n == null) null else data(n.?);
         }
 
         pub fn depth(self: *Self) ngx_uint_t {
@@ -1266,6 +1239,10 @@ test "rbtree" {
         tree.insert(r0, {});
     }
     try expectEqual(tree.depth(), 5);
+
+    while (tree.find(6)) |r0| {
+        tree.delete(r0);
+    }
 
     var bfs = try tree.bfs(pool);
     while (bfs.next()) |n| {
