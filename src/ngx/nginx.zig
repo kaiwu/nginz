@@ -933,8 +933,8 @@ const ngx_rbtree_delete = ngx.ngx_rbtree_delete;
 pub fn NRBTree(
     comptime T: type,
     comptime field: []const u8,
-    Context: anytype,
-    comptime KeyFn: fn (@TypeOf(Context), [*c]T) ngx_rbtree_key_t,
+    comptime Context: anytype,
+    comptime KeyFn: fn (Context, [*c]T) ngx_rbtree_key_t,
 ) type {
     const OFFSET = @offsetOf(T, field);
     const Node = ngx_rbtree_node_t;
@@ -992,8 +992,8 @@ pub fn NRBTree(
             return if (isLeft(n)) n.*.parent else upLeft(n.*.parent);
         }
 
-        fn insertFn(parent: [*c]Node, n: [*c]Node, sentinel: [*c]Node) void {
-            var pp: [*c][*c]Node = @ptrCast(&parent);
+        fn insertFn(parent: [*c]Node, n: [*c]Node, sentinel: [*c]Node) callconv(.C) void {
+            var pp: *[*c]Node = @constCast(&parent);
             var p: [*c]Node = parent;
             while (pp.* != sentinel) {
                 p = pp.*;
@@ -1011,6 +1011,29 @@ pub fn NRBTree(
         PreOrder,
         InOrder,
         PostOrder,
+    };
+
+    const LookupIterator = struct {
+        const Self = @This();
+        key: ngx_rbtree_key_t,
+        tree: [*c]ngx_rbtree_t,
+        node: [*c]ngx_rbtree_node_t,
+
+        pub fn next(it: *Self) ?[*c]Node {
+            if (it.node == nullptr(Node)) {
+                return null;
+            }
+            const x = it.node;
+            it.node = nullptr(Node);
+            if (x.*.left != it.tree.*.sentinel and x.*.left.*.key == it.key) {
+                it.node = x.*.left;
+            }
+            if (x.*.right != it.tree.*.sentinel and x.*.right.*.key == it.key) {
+                it.node = x.*.right;
+            }
+
+            return x;
+        }
     };
 
     const Iterator = struct {
@@ -1045,7 +1068,7 @@ pub fn NRBTree(
             if (x.*.right != it.tree.*.sentinel) {
                 it.node = Tree.downLeft(x.*.right, it.tree.*.sentinel);
             } else {
-                it.node = Tree.upLeft(x, it.tree.*.sentinel);
+                it.node = Tree.upLeft(x);
             }
             return x;
         }
@@ -1055,14 +1078,13 @@ pub fn NRBTree(
                 return null;
             }
             const x = it.node;
+            it.node = x.*.parent;
 
             if (Tree.isLeft(x)) {
                 const s = Tree.sibling(x);
                 if (s != it.tree.*.sentinel) {
                     it.node = Tree.downBottom(s, it.tree.*.sentinel);
                 }
-            } else {
-                it.node = x.*.parent;
             }
             return x;
         }
@@ -1102,14 +1124,28 @@ pub fn NRBTree(
             pt: ?ngx_rbtree_insert_pt,
         ) !Self {
             if (ngz_pcalloc_c(Node, p)) |sentinel| {
-                if (pt) |pt0| {
-                    ngx_rbtree_init(t, sentinel, pt0);
-                } else {
-                    ngx_rbtree_init(t, sentinel, &Tree.insertFn);
-                }
+                const pt0 = pt orelse &Tree.insertFn;
+                ngx_rbtree_init(t, sentinel, pt0);
                 return Self{ .tree = t };
             }
             return NError.OOM;
+        }
+
+        pub fn lookup(self: *Self, key: ngx_rbtree_key_t) LookupIterator {
+            var it = LookupIterator{
+                .key = key,
+                .node = nullptr(Node),
+                .tree = self.*.tree,
+            };
+            var p: [*c]Node = self.tree.*.root;
+            while (p != self.tree.*.sentinel) {
+                if (p.*.key == it.key) {
+                    it.node = p;
+                    break;
+                }
+                p = if (p.*.key < it.key) p.*.left else p.*.right;
+            }
+            return it;
         }
 
         pub fn iterator(self: *Self, order: TraverseOrderType) Iterator {
@@ -1146,7 +1182,52 @@ pub fn NRBTree(
     };
 }
 
-test "rbtree" {}
+test "rbtree" {
+    const RBT = extern struct {
+        const Self = @This();
+        c: u8,
+        n: ngx_uint_t,
+        node: ngx_rbtree_node_t = undefined,
+
+        pub fn key(ctx: void, p: [*c]Self) ngx_rbtree_key_t {
+            _ = ctx;
+            return p.*.n;
+        }
+    };
+
+    var rs = [_]RBT{
+        RBT{ .n = 0, .c = 'E' },
+        RBT{ .n = 1, .c = 'X' },
+        RBT{ .n = 2, .c = 'M' },
+        RBT{ .n = 3, .c = 'B' },
+        RBT{ .n = 4, .c = 'S' },
+        RBT{ .n = 5, .c = 'A' },
+        RBT{ .n = 6, .c = 'P' },
+        RBT{ .n = 7, .c = 'T' },
+        RBT{ .n = 8, .c = 'N' },
+        RBT{ .n = 9, .c = 'W' },
+        RBT{ .n = 10, .c = 'H' },
+        RBT{ .n = 11, .c = 'C' },
+    };
+
+    const log = ngx_log_init(c_str(""), c_str(""));
+    ngx_time_init();
+
+    const pool = ngx_create_pool(1024, log);
+    defer ngx_destroy_pool(pool);
+
+    const RBTree = NRBTree(RBT, "node", void, RBT.key);
+    var t: ngx_rbtree_t = undefined;
+    var tree = try RBTree.init(@ptrCast(&t), pool, null);
+    for (&rs) |*r0| {
+        tree.insert(r0, {});
+    }
+    var it = tree.iterator(RBTree.TraverseOrderType.PostOrder);
+    while (it.next()) |n| {
+        const r0 = RBTree.data(n);
+        std.debug.print("{c} ", .{r0.*.c});
+    }
+}
 
 pub fn PointerIterator(comptime T: type) type {
     return struct {
