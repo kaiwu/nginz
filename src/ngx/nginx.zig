@@ -992,6 +992,13 @@ pub fn NRBTree(
             return if (isLeft(n)) n.*.parent else upLeft(n.*.parent);
         }
 
+        pub fn depth(n: [*c]Node, s: [*c]Node, d: ngx_uint_t) ngx_uint_t {
+            if (n == s) {
+                return d;
+            }
+            return @max(depth(n.*.left, s, d + 1), depth(n.*.right, s, d + 1));
+        }
+
         fn insertFn(parent: [*c]Node, n: [*c]Node, sentinel: [*c]Node) callconv(.C) void {
             var pp: *[*c]Node = @constCast(&parent);
             var p: [*c]Node = parent;
@@ -1143,9 +1150,13 @@ pub fn NRBTree(
                     it.node = p;
                     break;
                 }
-                p = if (p.*.key < it.key) p.*.left else p.*.right;
+                p = if (it.key < p.*.key) p.*.left else p.*.right;
             }
             return it;
+        }
+
+        pub fn depth(self: *Self) ngx_uint_t {
+            return Tree.depth(self.tree.*.root, self.tree.*.sentinel, 0);
         }
 
         pub fn iterator(self: *Self, order: TraverseOrderType) Iterator {
@@ -1222,6 +1233,8 @@ test "rbtree" {
     for (&rs) |*r0| {
         tree.insert(r0, {});
     }
+    try expectEqual(tree.depth(), 5);
+
     var it = tree.iterator(RBTree.TraverseOrderType.PostOrder);
     while (it.next()) |n| {
         const r0 = RBTree.data(n);
