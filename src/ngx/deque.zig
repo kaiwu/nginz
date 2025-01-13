@@ -400,7 +400,7 @@ test "format" {
     try deque.pushBack(69);
     try deque.pushBack(420);
 
-    std.debug.print("{}\n", .{deque});
+    // std.debug.print("{}\n", .{deque});
 }
 
 test "nextBack" {

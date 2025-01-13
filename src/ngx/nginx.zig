@@ -1,6 +1,6 @@
 const std = @import("std");
 const ngx = @import("ngx.zig");
-pub const Deque = @import("deque").Deque;
+pub const Deque = @import("deque.zig").Deque;
 const expectEqual = std.testing.expectEqual;
 
 pub const nginx_version = @as(ngx_uint_t, 1027003);
@@ -1044,6 +1044,25 @@ pub fn NRBTree(
         }
     };
 
+    const BfsIterator = struct {
+        const Self = @This();
+        tree: [*c]ngx_rbtree_t,
+        queue: Deque([*c]Node),
+
+        pub fn next(it: *Self) ?[*c]Node {
+            if (it.queue.popFront()) |n| {
+                if (n.*.left != it.tree.*.sentinel) {
+                    it.queue.pushBack(n.*.left) catch unreachable;
+                }
+                if (n.*.right != it.tree.*.sentinel) {
+                    it.queue.pushBack(n.*.right) catch unreachable;
+                }
+                return n;
+            }
+            return null;
+        }
+    };
+
     const Iterator = struct {
         const Self = @This();
         order: TraverseOrder,
@@ -1160,6 +1179,17 @@ pub fn NRBTree(
             return Tree.depth(self.tree.*.root, self.tree.*.sentinel, 0);
         }
 
+        pub fn bfs(self: *Self, p: [*c]ngx_pool_t) !BfsIterator {
+            var fba = try NAllocator(1024).init(p);
+            const allocator = fba.allocator();
+
+            var q = try Deque([*c]Node).init(allocator);
+            if (self.tree.*.root != self.tree.*.sentinel) {
+                try q.pushBack(self.tree.*.root);
+            }
+            return BfsIterator{ .queue = q, .tree = self.tree };
+        }
+
         pub fn iterator(self: *Self, order: TraverseOrderType) Iterator {
             var it = Iterator{
                 .tree = self.tree,
@@ -1235,6 +1265,14 @@ test "rbtree" {
         tree.insert(r0, {});
     }
     try expectEqual(tree.depth(), 4);
+
+    var bfs = try tree.bfs(pool);
+    while (bfs.next()) |n| {
+        const r0 = RBTree.data(n);
+        std.debug.print("{c} ", .{r0.*.c});
+    }
+
+    std.debug.print("\n", .{});
 
     var it = tree.iterator(RBTree.TraverseOrderType.PostOrder);
     while (it.next()) |n| {

@@ -1,12 +1,10 @@
 const std = @import("std");
 
-const DEQUE = "src/deque.zig";
 const NGINX = "src/ngx/nginx.zig";
 
 var modules = [_][]const u8{
     "src/modules/echoz-nginx-module/ngx_http_echoz.zig",
     NGINX,
-    DEQUE,
 };
 
 const PN = struct {
@@ -41,25 +39,14 @@ pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
-    const deque = b.addModule("deque", .{
-        .root_source_file = b.path(DEQUE),
-        .target = target,
-        .optimize = optimize,
-    });
-
-    const imports = [_]std.Build.Module.Import{
-        .{ .name = "deque", .module = deque },
-    };
-
     const nginx = b.addModule("nginx", .{
         .root_source_file = b.path(NGINX),
         .target = target,
         .optimize = optimize,
-        .imports = &imports,
     });
 
     for (modules) |m| {
-        if (std.mem.eql(u8, m, NGINX) or std.mem.eql(u8, m, DEQUE)) {
+        if (std.mem.eql(u8, m, NGINX)) {
             continue;
         }
         const pn = module_path(m);
