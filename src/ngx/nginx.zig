@@ -995,7 +995,7 @@ pub fn NRBTree(
 
         pub fn depth(n: [*c]Node, s: [*c]Node, d: ngx_uint_t) ngx_uint_t {
             if (n == s) {
-                return d - 1;
+                return d;
             }
             return @max(depth(n.*.left, s, d + 1), depth(n.*.right, s, d + 1));
         }
@@ -1250,6 +1250,7 @@ test "rbtree" {
         RBT{ .n = 9, .c = 'W' },
         RBT{ .n = 10, .c = 'H' },
         RBT{ .n = 11, .c = 'C' },
+        RBT{ .n = 12, .c = 'Y' },
     };
 
     const log = ngx_log_init(c_str(""), c_str(""));
@@ -1264,7 +1265,7 @@ test "rbtree" {
     for (&rs) |*r0| {
         tree.insert(r0, {});
     }
-    try expectEqual(tree.depth(), 4);
+    try expectEqual(tree.depth(), 5);
 
     var bfs = try tree.bfs(pool);
     while (bfs.next()) |n| {
