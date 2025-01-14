@@ -18264,21 +18264,23 @@ pub extern fn ngx_http_upstream_free_round_robin_peer(pc: [*c]ngx_peer_connectio
 pub extern fn ngx_http_upstream_set_round_robin_peer_session(pc: [*c]ngx_peer_connection_t, data: ?*anyopaque) ngx_int_t;
 pub extern fn ngx_http_upstream_save_round_robin_peer_session(pc: [*c]ngx_peer_connection_t, data: ?*anyopaque) void;
 pub const ngx_http_location_tree_node_t = struct_ngx_http_location_tree_node_s;
+
+const struct_ngx_http_core_loc_conf_flag_s = packed struct {
+    noname: bool,
+    lmt_excpt: bool,
+    named: bool,
+    exact_match: bool,
+    noregex: bool,
+    auto_redirect: bool,
+    gzip_disable_msie6: u2,
+    gzip_disalbe_degradation: u2,
+    padding: u22,
+};
 pub const struct_ngx_http_core_loc_conf_s = extern struct {
     name: ngx_str_t = @import("std").mem.zeroes(ngx_str_t),
     escaped_name: ngx_str_t = @import("std").mem.zeroes(ngx_str_t),
     regex: [*c]ngx_http_regex_t = @import("std").mem.zeroes([*c]ngx_http_regex_t),
-    flags: packed struct {
-        noname: bool,
-        lmt_excpt: bool,
-        named: bool,
-        exact_match: bool,
-        noregex: bool,
-        auto_redirect: bool,
-        gzip_disable_msie6: u2,
-        gzip_disalbe_degradation: u2,
-        padding: u22,
-    } = @import("std").mem.zeroes(c_uint),
+    flags: struct_ngx_http_core_loc_conf_flag_s = @import("std").mem.zeroes(struct_ngx_http_core_loc_conf_flag_s),
     static_locations: [*c]ngx_http_location_tree_node_t = @import("std").mem.zeroes([*c]ngx_http_location_tree_node_t),
     regex_locations: [*c][*c]ngx_http_core_loc_conf_t = @import("std").mem.zeroes([*c][*c]ngx_http_core_loc_conf_t),
     loc_conf: [*c]?*anyopaque = @import("std").mem.zeroes([*c]?*anyopaque),

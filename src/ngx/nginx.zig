@@ -289,6 +289,7 @@ pub inline fn ngx_http_conf_get_module_loc_conf(cf: [*c]ngx_conf_t, m: *ngx_modu
 
 pub const NError = error{
     OOM,
+    CONF_ERROR,
     HASH_ERROR,
 };
 
@@ -1329,6 +1330,10 @@ pub fn NArray(comptime T: type) type {
             return NError.OOM;
         }
 
+        pub fn inited(self: *Self) bool {
+            return self.pa != undefined and self.pa != nullptr(ngx_array_t);
+        }
+
         pub fn size(self: *Self) ngx_uint_t {
             return self.pa.*.nelts;
         }
@@ -1447,6 +1452,10 @@ pub fn NList(comptime T: type) type {
                 return Self{ .pl = p0 };
             }
             return NError.OOM;
+        }
+
+        pub fn inited(self: *Self) bool {
+            return self.pl != undefined and self.pl != nullptr(ngx_list_t);
         }
 
         pub fn size(self: *Self) ngx_uint_t {
@@ -1798,23 +1807,36 @@ test "allocator" {
 pub const ngx_http_script_variables_count = ngx.ngx_http_script_variables_count;
 pub const ngx_http_script_compile = ngx.ngx_http_script_compile;
 
-pub inline fn ngx_conf_variables_parse(
+pub inline fn ngz_http_conf_variables_parse(
     cf: [*c]ngx_conf_t,
     script: [*c]ngx_str_t,
     lengths: [*c][*c]ngx_array_t,
     values: [*c][*c]ngx_array_t,
-) [*c]u8 {
+) !void {
     const n = ngx_http_script_variables_count(script);
-    if (n == 0) {
-        return NGX_CONF_OK;
+    if (n > 0) {
+        var sc: ngx_http_script_compile_t = std.mem.zeroes(ngx_http_script_compile_t);
+        sc.cf = cf;
+        sc.variables = n;
+        sc.source = script;
+        sc.values = values;
+        sc.lengths = lengths;
+        sc.flags.complete_values = true;
+        sc.flags.complete_lengths = true;
+        if (ngx_http_script_compile(&sc) != NGX_OK) {
+            return NError.CONF_ERROR;
+        }
     }
-    var sc: ngx_http_script_compile_t = std.mem.zeroes(ngx_http_script_compile_t);
-    sc.cf = cf;
-    sc.variables = n;
-    sc.source = script;
-    sc.values = values;
-    sc.lengths = lengths;
-    sc.flags.complete_values = true;
-    sc.flags.complete_lengths = true;
-    return if (ngx_http_script_compile(&sc) == NGX_OK) NGX_CONF_OK else NGX_CONF_ERROR;
+}
+
+extern var ngx_http_core_module: ngx_module_t;
+pub inline fn ngz_http_loc_set_handler(
+    cf: [*c]ngx_conf_t,
+    handler: ngx.ngx_http_handler_pt,
+) void {
+    if (ngx_http_conf_get_module_loc_conf(cf, &ngx_http_core_module)) |cf0| {
+        if (castPtr(ngx.ngx_http_core_loc_conf_t, cf0)) |clcf| {
+            clcf.*.handler = handler;
+        }
+    }
 }

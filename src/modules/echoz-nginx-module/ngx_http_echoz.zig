@@ -13,19 +13,28 @@ const ngx_array_t = ngx.ngx_array_t;
 const ngx_module_t = ngx.ngx_module_t;
 const ngx_command_t = ngx.ngx_command_t;
 const ngx_http_module_t = ngx.ngx_http_module_t;
+const ngx_http_request_t = ngx.ngx_http_request_t;
 
 const ngx_string = ngx.ngx_string;
 
-const echoz_parameter = extern struct {
-    plain: ngx_str_t,
-    lengths: [*c]ngx_array_t = undefined,
-    values: [*c]ngx_array_t = undefined,
+const echoz_command_type = enum(ngx_int_t) {
+    echoz,
+    echozn,
 };
 
-extern var ngx_http_core_module: ngx_module_t;
+const echoz_parameter = extern struct {
+    plain: ngx_str_t,
+    lengths: [*c]ngx_array_t,
+    values: [*c]ngx_array_t,
+};
+
+const echoz_command = extern struct {
+    type: echoz_command_type,
+    params: ngx.NArray(echoz_parameter),
+};
 
 const loc_conf = extern struct {
-    params: ngx.NArray(echoz_parameter),
+    cmds: ngx.NArray(echoz_command),
 };
 
 fn postconfiguration(cf: [*c]ngx_conf_t) callconv(.C) ngx_int_t {
@@ -40,19 +49,28 @@ fn create_loc_conf(cf: [*c]ngx_conf_t) callconv(.C) ?*anyopaque {
     return null;
 }
 
+export fn ngx_http_echoz_handler(r: [*c]ngx_http_request_t) callconv(.C) ngx_int_t {
+    _ = r;
+    return NGX_OK;
+}
+
 fn ngx_conf_set_echoz(cf: [*c]ngx_conf_t, cmd: [*c]ngx_command_t, loc: ?*anyopaque) callconv(.C) [*c]u8 {
     _ = cmd;
     if (ngx.castPtr(loc_conf, loc)) |lccf| {
-        lccf.*.params = ngx.NArray(echoz_parameter).init(cf.*.pool, 1) catch return ngx.NGX_CONF_ERROR;
+        if (!lccf.*.cmds.inited()) {
+            lccf.*.cmds = ngx.NArray(echoz_command).init(cf.*.pool, 1) catch return ngx.NGX_CONF_ERROR;
+            ngx.ngz_http_loc_set_handler(cf, ngx_http_echoz_handler);
+        }
 
-        var i: ngx.ngx_uint_t = 0;
+        const echoz = lccf.*.cmds.append() catch return ngx.NGX_CONF_ERROR;
+        echoz.*.type = .echoz;
+        echoz.*.params = ngx.NArray(echoz_parameter).init(cf.*.pool, 1) catch return ngx.NGX_CONF_ERROR;
+        var i: ngx.ngx_uint_t = 1;
         while (ngx.ngx_array_next(ngx_str_t, cf.*.args, &i)) |arg| {
             ngx.ngx_http_conf_debug(cf, "%V", .{arg});
-            const param = lccf.*.params.append() catch return ngx.NGX_CONF_ERROR;
+            const param = echoz.*.params.append() catch return ngx.NGX_CONF_ERROR;
             param.*.plain = arg.*;
-            if (ngx.ngx_conf_variables_parse(cf, arg, &param.*.lengths, &param.*.values) == ngx.NGX_CONF_ERROR) {
-                return ngx.NGX_CONF_ERROR;
-            }
+            ngx.ngz_http_conf_variables_parse(cf, arg, &param.*.lengths, &param.*.values) catch return ngx.NGX_CONF_ERROR;
         }
     }
     return ngx.NGX_CONF_OK;
