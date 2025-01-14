@@ -4,7 +4,21 @@ const NGINX = "src/ngx/nginx.zig";
 
 var modules = [_][]const u8{
     "src/modules/echoz-nginx-module/ngx_http_echoz.zig",
-    NGINX,
+};
+
+var tests = [_][]const u8{
+    "src/ngx/ngx_buf.zig",
+    "src/ngx/ngx_log.zig",
+    "src/ngx/ngx_conf.zig",
+    "src/ngx/ngx_core.zig",
+    "src/ngx/ngx_hash.zig",
+    "src/ngx/ngx_http.zig",
+    "src/ngx/ngx_list.zig",
+    "src/ngx/ngx_queue.zig",
+    "src/ngx/ngx_array.zig",
+    "src/ngx/ngx_module.zig",
+    "src/ngx/ngx_rbtree.zig",
+    "src/ngx/ngx_string.zig",
 };
 
 const PN = struct {
@@ -46,9 +60,6 @@ pub fn build(b: *std.Build) void {
     });
 
     for (modules) |m| {
-        if (std.mem.eql(u8, m, NGINX)) {
-            continue;
-        }
         const pn = module_path(m);
         const o = b.addObject(.{
             .name = pn.n,
@@ -65,7 +76,7 @@ pub fn build(b: *std.Build) void {
     }
 
     const test_step = b.step("test", "Run unit tests");
-    for (modules) |case| {
+    for (tests) |case| {
         const t = b.addTest(.{
             .root_source_file = b.path(case),
             .target = target,
