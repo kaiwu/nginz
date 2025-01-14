@@ -1,7 +1,3 @@
-const std = @import("std");
-const ngx = @import("ngx.zig");
-const expectEqual = std.testing.expectEqual;
-
 pub const Deque = @import("deque.zig").Deque;
 
 pub const log = @import("ngx_log.zig");

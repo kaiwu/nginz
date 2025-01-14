@@ -3090,6 +3090,11 @@ pub const struct_ngx_log_s = extern struct {
     next: [*c]ngx_log_t = @import("std").mem.zeroes([*c]ngx_log_t),
 };
 pub const ngx_log_t = struct_ngx_log_s;
+const struct_ngx_file_flags_s = packed struct {
+    valid_info: bool,
+    directio: bool,
+    padding: u30,
+};
 pub const struct_ngx_file_s = extern struct {
     fd: ngx_fd_t = @import("std").mem.zeroes(ngx_fd_t),
     name: ngx_str_t = @import("std").mem.zeroes(ngx_str_t),
@@ -3097,13 +3102,23 @@ pub const struct_ngx_file_s = extern struct {
     offset: off_t = @import("std").mem.zeroes(off_t),
     sys_offset: off_t = @import("std").mem.zeroes(off_t),
     log: [*c]ngx_log_t = @import("std").mem.zeroes([*c]ngx_log_t),
-    flags: packed struct {
-        valid_info: bool,
-        directio: bool,
-        padding: u30,
-    } = @import("std").mem.zeroes(c_uint),
+    flags: struct_ngx_file_flags_s = @import("std").mem.zeroes(struct_ngx_file_flags_s),
 };
 pub const ngx_file_t = struct_ngx_file_s;
+const struct_ngx_buf_flags_s = packed struct {
+    temporary: bool,
+    memory: bool,
+    mmap: bool,
+    recycled: bool,
+    in_file: bool,
+    flush: bool,
+    sync: bool,
+    last_buf: bool,
+    last_in_chain: bool,
+    last_shadow: bool,
+    temp_file: bool,
+    padding: u21,
+};
 pub const struct_ngx_buf_s = extern struct {
     pos: [*c]u_char = @import("std").mem.zeroes([*c]u_char),
     last: [*c]u_char = @import("std").mem.zeroes([*c]u_char),
@@ -3114,20 +3129,7 @@ pub const struct_ngx_buf_s = extern struct {
     tag: ngx_buf_tag_t = @import("std").mem.zeroes(ngx_buf_tag_t),
     file: [*c]ngx_file_t = @import("std").mem.zeroes([*c]ngx_file_t),
     shadow: [*c]ngx_buf_t = @import("std").mem.zeroes([*c]ngx_buf_t),
-    flags: packed struct {
-        temporary: bool,
-        memory: bool,
-        mmap: bool,
-        recycled: bool,
-        in_file: bool,
-        flush: bool,
-        sync: bool,
-        last_buf: bool,
-        last_in_chain: bool,
-        last_shadow: bool,
-        temp_file: bool,
-        padding: u21,
-    } = @import("std").mem.zeroes(c_uint),
+    flags: struct_ngx_buf_flags_s = @import("std").mem.zeroes(struct_ngx_buf_flags_s),
     num: c_int = @import("std").mem.zeroes(c_int),
 };
 pub const ngx_buf_t = struct_ngx_buf_s;
@@ -3174,31 +3176,32 @@ pub const struct_ngx_queue_s = extern struct {
     next: [*c]ngx_queue_t = @import("std").mem.zeroes([*c]ngx_queue_t),
 };
 pub const ngx_queue_t = struct_ngx_queue_s;
+const struct_ngx_event_flags_s = packed struct {
+    write: bool,
+    accept: bool,
+    instance: bool,
+    active: bool,
+    disabled: bool,
+    ready: bool,
+    oneshot: bool,
+    complete: bool,
+    eof: bool,
+    @"error": bool,
+    timeout: bool,
+    timer_set: bool,
+    delayed: bool,
+    deferred_accept: bool,
+    pending_eof: bool,
+    posted: bool,
+    closed: bool,
+    channel: bool,
+    resovler: bool,
+    cancelable: bool,
+    padding: u12,
+};
 pub const struct_ngx_event_s = extern struct {
     data: ?*anyopaque = @import("std").mem.zeroes(?*anyopaque),
-    flags: packed struct {
-        write: bool,
-        accept: bool,
-        instance: bool,
-        active: bool,
-        disabled: bool,
-        ready: bool,
-        oneshot: bool,
-        complete: bool,
-        eof: bool,
-        @"error": bool,
-        timeout: bool,
-        timer_set: bool,
-        delayed: bool,
-        deferred_accept: bool,
-        pending_eof: bool,
-        posted: bool,
-        closed: bool,
-        channel: bool,
-        resovler: bool,
-        cancelable: bool,
-        padding: u12,
-    } = @import("std").mem.zeroes(c_uint),
+    flags: struct_ngx_event_flags_s = @import("std").mem.zeroes(struct_ngx_event_flags_s),
     available: c_int = @import("std").mem.zeroes(c_int),
     handler: ngx_event_handler_pt = @import("std").mem.zeroes(ngx_event_handler_pt),
     index: ngx_uint_t = @import("std").mem.zeroes(ngx_uint_t),
@@ -3220,6 +3223,28 @@ pub const struct_ngx_rbtree_s = extern struct {
     insert: ngx_rbtree_insert_pt = @import("std").mem.zeroes(ngx_rbtree_insert_pt),
 };
 pub const ngx_rbtree_t = struct_ngx_rbtree_s;
+const struct_ngx_listening_flags_s = packed struct {
+    open: bool,
+    remain: bool,
+    ignore: bool,
+    bound: bool,
+    inherited: bool,
+    nonblocking_accept: bool,
+    listen: bool,
+    nonblocking: bool,
+    shared: bool,
+    addr_ntop: bool,
+    wildcard: bool,
+    ipv6only: bool,
+    reuseport: bool,
+    add_reuseport: bool,
+    keepalive: u2,
+    quic: bool,
+    deferred_accept: bool,
+    delete_deferred: bool,
+    add_deferred: bool,
+    padding: u12,
+};
 pub const struct_ngx_listening_s = extern struct {
     fd: ngx_socket_t = @import("std").mem.zeroes(ngx_socket_t),
     sockaddr: [*c]struct_sockaddr = @import("std").mem.zeroes([*c]struct_sockaddr),
@@ -3244,28 +3269,7 @@ pub const struct_ngx_listening_s = extern struct {
     rbtree: ngx_rbtree_t = @import("std").mem.zeroes(ngx_rbtree_t),
     sentinel: ngx_rbtree_node_t = @import("std").mem.zeroes(ngx_rbtree_node_t),
     worker: ngx_uint_t = @import("std").mem.zeroes(ngx_uint_t),
-    flags: packed struct {
-        open: bool,
-        remain: bool,
-        ignore: bool,
-        bound: bool,
-        inherited: bool,
-        nonblocking_accept: bool,
-        listen: bool,
-        nonblocking: bool,
-        shared: bool,
-        addr_ntop: bool,
-        wildcard: bool,
-        ipv6only: bool,
-        reuseport: bool,
-        add_reuseport: bool,
-        keepalive: u2,
-        quic: bool,
-        deferred_accept: bool,
-        delete_deferred: bool,
-        add_deferred: bool,
-        padding: u12,
-    } = @import("std").mem.zeroes(c_uint),
+    flags: struct_ngx_listening_flags_s = @import("std").mem.zeroes(struct_ngx_listening_flags_s),
     fastopen: c_int = @import("std").mem.zeroes(c_int),
 };
 pub const ngx_listening_t = struct_ngx_listening_s;
@@ -3285,6 +3289,24 @@ pub const struct_ssl_session_st = opaque {};
 pub const SSL_SESSION = struct_ssl_session_st;
 pub const struct_ngx_ssl_ocsp_s = opaque {};
 pub const ngx_ssl_ocsp_t = struct_ngx_ssl_ocsp_s;
+const struct_ngx_ssl_connection_flags_s = packed struct {
+    handshaked: bool,
+    handshake_rejected: bool,
+    renegotiation: bool,
+    buffer: bool,
+    sendilfe: bool,
+    no_wait_shutdown: bool,
+    no_send_shutdown: bool,
+    shutdown_without_free: bool,
+    handshake_buffer_set: bool,
+    session_timeout_set: bool,
+    try_early_data: bool,
+    in_early: bool,
+    in_ocsp: bool,
+    early_preread: bool,
+    write_blocked: bool,
+    padding: u17,
+};
 pub const struct_ngx_ssl_connection_s = extern struct {
     connection: ?*SSL = @import("std").mem.zeroes(?*SSL),
     session_ctx: ?*SSL_CTX = @import("std").mem.zeroes(?*SSL_CTX),
@@ -3298,24 +3320,7 @@ pub const struct_ngx_ssl_connection_s = extern struct {
     saved_write_handler: ngx_event_handler_pt = @import("std").mem.zeroes(ngx_event_handler_pt),
     ocsp: ?*ngx_ssl_ocsp_t = @import("std").mem.zeroes(?*ngx_ssl_ocsp_t),
     early_buf: u_char = @import("std").mem.zeroes(u_char),
-    flags: packed struct {
-        handshaked: bool,
-        handshake_rejected: bool,
-        renegotiation: bool,
-        buffer: bool,
-        sendilfe: bool,
-        no_wait_shutdown: bool,
-        no_send_shutdown: bool,
-        shutdown_without_free: bool,
-        handshake_buffer_set: bool,
-        session_timeout_set: bool,
-        try_early_data: bool,
-        in_early: bool,
-        in_ocsp: bool,
-        early_preread: bool,
-        write_blocked: bool,
-        padding: u17,
-    } = @import("std").mem.zeroes(c_uint),
+    flags: struct_ngx_ssl_connection_flags_s = @import("std").mem.zeroes(struct_ngx_ssl_connection_flags_s),
 };
 pub const ngx_ssl_connection_t = struct_ngx_ssl_connection_s;
 pub const struct_ngx_udp_connection_s = extern struct {
@@ -3326,6 +3331,25 @@ pub const struct_ngx_udp_connection_s = extern struct {
 };
 pub const ngx_udp_connection_t = struct_ngx_udp_connection_s;
 pub const ngx_msec_t = ngx_rbtree_key_t;
+const struct_ngx_connection_flags_s = packed struct {
+    buffered: u8,
+    log_error: u3,
+    timedout: bool,
+    @"error": bool,
+    destroyed: bool,
+    pipeline: bool,
+    idle: bool,
+    resuable: bool,
+    close: bool,
+    shared: bool,
+    snedfile: bool,
+    sndlowat: bool,
+    tcp_nodelay: u2,
+    tcp_nopush: u2,
+    need_last_buf: bool,
+    need_flush_buf: bool,
+    padding: u5,
+};
 pub const struct_ngx_connection_s = extern struct {
     data: ?*anyopaque = @import("std").mem.zeroes(?*anyopaque),
     read: [*c]ngx_event_t = @import("std").mem.zeroes([*c]ngx_event_t),
@@ -3353,25 +3377,7 @@ pub const struct_ngx_connection_s = extern struct {
     number: ngx_atomic_uint_t = @import("std").mem.zeroes(ngx_atomic_uint_t),
     start_time: ngx_msec_t = @import("std").mem.zeroes(ngx_msec_t),
     requests: ngx_uint_t = @import("std").mem.zeroes(ngx_uint_t),
-    flags: packed struct {
-        buffered: u8,
-        log_error: u3,
-        timedout: bool,
-        @"error": bool,
-        destroyed: bool,
-        pipeline: bool,
-        idle: bool,
-        resuable: bool,
-        close: bool,
-        shared: bool,
-        snedfile: bool,
-        sndlowat: bool,
-        tcp_nodelay: u2,
-        tcp_nopush: u2,
-        need_last_buf: bool,
-        need_flush_buf: bool,
-        padding: u5,
-    } = @import("std").mem.zeroes(c_uint),
+    flags: struct_ngx_connection_flags_s = @import("std").mem.zeroes(struct_ngx_connection_flags_s),
 };
 pub const ngx_connection_t = struct_ngx_connection_s;
 pub const ngx_module_t = struct_ngx_module_s;
@@ -3519,14 +3525,15 @@ pub const ngx_keyval_t = extern struct {
     key: ngx_str_t = @import("std").mem.zeroes(ngx_str_t),
     value: ngx_str_t = @import("std").mem.zeroes(ngx_str_t),
 };
+const ngx_variable_value_flags_t = packed struct {
+    len: u28,
+    valid: bool,
+    no_cacheable: bool,
+    not_found: bool,
+    escape: bool,
+};
 pub const ngx_variable_value_t = extern struct {
-    flags: packed struct {
-        len: u28,
-        valid: bool,
-        no_cacheable: bool,
-        not_found: bool,
-        escape: bool,
-    } = @import("std").mem.zeroes(c_uint),
+    flags: ngx_variable_value_flags_t = @import("std").mem.zeroes(ngx_variable_value_flags_t),
     data: [*c]u_char = @import("std").mem.zeroes([*c]u_char),
 };
 pub extern fn ngx_strlow(dst: [*c]u_char, src: [*c]u_char, n: usize) void;
@@ -3597,15 +3604,16 @@ pub const ngx_file_mapping_t = extern struct {
     fd: ngx_fd_t = @import("std").mem.zeroes(ngx_fd_t),
     log: [*c]ngx_log_t = @import("std").mem.zeroes([*c]ngx_log_t),
 };
+const ngx_dir_flags_t = packed struct {
+    type: u8,
+    valid_info: bool,
+    padding: u23,
+};
 pub const ngx_dir_t = extern struct {
     dir: ?*DIR = @import("std").mem.zeroes(?*DIR),
     de: [*c]struct_dirent = @import("std").mem.zeroes([*c]struct_dirent),
     info: struct_stat = @import("std").mem.zeroes(struct_stat),
-    flags: packed struct {
-        type: u8,
-        valid_info: bool,
-        padding: u23,
-    } = @import("std").mem.zeroes(c_uint),
+    flags: ngx_dir_flags_t = @import("std").mem.zeroes(ngx_dir_flags_t),
 };
 pub const ngx_glob_t = extern struct {
     n: usize = @import("std").mem.zeroes(usize),
@@ -3658,6 +3666,14 @@ pub extern fn ngx_init_setproctitle(log: [*c]ngx_log_t) ngx_int_t;
 pub extern fn ngx_setproctitle(title: [*c]u8) void;
 pub const ngx_pid_t = pid_t;
 pub const ngx_spawn_proc_pt = ?*const fn ([*c]ngx_cycle_t, ?*anyopaque) callconv(.C) void;
+const ngx_process_flags_t = packed struct {
+    respawn: bool,
+    just_spawn: bool,
+    detached: bool,
+    exiting: bool,
+    exited: bool,
+    padding: u27,
+};
 pub const ngx_process_t = extern struct {
     pid: ngx_pid_t = @import("std").mem.zeroes(ngx_pid_t),
     status: c_int = @import("std").mem.zeroes(c_int),
@@ -3665,14 +3681,7 @@ pub const ngx_process_t = extern struct {
     proc: ngx_spawn_proc_pt = @import("std").mem.zeroes(ngx_spawn_proc_pt),
     data: ?*anyopaque = @import("std").mem.zeroes(?*anyopaque),
     name: [*c]u8 = @import("std").mem.zeroes([*c]u8),
-    flags: packed struct {
-        respawn: bool,
-        just_spawn: bool,
-        detached: bool,
-        exiting: bool,
-        exited: bool,
-        padding: u27,
-    } = @import("std").mem.zeroes(c_uint),
+    flags: ngx_process_flags_t = @import("std").mem.zeroes(ngx_process_flags_t),
 };
 pub const ngx_exec_ctx_t = extern struct {
     path: [*c]u8 = @import("std").mem.zeroes([*c]u8),
@@ -3756,20 +3765,21 @@ pub const ngx_bufs_t = extern struct {
     size: usize = @import("std").mem.zeroes(usize),
 };
 pub const ngx_output_chain_filter_pt = ?*const fn (?*anyopaque, [*c]ngx_chain_t) callconv(.C) ngx_int_t;
+const struct_ngx_output_chain_ctx_flags_s = packed struct {
+    sendfile: bool,
+    directio: bool,
+    unaligned: bool,
+    need_in_memory: bool,
+    need_in_temp: bool,
+    aio: bool,
+    padding: u26,
+};
 pub const struct_ngx_output_chain_ctx_s = extern struct {
     buf: [*c]ngx_buf_t = @import("std").mem.zeroes([*c]ngx_buf_t),
     in: [*c]ngx_chain_t = @import("std").mem.zeroes([*c]ngx_chain_t),
     free: [*c]ngx_chain_t = @import("std").mem.zeroes([*c]ngx_chain_t),
     busy: [*c]ngx_chain_t = @import("std").mem.zeroes([*c]ngx_chain_t),
-    flags: packed struct {
-        sendfile: bool,
-        directio: bool,
-        unaligned: bool,
-        need_in_memory: bool,
-        need_in_temp: bool,
-        aio: bool,
-        padding: u26,
-    } = @import("std").mem.zeroes(c_uint),
+    flags: struct_ngx_output_chain_ctx_flags_s = @import("std").mem.zeroes(struct_ngx_output_chain_ctx_flags_s),
     alignment: off_t = @import("std").mem.zeroes(off_t),
     pool: [*c]ngx_pool_t = @import("std").mem.zeroes([*c]ngx_pool_t),
     allocated: ngx_int_t = @import("std").mem.zeroes(ngx_int_t),
@@ -3946,6 +3956,13 @@ pub const ngx_path_init_t = extern struct {
     name: ngx_str_t = @import("std").mem.zeroes(ngx_str_t),
     level: [3]usize = @import("std").mem.zeroes([3]usize),
 };
+const ngx_temp_file_flags_t = packed struct {
+    log_level: u8,
+    persistent: bool,
+    clean: bool,
+    thread_write: bool,
+    padding: u21,
+};
 pub const ngx_temp_file_t = extern struct {
     file: ngx_file_t = @import("std").mem.zeroes(ngx_file_t),
     offset: off_t = @import("std").mem.zeroes(off_t),
@@ -3953,24 +3970,19 @@ pub const ngx_temp_file_t = extern struct {
     pool: [*c]ngx_pool_t = @import("std").mem.zeroes([*c]ngx_pool_t),
     warn: [*c]u8 = @import("std").mem.zeroes([*c]u8),
     access: ngx_uint_t = @import("std").mem.zeroes(ngx_uint_t),
-    flags: packed struct {
-        log_level: u8,
-        persistent: bool,
-        clean: bool,
-        thread_write: bool,
-        padding: u21,
-    } = @import("std").mem.zeroes(c_uint),
+    flags: ngx_temp_file_flags_t = @import("std").mem.zeroes(ngx_temp_file_flags_t),
+};
+const ngx_ext_rename_file_flags_t = packed struct {
+    create_path: bool,
+    delete_file: bool,
+    padding: u30,
 };
 pub const ngx_ext_rename_file_t = extern struct {
     access: ngx_uint_t = @import("std").mem.zeroes(ngx_uint_t),
     path_access: ngx_uint_t = @import("std").mem.zeroes(ngx_uint_t),
     time: time_t = @import("std").mem.zeroes(time_t),
     fd: ngx_fd_t = @import("std").mem.zeroes(ngx_fd_t),
-    flags: packed struct {
-        create_path: bool,
-        delete_file: bool,
-        padding: u30,
-    } = @import("std").mem.zeroes(c_uint),
+    flags: ngx_ext_rename_file_flags_t = @import("std").mem.zeroes(ngx_ext_rename_file_flags_t),
     log: [*c]ngx_log_t = @import("std").mem.zeroes([*c]ngx_log_t),
 };
 pub const ngx_copy_file_t = extern struct {
@@ -4620,6 +4632,10 @@ pub const ngx_slab_stat_t = extern struct {
     reqs: ngx_uint_t = @import("std").mem.zeroes(ngx_uint_t),
     fails: ngx_uint_t = @import("std").mem.zeroes(ngx_uint_t),
 };
+const ngx_slab_pool_flags_t = packed struct {
+    log_nomem: bool,
+    padding: u31,
+};
 pub const ngx_slab_pool_t = extern struct {
     lock: ngx_shmtx_sh_t = @import("std").mem.zeroes(ngx_shmtx_sh_t),
     min_size: usize = @import("std").mem.zeroes(usize),
@@ -4634,10 +4650,7 @@ pub const ngx_slab_pool_t = extern struct {
     mutex: ngx_shmtx_t = @import("std").mem.zeroes(ngx_shmtx_t),
     log_ctx: [*c]u_char = @import("std").mem.zeroes([*c]u_char),
     zero: u_char = @import("std").mem.zeroes(u_char),
-    flags: packed struct {
-        log_nomem: bool,
-        padding: u31,
-    } = @import("std").mem.zeroes(c_uint),
+    flags: ngx_slab_pool_flags_t = @import("std").mem.zeroes(ngx_slab_pool_flags_t),
     data: ?*anyopaque = @import("std").mem.zeroes(?*anyopaque),
     addr: ?*anyopaque = @import("std").mem.zeroes(?*anyopaque),
 };
@@ -4676,6 +4689,14 @@ pub const ngx_addr_t = extern struct {
     socklen: socklen_t = @import("std").mem.zeroes(socklen_t),
     name: ngx_str_t = @import("std").mem.zeroes(ngx_str_t),
 };
+const ngx_url_flags_t = packed struct {
+    listen: bool,
+    uri_part: bool,
+    no_resolve: bool,
+    no_port: bool,
+    wildcard: bool,
+    padding: u27,
+};
 pub const ngx_url_t = extern struct {
     url: ngx_str_t = @import("std").mem.zeroes(ngx_str_t),
     host: ngx_str_t = @import("std").mem.zeroes(ngx_str_t),
@@ -4685,14 +4706,7 @@ pub const ngx_url_t = extern struct {
     default_port: in_port_t = @import("std").mem.zeroes(in_port_t),
     last_port: in_port_t = @import("std").mem.zeroes(in_port_t),
     family: c_int = @import("std").mem.zeroes(c_int),
-    flags: packed struct {
-        listen: bool,
-        uri_part: bool,
-        no_resolve: bool,
-        no_port: bool,
-        wildcard: bool,
-        padding: u27,
-    } = @import("std").mem.zeroes(c_uint),
+    flags: ngx_url_flags_t = @import("std").mem.zeroes(ngx_url_flags_t),
     socklen: socklen_t = @import("std").mem.zeroes(socklen_t),
     sockaddr: ngx_sockaddr_t = @import("std").mem.zeroes(ngx_sockaddr_t),
     addrs: [*c]ngx_addr_t = @import("std").mem.zeroes([*c]ngx_addr_t),
@@ -4764,6 +4778,11 @@ pub extern var ngx_core_module: ngx_module_t;
 pub extern var ngx_test_config: ngx_uint_t;
 pub extern var ngx_dump_config: ngx_uint_t;
 pub extern var ngx_quiet_mode: ngx_uint_t;
+const struct_ngx_resolver_flags_s = packed struct {
+    ipv4: bool,
+    ipv6: bool,
+    padding: u30,
+};
 pub const struct_ngx_resolver_s = extern struct {
     event: [*c]ngx_event_t = @import("std").mem.zeroes([*c]ngx_event_t),
     dummy: ?*anyopaque = @import("std").mem.zeroes(?*anyopaque),
@@ -4783,11 +4802,7 @@ pub const struct_ngx_resolver_s = extern struct {
     name_expire_queue: ngx_queue_t = @import("std").mem.zeroes(ngx_queue_t),
     srv_expire_queue: ngx_queue_t = @import("std").mem.zeroes(ngx_queue_t),
     addr_expire_queue: ngx_queue_t = @import("std").mem.zeroes(ngx_queue_t),
-    flags: packed struct {
-        ipv4: bool,
-        ipv6: bool,
-        padding: u30,
-    } = @import("std").mem.zeroes(c_uint),
+    flags: struct_ngx_resolver_flags_s = @import("std").mem.zeroes(struct_ngx_resolver_flags_s),
     addr6_rbtree: ngx_rbtree_t = @import("std").mem.zeroes(ngx_rbtree_t),
     addr6_sentinel: ngx_rbtree_node_t = @import("std").mem.zeroes(ngx_rbtree_node_t),
     addr6_resend_queue: ngx_queue_t = @import("std").mem.zeroes(ngx_queue_t),
@@ -4812,6 +4827,12 @@ pub const ngx_resolver_connection_t = extern struct {
 };
 pub const ngx_resolver_ctx_t = struct_ngx_resolver_ctx_s;
 pub const ngx_resolver_handler_pt = ?*const fn ([*c]ngx_resolver_ctx_t) callconv(.C) void;
+const struct_ngx_resolver_ctx_flags_s = packed struct {
+    quick: bool,
+    @"async": bool,
+    cancelable: bool,
+    padding: u29,
+};
 pub const struct_ngx_resolver_ctx_s = extern struct {
     next: [*c]ngx_resolver_ctx_t = @import("std").mem.zeroes([*c]ngx_resolver_ctx_t),
     resolver: [*c]ngx_resolver_t = @import("std").mem.zeroes([*c]ngx_resolver_t),
@@ -4831,12 +4852,7 @@ pub const struct_ngx_resolver_ctx_s = extern struct {
     handler: ngx_resolver_handler_pt = @import("std").mem.zeroes(ngx_resolver_handler_pt),
     data: ?*anyopaque = @import("std").mem.zeroes(?*anyopaque),
     timeout: ngx_msec_t = @import("std").mem.zeroes(ngx_msec_t),
-    flags: packed struct {
-        quick: bool,
-        @"async": bool,
-        cancelable: bool,
-        padding: u29,
-    } = @import("std").mem.zeroes(c_uint),
+    flags: struct_ngx_resolver_ctx_flags_s = @import("std").mem.zeroes(struct_ngx_resolver_ctx_flags_s),
     recursion: ngx_uint_t = @import("std").mem.zeroes(ngx_uint_t),
     event: [*c]ngx_event_t = @import("std").mem.zeroes([*c]ngx_event_t),
 };
@@ -4873,6 +4889,11 @@ const union_unnamed_83 = extern union {
     addr6: struct_in6_addr,
     addrs6: [*c]struct_in6_addr,
 };
+const ngx_resolver_node_flags_t = packed struct {
+    tcp: bool,
+    tcp6: bool,
+    padding: u30,
+};
 pub const ngx_resolver_node_t = extern struct {
     node: ngx_rbtree_node_t = @import("std").mem.zeroes(ngx_rbtree_node_t),
     queue: ngx_queue_t = @import("std").mem.zeroes(ngx_queue_t),
@@ -4892,11 +4913,7 @@ pub const ngx_resolver_node_t = extern struct {
     expire: time_t = @import("std").mem.zeroes(time_t),
     valid: time_t = @import("std").mem.zeroes(time_t),
     ttl: u32 = @import("std").mem.zeroes(u32),
-    flags: packed struct {
-        tcp: bool,
-        tcp6: bool,
-        padding: u30,
-    } = @import("std").mem.zeroes(c_uint),
+    flags: ngx_resolver_node_flags_t = @import("std").mem.zeroes(ngx_resolver_node_flags_t),
     last_connection: ngx_uint_t = @import("std").mem.zeroes(ngx_uint_t),
     waiting: [*c]ngx_resolver_ctx_t = @import("std").mem.zeroes([*c]ngx_resolver_ctx_t),
 };
@@ -15151,16 +15168,17 @@ pub const struct_ngx_ssl_sess_id_s = extern struct {
     session: [*c]u_char = @import("std").mem.zeroes([*c]u_char),
 };
 pub const ngx_ssl_sess_id_t = struct_ngx_ssl_sess_id_s;
+const ngx_ssl_ticket_key_flags_t = packed struct {
+    size: u8,
+    shared: bool,
+    padding: u23,
+};
 pub const ngx_ssl_ticket_key_t = extern struct {
     name: [16]u_char = @import("std").mem.zeroes([16]u_char),
     hmac_key: [32]u_char = @import("std").mem.zeroes([32]u_char),
     aes_key: [32]u_char = @import("std").mem.zeroes([32]u_char),
     expire: time_t = @import("std").mem.zeroes(time_t),
-    flags: packed struct {
-        size: u8,
-        shared: bool,
-        padding: u23,
-    } = @import("std").mem.zeroes(c_uint),
+    flags: ngx_ssl_ticket_key_flags_t = @import("std").mem.zeroes(ngx_ssl_ticket_key_flags_t),
 };
 pub const ngx_ssl_session_cache_t = extern struct {
     session_rbtree: ngx_rbtree_t = @import("std").mem.zeroes(ngx_rbtree_t),
@@ -15335,6 +15353,20 @@ pub extern var ngx_max_module: ngx_uint_t;
 pub const ngx_module_names: [*c][*c]u8 = @extern([*c][*c]u8, .{
     .name = "ngx_module_names",
 });
+const ngx_open_file_info_flags_t = packed struct {
+    disable_symlinks: u2,
+    test_dir: bool,
+    test_only: bool,
+    log: bool,
+    errors: bool,
+    events: bool,
+    is_dir: bool,
+    is_file: bool,
+    is_link: bool,
+    is_exec: bool,
+    is_directio: bool,
+    padding: u20,
+};
 pub const ngx_open_file_info_t = extern struct {
     fd: ngx_fd_t = @import("std").mem.zeroes(ngx_fd_t),
     uniq: ngx_file_uniq_t = @import("std").mem.zeroes(ngx_file_uniq_t),
@@ -15348,20 +15380,19 @@ pub const ngx_open_file_info_t = extern struct {
     valid: time_t = @import("std").mem.zeroes(time_t),
     min_uses: ngx_uint_t = @import("std").mem.zeroes(ngx_uint_t),
     disable_symlinks_from: usize = @import("std").mem.zeroes(usize),
-    flags: packed struct {
-        disable_symlinks: u2,
-        test_dir: bool,
-        test_only: bool,
-        log: bool,
-        errors: bool,
-        events: bool,
-        is_dir: bool,
-        is_file: bool,
-        is_link: bool,
-        is_exec: bool,
-        is_directio: bool,
-        padding: u20,
-    } = @import("std").mem.zeroes(c_uint),
+    flags: ngx_open_file_info_flags_t = @import("std").mem.zeroes(ngx_open_file_info_flags_t),
+};
+const struct_ngx_cached_open_file_flags_s = packed struct {
+    disable_symlinks: u2,
+    count: u24,
+    close: bool,
+    use_event: bool,
+    is_dir: bool,
+    is_file: bool,
+    is_link: bool,
+    is_exec: bool,
+    is_directio: bool,
+    padding: u31,
 };
 pub const struct_ngx_cached_open_file_s = extern struct {
     node: ngx_rbtree_node_t = @import("std").mem.zeroes(ngx_rbtree_node_t),
@@ -15376,19 +15407,7 @@ pub const struct_ngx_cached_open_file_s = extern struct {
     err: ngx_err_t = @import("std").mem.zeroes(ngx_err_t),
     uses: u32 = @import("std").mem.zeroes(u32),
     disable_symlinks_from: usize = @import("std").mem.zeroes(usize),
-    flags: packed struct {
-        disable_symlinks: u2,
-        count: u24,
-        close: bool,
-        use_event: bool,
-        is_dir: bool,
-        is_file: bool,
-        is_link: bool,
-        is_exec: bool,
-        is_directio: bool,
-        padding: u31,
-    } = @import("std").mem.zeroes(c_ulong),
-
+    flags: struct_ngx_cached_open_file_flags_s = @import("std").mem.zeroes(struct_ngx_cached_open_file_flags_s),
     event: [*c]ngx_event_t = @import("std").mem.zeroes([*c]ngx_event_t),
 };
 pub const ngx_cached_open_file_t = struct_ngx_cached_open_file_s;
@@ -15482,6 +15501,11 @@ pub extern fn ngx_connection_error(c: [*c]ngx_connection_t, err: ngx_err_t, text
 pub extern fn ngx_get_connection(s: ngx_socket_t, log: [*c]ngx_log_t) [*c]ngx_connection_t;
 pub extern fn ngx_free_connection(c: [*c]ngx_connection_t) void;
 pub extern fn ngx_reusable_connection(c: [*c]ngx_connection_t, reusable: ngx_uint_t) void;
+const ngx_syslog_peer_flags_t = packed struct {
+    busy: bool,
+    nohostname: bool,
+    padding: u30,
+};
 pub const ngx_syslog_peer_t = extern struct {
     facility: ngx_uint_t = @import("std").mem.zeroes(ngx_uint_t),
     severity: ngx_uint_t = @import("std").mem.zeroes(ngx_uint_t),
@@ -15491,11 +15515,7 @@ pub const ngx_syslog_peer_t = extern struct {
     conn: ngx_connection_t = @import("std").mem.zeroes(ngx_connection_t),
     log: ngx_log_t = @import("std").mem.zeroes(ngx_log_t),
     logp: [*c]ngx_log_t = @import("std").mem.zeroes([*c]ngx_log_t),
-    flags: packed struct {
-        busy: bool,
-        nohostname: bool,
-        padding: u30,
-    } = @import("std").mem.zeroes(c_uint),
+    flags: ngx_syslog_peer_flags_t = @import("std").mem.zeroes(ngx_syslog_peer_flags_t),
 };
 pub extern fn ngx_syslog_process_conf(cf: [*c]ngx_conf_t, peer: [*c]ngx_syslog_peer_t) [*c]u8;
 pub extern fn ngx_syslog_add_header(peer: [*c]ngx_syslog_peer_t, buf: [*c]u_char) [*c]u_char;
@@ -17127,6 +17147,22 @@ pub const struct_ngx_http_file_cache_s = extern struct {
     use_temp_path: ngx_uint_t = @import("std").mem.zeroes(ngx_uint_t),
 };
 pub const ngx_http_file_cache_t = struct_ngx_http_file_cache_s;
+const struct_ngx_http_cache_flags_s = packed struct {
+    lock: bool,
+    waiting: bool,
+    updated: bool,
+    updating: bool,
+    exists: bool,
+    temp_file: bool,
+    purged: bool,
+    reading: bool,
+    secondary: bool,
+    update_variant: bool,
+    background: bool,
+    stale_updating: bool,
+    stale_error: bool,
+    padding: u19,
+};
 pub const struct_ngx_http_cache_s = extern struct {
     file: ngx_file_t = @import("std").mem.zeroes(ngx_file_t),
     keys: ngx_array_t = @import("std").mem.zeroes(ngx_array_t),
@@ -17159,22 +17195,7 @@ pub const struct_ngx_http_cache_s = extern struct {
     lock_time: ngx_msec_t = @import("std").mem.zeroes(ngx_msec_t),
     wait_time: ngx_msec_t = @import("std").mem.zeroes(ngx_msec_t),
     wait_event: ngx_event_t = @import("std").mem.zeroes(ngx_event_t),
-    flags: packed struct {
-        lock: bool,
-        waiting: bool,
-        updated: bool,
-        updating: bool,
-        exists: bool,
-        temp_file: bool,
-        purged: bool,
-        reading: bool,
-        secondary: bool,
-        update_variant: bool,
-        background: bool,
-        stale_updating: bool,
-        stale_error: bool,
-        padding: u19,
-    } = @import("std").mem.zeroes(c_uint),
+    flags: struct_ngx_http_cache_flags_s = @import("std").mem.zeroes(struct_ngx_http_cache_flags_s),
 };
 pub const ngx_http_cache_t = struct_ngx_http_cache_s;
 pub const ngx_http_upstream_handler_pt = ?*const fn ([*c]ngx_http_request_t, [*c]ngx_http_upstream_t) callconv(.C) void;
@@ -17183,6 +17204,14 @@ pub const ngx_event_free_peer_pt = ?*const fn ([*c]ngx_peer_connection_t, ?*anyo
 pub const ngx_event_notify_peer_pt = ?*const fn ([*c]ngx_peer_connection_t, ?*anyopaque, ngx_uint_t) callconv(.C) void;
 pub const ngx_event_set_peer_session_pt = ?*const fn ([*c]ngx_peer_connection_t, ?*anyopaque) callconv(.C) ngx_int_t;
 pub const ngx_event_save_peer_session_pt = ?*const fn ([*c]ngx_peer_connection_t, ?*anyopaque) callconv(.C) void;
+const struct_ngx_peer_connection_flags_s = packed struct {
+    cached: bool,
+    transparent: bool,
+    so_keepalive: bool,
+    down: bool,
+    log_error: u2,
+    padding: u26,
+};
 pub const struct_ngx_peer_connection_s = extern struct {
     connection: [*c]ngx_connection_t = @import("std").mem.zeroes([*c]ngx_connection_t),
     sockaddr: [*c]struct_sockaddr = @import("std").mem.zeroes([*c]struct_sockaddr),
@@ -17200,18 +17229,26 @@ pub const struct_ngx_peer_connection_s = extern struct {
     type: c_int = @import("std").mem.zeroes(c_int),
     rcvbuf: c_int = @import("std").mem.zeroes(c_int),
     log: [*c]ngx_log_t = @import("std").mem.zeroes([*c]ngx_log_t),
-    flags: packed struct {
-        cached: bool,
-        transparent: bool,
-        so_keepalive: bool,
-        down: bool,
-        log_error: u2,
-        padding: u26,
-    } = @import("std").mem.zeroes(c_uint),
+    flags: struct_ngx_peer_connection_flags_s = @import("std").mem.zeroes(struct_ngx_peer_connection_flags_s),
 };
 pub const ngx_peer_connection_t = struct_ngx_peer_connection_s;
 pub const ngx_event_pipe_input_filter_pt = ?*const fn ([*c]ngx_event_pipe_t, [*c]ngx_buf_t) callconv(.C) ngx_int_t;
 pub const ngx_event_pipe_output_filter_pt = ?*const fn (?*anyopaque, [*c]ngx_chain_t) callconv(.C) ngx_int_t;
+const struct_ngx_event_pipe_flags_s = packed struct {
+    read: bool,
+    cacheable: bool,
+    single_buf: bool,
+    free_bufs: bool,
+    upstream_done: bool,
+    upstream_error: bool,
+    upstream_eof: bool,
+    upstream_blocked: bool,
+    downstream_done: bool,
+    downstream_error: bool,
+    cyclic_temp_file: bool,
+    aio: bool,
+    padding: u20,
+};
 pub const struct_ngx_event_pipe_s = extern struct {
     upstream: [*c]ngx_connection_t = @import("std").mem.zeroes([*c]ngx_connection_t),
     downstream: [*c]ngx_connection_t = @import("std").mem.zeroes([*c]ngx_connection_t),
@@ -17226,21 +17263,7 @@ pub const struct_ngx_event_pipe_s = extern struct {
     input_ctx: ?*anyopaque = @import("std").mem.zeroes(?*anyopaque),
     output_filter: ngx_event_pipe_output_filter_pt = @import("std").mem.zeroes(ngx_event_pipe_output_filter_pt),
     output_ctx: ?*anyopaque = @import("std").mem.zeroes(?*anyopaque),
-    flags: packed struct {
-        read: bool,
-        cacheable: bool,
-        single_buf: bool,
-        free_bufs: bool,
-        upstream_done: bool,
-        upstream_error: bool,
-        upstream_eof: bool,
-        upstream_blocked: bool,
-        downstream_done: bool,
-        downstream_error: bool,
-        cyclic_temp_file: bool,
-        aio: bool,
-        padding: u20,
-    } = @import("std").mem.zeroes(c_uint),
+    flags: struct_ngx_event_pipe_flags_s = @import("std").mem.zeroes(struct_ngx_event_pipe_flags_s),
     allocated: ngx_int_t = @import("std").mem.zeroes(ngx_int_t),
     bufs: ngx_bufs_t = @import("std").mem.zeroes(ngx_bufs_t),
     tag: ngx_buf_tag_t = @import("std").mem.zeroes(ngx_buf_tag_t),
@@ -17279,6 +17302,22 @@ pub const struct_ngx_http_upstream_srv_conf_s = extern struct {
 };
 pub const ngx_http_upstream_srv_conf_t = struct_ngx_http_upstream_srv_conf_s;
 pub const ngx_http_cleanup_pt = ?*const fn (?*anyopaque) callconv(.C) void;
+const struct_ngx_http_upstream_flags_s = packed struct {
+    store: bool,
+    cacheable: bool,
+    accel: bool,
+    ssl: bool,
+    cache_status: u3,
+    buffering: bool,
+    keepalive: bool,
+    upgrade: bool,
+    @"error": bool,
+    request_sent: bool,
+    request_body_sent: bool,
+    request_body_blocked: bool,
+    header_sent: bool,
+    padding: u17,
+};
 pub const struct_ngx_http_upstream_s = extern struct {
     read_event_handler: ngx_http_upstream_handler_pt = @import("std").mem.zeroes(ngx_http_upstream_handler_pt),
     write_event_handler: ngx_http_upstream_handler_pt = @import("std").mem.zeroes(ngx_http_upstream_handler_pt),
@@ -17316,22 +17355,7 @@ pub const struct_ngx_http_upstream_s = extern struct {
     uri: ngx_str_t = @import("std").mem.zeroes(ngx_str_t),
     ssl_name: ngx_str_t = @import("std").mem.zeroes(ngx_str_t),
     cleanup: [*c]ngx_http_cleanup_pt = @import("std").mem.zeroes([*c]ngx_http_cleanup_pt),
-    flags: packed struct {
-        store: bool,
-        cacheable: bool,
-        accel: bool,
-        ssl: bool,
-        cache_status: u3,
-        buffering: bool,
-        keepalive: bool,
-        upgrade: bool,
-        @"error": bool,
-        request_sent: bool,
-        request_body_sent: bool,
-        request_body_blocked: bool,
-        header_sent: bool,
-        padding: u17,
-    } = @import("std").mem.zeroes(c_uint),
+    flags: struct_ngx_http_upstream_flags_s = @import("std").mem.zeroes(struct_ngx_http_upstream_flags_s),
 };
 pub const ngx_http_upstream_t = struct_ngx_http_upstream_s;
 pub const struct_ngx_http_postponed_request_s = extern struct {
@@ -17608,6 +17632,20 @@ pub const ngx_http_header_out_t = extern struct {
     name: ngx_str_t = @import("std").mem.zeroes(ngx_str_t),
     offset: ngx_uint_t = @import("std").mem.zeroes(ngx_uint_t),
 };
+const ngx_http_headers_in_flags_t = packed struct {
+    connection_type: u2,
+    chunked: bool,
+    multi: bool,
+    multi_linked: bool,
+    msie: bool,
+    msie6: bool,
+    opera: bool,
+    gecko: bool,
+    chrome: bool,
+    safari: bool,
+    konqueror: bool,
+    padding: u20,
+};
 pub const ngx_http_headers_in_t = extern struct {
     headers: ngx_list_t = @import("std").mem.zeroes(ngx_list_t),
     host: [*c]ngx_table_elt_t = @import("std").mem.zeroes([*c]ngx_table_elt_t),
@@ -17638,20 +17676,7 @@ pub const ngx_http_headers_in_t = extern struct {
     server: ngx_str_t = @import("std").mem.zeroes(ngx_str_t),
     content_length_n: off_t = @import("std").mem.zeroes(off_t),
     keep_alive_n: time_t = @import("std").mem.zeroes(time_t),
-    flags: packed struct {
-        connection_type: u2,
-        chunked: bool,
-        multi: bool,
-        multi_linked: bool,
-        msie: bool,
-        msie6: bool,
-        opera: bool,
-        gecko: bool,
-        chrome: bool,
-        safari: bool,
-        konqueror: bool,
-        padding: u20,
-    } = @import("std").mem.zeroes(c_uint),
+    flags: ngx_http_headers_in_flags_t = @import("std").mem.zeroes(ngx_http_headers_in_flags_t),
 };
 pub const ngx_http_headers_out_t = extern struct {
     headers: ngx_list_t = @import("std").mem.zeroes(ngx_list_t),
@@ -17684,6 +17709,12 @@ pub const ngx_http_headers_out_t = extern struct {
     last_modified_time: time_t = @import("std").mem.zeroes(time_t),
 };
 pub const ngx_http_client_body_handler_pt = ?*const fn ([*c]ngx_http_request_t) callconv(.C) void;
+const ngx_http_request_body_flags_t = packed struct {
+    filter_need_buffering: bool,
+    last_sent: bool,
+    last_saved: bool,
+    padding: u29,
+};
 pub const ngx_http_request_body_t = extern struct {
     temp_file: [*c]ngx_temp_file_t = @import("std").mem.zeroes([*c]ngx_temp_file_t),
     bufs: [*c]ngx_chain_t = @import("std").mem.zeroes([*c]ngx_chain_t),
@@ -17694,25 +17725,26 @@ pub const ngx_http_request_body_t = extern struct {
     busy: [*c]ngx_chain_t = @import("std").mem.zeroes([*c]ngx_chain_t),
     chunked: [*c]ngx_http_chunked_t = @import("std").mem.zeroes([*c]ngx_http_chunked_t),
     post_handler: ngx_http_client_body_handler_pt = @import("std").mem.zeroes(ngx_http_client_body_handler_pt),
-    flags: packed struct {
-        filter_need_buffering: bool,
-        last_sent: bool,
-        last_saved: bool,
-        padding: u29,
-    } = @import("std").mem.zeroes(c_uint),
+    flags: ngx_http_request_body_flags_t = @import("std").mem.zeroes(ngx_http_request_body_flags_t),
+};
+const struct_ngx_http_addr_conf_flags_s = packed struct {
+    ssl: bool,
+    http2: bool,
+    quic: bool,
+    proxy_protocol: bool,
+    padding: u28,
 };
 pub const struct_ngx_http_addr_conf_s = extern struct {
     default_server: [*c]ngx_http_core_srv_conf_t = @import("std").mem.zeroes([*c]ngx_http_core_srv_conf_t),
     virtual_names: [*c]ngx_http_virtual_names_t = @import("std").mem.zeroes([*c]ngx_http_virtual_names_t),
-    flags: packed struct {
-        ssl: bool,
-        http2: bool,
-        quic: bool,
-        proxy_protocol: bool,
-        padding: u28,
-    } = @import("std").mem.zeroes(c_uint),
+    flags: struct_ngx_http_addr_conf_flags_s = @import("std").mem.zeroes(struct_ngx_http_addr_conf_flags_s),
 };
 pub const ngx_http_addr_conf_t = struct_ngx_http_addr_conf_s;
+const ngx_http_connection_flags_t = packed struct {
+    ssl: bool,
+    proxy_protocol: bool,
+    padding: u30,
+};
 pub const ngx_http_connection_t = extern struct {
     addr_conf: [*c]ngx_http_addr_conf_t = @import("std").mem.zeroes([*c]ngx_http_addr_conf_t),
     conf_ctx: [*c]ngx_http_conf_ctx_t = @import("std").mem.zeroes([*c]ngx_http_conf_ctx_t),
@@ -17721,11 +17753,7 @@ pub const ngx_http_connection_t = extern struct {
     busy: [*c]ngx_chain_t = @import("std").mem.zeroes([*c]ngx_chain_t),
     nbusy: ngx_int_t = @import("std").mem.zeroes(ngx_int_t),
     free: [*c]ngx_chain_t = @import("std").mem.zeroes([*c]ngx_chain_t),
-    flags: packed struct {
-        ssl: bool,
-        proxy_protocol: bool,
-        padding: u30,
-    } = @import("std").mem.zeroes(c_uint),
+    flags: ngx_http_connection_flags_t = @import("std").mem.zeroes(ngx_http_connection_flags_t),
 };
 pub const ngx_http_post_subrequest_pt = ?*const fn ([*c]ngx_http_request_t, ?*anyopaque, ngx_int_t) callconv(.C) ngx_int_t;
 pub const ngx_http_post_subrequest_t = extern struct {
@@ -17741,6 +17769,14 @@ pub const ngx_http_headers_in: [*c]ngx_http_header_t = @extern([*c]ngx_http_head
 pub const ngx_http_headers_out: [*c]ngx_http_header_out_t = @extern([*c]ngx_http_header_out_t, .{
     .name = "ngx_http_headers_out",
 });
+const ngx_http_script_engine_flags_t = packed struct {
+    flushed: bool,
+    skip: bool,
+    quote: bool,
+    is_args: bool,
+    log: bool,
+    padding: u27,
+};
 pub const ngx_http_script_engine_t = extern struct {
     ip: [*c]u_char = @import("std").mem.zeroes([*c]u_char),
     pos: [*c]u_char = @import("std").mem.zeroes([*c]u_char),
@@ -17748,19 +17784,12 @@ pub const ngx_http_script_engine_t = extern struct {
     buf: ngx_str_t = @import("std").mem.zeroes(ngx_str_t),
     line: ngx_str_t = @import("std").mem.zeroes(ngx_str_t),
     args: [*c]u_char = @import("std").mem.zeroes([*c]u_char),
-    flags: packed struct {
-        flushed: bool,
-        skip: bool,
-        quote: bool,
-        is_args: bool,
-        log: bool,
-        padding: u27,
-    } = @import("std").mem.zeroes(c_uint),
+    flags: ngx_http_script_engine_flags_t = @import("std").mem.zeroes(ngx_http_script_engine_flags_t),
     status: ngx_int_t = @import("std").mem.zeroes(ngx_int_t),
     request: [*c]ngx_http_request_t = @import("std").mem.zeroes([*c]ngx_http_request_t),
 };
 
-const ngx_http_script_compile_flag_t = packed struct {
+const ngx_http_script_compile_flags_t = packed struct {
     compile_args: bool,
     complete_lengths: bool,
     complete_values: bool,
@@ -17782,7 +17811,7 @@ pub const ngx_http_script_compile_t = extern struct {
     captures_mask: ngx_uint_t = @import("std").mem.zeroes(ngx_uint_t),
     size: ngx_uint_t = @import("std").mem.zeroes(ngx_uint_t),
     main: ?*anyopaque = @import("std").mem.zeroes(?*anyopaque),
-    flags: ngx_http_script_compile_flag_t = @import("std").mem.zeroes(ngx_http_script_compile_flag_t),
+    flags: ngx_http_script_compile_flags_t = @import("std").mem.zeroes(ngx_http_script_compile_flags_t),
 };
 const union_unnamed_259 = extern union {
     size: usize,
@@ -17794,16 +17823,17 @@ pub const ngx_http_complex_value_t = extern struct {
     values: ?*anyopaque = @import("std").mem.zeroes(?*anyopaque),
     u: union_unnamed_259 = @import("std").mem.zeroes(union_unnamed_259),
 };
+const ngx_http_compile_complex_value_flags_t = packed struct {
+    zero: bool,
+    conf_prefix: bool,
+    root_prefix: bool,
+    padding: u29,
+};
 pub const ngx_http_compile_complex_value_t = extern struct {
     cf: [*c]ngx_conf_t = @import("std").mem.zeroes([*c]ngx_conf_t),
     value: [*c]ngx_str_t = @import("std").mem.zeroes([*c]ngx_str_t),
     complex_value: [*c]ngx_http_complex_value_t = @import("std").mem.zeroes([*c]ngx_http_complex_value_t),
-    flags: packed struct {
-        zero: bool,
-        conf_prefix: bool,
-        root_prefix: bool,
-        padding: u29,
-    } = @import("std").mem.zeroes(c_uint),
+    flags: ngx_http_compile_complex_value_flags_t = @import("std").mem.zeroes(ngx_http_compile_complex_value_flags_t),
 };
 pub const ngx_http_script_code_pt = ?*const fn ([*c]ngx_http_script_engine_t) callconv(.C) void;
 pub const ngx_http_script_len_code_pt = ?*const fn ([*c]ngx_http_script_engine_t) callconv(.C) usize;
@@ -17824,6 +17854,16 @@ pub const ngx_http_script_copy_capture_code_t = extern struct {
     code: ngx_http_script_code_pt = @import("std").mem.zeroes(ngx_http_script_code_pt),
     n: usize = @import("std").mem.zeroes(usize),
 };
+const ngx_http_script_regex_code_flags_t = packed struct {
+    @"test": bool,
+    negative_test: bool,
+    uri: bool,
+    args: bool,
+    add_args: bool,
+    redirect: bool,
+    break_cycle: bool,
+    padding: u25,
+};
 pub const ngx_http_script_regex_code_t = extern struct {
     code: ngx_http_script_code_pt = @import("std").mem.zeroes(ngx_http_script_code_pt),
     regex: [*c]ngx_http_regex_t = @import("std").mem.zeroes([*c]ngx_http_regex_t),
@@ -17831,27 +17871,19 @@ pub const ngx_http_script_regex_code_t = extern struct {
     size: usize = @import("std").mem.zeroes(usize),
     status: usize = @import("std").mem.zeroes(usize),
     next: usize = @import("std").mem.zeroes(usize),
-    flags: packed struct {
-        @"test": bool,
-        negative_test: bool,
-        uri: bool,
-        args: bool,
-        add_args: bool,
-        redirect: bool,
-        break_cycle: bool,
-        padding: u25,
-    } = @import("std").mem.zeroes(c_uint),
+    flags: ngx_http_script_regex_code_flags_t = @import("std").mem.zeroes(ngx_http_script_regex_code_flags_t),
     name: ngx_str_t = @import("std").mem.zeroes(ngx_str_t),
+};
+const ngx_http_script_regex_end_code_flags_t = packed struct {
+    uri: bool,
+    args: bool,
+    add_args: bool,
+    redirect: bool,
+    padding: u28,
 };
 pub const ngx_http_script_regex_end_code_t = extern struct {
     code: ngx_http_script_code_pt = @import("std").mem.zeroes(ngx_http_script_code_pt),
-    flags: packed struct {
-        uri: bool,
-        args: bool,
-        add_args: bool,
-        redirect: bool,
-        padding: u28,
-    } = @import("std").mem.zeroes(c_uint),
+    flags: ngx_http_script_regex_end_code_flags_t = @import("std").mem.zeroes(ngx_http_script_regex_end_code_flags_t),
 };
 pub const ngx_http_script_full_name_code_t = extern struct {
     code: ngx_http_script_code_pt = @import("std").mem.zeroes(ngx_http_script_code_pt),
@@ -18025,6 +18057,10 @@ pub const ngx_http_upstream_peer_t = extern struct {
     init: ngx_http_upstream_init_peer_pt = @import("std").mem.zeroes(ngx_http_upstream_init_peer_pt),
     data: ?*anyopaque = @import("std").mem.zeroes(?*anyopaque),
 };
+const ngx_http_upstream_server_flags_t = packed struct {
+    backup: bool,
+    padding: u31,
+};
 pub const ngx_http_upstream_server_t = extern struct {
     name: ngx_str_t = @import("std").mem.zeroes(ngx_str_t),
     addrs: [*c]ngx_addr_t = @import("std").mem.zeroes([*c]ngx_addr_t),
@@ -18035,10 +18071,7 @@ pub const ngx_http_upstream_server_t = extern struct {
     fail_timeout: time_t = @import("std").mem.zeroes(time_t),
     slow_start: ngx_msec_t = @import("std").mem.zeroes(ngx_msec_t),
     down: ngx_uint_t = @import("std").mem.zeroes(ngx_uint_t),
-    flags: packed struct {
-        backup: bool,
-        padding: u31,
-    } = @import("std").mem.zeroes(c_uint),
+    flags: ngx_http_upstream_server_flags_t = @import("std").mem.zeroes(ngx_http_upstream_server_flags_t),
     host: ngx_str_t = @import("std").mem.zeroes(ngx_str_t),
     service: ngx_str_t = @import("std").mem.zeroes(ngx_str_t),
 };
@@ -18046,6 +18079,14 @@ pub const ngx_http_upstream_local_t = extern struct {
     addr: [*c]ngx_addr_t = @import("std").mem.zeroes([*c]ngx_addr_t),
     value: [*c]ngx_http_complex_value_t = @import("std").mem.zeroes([*c]ngx_http_complex_value_t),
     transparent: ngx_uint_t = @import("std").mem.zeroes(ngx_uint_t),
+};
+const ngx_http_upstream_conf_flags_t = packed struct {
+    cache: i2,
+    store: i2,
+    intercept_404: bool,
+    change_buffering: bool,
+    preserve_output: bool,
+    padding: u25,
 };
 pub const ngx_http_upstream_conf_t = extern struct {
     upstream: [*c]ngx_http_upstream_srv_conf_t = @import("std").mem.zeroes([*c]ngx_http_upstream_srv_conf_t),
@@ -18100,14 +18141,7 @@ pub const ngx_http_upstream_conf_t = extern struct {
     no_cache: [*c]ngx_array_t = @import("std").mem.zeroes([*c]ngx_array_t),
     store_lengths: [*c]ngx_array_t = @import("std").mem.zeroes([*c]ngx_array_t),
     store_values: [*c]ngx_array_t = @import("std").mem.zeroes([*c]ngx_array_t),
-    flags: packed struct {
-        cache: i2,
-        store: i2,
-        intercept_404: bool,
-        change_buffering: bool,
-        preserve_output: bool,
-        padding: u25,
-    } = @import("std").mem.zeroes(c_uint),
+    flags: ngx_http_upstream_conf_flags_t = @import("std").mem.zeroes(ngx_http_upstream_conf_flags_t),
     ssl: [*c]ngx_ssl_t = @import("std").mem.zeroes([*c]ngx_ssl_t),
     ssl_session_reuse: ngx_flag_t = @import("std").mem.zeroes(ngx_flag_t),
     ssl_name: [*c]ngx_http_complex_value_t = @import("std").mem.zeroes([*c]ngx_http_complex_value_t),
@@ -18125,6 +18159,13 @@ pub const ngx_http_upstream_header_t = extern struct {
     copy_handler: ngx_http_header_handler_pt = @import("std").mem.zeroes(ngx_http_header_handler_pt),
     conf: ngx_uint_t = @import("std").mem.zeroes(ngx_uint_t),
     redirect: ngx_uint_t = @import("std").mem.zeroes(ngx_uint_t),
+};
+const ngx_http_upstream_headers_in_flags_t = packed struct {
+    connection_close: bool,
+    chunked: bool,
+    no_cache: bool,
+    expired: bool,
+    padding: u28,
 };
 pub const ngx_http_upstream_headers_in_t = extern struct {
     headers: ngx_list_t = @import("std").mem.zeroes(ngx_list_t),
@@ -18152,13 +18193,7 @@ pub const ngx_http_upstream_headers_in_t = extern struct {
     set_cookie: [*c]ngx_table_elt_t = @import("std").mem.zeroes([*c]ngx_table_elt_t),
     content_length_n: off_t = @import("std").mem.zeroes(off_t),
     last_modified_time: time_t = @import("std").mem.zeroes(time_t),
-    flags: packed struct {
-        connection_close: bool,
-        chunked: bool,
-        no_cache: bool,
-        expired: bool,
-        padding: u28,
-    } = @import("std").mem.zeroes(c_uint),
+    flags: ngx_http_upstream_headers_in_flags_t = @import("std").mem.zeroes(ngx_http_upstream_headers_in_flags_t),
 };
 pub const ngx_http_upstream_resolved_t = extern struct {
     host: ngx_str_t = @import("std").mem.zeroes(ngx_str_t),
@@ -18195,6 +18230,10 @@ pub const ngx_http_upstream_cache_method_mask: [*c]ngx_conf_bitmask_t = @extern(
 pub const ngx_http_upstream_ignore_headers_masks: [*c]ngx_conf_bitmask_t = @extern([*c]ngx_conf_bitmask_t, .{
     .name = "ngx_http_upstream_ignore_headers_masks",
 });
+const struct_ngx_http_upstream_rr_peer_flags_s = packed struct {
+    zombie: bool,
+    padding: u31,
+};
 pub const struct_ngx_http_upstream_rr_peer_s = extern struct {
     sockaddr: [*c]struct_sockaddr = @import("std").mem.zeroes([*c]struct_sockaddr),
     socklen: socklen_t = @import("std").mem.zeroes(socklen_t),
@@ -18215,10 +18254,7 @@ pub const struct_ngx_http_upstream_rr_peer_s = extern struct {
     down: ngx_uint_t = @import("std").mem.zeroes(ngx_uint_t),
     ssl_session: ?*anyopaque = @import("std").mem.zeroes(?*anyopaque),
     ssl_session_len: c_int = @import("std").mem.zeroes(c_int),
-    flags: packed struct {
-        zombie: bool,
-        padding: u31,
-    } = @import("std").mem.zeroes(c_uint),
+    flags: struct_ngx_http_upstream_rr_peer_flags_s = @import("std").mem.zeroes(struct_ngx_http_upstream_rr_peer_flags_s),
     lock: ngx_atomic_t = @import("std").mem.zeroes(ngx_atomic_t),
     refs: ngx_uint_t = @import("std").mem.zeroes(ngx_uint_t),
     host: [*c]ngx_http_upstream_host_t = @import("std").mem.zeroes([*c]ngx_http_upstream_host_t),
@@ -18226,6 +18262,11 @@ pub const struct_ngx_http_upstream_rr_peer_s = extern struct {
 };
 pub const ngx_http_upstream_rr_peer_t = struct_ngx_http_upstream_rr_peer_s;
 pub const ngx_http_upstream_rr_peers_t = struct_ngx_http_upstream_rr_peers_s;
+const struct_ngx_http_upstream_rr_peers_flags_s = packed struct {
+    single: bool,
+    weighted: bool,
+    padding: u30,
+};
 pub const struct_ngx_http_upstream_rr_peers_s = extern struct {
     number: ngx_uint_t = @import("std").mem.zeroes(ngx_uint_t),
     shpool: [*c]ngx_slab_pool_t = @import("std").mem.zeroes([*c]ngx_slab_pool_t),
@@ -18235,11 +18276,7 @@ pub const struct_ngx_http_upstream_rr_peers_s = extern struct {
     zone_next: [*c]ngx_http_upstream_rr_peers_t = @import("std").mem.zeroes([*c]ngx_http_upstream_rr_peers_t),
     total_weight: ngx_uint_t = @import("std").mem.zeroes(ngx_uint_t),
     tries: ngx_uint_t = @import("std").mem.zeroes(ngx_uint_t),
-    flags: packed struct {
-        single: bool,
-        weighted: bool,
-        padding: u30,
-    } = @import("std").mem.zeroes(c_uint),
+    flags: struct_ngx_http_upstream_rr_peers_flags_s = @import("std").mem.zeroes(struct_ngx_http_upstream_rr_peers_flags_s),
     name: [*c]ngx_str_t = @import("std").mem.zeroes([*c]ngx_str_t),
     next: [*c]ngx_http_upstream_rr_peers_t = @import("std").mem.zeroes([*c]ngx_http_upstream_rr_peers_t),
     peer: [*c]ngx_http_upstream_rr_peer_t = @import("std").mem.zeroes([*c]ngx_http_upstream_rr_peer_t),
@@ -18269,7 +18306,7 @@ pub extern fn ngx_http_upstream_set_round_robin_peer_session(pc: [*c]ngx_peer_co
 pub extern fn ngx_http_upstream_save_round_robin_peer_session(pc: [*c]ngx_peer_connection_t, data: ?*anyopaque) void;
 pub const ngx_http_location_tree_node_t = struct_ngx_http_location_tree_node_s;
 
-const struct_ngx_http_core_loc_conf_flag_s = packed struct {
+const struct_ngx_http_core_loc_conf_flags_s = packed struct {
     noname: bool,
     lmt_excpt: bool,
     named: bool,
@@ -18284,7 +18321,7 @@ pub const struct_ngx_http_core_loc_conf_s = extern struct {
     name: ngx_str_t = @import("std").mem.zeroes(ngx_str_t),
     escaped_name: ngx_str_t = @import("std").mem.zeroes(ngx_str_t),
     regex: [*c]ngx_http_regex_t = @import("std").mem.zeroes([*c]ngx_http_regex_t),
-    flags: struct_ngx_http_core_loc_conf_flag_s = @import("std").mem.zeroes(struct_ngx_http_core_loc_conf_flag_s),
+    flags: struct_ngx_http_core_loc_conf_flags_s = @import("std").mem.zeroes(struct_ngx_http_core_loc_conf_flags_s),
     static_locations: [*c]ngx_http_location_tree_node_t = @import("std").mem.zeroes([*c]ngx_http_location_tree_node_t),
     regex_locations: [*c][*c]ngx_http_core_loc_conf_t = @import("std").mem.zeroes([*c][*c]ngx_http_core_loc_conf_t),
     loc_conf: [*c]?*anyopaque = @import("std").mem.zeroes([*c]?*anyopaque),
@@ -18375,25 +18412,26 @@ pub const struct_ngx_http_location_tree_node_s = extern struct {
     auto_redirect: u_char = @import("std").mem.zeroes(u_char),
     name: [1]u_char = @import("std").mem.zeroes([1]u_char),
 };
+const ngx_http_listen_opt_flags_t = packed struct {
+    set: bool,
+    default_server: bool,
+    bind: bool,
+    wildcard: bool,
+    ssl: bool,
+    http2: bool,
+    quic: bool,
+    ipv6only: bool,
+    deferred_accept: bool,
+    reuseport: bool,
+    so_keepalive: u2,
+    proxy_protocol: bool,
+    padding: u19,
+};
 pub const ngx_http_listen_opt_t = extern struct {
     sockaddr: [*c]struct_sockaddr = @import("std").mem.zeroes([*c]struct_sockaddr),
     socklen: socklen_t = @import("std").mem.zeroes(socklen_t),
     addr_text: ngx_str_t = @import("std").mem.zeroes(ngx_str_t),
-    flags: packed struct {
-        set: bool,
-        default_server: bool,
-        bind: bool,
-        wildcard: bool,
-        ssl: bool,
-        http2: bool,
-        quic: bool,
-        ipv6only: bool,
-        deferred_accept: bool,
-        reuseport: bool,
-        so_keepalive: u2,
-        proxy_protocol: bool,
-        padding: u19,
-    } = @import("std").mem.zeroes(c_uint),
+    flags: ngx_http_listen_opt_flags_t = @import("std").mem.zeroes(ngx_http_listen_opt_flags_t),
     backlog: c_int = @import("std").mem.zeroes(c_int),
     rcvbuf: c_int = @import("std").mem.zeroes(c_int),
     sndbuf: c_int = @import("std").mem.zeroes(c_int),
@@ -18446,6 +18484,11 @@ pub const ngx_http_core_main_conf_t = extern struct {
     ports: [*c]ngx_array_t = @import("std").mem.zeroes([*c]ngx_array_t),
     phases: [11]ngx_http_phase_t = @import("std").mem.zeroes([11]ngx_http_phase_t),
 };
+const ngx_http_core_srv_conf_flags_t = packed struct {
+    listen: bool,
+    captures: bool,
+    padding: u30,
+};
 pub const ngx_http_core_srv_conf_t = extern struct {
     server_names: ngx_array_t = @import("std").mem.zeroes(ngx_array_t),
     ctx: [*c]ngx_http_conf_ctx_t = @import("std").mem.zeroes([*c]ngx_http_conf_ctx_t),
@@ -18460,11 +18503,7 @@ pub const ngx_http_core_srv_conf_t = extern struct {
     ignore_invalid_headers: ngx_flag_t = @import("std").mem.zeroes(ngx_flag_t),
     merge_slashes: ngx_flag_t = @import("std").mem.zeroes(ngx_flag_t),
     underscores_in_headers: ngx_flag_t = @import("std").mem.zeroes(ngx_flag_t),
-    flags: packed struct {
-        listen: bool,
-        captures: bool,
-        padding: u30,
-    } = @import("std").mem.zeroes(c_uint),
+    flags: ngx_http_core_srv_conf_flags_t = @import("std").mem.zeroes(ngx_http_core_srv_conf_flags_t),
     named_locations: [*c][*c]ngx_http_core_loc_conf_t = @import("std").mem.zeroes([*c][*c]ngx_http_core_loc_conf_t),
 };
 pub const ngx_http_server_name_t = extern struct {
@@ -18495,14 +18534,15 @@ pub const ngx_http_conf_port_t = extern struct {
     port: in_port_t = @import("std").mem.zeroes(in_port_t),
     addrs: ngx_array_t = @import("std").mem.zeroes(ngx_array_t),
 };
+const ngx_http_conf_addr_flags_t = packed struct {
+    protocols: u3,
+    protocols_set: bool,
+    protocols_changed: bool,
+    padding: u27,
+};
 pub const ngx_http_conf_addr_t = extern struct {
     opt: ngx_http_listen_opt_t = @import("std").mem.zeroes(ngx_http_listen_opt_t),
-    flags: packed struct {
-        protocols: u3,
-        protocols_set: bool,
-        protocols_changed: bool,
-        padding: u27,
-    } = @import("std").mem.zeroes(c_uint),
+    flags: ngx_http_conf_addr_flags_t = @import("std").mem.zeroes(ngx_http_conf_addr_flags_t),
     hash: ngx_hash_t = @import("std").mem.zeroes(ngx_hash_t),
     wc_head: [*c]ngx_hash_wildcard_t = @import("std").mem.zeroes([*c]ngx_hash_wildcard_t),
     wc_tail: [*c]ngx_hash_wildcard_t = @import("std").mem.zeroes([*c]ngx_hash_wildcard_t),
@@ -18563,21 +18603,22 @@ pub const ngx_http_cache_valid_t = extern struct {
     status: ngx_uint_t = @import("std").mem.zeroes(ngx_uint_t),
     valid: time_t = @import("std").mem.zeroes(time_t),
 };
+const ngx_http_file_cache_node_flags_t = packed struct {
+    count: u20,
+    uses: u10,
+    valid_msec: u10,
+    @"error": u10,
+    exists: bool,
+    updating: bool,
+    deleting: bool,
+    purged: bool,
+    padding: u10,
+};
 pub const ngx_http_file_cache_node_t = extern struct {
     node: ngx_rbtree_node_t = @import("std").mem.zeroes(ngx_rbtree_node_t),
     queue: ngx_queue_t = @import("std").mem.zeroes(ngx_queue_t),
     key: [8]u_char = @import("std").mem.zeroes([8]u_char),
-    flags: packed struct {
-        count: u20,
-        uses: u10,
-        valid_msec: u10,
-        @"error": u10,
-        exists: bool,
-        updating: bool,
-        deleting: bool,
-        purged: bool,
-        padding: u10,
-    } = @import("std").mem.zeroes(c_ulong),
+    flags: ngx_http_file_cache_node_flags_t = @import("std").mem.zeroes(ngx_http_file_cache_node_flags_t),
     uniq: ngx_file_uniq_t = @import("std").mem.zeroes(ngx_file_uniq_t),
     expire: time_t = @import("std").mem.zeroes(time_t),
     valid_sec: time_t = @import("std").mem.zeroes(time_t),
