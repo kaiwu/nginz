@@ -3315,7 +3315,7 @@ pub const struct_ngx_ssl_connection_s = extern struct {
         early_preread: bool,
         write_blocked: bool,
         padding: u17,
-    } = @import("std").mem.zeros(c_uint),
+    } = @import("std").mem.zeroes(c_uint),
 };
 pub const ngx_ssl_connection_t = struct_ngx_ssl_connection_s;
 pub const struct_ngx_udp_connection_s = extern struct {
@@ -3605,7 +3605,7 @@ pub const ngx_dir_t = extern struct {
         type: u8,
         valid_info: bool,
         padding: u23,
-    } = @import("std").mem.zeros(c_uint),
+    } = @import("std").mem.zeroes(c_uint),
 };
 pub const ngx_glob_t = extern struct {
     n: usize = @import("std").mem.zeroes(usize),
@@ -3672,7 +3672,7 @@ pub const ngx_process_t = extern struct {
         exiting: bool,
         exited: bool,
         padding: u27,
-    } = @import("std").mem.zeros(c_uint),
+    } = @import("std").mem.zeroes(c_uint),
 };
 pub const ngx_exec_ctx_t = extern struct {
     path: [*c]u8 = @import("std").mem.zeroes([*c]u8),
@@ -15160,7 +15160,7 @@ pub const ngx_ssl_ticket_key_t = extern struct {
         size: u8,
         shared: bool,
         padding: u23,
-    } = @import("std").mem.zeros(c_uint),
+    } = @import("std").mem.zeroes(c_uint),
 };
 pub const ngx_ssl_session_cache_t = extern struct {
     session_rbtree: ngx_rbtree_t = @import("std").mem.zeroes(ngx_rbtree_t),
@@ -17331,7 +17331,7 @@ pub const struct_ngx_http_upstream_s = extern struct {
         request_body_blocked: bool,
         header_sent: bool,
         padding: u17,
-    } = @import("std").mem.zeros(c_uint),
+    } = @import("std").mem.zeroes(c_uint),
 };
 pub const ngx_http_upstream_t = struct_ngx_http_upstream_s;
 pub const struct_ngx_http_postponed_request_s = extern struct {
@@ -17751,9 +17751,21 @@ pub const ngx_http_script_engine_t = extern struct {
         is_args: bool,
         log: bool,
         padding: u27,
-    } = @import("std").mem.zeros(c_uint),
+    } = @import("std").mem.zeroes(c_uint),
     status: ngx_int_t = @import("std").mem.zeroes(ngx_int_t),
     request: [*c]ngx_http_request_t = @import("std").mem.zeroes([*c]ngx_http_request_t),
+};
+
+const ngx_http_script_compile_flag_t = packed struct {
+    compile_args: bool,
+    complete_lengths: bool,
+    complete_values: bool,
+    zero: bool,
+    conf_prefix: bool,
+    root_prefix: bool,
+    dup_capture: bool,
+    args: bool,
+    padding: u24,
 };
 pub const ngx_http_script_compile_t = extern struct {
     cf: [*c]ngx_conf_t = @import("std").mem.zeroes([*c]ngx_conf_t),
@@ -17766,17 +17778,7 @@ pub const ngx_http_script_compile_t = extern struct {
     captures_mask: ngx_uint_t = @import("std").mem.zeroes(ngx_uint_t),
     size: ngx_uint_t = @import("std").mem.zeroes(ngx_uint_t),
     main: ?*anyopaque = @import("std").mem.zeroes(?*anyopaque),
-    flags: packed struct {
-        compile_args: bool,
-        complete_lengths: bool,
-        complete_values: bool,
-        zero: bool,
-        conf_prefix: bool,
-        root_prefix: bool,
-        dup_capture: bool,
-        args: bool,
-        padding: u24,
-    } = @import("std").mem.zeros(c_uint),
+    flags: ngx_http_script_compile_flag_t = @import("std").mem.zeroes(ngx_http_script_compile_flag_t),
 };
 const union_unnamed_259 = extern union {
     size: usize,
@@ -17797,7 +17799,7 @@ pub const ngx_http_compile_complex_value_t = extern struct {
         conf_prefix: bool,
         root_prefix: bool,
         padding: u29,
-    } = @import("std").mem.zeros(c_uint),
+    } = @import("std").mem.zeroes(c_uint),
 };
 pub const ngx_http_script_code_pt = ?*const fn ([*c]ngx_http_script_engine_t) callconv(.C) void;
 pub const ngx_http_script_len_code_pt = ?*const fn ([*c]ngx_http_script_engine_t) callconv(.C) usize;
@@ -17834,7 +17836,7 @@ pub const ngx_http_script_regex_code_t = extern struct {
         redirect: bool,
         break_cycle: bool,
         padding: u25,
-    } = @import("std").mem.zeros(c_uint),
+    } = @import("std").mem.zeroes(c_uint),
     name: ngx_str_t = @import("std").mem.zeroes(ngx_str_t),
 };
 pub const ngx_http_script_regex_end_code_t = extern struct {
@@ -17845,7 +17847,7 @@ pub const ngx_http_script_regex_end_code_t = extern struct {
         add_args: bool,
         redirect: bool,
         padding: u28,
-    } = @import("std").mem.zeros(c_uint),
+    } = @import("std").mem.zeroes(c_uint),
 };
 pub const ngx_http_script_full_name_code_t = extern struct {
     code: ngx_http_script_code_pt = @import("std").mem.zeroes(ngx_http_script_code_pt),
@@ -18032,7 +18034,7 @@ pub const ngx_http_upstream_server_t = extern struct {
     flags: packed struct {
         backup: bool,
         padding: u31,
-    } = @import("std").mem.zeros(c_uint),
+    } = @import("std").mem.zeroes(c_uint),
     host: ngx_str_t = @import("std").mem.zeroes(ngx_str_t),
     service: ngx_str_t = @import("std").mem.zeroes(ngx_str_t),
 };
@@ -18101,7 +18103,7 @@ pub const ngx_http_upstream_conf_t = extern struct {
         change_buffering: bool,
         preserve_output: bool,
         padding: u25,
-    } = @import("std").mem.zeros(c_uint),
+    } = @import("std").mem.zeroes(c_uint),
     ssl: [*c]ngx_ssl_t = @import("std").mem.zeroes([*c]ngx_ssl_t),
     ssl_session_reuse: ngx_flag_t = @import("std").mem.zeroes(ngx_flag_t),
     ssl_name: [*c]ngx_http_complex_value_t = @import("std").mem.zeroes([*c]ngx_http_complex_value_t),
@@ -18152,7 +18154,7 @@ pub const ngx_http_upstream_headers_in_t = extern struct {
         no_cache: bool,
         expired: bool,
         padding: u28,
-    } = @import("std").mem.zeros(c_uint),
+    } = @import("std").mem.zeroes(c_uint),
 };
 pub const ngx_http_upstream_resolved_t = extern struct {
     host: ngx_str_t = @import("std").mem.zeroes(ngx_str_t),
@@ -18212,7 +18214,7 @@ pub const struct_ngx_http_upstream_rr_peer_s = extern struct {
     flags: packed struct {
         zombie: bool,
         padding: u31,
-    } = @import("std").mem.zeros(c_uint),
+    } = @import("std").mem.zeroes(c_uint),
     lock: ngx_atomic_t = @import("std").mem.zeroes(ngx_atomic_t),
     refs: ngx_uint_t = @import("std").mem.zeroes(ngx_uint_t),
     host: [*c]ngx_http_upstream_host_t = @import("std").mem.zeroes([*c]ngx_http_upstream_host_t),
@@ -18233,7 +18235,7 @@ pub const struct_ngx_http_upstream_rr_peers_s = extern struct {
         single: bool,
         weighted: bool,
         padding: u30,
-    } = @import("std").mem.zeros(c_uint),
+    } = @import("std").mem.zeroes(c_uint),
     name: [*c]ngx_str_t = @import("std").mem.zeroes([*c]ngx_str_t),
     next: [*c]ngx_http_upstream_rr_peers_t = @import("std").mem.zeroes([*c]ngx_http_upstream_rr_peers_t),
     peer: [*c]ngx_http_upstream_rr_peer_t = @import("std").mem.zeroes([*c]ngx_http_upstream_rr_peer_t),

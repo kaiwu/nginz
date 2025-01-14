@@ -5,20 +5,27 @@ const NULL = ngx.NULL;
 const NGX_OK = ngx.NGX_OK;
 const NGX_LOG_ERR = ngx.NGX_LOG_ERR;
 
+const ngx_str_t = ngx.ngx_str_t;
 const ngx_int_t = ngx.ngx_int_t;
 const ngx_flag_t = ngx.ngx_flag_t;
 const ngx_conf_t = ngx.ngx_conf_t;
+const ngx_array_t = ngx.ngx_array_t;
 const ngx_module_t = ngx.ngx_module_t;
 const ngx_command_t = ngx.ngx_command_t;
 const ngx_http_module_t = ngx.ngx_http_module_t;
-const ngx_str_t = ngx.ngx_str_t;
+
 const ngx_string = ngx.ngx_string;
-const ngz_array_t = ngx.NArray(ngx_str_t);
+
+const echoz_parameter = extern struct {
+    plain: ngx_str_t,
+    lengths: [*c]ngx_array_t = undefined,
+    values: [*c]ngx_array_t = undefined,
+};
 
 extern var ngx_http_core_module: ngx_module_t;
 
 const loc_conf = extern struct {
-    params: ngz_array_t,
+    params: ngx.NArray(echoz_parameter),
 };
 
 fn postconfiguration(cf: [*c]ngx_conf_t) callconv(.C) ngx_int_t {
@@ -36,11 +43,16 @@ fn create_loc_conf(cf: [*c]ngx_conf_t) callconv(.C) ?*anyopaque {
 fn ngx_conf_set_echoz(cf: [*c]ngx_conf_t, cmd: [*c]ngx_command_t, loc: ?*anyopaque) callconv(.C) [*c]u8 {
     _ = cmd;
     if (ngx.castPtr(loc_conf, loc)) |lccf| {
-        lccf.*.params = ngz_array_t.init(cf.*.pool, 1) catch return ngx.NGX_CONF_ERROR;
+        lccf.*.params = ngx.NArray(echoz_parameter).init(cf.*.pool, 1) catch return ngx.NGX_CONF_ERROR;
+
         var i: ngx.ngx_uint_t = 0;
         while (ngx.ngx_array_next(ngx_str_t, cf.*.args, &i)) |arg| {
             ngx.ngx_http_conf_debug(cf, "%V", .{arg});
-            lccf.*.params.append(arg.*) catch return ngx.NGX_CONF_ERROR;
+            const param = lccf.*.params.append() catch return ngx.NGX_CONF_ERROR;
+            param.*.plain = arg.*;
+            if (ngx.ngx_conf_variables_parse(cf, arg, &param.*.lengths, &param.*.values) == ngx.NGX_CONF_ERROR) {
+                return ngx.NGX_CONF_ERROR;
+            }
         }
     }
     return ngx.NGX_CONF_OK;

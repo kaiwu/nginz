@@ -104,12 +104,12 @@ pub const ngx_chain_t = ngx.ngx_chain_t;
 pub const NULL = ngx.NULL;
 pub const ngx_palloc = ngx.ngx_palloc;
 pub const ngx_pcalloc = ngx.ngx_pcalloc;
+pub const ngx_pnalloc = ngx.ngx_pnalloc;
 pub const ngx_pmemalign = ngx.ngx_pmemalign;
 pub const ngx_pfree = ngx.ngx_pfree;
 pub const ngx_log_error_core = ngx.ngx_log_error_core;
 pub const ngx_log_init = ngx.ngx_log_init;
 pub const ngx_time_init = ngx.ngx_time_init;
-pub const ngx_rbtree_insert_pt = ngx.ngx_rbtree_insert_pt;
 
 pub inline fn sizeof(comptime s: []const u8) usize {
     return s.len;
@@ -929,6 +929,7 @@ pub inline fn ngx_rbtree_min(node: [*c]ngx_rbtree_node_t, sentinel: [*c]ngx_rbtr
     return n;
 }
 
+pub const ngx_rbtree_insert_pt = ngx.ngx_rbtree_insert_pt;
 const ngx_rbtree_insert = ngx.ngx_rbtree_insert;
 const ngx_rbtree_delete = ngx.ngx_rbtree_delete;
 pub fn NRBTree(
@@ -1356,9 +1357,9 @@ pub fn NArray(comptime T: type) type {
             ngx_array_destroy(self.pa);
         }
 
-        pub fn append(self: *Self, t: T) !void {
+        pub fn append(self: *Self) ![*c]T {
             if (castPtr(T, ngx_array_push(self.pa))) |p0| {
-                p0.* = t;
+                return p0;
             } else {
                 return NError.OOM;
             }
@@ -1379,7 +1380,8 @@ test "array" {
     try expectEqual(ns.pa.*.nalloc, 10);
 
     for (0..20) |i| {
-        try ns.append(i);
+        const p = try ns.append();
+        p.* = i;
     }
     try expectEqual(ns.at(10).?.*, 10);
     try expectEqual(ns.at(20), null);
@@ -1470,10 +1472,10 @@ pub fn NList(comptime T: type) type {
             return Iterator{ .pl = self.pl, .last = @ptrCast(&self.pl.*.part) };
         }
 
-        pub fn append(self: *Self, t: T) !void {
+        pub fn append(self: *Self) ![*c]T {
             if (castPtr(T, ngx_list_push(self.pl))) |p0| {
-                p0.* = t;
-                self.len += 1;
+                defer self.len += 1;
+                return p0;
             } else {
                 return NError.OOM;
             }
@@ -1493,7 +1495,8 @@ test "list" {
     try expectEqual(ns.pl.*.nalloc, 6);
 
     for (0..20) |i| {
-        try ns.append(i);
+        const p = try ns.append();
+        p.* = i;
     }
     try expectEqual(ns.at(10).?.*, 10);
     try expectEqual(ns.at(20), null);
@@ -1504,17 +1507,18 @@ const NGX_CACHELINE_SIZE = ngx.NGX_CPU_CACHE_LINE;
 const ngx_hash_keys_array_t = ngx.ngx_hash_keys_arrays_t;
 const ngx_hash_init_t = ngx.ngx_hash_init_t;
 const ngx_hash_key_t = ngx.ngx_hash_key_t;
+const ngx_hash_key_pt = ngx.ngx_hash_key_pt;
+
 pub const ngx_hash_type = enum(ngx_uint_t) {
     hash_small = NGX_HASH_SMALL,
     hash_large = NGX_HASH_LARGE,
 };
 
-const ngx_hash_key = ngx.ngx_hash_key;
-const ngx_hash_key_pt = ngx.ngx_hash_key_pt;
-const ngx_hash_keys_array_init = ngx.ngx_hash_keys_array_init;
-const ngx_hash_add_key = ngx.ngx_hash_add_key;
-const ngx_hash_init = ngx.ngx_hash_init;
-const ngx_hash_find = ngx.ngx_hash_find;
+pub const ngx_hash_key = ngx.ngx_hash_key;
+pub const ngx_hash_keys_array_init = ngx.ngx_hash_keys_array_init;
+pub const ngx_hash_add_key = ngx.ngx_hash_add_key;
+pub const ngx_hash_init = ngx.ngx_hash_init;
+pub const ngx_hash_find = ngx.ngx_hash_find;
 
 pub fn NHash(comptime K: type, comptime V: type, comptime M: ngx_uint_t) type {
     const MAX_SIZE = M;
@@ -1789,4 +1793,28 @@ test "allocator" {
         try as.append(i);
     }
     try expectEqual(as.items.len, 10);
+}
+
+pub const ngx_http_script_variables_count = ngx.ngx_http_script_variables_count;
+pub const ngx_http_script_compile = ngx.ngx_http_script_compile;
+
+pub inline fn ngx_conf_variables_parse(
+    cf: [*c]ngx_conf_t,
+    script: [*c]ngx_str_t,
+    lengths: [*c][*c]ngx_array_t,
+    values: [*c][*c]ngx_array_t,
+) [*c]u8 {
+    const n = ngx_http_script_variables_count(script);
+    if (n == 0) {
+        return NGX_CONF_OK;
+    }
+    var sc: ngx_http_script_compile_t = std.mem.zeroes(ngx_http_script_compile_t);
+    sc.cf = cf;
+    sc.variables = n;
+    sc.source = script;
+    sc.values = values;
+    sc.lengths = lengths;
+    sc.flags.complete_values = true;
+    sc.flags.complete_lengths = true;
+    return if (ngx_http_script_compile(&sc) == NGX_OK) NGX_CONF_OK else NGX_CONF_ERROR;
 }
