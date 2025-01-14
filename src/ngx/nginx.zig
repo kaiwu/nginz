@@ -1235,7 +1235,7 @@ test "rbtree" {
 
     const RBTree = NRBTree(RBT, "node", void, RBT.key);
     var t: ngx_rbtree_t = undefined;
-    var tree = try RBTree.init(@ptrCast(&t), pool, null);
+    var tree = try RBTree.init(&t, pool, null);
     for (&rs) |*r0| {
         tree.insert(r0, {});
     }
@@ -1457,7 +1457,7 @@ pub fn NList(comptime T: type) type {
             if (i < self.len) {
                 const n = i / self.pl.*.nalloc;
                 const m = i % self.pl.*.nalloc;
-                var part: [*c]ngx_list_part_t = @ptrCast(&self.pl.*.part);
+                var part: [*c]ngx_list_part_t = &self.pl.*.part;
                 for (0..n) |_| {
                     part = part.*.next;
                 }
@@ -1469,7 +1469,7 @@ pub fn NList(comptime T: type) type {
         }
 
         pub fn iterator(self: *Self) Iterator {
-            return Iterator{ .pl = self.pl, .last = @ptrCast(&self.pl.*.part) };
+            return Iterator{ .pl = self.pl, .last = &self.pl.*.part };
         }
 
         pub fn append(self: *Self) ![*c]T {
@@ -1588,7 +1588,7 @@ pub fn NHash(comptime K: type, comptime V: type, comptime M: ngx_uint_t) type {
             const name = self.ctx.*.data(k);
             const len = self.ctx.*.len(k);
             const k0 = self.ctx.*.key(name, len);
-            if (castPtr(KV, ngx_hash_find(@ptrCast(&self.hash), k0, name, len))) |kv| {
+            if (castPtr(KV, ngx_hash_find(&self.hash, k0, name, len))) |kv| {
                 return kv;
             }
             return null;
@@ -1638,9 +1638,9 @@ test "hash" {
     var vs = [_]ngx_int_t{ 1, 2, 3 };
 
     var kv = [_]KV{
-        KV{ .key_ptr = @ptrCast(&ks[0]), .value_ptr = @ptrCast(&vs[0]) },
-        KV{ .key_ptr = @ptrCast(&ks[1]), .value_ptr = @ptrCast(&vs[1]) },
-        KV{ .key_ptr = @ptrCast(&ks[2]), .value_ptr = @ptrCast(&vs[2]) },
+        KV{ .key_ptr = &ks[0], .value_ptr = &vs[0] },
+        KV{ .key_ptr = &ks[1], .value_ptr = &vs[1] },
+        KV{ .key_ptr = &ks[2], .value_ptr = &vs[2] },
     };
 
     var h = try Hash.init(@constCast(&ctx), &kv);
