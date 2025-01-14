@@ -52,11 +52,11 @@ pub const ngx_ext_rename_file_t = ngx.ngx_ext_rename_file_t;
 pub const ngx_output_chain_ctx_t = ngx.ngx_output_chain_ctx_t;
 pub const ngx_cached_open_file_t = ngx.ngx_cached_open_file_t;
 
+pub const ngx_pfree = ngx.ngx_pfree;
 pub const ngx_palloc = ngx.ngx_palloc;
 pub const ngx_pcalloc = ngx.ngx_pcalloc;
 pub const ngx_pnalloc = ngx.ngx_pnalloc;
 pub const ngx_pmemalign = ngx.ngx_pmemalign;
-pub const ngx_pfree = ngx.ngx_pfree;
 
 pub const NError = error{
     OOM,
@@ -115,6 +115,10 @@ pub inline fn ngz_pcalloc(comptime T: type, p: [*c]ngx_pool_t) ?*T {
         return @alignCast(@ptrCast(p0));
     }
     return null;
+}
+
+pub inline fn ngz_memcpy(dst: [*c]u8, src: [*c]u8, len: ngx_uint_t) void {
+    @memcpy(slicify(u8, dst, len), slicify(u8, src, len));
 }
 
 test "core" {

@@ -1,10 +1,13 @@
 const std = @import("std");
 const ngx = @import("ngx.zig");
-const core = @import("ngx_core.zig");
-const conf = @import("ngx_conf.zig");
-const array = @import("ngx_array.zig");
-const string = @import("ngx_string.zig");
-const module = @import("ngx_module.zig");
+const nginx = @import("nginx.zig");
+
+const log = nginx.log;
+const core = nginx.core;
+const conf = nginx.conf;
+const array = nginx.array;
+const string = nginx.string;
+const module = nginx.module;
 const expectEqual = std.testing.expectEqual;
 
 pub const ngx_http_file_cache_node_t = ngx.ngx_http_file_cache_node_t;

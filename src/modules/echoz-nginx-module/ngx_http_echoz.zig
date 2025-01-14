@@ -8,17 +8,17 @@ const NULL = core.NULL;
 const NGX_OK = core.NGX_OK;
 
 const ngx_buf_t = ngx.buf.ngx_buf_t;
-const ngx_str_t = ngx.core.ngx_str_t;
-const ngx_int_t = ngx.core.ngx_int_t;
-const ngx_uint_t = ngx.core.ngx_uint_t;
-const ngx_flag_t = ngx.core.ngx_flag_t;
-const ngx_conf_t = ngx.conf.ngx_conf_t;
+const ngx_str_t = core.ngx_str_t;
+const ngx_int_t = core.ngx_int_t;
+const ngx_uint_t = core.ngx_uint_t;
+const ngx_flag_t = core.ngx_flag_t;
+const ngx_conf_t = conf.ngx_conf_t;
 const ngx_chain_t = ngx.buf.ngx_chain_t;
 const ngx_array_t = ngx.array.ngx_array_t;
 const ngx_module_t = ngx.module.ngx_module_t;
-const ngx_command_t = ngx.conf.ngx_command_t;
-const ngx_http_module_t = ngx.http.ngx_http_module_t;
-const ngx_http_request_t = ngx.http.ngx_http_request_t;
+const ngx_command_t = conf.ngx_command_t;
+const ngx_http_module_t = http.ngx_http_module_t;
+const ngx_http_request_t = http.ngx_http_request_t;
 
 const ngx_string = ngx.string.ngx_string;
 const NArray = ngx.array.NArray;
@@ -56,7 +56,7 @@ fn create_loc_conf(cf: [*c]ngx_conf_t) callconv(.C) ?*anyopaque {
 }
 
 export fn ngx_http_echoz_handler(r: [*c]ngx_http_request_t) callconv(.C) ngx_int_t {
-    const response = ngx_string("echoz");
+    const response = ngx_string("yes echoz");
     r.*.headers_out.status = http.NGX_HTTP_OK;
     r.*.headers_out.content_length_n = response.len;
     _ = http.ngx_http_send_header(r);
@@ -68,9 +68,9 @@ export fn ngx_http_echoz_handler(r: [*c]ngx_http_request_t) callconv(.C) ngx_int
         .next = core.nullptr(ngx_chain_t),
     };
 
-    // ngx_memcpy(b->pos, response.data, response.len);
-    // b->last = b->pos + response.len;
-    // b->last_buf = 1;  // Mark as the last buffer
+    core.ngz_memcpy(b.*.pos, response.data, response.len);
+    b.*.last = b.*.pos + response.len;
+    b.*.flags.last_buf = true;
 
     return http.ngx_http_output_filter(r, &out);
 }
