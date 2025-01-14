@@ -70,18 +70,6 @@ pub inline fn ngz_http_conf_variables_parse(
     }
 }
 
-extern var ngx_http_core_module: ngx_module_t;
-pub inline fn ngz_http_loc_set_handler(
-    cf: [*c]ngx_conf_t,
-    handler: ngx.ngx_http_handler_pt,
-) void {
-    if (conf.ngx_http_conf_get_module_loc_conf(cf, &ngx_http_core_module)) |cf0| {
-        if (core.castPtr(ngx.ngx_http_core_loc_conf_t, cf0)) |clcf| {
-            clcf.*.handler = handler;
-        }
-    }
-}
-
 pub const NGX_HTTP_OK = ngx.NGX_HTTP_OK;
 pub const NGX_HTTP_INTERNAL_SERVER_ERROR = ngx.NGX_HTTP_INTERNAL_SERVER_ERROR;
 

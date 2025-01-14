@@ -106,6 +106,15 @@ pub inline fn ngx_http_conf_get_module_loc_conf(cf: [*c]ngx_conf_t, m: *ngx_modu
     return null;
 }
 
+pub inline fn ngx_http_conf_get_core_module_loc_conf(cf: [*c]ngx_conf_t) ?[*c]ngx.ngx_http_core_loc_conf_t {
+    if (core.castPtr(ngx_http_conf_ctx_t, cf.*.ctx)) |p| {
+        if (core.castPtr(ngx.ngx_http_core_loc_conf_t, p.*.loc_conf[0])) |clcf| {
+            return clcf;
+        }
+    }
+    return null;
+}
+
 test "conf" {
     try expectEqual(@sizeOf(ngx_conf_t), 96);
     try expectEqual(@sizeOf(ngx_command_t), 56);

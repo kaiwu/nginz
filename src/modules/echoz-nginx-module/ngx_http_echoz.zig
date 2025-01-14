@@ -7,12 +7,12 @@ const http = ngx.http;
 const NULL = core.NULL;
 const NGX_OK = core.NGX_OK;
 
-const ngx_buf_t = ngx.buf.ngx_buf_t;
 const ngx_str_t = core.ngx_str_t;
 const ngx_int_t = core.ngx_int_t;
 const ngx_uint_t = core.ngx_uint_t;
 const ngx_flag_t = core.ngx_flag_t;
 const ngx_conf_t = conf.ngx_conf_t;
+const ngx_buf_t = ngx.buf.ngx_buf_t;
 const ngx_chain_t = ngx.buf.ngx_chain_t;
 const ngx_array_t = ngx.array.ngx_array_t;
 const ngx_module_t = ngx.module.ngx_module_t;
@@ -56,7 +56,7 @@ fn create_loc_conf(cf: [*c]ngx_conf_t) callconv(.C) ?*anyopaque {
 }
 
 export fn ngx_http_echoz_handler(r: [*c]ngx_http_request_t) callconv(.C) ngx_int_t {
-    const response = ngx_string("yes echoz");
+    const response = ngx_string("oh yes yes echoz");
     r.*.headers_out.status = http.NGX_HTTP_OK;
     r.*.headers_out.content_length_n = response.len;
     _ = http.ngx_http_send_header(r);
@@ -80,7 +80,9 @@ fn ngx_conf_set_echoz(cf: [*c]ngx_conf_t, cmd: [*c]ngx_command_t, loc: ?*anyopaq
     if (core.castPtr(loc_conf, loc)) |lccf| {
         if (!lccf.*.cmds.inited()) {
             lccf.*.cmds = NArray(echoz_command).init(cf.*.pool, 1) catch return conf.NGX_CONF_ERROR;
-            http.ngz_http_loc_set_handler(cf, ngx_http_echoz_handler);
+            if (conf.ngx_http_conf_get_core_module_loc_conf(cf)) |cocf| {
+                cocf.*.handler = ngx_http_echoz_handler;
+            }
         }
 
         const echoz = lccf.*.cmds.append() catch return conf.NGX_CONF_ERROR;
