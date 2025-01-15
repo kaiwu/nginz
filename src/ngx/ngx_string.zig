@@ -5,7 +5,7 @@ const expectEqual = std.testing.expectEqual;
 
 const NULL = core.NULL;
 const u_char = core.u_char;
-const ngx_str_t = core.ngx_str_t;
+pub const ngx_str_t = core.ngx_str_t;
 
 pub inline fn ngx_string(str: []const u8) ngx_str_t {
     return ngx_str_t{ .len = str.len, .data = @constCast(str.ptr) };

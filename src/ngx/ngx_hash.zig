@@ -62,10 +62,11 @@ pub fn NHash(comptime K: type, comptime V: type, comptime M: ngx_uint_t) type {
 
         ctx: [*c]Ctx,
         hash: ngx_hash_t = undefined,
+        ready: ngx.ngx_flag_t = 0,
 
         // [*c]Ctx and []KV must retain
         pub fn init(ctx: [*c]Ctx, kv: []KV) !Self {
-            var h = Self{ .ctx = ctx };
+            var h = Self{ .ctx = ctx, .ready = 0 };
 
             var keys: ngx_hash_keys_array_t = undefined;
             keys.temp_pool = ctx.*.temp_pool;
@@ -93,11 +94,16 @@ pub fn NHash(comptime K: type, comptime V: type, comptime M: ngx_uint_t) type {
             };
             if (core.castPtr(ngx_hash_key_t, keys.keys.elts)) |ks| {
                 if (ngx_hash_init(&hash_init, ks, keys.keys.nelts) == core.NGX_OK) {
+                    h.ready = 1;
                     return h;
                 }
             }
 
             return core.NError.HASH_ERROR;
+        }
+
+        pub fn inited(self: *Self) bool {
+            return self.ready == 1;
         }
 
         pub fn getPtr(self: *Self, k: [*c]K) ?[*c]KV {
@@ -184,6 +190,7 @@ pub fn ZHash(comptime K: type, comptime V: type, comptime Ctx: type, comptime M:
 
         hash: ?*anyopaque,
         fba: ?*anyopaque,
+        ready: ngx.ngx_flag_t = 0,
 
         pub fn init(p: [*c]ngx_pool_t) !Self {
             if (core.ngz_pcalloc(HashMap, p)) |hash| {
@@ -192,11 +199,19 @@ pub fn ZHash(comptime K: type, comptime V: type, comptime Ctx: type, comptime M:
                         fba.* = std.heap.FixedBufferAllocator.init(core.slicify(u8, buf, PAGE_SIZE));
                         const allocator = fba.allocator();
                         hash.* = HashMap.init(allocator);
-                        return Self{ .hash = @alignCast(@ptrCast(hash)), .fba = @alignCast(@ptrCast(fba)) };
+                        return Self{
+                            .hash = @alignCast(@ptrCast(hash)),
+                            .fba = @alignCast(@ptrCast(fba)),
+                            .ready = 1,
+                        };
                     }
                 }
             }
             return core.NError.OOM;
+        }
+
+        pub fn inited(self: *Self) bool {
+            return self.ready == 1;
         }
 
         pub fn put(self: *Self, k: K, v: V) !void {

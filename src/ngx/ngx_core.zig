@@ -62,6 +62,7 @@ pub const NError = error{
     OOM,
     CONF_ERROR,
     HASH_ERROR,
+    REQUEST_ERROR,
 };
 
 pub inline fn sizeof(comptime s: []const u8) usize {

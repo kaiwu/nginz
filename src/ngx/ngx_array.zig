@@ -28,7 +28,7 @@ pub fn NArray(comptime T: type) type {
         @compileError("NArray invalid element");
     }
 
-    const Iterator = struct {
+    const Iterator = extern struct {
         const Self = @This();
 
         pa: [*c]ngx_array_t,
@@ -44,10 +44,20 @@ pub fn NArray(comptime T: type) type {
             }
             return null;
         }
+
+        pub fn prev(self: *Self) void {
+            self.offset -= 1;
+        }
+
+        pub fn reset(self: *Self) void {
+            self.offset = 0;
+        }
     };
 
     return extern struct {
         const Self = @This();
+        pub const IteratorType = Iterator;
+
         pa: [*c]ngx_array_t = undefined,
         ready: ngx.ngx_flag_t = 0,
 
@@ -62,7 +72,7 @@ pub fn NArray(comptime T: type) type {
             return self.ready == 1;
         }
 
-        pub fn size(self: *Self) ngx_uint_t {
+        pub fn size(self: *const Self) ngx_uint_t {
             return self.pa.*.nelts;
         }
 
@@ -98,6 +108,18 @@ pub fn NArray(comptime T: type) type {
             }
         }
     };
+}
+
+pub inline fn fmap(
+    comptime T: type,
+    comptime U: type,
+    a0: *NArray(T),
+    a1: *NArray(U),
+    f: *const fn (T) U,
+) void {
+    for (a0.slice(), a1.slice()) |*p0, *p1| {
+        p1.* = f(p0.*);
+    }
 }
 
 const ngx_log_init = ngx.ngx_log_init;

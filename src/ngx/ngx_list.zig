@@ -15,7 +15,7 @@ pub fn NList(comptime T: type) type {
         @compileError("NList invalid element");
     }
 
-    const Iterator = struct {
+    const Iterator = extern struct {
         const Self = @This();
 
         pl: [*c]ngx_list_t,
@@ -57,6 +57,8 @@ pub fn NList(comptime T: type) type {
 
     return extern struct {
         const Self = @This();
+        pub const IteratorType = Iterator;
+
         pl: [*c]ngx_list_t = undefined,
         len: core.ngx_uint_t = 0,
         ready: ngx.ngx_flag_t = 0,
@@ -72,7 +74,7 @@ pub fn NList(comptime T: type) type {
             return self.ready == 1;
         }
 
-        pub fn size(self: *Self) core.ngx_uint_t {
+        pub fn size(self: *const Self) core.ngx_uint_t {
             return self.len;
         }
 

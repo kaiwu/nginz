@@ -37,8 +37,7 @@ pub const ngx_ssl_connection_t = ngx.ngx_ssl_connection_t;
 pub const ngx_ssl_ticket_key_t = ngx.ngx_ssl_ticket_key_t;
 pub const ngx_http_module_t = ngx.ngx_http_module_t;
 
-pub const ngx_http_script_variables_count = ngx.ngx_http_script_variables_count;
-pub const ngx_http_script_compile = ngx.ngx_http_script_compile;
+pub const ngx_http_script_run = ngx.ngx_http_script_run;
 
 const NError = core.NError;
 const NGX_OK = core.NGX_OK;
@@ -48,26 +47,19 @@ const ngx_conf_t = conf.ngx_conf_t;
 const ngx_array_t = array.ngx_array_t;
 const ngx_module_t = module.ngx_module_t;
 
-pub inline fn ngz_http_conf_variables_parse(
-    cf: [*c]ngx_conf_t,
-    script: [*c]ngx_str_t,
-    lengths: [*c][*c]ngx_array_t,
-    values: [*c][*c]ngx_array_t,
-) !void {
-    const n = ngx_http_script_variables_count(script);
-    if (n > 0) {
-        var sc: ngx_http_script_compile_t = std.mem.zeroes(ngx_http_script_compile_t);
-        sc.cf = cf;
-        sc.variables = n;
-        sc.source = script;
-        sc.values = values;
-        sc.lengths = lengths;
-        sc.flags.complete_values = true;
-        sc.flags.complete_lengths = true;
-        if (ngx_http_script_compile(&sc) != NGX_OK) {
-            return NError.CONF_ERROR;
-        }
+pub inline fn ngz_http_get_module_ctx(
+    comptime T: type,
+    r: [*c]ngx_http_request_t,
+    m: [*c]ngx_module_t,
+) ![*c]T {
+    if (core.castPtr(T, r.*.ctx[m.*.ctx_index])) |ctx| {
+        return ctx;
     }
+    if (core.ngz_pcalloc_c(T, r.*.pool)) |ctx| {
+        r.*.ctx[m.*.ctx_index] = ctx;
+        return ctx;
+    }
+    return core.NError.OOM;
 }
 
 pub const NGX_HTTP_OK = ngx.NGX_HTTP_OK;

@@ -2,6 +2,7 @@ const std = @import("std");
 const ngx = @import("ngx.zig");
 const core = @import("ngx_core.zig");
 const http = @import("ngx_http.zig");
+const array = @import("ngx_array.zig");
 const string = @import("ngx_string.zig");
 const module = @import("ngx_module.zig");
 const expectEqual = std.testing.expectEqual;
@@ -62,6 +63,7 @@ pub const NGX_HTTP_SRV_CONF = ngx.NGX_HTTP_SRV_CONF;
 pub const NGX_HTTP_UPS_CONF = ngx.NGX_HTTP_UPS_CONF;
 
 const NULL = core.NULL;
+const ngx_array_t = array.ngx_array_t;
 const ngx_module_t = module.ngx_module_t;
 const ngx_http_request_t = http.ngx_http_request_t;
 
@@ -113,6 +115,29 @@ pub inline fn ngx_http_conf_get_core_module_loc_conf(cf: [*c]ngx_conf_t) ?[*c]ng
         }
     }
     return null;
+}
+
+pub inline fn ngz_http_conf_variables_parse(
+    cf: [*c]ngx_conf_t,
+    script: [*c]string.ngx_str_t,
+    lengths: [*c][*c]ngx_array_t,
+    values: [*c][*c]ngx_array_t,
+) !core.ngx_uint_t {
+    const n = ngx.ngx_http_script_variables_count(script);
+    if (n > 0) {
+        var sc: ngx.ngx_http_script_compile_t = std.mem.zeroes(ngx.ngx_http_script_compile_t);
+        sc.cf = cf;
+        sc.variables = n;
+        sc.source = script;
+        sc.values = values;
+        sc.lengths = lengths;
+        sc.flags.complete_values = true;
+        sc.flags.complete_lengths = true;
+        if (ngx.ngx_http_script_compile(&sc) != core.NGX_OK) {
+            return core.NError.CONF_ERROR;
+        }
+    }
+    return n;
 }
 
 test "conf" {
