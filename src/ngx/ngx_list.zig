@@ -59,16 +59,17 @@ pub fn NList(comptime T: type) type {
         const Self = @This();
         pl: [*c]ngx_list_t = undefined,
         len: core.ngx_uint_t = 0,
+        ready: ngx.ngx_flag_t = 0,
 
         pub fn init(p: [*c]core.ngx_pool_t, n: core.ngx_uint_t) !Self {
             if (core.nonNullPtr(ngx_list_t, ngx_list_create(p, n, @sizeOf(T)))) |p0| {
-                return Self{ .pl = p0 };
+                return Self{ .pl = p0, .ready = 1 };
             }
             return core.NError.OOM;
         }
 
         pub fn inited(self: *Self) bool {
-            return self.pl != undefined and self.pl != core.nullptr(ngx_list_t);
+            return self.ready == 1;
         }
 
         pub fn size(self: *Self) core.ngx_uint_t {

@@ -49,16 +49,17 @@ pub fn NArray(comptime T: type) type {
     return extern struct {
         const Self = @This();
         pa: [*c]ngx_array_t = undefined,
+        ready: ngx.ngx_flag_t = 0,
 
         pub fn init(p: [*c]ngx_pool_t, n: ngx_uint_t) !Self {
             if (core.nonNullPtr(ngx_array_t, ngx_array_create(p, n, @sizeOf(T)))) |p0| {
-                return Self{ .pa = p0 };
+                return Self{ .pa = p0, .ready = 1 };
             }
             return core.NError.OOM;
         }
 
         pub fn inited(self: *Self) bool {
-            return self.pa != undefined and self.pa != core.nullptr(ngx_array_t);
+            return self.ready == 1;
         }
 
         pub fn size(self: *Self) ngx_uint_t {
