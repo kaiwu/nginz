@@ -85,6 +85,7 @@ pub const NChain = extern struct {
                 b.*.pos = str.data;
                 b.*.end = str.data + str.len;
                 b.*.last = str.data + str.len;
+                b.*.flags.memory = true;
 
                 cl.*.buf = b;
                 cl.*.next = NP;

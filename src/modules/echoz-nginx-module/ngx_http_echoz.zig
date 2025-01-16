@@ -19,9 +19,9 @@ const ngx_pool_t = core.ngx_pool_t;
 const ngx_conf_t = conf.ngx_conf_t;
 const ngx_buf_t = ngx.buf.ngx_buf_t;
 const ngx_chain_t = ngx.buf.ngx_chain_t;
+const ngx_command_t = conf.ngx_command_t;
 const ngx_array_t = ngx.array.ngx_array_t;
 const ngx_module_t = ngx.module.ngx_module_t;
-const ngx_command_t = conf.ngx_command_t;
 const ngx_http_module_t = http.ngx_http_module_t;
 const ngx_http_request_t = http.ngx_http_request_t;
 
@@ -97,8 +97,10 @@ fn map(
             ) == core.nullptr(core.u_char)) {
                 return RError.SCRIPT_ERROR;
             }
-            const space = try ss.append();
-            space.* = ctx.*.space_str;
+            if (i + 1 < ps.size()) {
+                const space = try ss.append();
+                space.* = ctx.*.space_str;
+            }
         }
     }
     return ss;
@@ -136,23 +138,21 @@ export fn ngx_http_echoz_handler(r: [*c]ngx_http_request_t) callconv(.C) ngx_int
             .next = core.nullptr(ngx_chain_t),
             .buf = core.nullptr(ngx_buf_t),
         };
-        var cl: [*c]ngx_chain_t = &out;
+        var last: [*c]ngx_chain_t = &out;
         while (ctx.*.iterator.next()) |cmd| {
-            cl = echoz_exec_command(cmd, ctx, r, cl) catch {
-                return NGX_ERROR;
-            };
-            cl = ctx.*.chain.allocStr(ctx.*.newline_str, cl) catch {
-                return NGX_ERROR;
-            };
+            last = echoz_exec_command(cmd, ctx, r, last) catch return http.NGX_HTTP_INTERNAL_SERVER_ERROR;
+            last = ctx.*.chain.allocStr(ctx.*.newline_str, last) catch return http.NGX_HTTP_INTERNAL_SERVER_ERROR;
         }
 
         const len = buf.ngz_chain_length(out.next);
         r.*.headers_out.status = http.NGX_HTTP_OK;
         r.*.headers_out.content_length_n = @intCast(len);
-        cl.*.buf.*.flags.last_buf = true;
+        _ = http.ngx_http_send_header(r);
+
+        last.*.buf.*.flags.last_buf = true;
         return http.ngx_http_output_filter(r, out.next);
     }
-    return NGX_OK;
+    return NGX_ERROR;
 }
 
 fn ngx_conf_set_echoz(cf: [*c]ngx_conf_t, cmd: [*c]ngx_command_t, loc: ?*anyopaque) callconv(.C) [*c]u8 {

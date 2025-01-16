@@ -81,7 +81,7 @@ pub inline fn ngx_align(d: ngx_uint_t, comptime a: ngx_uint_t) ngx_uint_t {
 }
 
 pub inline fn nullptr(comptime T: type) [*c]T {
-    return @as([*c]T, @alignCast(@ptrCast(NULL)));
+    return @as([*c]T, @ptrCast(@alignCast(NULL)));
 }
 
 pub inline fn slicify(comptime T: type, p: [*c]T, len: usize) []T {
@@ -93,27 +93,24 @@ pub inline fn make_slice(p: [*c]u8, len: usize) []u8 {
 }
 
 pub inline fn nonNullPtr(comptime T: type, p: [*c]T) ?[*c]T {
-    return if (p != @as([*c]T, @alignCast(@ptrCast(NULL)))) p else null;
+    return if (p != nullptr(T)) p else null;
 }
 
 pub inline fn castPtr(comptime T: type, p: ?*anyopaque) ?[*c]T {
-    const p0 = @as([*c]T, @alignCast(@ptrCast(p)));
-    if (nonNullPtr(T, p0)) |_| {
-        return p0;
-    }
-    return null;
+    const p0 = @as([*c]T, @ptrCast(@alignCast(p)));
+    return nonNullPtr(T, p0);
 }
 
 pub inline fn ngz_pcalloc_c(comptime T: type, p: [*c]ngx_pool_t) ?[*c]T {
     if (ngx_pcalloc(p, @sizeOf(T))) |p0| {
-        return @alignCast(@ptrCast(p0));
+        return @as([*c]T, @ptrCast(@alignCast(p0)));
     }
     return null;
 }
 
 pub inline fn ngz_pcalloc(comptime T: type, p: [*c]ngx_pool_t) ?*T {
     if (ngx_pcalloc(p, @sizeOf(T))) |p0| {
-        return @alignCast(@ptrCast(p0));
+        return @as(*T, @ptrCast(@alignCast(p0)));
     }
     return null;
 }
