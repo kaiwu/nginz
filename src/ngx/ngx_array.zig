@@ -76,11 +76,11 @@ pub fn NArray(comptime T: type) type {
             return self.pa.*.nelts;
         }
 
-        pub fn iterator(self: *Self) Iterator {
+        pub fn iterator(self: *const Self) Iterator {
             return Iterator{ .pa = self.pa };
         }
 
-        pub fn at(self: *Self, i: ngx_uint_t) ?[*c]T {
+        pub fn at(self: *const Self, i: ngx_uint_t) ?[*c]T {
             if (i < self.pa.*.nelts) {
                 if (core.castPtr(T, self.pa.*.elts)) |p0| {
                     return p0 + i;

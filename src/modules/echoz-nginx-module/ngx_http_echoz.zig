@@ -48,27 +48,8 @@ const echoz_command = extern struct {
 
 const RError = error{
     SCRIPT_ERROR,
+    FILTER_ERROR,
 };
-
-fn map(ps: NArray(echoz_parameter), p: [*c]ngx_pool_t, r: [*c]ngx_http_request_t) !NArray(ngx_str_t) {
-    var ss = try NArray(ngx_str_t).init(p, ps.size());
-    for (NArray(echoz_parameter).slice(@constCast(&ps)), ss.slice()) |p0, *s0| {
-        if (p0.variables == 0) {
-            s0.* = p0.raw;
-            continue;
-        }
-        if (http.ngx_http_script_run(
-            r,
-            s0,
-            p0.lengths.*.elts,
-            0,
-            p0.values.*.elts,
-        ) == core.nullptr(core.u_char)) {
-            return RError.SCRIPT_ERROR;
-        }
-    }
-    return ss;
-}
 
 const loc_conf = extern struct {
     cmds: NArray(echoz_command),
@@ -78,6 +59,8 @@ const echoz_context = extern struct {
     ready: ngx_flag_t,
     iterator: NArray(echoz_command).IteratorType,
     chain: NChain,
+    space_str: ngx_str_t,
+    newline_str: ngx_str_t,
 };
 
 fn postconfiguration(cf: [*c]ngx_conf_t) callconv(.C) ngx_int_t {
@@ -92,14 +75,43 @@ fn create_loc_conf(cf: [*c]ngx_conf_t) callconv(.C) ?*anyopaque {
     return null;
 }
 
+fn map(
+    ps: NArray(echoz_parameter),
+    r: [*c]ngx_http_request_t,
+    ctx: [*c]echoz_context,
+) !NArray(ngx_str_t) {
+    var ss = try NArray(ngx_str_t).init(r.*.pool, ps.size());
+    var i: ngx_uint_t = 0;
+    while (i < ps.size()) : (i += 1) {
+        if (ps.at(i)) |p0| {
+            const s0 = try ss.append();
+            if (p0.*.variables == 0) {
+                s0.* = p0.*.raw;
+            }
+            if (p0.*.variables > 0 and http.ngx_http_script_run(
+                r,
+                s0,
+                p0.*.lengths.*.elts,
+                0,
+                p0.*.values.*.elts,
+            ) == core.nullptr(core.u_char)) {
+                return RError.SCRIPT_ERROR;
+            }
+            const space = try ss.append();
+            space.* = ctx.*.space_str;
+        }
+    }
+    return ss;
+}
+
 fn echoz_exec_command(
     cmd: [*c]echoz_command,
     ctx: [*c]echoz_context,
     r: [*c]ngx_http_request_t,
-) !void {
-    _ = ctx;
-    const parameters = try map(cmd.*.params, r.*.pool, r);
-    _ = parameters;
+    c: [*c]ngx_chain_t,
+) ![*c]ngx_chain_t {
+    const parameters = try map(cmd.*.params, r, ctx);
+    return ctx.*.chain.allocNStr(parameters, c);
 }
 
 export fn ngx_http_echoz_handler(r: [*c]ngx_http_request_t) callconv(.C) ngx_int_t {
@@ -116,13 +128,29 @@ export fn ngx_http_echoz_handler(r: [*c]ngx_http_request_t) callconv(.C) ngx_int
         if (ctx.*.ready == 0) {
             ctx.*.iterator = lccf.*.cmds.iterator();
             ctx.*.chain = NChain.init(r.*.pool);
+            ctx.*.space_str = ngx_string(" ");
+            ctx.*.newline_str = ngx_string("\n");
             ctx.*.ready = 1;
         }
+        var out = buf.ngx_chain_t{
+            .next = core.nullptr(ngx_chain_t),
+            .buf = core.nullptr(ngx_buf_t),
+        };
+        var cl: [*c]ngx_chain_t = &out;
         while (ctx.*.iterator.next()) |cmd| {
-            echoz_exec_command(cmd, ctx, r) catch {
+            cl = echoz_exec_command(cmd, ctx, r, cl) catch {
+                return NGX_ERROR;
+            };
+            cl = ctx.*.chain.allocStr(ctx.*.newline_str, cl) catch {
                 return NGX_ERROR;
             };
         }
+
+        const len = buf.ngz_chain_length(out.next);
+        r.*.headers_out.status = http.NGX_HTTP_OK;
+        r.*.headers_out.content_length_n = @intCast(len);
+        cl.*.buf.*.flags.last_buf = true;
+        return http.ngx_http_output_filter(r, out.next);
     }
     return NGX_OK;
 }

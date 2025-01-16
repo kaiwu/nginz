@@ -1,6 +1,7 @@
 const std = @import("std");
 const ngx = @import("ngx.zig");
 const core = @import("ngx_core.zig");
+const array = @import("ngx_array.zig");
 const expectEqual = std.testing.expectEqual;
 
 pub const ngx_buf_t = ngx.ngx_buf_t;
@@ -8,8 +9,10 @@ pub const ngx_chain_t = ngx.ngx_chain_t;
 
 const off_t = core.off_t;
 const u_char = core.u_char;
+const ngx_str_t = core.ngx_str_t;
 const ngx_uint_t = core.ngx_uint_t;
 const ngx_pool_t = core.ngx_pool_t;
+const NArray = array.NArray;
 
 pub inline fn ngx_buf_in_memory(b: [*c]ngx_buf_t) bool {
     return b.*.flags.temporary or b.*.flags.memory or b.*.flags.mmap;
@@ -40,6 +43,7 @@ pub inline fn ngx_free_chain(pool: [*c]ngx_pool_t, cl: [*c]ngx_chain_t) void {
     pool.*.chain = cl;
 }
 
+const ngx_alloc_chain_link = ngx.ngx_alloc_chain_link;
 const ngx_create_temp_buf = ngx.ngx_create_temp_buf;
 
 pub inline fn ngz_chain_length(cl: [*c]ngx_chain_t) ngx_uint_t {
@@ -60,6 +64,51 @@ pub const NChain = extern struct {
 
     pub fn init(p: [*c]ngx_pool_t) Self {
         return Self{ .pool = p };
+    }
+
+    pub fn create(self: *Self) ![*c]ngx_chain_t {
+        const cl = ngx_alloc_chain_link(self.pool);
+        if (cl != NP) {
+            return cl;
+        }
+        return core.NError.OOM;
+    }
+
+    pub fn allocStr(
+        self: *Self,
+        str: ngx_str_t,
+        last: ?[*c]ngx_chain_t,
+    ) ![*c]ngx_chain_t {
+        if (core.ngz_pcalloc_c(ngx_chain_t, self.pool)) |cl| {
+            if (core.ngz_pcalloc_c(ngx_buf_t, self.pool)) |b| {
+                b.*.start = str.data;
+                b.*.pos = str.data;
+                b.*.end = str.data + str.len;
+                b.*.last = str.data + str.len;
+
+                cl.*.buf = b;
+                cl.*.next = NP;
+                if (last) |lc| {
+                    lc.*.next = cl;
+                }
+                return cl;
+            }
+        }
+        return core.NError.OOM;
+    }
+
+    // [last->next, last]
+    pub fn allocNStr(
+        self: *Self,
+        as: NArray(ngx_str_t),
+        last: [*c]ngx_chain_t,
+    ) ![*c]ngx_chain_t {
+        var cl: [*c]ngx_chain_t = last;
+        var it = as.iterator();
+        while (it.next()) |s| {
+            cl = try self.allocStr(s.*, cl);
+        }
+        return cl;
     }
 
     pub fn alloc(
