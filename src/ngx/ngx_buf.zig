@@ -7,6 +7,7 @@ pub const ngx_buf_t = ngx.ngx_buf_t;
 pub const ngx_chain_t = ngx.ngx_chain_t;
 
 const off_t = core.off_t;
+const u_char = core.u_char;
 const ngx_uint_t = core.ngx_uint_t;
 const ngx_pool_t = core.ngx_pool_t;
 
@@ -44,8 +45,8 @@ const ngx_create_temp_buf = ngx.ngx_create_temp_buf;
 pub inline fn ngz_chain_length(cl: [*c]ngx_chain_t) ngx_uint_t {
     var total: ngx_uint_t = 0;
     var n: [*c]ngx_chain_t = cl;
-    while (n != core.nullptr(ngx_chain_t)) {
-        total += n.*.buf.*.last - n.*.buf.*.pos;
+    while (n != NChain.NP) {
+        total += @intFromPtr(n.*.buf.*.last) - @intFromPtr(n.*.buf.*.pos);
         n = n.*.next;
     }
     return total;
@@ -53,6 +54,8 @@ pub inline fn ngz_chain_length(cl: [*c]ngx_chain_t) ngx_uint_t {
 
 pub const NChain = extern struct {
     const Self = @This();
+    const NP = core.nullptr(ngx_chain_t);
+
     pool: [*c]ngx_pool_t,
 
     pub fn init(p: [*c]ngx_pool_t) Self {
@@ -62,24 +65,23 @@ pub const NChain = extern struct {
     pub fn alloc(
         self: *Self,
         size: ngx_uint_t,
-        prev: ?[*c]ngx_chain_t,
+        last: ?[*c]ngx_chain_t,
     ) ![*c]ngx_chain_t {
-        const nc = core.nullptr(ngx_chain_t);
         var cl: [*c]ngx_chain_t = self.pool.*.chain;
-        var last: [*c]ngx_chain_t = cl;
-        while (cl != nc) {
-            if (cl.*.buf.*.end - cl.*.buf.*.start >= size) {
-                last.*.next = cl.*.next;
+        var ll: [*c]ngx_chain_t = cl;
+        while (cl != NP) {
+            if (@intFromPtr(cl.*.buf.*.end) - @intFromPtr(cl.*.buf.*.start) >= size) {
+                ll.*.next = cl.*.next;
                 break;
             }
-            last = cl;
+            ll = cl;
             cl = cl.*.next;
         }
-        if (cl != nc) {
+        if (cl != NP) {
             cl.*.buf.*.last = cl.*.buf.*.pos;
-            cl.*.next = nc;
-            if (prev) |pcl| {
-                pcl.*.next = cl;
+            cl.*.next = NP;
+            if (last) |lc| {
+                lc.*.next = cl;
             }
             return cl;
         }
@@ -88,9 +90,9 @@ pub const NChain = extern struct {
             const b = ngx_create_temp_buf(self.pool, size);
             if (b != core.nullptr(ngx_buf_t)) {
                 cl0.*.buf = b;
-                cl0.*.next = nc;
-                if (prev) |pcl| {
-                    pcl.*.next = cl0;
+                cl0.*.next = NP;
+                if (last) |lc| {
+                    lc.*.next = cl0;
                 }
                 return cl0;
             }
@@ -119,7 +121,7 @@ pub const NChain = extern struct {
 
     pub fn freeN(self: *Self, cl: [*c]ngx_chain_t) void {
         var last: [*c]ngx_chain_t = cl;
-        while (last.*.next != core.nullptr(ngx_chain_t)) {
+        while (last.*.next != NP) {
             last.*.buf.*.last = last.*.buf.*.pos;
             last = last.*.next;
         }
@@ -132,9 +134,66 @@ pub const NRingBuffer = extern struct {
     const Self = @This();
 
     buf: [*c]ngx_buf_t,
-    size: ngx_uint_t,
-    head: ngx_uint_t,
-    tail: ngx_uint_t,
+    //buf->pos is read pointer
+    //buf->last is write pointer
+
+    pub fn init(b: [*c]ngx_buf_t) Self {
+        return Self{ .buf = b };
+    }
+
+    pub fn empty(self: *Self) bool {
+        return self.buf.*.last == self.buf.*.pos;
+    }
+
+    pub fn size(self: *Self) ngx_uint_t {
+        if (self.buf.*.last >= self.buf.*.pos) {
+            return @intFromPtr(self.buf.*.last) - @intFromPtr(self.buf.*.pos);
+        }
+        const s0 = @intFromPtr(self.buf.*.end) - @intFromPtr(self.buf.*.pos);
+        const s1 = @intFromPtr(self.buf.*.last) - @intFromPtr(self.buf.*.start);
+        return s0 + s1;
+    }
+
+    pub fn full(self: *Self) bool {
+        const s = @intFromPtr(self.buf.*.end) - @intFromPtr(self.buf.*.start);
+        return size(self) == s;
+    }
+
+    pub fn space(self: *Self) ngx_uint_t {
+        const s = @intFromPtr(self.buf.*.end) - @intFromPtr(self.buf.*.start);
+        const s0 = size(self);
+        return if (s > s0) s - s0 else 0;
+    }
+
+    pub fn write(self: *Self, p: [*c]u_char, len: ngx_uint_t) !void {
+        if (len > space(self)) {
+            return core.NError.OOM;
+        }
+        if (self.buf.*.last + len <= self.buf.*.end) {
+            core.ngz_memcpy(self.buf.*.last, p, len);
+            self.buf.*.last += len;
+        } else {
+            const part = @intFromPtr(self.buf.*.end) - @intFromPtr(self.buf.*.last);
+            core.ngz_memcpy(self.buf.*.last, p, part);
+            core.ngz_memcpy(self.buf.*.start, p + part, len - part);
+            self.buf.*.last = self.buf.*.start + (len - part);
+        }
+    }
+
+    pub fn read(self: *Self, p: [*c]u_char, len: ngx_uint_t) !void {
+        if (len > size(self)) {
+            return core.NError.OOM;
+        }
+        if (self.buf.*.pos + len <= self.buf.*.end) {
+            core.ngz_memcpy(p, self.buf.*.pos, len);
+            self.buf.*.pos += len;
+        } else {
+            const part = @intFromPtr(self.buf.*.end) - @intFromPtr(self.buf.*.pos);
+            core.ngz_memcpy(p, self.buf.*.pos, part);
+            core.ngz_memcpy(p + part, self.buf.*.start, len - part);
+            self.buf.*.pos = self.buf.*.start + len - part;
+        }
+    }
 };
 
 test "buf" {
