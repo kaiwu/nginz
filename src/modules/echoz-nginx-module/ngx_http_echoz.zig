@@ -1,5 +1,7 @@
 const std = @import("std");
 const ngx = @import("nginx");
+
+const buf = ngx.buf;
 const core = ngx.core;
 const conf = ngx.conf;
 const http = ngx.http;
@@ -25,6 +27,7 @@ const ngx_http_request_t = http.ngx_http_request_t;
 
 const ngx_string = ngx.string.ngx_string;
 const NArray = ngx.array.NArray;
+const NChain = ngx.buf.NChain;
 
 const echoz_command_type = enum(ngx_int_t) {
     echoz,
@@ -43,6 +46,10 @@ const echoz_command = extern struct {
     params: NArray(echoz_parameter),
 };
 
+const RError = error{
+    SCRIPT_ERROR,
+};
+
 fn map(ps: NArray(echoz_parameter), p: [*c]ngx_pool_t, r: [*c]ngx_http_request_t) !NArray(ngx_str_t) {
     var ss = try NArray(ngx_str_t).init(p, ps.size());
     for (NArray(echoz_parameter).slice(@constCast(&ps)), ss.slice()) |p0, *s0| {
@@ -57,7 +64,7 @@ fn map(ps: NArray(echoz_parameter), p: [*c]ngx_pool_t, r: [*c]ngx_http_request_t
             0,
             p0.values.*.elts,
         ) == core.nullptr(core.u_char)) {
-            return core.NError.REQUEST_ERROR;
+            return RError.SCRIPT_ERROR;
         }
     }
     return ss;
@@ -70,6 +77,7 @@ const loc_conf = extern struct {
 const echoz_context = extern struct {
     ready: ngx_flag_t,
     iterator: NArray(echoz_command).IteratorType,
+    chain: NChain,
 };
 
 fn postconfiguration(cf: [*c]ngx_conf_t) callconv(.C) ngx_int_t {
@@ -88,11 +96,10 @@ fn echoz_exec_command(
     cmd: [*c]echoz_command,
     ctx: [*c]echoz_context,
     r: [*c]ngx_http_request_t,
-) ngx_int_t {
+) !void {
     _ = ctx;
-    const parameters = map(cmd.*.params, r.*.pool, r) catch return NGX_ERROR;
+    const parameters = try map(cmd.*.params, r.*.pool, r);
     _ = parameters;
-    return NGX_OK;
 }
 
 export fn ngx_http_echoz_handler(r: [*c]ngx_http_request_t) callconv(.C) ngx_int_t {
@@ -108,13 +115,13 @@ export fn ngx_http_echoz_handler(r: [*c]ngx_http_request_t) callconv(.C) ngx_int
 
         if (ctx.*.ready == 0) {
             ctx.*.iterator = lccf.*.cmds.iterator();
+            ctx.*.chain = NChain.init(r.*.pool);
             ctx.*.ready = 1;
         }
         while (ctx.*.iterator.next()) |cmd| {
-            const res = echoz_exec_command(cmd, ctx, r);
-            if (res != NGX_OK) {
-                return res;
-            }
+            echoz_exec_command(cmd, ctx, r) catch {
+                return NGX_ERROR;
+            };
         }
     }
     return NGX_OK;
