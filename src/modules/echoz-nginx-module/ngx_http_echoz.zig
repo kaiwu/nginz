@@ -15,6 +15,7 @@ const ngx_str_t = core.ngx_str_t;
 const ngx_int_t = core.ngx_int_t;
 const ngx_uint_t = core.ngx_uint_t;
 const ngx_flag_t = core.ngx_flag_t;
+const ngx_msec_t = core.ngx_msec_t;
 const ngx_pool_t = core.ngx_pool_t;
 const ngx_conf_t = conf.ngx_conf_t;
 const ngx_buf_t = ngx.buf.ngx_buf_t;
@@ -33,6 +34,7 @@ const echoz_command_type = enum(ngx_int_t) {
     echoz,
     echozn,
     echoz_duplicate,
+    echoz_sleep,
 };
 
 const echoz_parameter = extern struct {
@@ -51,6 +53,7 @@ const ZError = error{
     COMMAND_ERROR,
     SCRIPT_ERROR,
     FILTER_ERROR,
+    TIMER_EVENT,
 };
 
 const loc_conf = extern struct {
@@ -75,6 +78,30 @@ fn create_loc_conf(cf: [*c]ngx_conf_t) callconv(.C) ?*anyopaque {
         return p;
     }
     return null;
+}
+
+fn atof(s: ngx_str_t, precision: ngx_uint_t) ZError!ngx_msec_t {
+    var t2 = [2]ngx_uint_t{ 0, 0 };
+    var i: usize = 0;
+    var p: ngx_uint_t = 0;
+    for (core.slicify(u8, s.data, s.len)) |c| {
+        if (p > @min(precision, 3)) {
+            break;
+        }
+        if (c >= '0' and c <= '9') {
+            t2[i] = t2[i] * 10 + c - '0';
+        }
+        if (c == '.' and i == 0) {
+            i += 1;
+        }
+        if (i > 0) {
+            p += 1;
+        }
+    }
+    for (0..4 - p) |_| {
+        t2[1] *= 10;
+    }
+    return t2[0] * 1000 + t2[1];
 }
 
 fn atoz(s: [*c]ngx_str_t) ZError!ngx_uint_t {
@@ -105,6 +132,7 @@ fn set_type(offset: ngx_uint_t) ZError!echoz_command_type {
         0 => .echoz,
         1 => .echozn,
         2 => .echoz_duplicate,
+        3 => .echoz_sleep,
         else => ZError.COMMAND_ERROR,
     };
 }
@@ -168,7 +196,7 @@ fn echoz_exec_command(
             }
             return ZError.COMMAND_ERROR;
         },
-        // else => return ZError.COMMAND_ERROR,
+        else => return ZError.COMMAND_ERROR,
     }
 }
 
@@ -196,7 +224,12 @@ export fn ngx_http_echoz_handler(r: [*c]ngx_http_request_t) callconv(.C) ngx_int
         };
         var last: [*c]ngx_chain_t = &out;
         while (ctx.*.iterator.next()) |cmd| {
-            last = echoz_exec_command(cmd, ctx, r, last) catch return http.NGX_HTTP_INTERNAL_SERVER_ERROR;
+            last = echoz_exec_command(cmd, ctx, r, last) catch |e| {
+                switch (e) {
+                    ZError.TIMER_EVENT => return core.NGX_AGAIN,
+                    else => return http.NGX_HTTP_INTERNAL_SERVER_ERROR,
+                }
+            };
             if (with_newline(cmd)) {
                 last = ctx.*.chain.allocStr(ctx.*.newline_str, last) catch return http.NGX_HTTP_INTERNAL_SERVER_ERROR;
             }
@@ -277,6 +310,14 @@ export const ngx_http_echoz_commands = [_]ngx_command_t{
         .offset = 2,
         .post = NULL,
     },
+    ngx_command_t{
+        .name = ngx_string("echoz_sleep"),
+        .type = conf.NGX_HTTP_LOC_CONF | conf.NGX_CONF_2MORE,
+        .set = ngx_conf_set_echoz,
+        .conf = conf.NGX_HTTP_LOC_CONF_OFFSET,
+        .offset = 3,
+        .post = NULL,
+    },
 };
 
 export var ngx_http_echoz_module = ngx.module.make_module(
@@ -290,4 +331,7 @@ test "module" {
     const len = core.sizeof(ngx.module.NGX_MODULE_SIGNATURE);
     const slice = core.make_slice(@constCast(ngx_http_echoz_module.signature), len);
     try expectEqual(slice.len, 40);
+
+    const t0 = try atof(ngx_string("2.181"), 2);
+    try expectEqual(t0, 2180);
 }

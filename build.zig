@@ -19,6 +19,8 @@ var tests = [_][]const u8{
     "src/ngx/ngx_module.zig",
     "src/ngx/ngx_rbtree.zig",
     "src/ngx/ngx_string.zig",
+
+    "src/modules/echoz-nginx-module/ngx_http_echoz.zig",
 };
 
 const PN = struct {
