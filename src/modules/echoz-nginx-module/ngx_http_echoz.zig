@@ -214,6 +214,10 @@ fn echoz_exec_command(
     }
 }
 
+export fn ngx_http_echoz_sleep_event_handler(ev: [*c]ngx_event_t) callconv(.C) void {
+    _ = ev;
+}
+
 export fn ngx_http_echoz_sleep_cleanup(data: ?*anyopaque) callconv(.C) void {
     if (core.castPtr(ngx_http_request_t, data)) |r| {
         const ctx = http.ngz_http_get_module_ctx(echoz_context, r, &ngx_http_echoz_module) catch return;
@@ -239,6 +243,9 @@ export fn ngx_http_echoz_handler(r: [*c]ngx_http_request_t) callconv(.C) ngx_int
             ctx.*.chain = NChain.init(r.*.pool);
             ctx.*.space_str = ngx_string(" ");
             ctx.*.newline_str = ngx_string("\n");
+            ctx.*.sleep.handler = ngx_http_echoz_sleep_event_handler;
+            ctx.*.sleep.data = r;
+            ctx.*.sleep.log = r.*.connection.*.log;
             ctx.*.ready = 1;
         }
         var out = buf.ngx_chain_t{
