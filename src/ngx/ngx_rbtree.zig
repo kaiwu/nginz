@@ -59,8 +59,8 @@ pub inline fn ngx_rbtree_min(node: [*c]ngx_rbtree_node_t, sentinel: [*c]ngx_rbtr
 }
 
 pub const ngx_rbtree_insert_pt = ngx.ngx_rbtree_insert_pt;
-const ngx_rbtree_insert = ngx.ngx_rbtree_insert;
-const ngx_rbtree_delete = ngx.ngx_rbtree_delete;
+pub const ngx_rbtree_insert = ngx.ngx_rbtree_insert;
+pub const ngx_rbtree_delete = ngx.ngx_rbtree_delete;
 pub fn NRBTree(
     comptime T: type,
     comptime field: []const u8,

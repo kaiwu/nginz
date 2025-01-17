@@ -19,6 +19,7 @@ const ngx_msec_t = core.ngx_msec_t;
 const ngx_pool_t = core.ngx_pool_t;
 const ngx_conf_t = conf.ngx_conf_t;
 const ngx_buf_t = ngx.buf.ngx_buf_t;
+const ngx_event_t = core.ngx_event_t;
 const ngx_chain_t = ngx.buf.ngx_chain_t;
 const ngx_command_t = conf.ngx_command_t;
 const ngx_array_t = ngx.array.ngx_array_t;
@@ -66,6 +67,7 @@ const echoz_context = extern struct {
     chain: NChain,
     space_str: ngx_str_t,
     newline_str: ngx_str_t,
+    sleep: ngx_event_t,
 };
 
 fn postconfiguration(cf: [*c]ngx_conf_t) callconv(.C) ngx_int_t {
@@ -80,7 +82,7 @@ fn create_loc_conf(cf: [*c]ngx_conf_t) callconv(.C) ?*anyopaque {
     return null;
 }
 
-fn atof(s: ngx_str_t, precision: ngx_uint_t) ZError!ngx_msec_t {
+fn atof(s: ngx_str_t, precision: ngx_uint_t) ngx_msec_t {
     var t2 = [2]ngx_uint_t{ 0, 0 };
     var i: usize = 0;
     var p: ngx_uint_t = 0;
@@ -196,7 +198,28 @@ fn echoz_exec_command(
             }
             return ZError.COMMAND_ERROR;
         },
-        else => return ZError.COMMAND_ERROR,
+        .echoz_sleep => {
+            var it = parameters.iterator();
+            if (it.next()) |delay| {
+                ngx.event.ngx_event_add_timer(&ctx.*.sleep, atof(delay.*, 3));
+                if (core.nonNullPtr(http.ngx_http_cleanup_t, http.ngx_http_cleanup_add(r, 0))) |cln| {
+                    cln.*.data = r;
+                    cln.*.handler = ngx_http_echoz_sleep_cleanup;
+                    return ZError.TIMER_EVENT;
+                }
+            }
+            return ZError.COMMAND_ERROR;
+        },
+        // else => return ZError.COMMAND_ERROR,
+    }
+}
+
+export fn ngx_http_echoz_sleep_cleanup(data: ?*anyopaque) callconv(.C) void {
+    if (core.castPtr(ngx_http_request_t, data)) |r| {
+        const ctx = http.ngz_http_get_module_ctx(echoz_context, r, &ngx_http_echoz_module) catch return;
+        if (ctx.*.sleep.flags.timer_set) {
+            ngx.event.ngx_event_del_timer(&ctx.*.sleep);
+        }
     }
 }
 
@@ -312,7 +335,7 @@ export const ngx_http_echoz_commands = [_]ngx_command_t{
     },
     ngx_command_t{
         .name = ngx_string("echoz_sleep"),
-        .type = conf.NGX_HTTP_LOC_CONF | conf.NGX_CONF_2MORE,
+        .type = conf.NGX_HTTP_LOC_CONF | conf.NGX_CONF_TAKE1,
         .set = ngx_conf_set_echoz,
         .conf = conf.NGX_HTTP_LOC_CONF_OFFSET,
         .offset = 3,
@@ -332,6 +355,7 @@ test "module" {
     const slice = core.make_slice(@constCast(ngx_http_echoz_module.signature), len);
     try expectEqual(slice.len, 40);
 
-    const t0 = try atof(ngx_string("2.181"), 2);
-    try expectEqual(t0, 2180);
+    try expectEqual(atof(ngx_string("2.181"), 2), 2180);
+    try expectEqual(atof(ngx_string("2.1011"), 3), 2101);
+    try expectEqual(atof(ngx_string("21"), 3), 21000);
 }

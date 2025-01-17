@@ -14,6 +14,7 @@ var tests = [_][]const u8{
     "src/ngx/ngx_hash.zig",
     "src/ngx/ngx_http.zig",
     "src/ngx/ngx_list.zig",
+    "src/ngx/ngx_event.zig",
     "src/ngx/ngx_queue.zig",
     "src/ngx/ngx_array.zig",
     "src/ngx/ngx_module.zig",
