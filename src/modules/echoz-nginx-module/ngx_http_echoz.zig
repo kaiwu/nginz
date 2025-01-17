@@ -47,6 +47,7 @@ const echoz_command = extern struct {
 };
 
 const RError = error{
+    COMMAND_ERROR,
     SCRIPT_ERROR,
     FILTER_ERROR,
 };
@@ -116,6 +117,18 @@ fn echoz_exec_command(
     return ctx.*.chain.allocNStr(parameters, c);
 }
 
+fn with_newline(cmd: [*c]echoz_command) bool {
+    return cmd.*.type == .echoz;
+}
+
+fn set_type(offset: ngx_uint_t) RError!echoz_command_type {
+    return switch (offset) {
+        0 => .echoz,
+        1 => .echozn,
+        else => RError.COMMAND_ERROR,
+    };
+}
+
 export fn ngx_http_echoz_handler(r: [*c]ngx_http_request_t) callconv(.C) ngx_int_t {
     if (core.castPtr(loc_conf, conf.ngx_http_get_module_loc_conf(r, &ngx_http_echoz_module))) |lccf| {
         if (!lccf.*.cmds.inited() or lccf.*.cmds.size() == 0) {
@@ -141,7 +154,9 @@ export fn ngx_http_echoz_handler(r: [*c]ngx_http_request_t) callconv(.C) ngx_int
         var last: [*c]ngx_chain_t = &out;
         while (ctx.*.iterator.next()) |cmd| {
             last = echoz_exec_command(cmd, ctx, r, last) catch return http.NGX_HTTP_INTERNAL_SERVER_ERROR;
-            last = ctx.*.chain.allocStr(ctx.*.newline_str, last) catch return http.NGX_HTTP_INTERNAL_SERVER_ERROR;
+            if (with_newline(cmd)) {
+                last = ctx.*.chain.allocStr(ctx.*.newline_str, last) catch return http.NGX_HTTP_INTERNAL_SERVER_ERROR;
+            }
         }
 
         const len = buf.ngz_chain_length(out.next);
@@ -156,7 +171,6 @@ export fn ngx_http_echoz_handler(r: [*c]ngx_http_request_t) callconv(.C) ngx_int
 }
 
 fn ngx_conf_set_echoz(cf: [*c]ngx_conf_t, cmd: [*c]ngx_command_t, loc: ?*anyopaque) callconv(.C) [*c]u8 {
-    _ = cmd;
     if (core.castPtr(loc_conf, loc)) |lccf| {
         if (!lccf.*.cmds.inited()) {
             lccf.*.cmds = NArray(echoz_command).init(cf.*.pool, 1) catch return conf.NGX_CONF_ERROR;
@@ -166,7 +180,7 @@ fn ngx_conf_set_echoz(cf: [*c]ngx_conf_t, cmd: [*c]ngx_command_t, loc: ?*anyopaq
         }
 
         const echoz = lccf.*.cmds.append() catch return conf.NGX_CONF_ERROR;
-        echoz.*.type = .echoz;
+        echoz.*.type = set_type(cmd.*.offset) catch return conf.NGX_CONF_ERROR;
         echoz.*.params = NArray(echoz_parameter).init(cf.*.pool, 1) catch return conf.NGX_CONF_ERROR;
         var i: ngx_uint_t = 1;
         while (ngx.array.ngx_array_next(ngx_str_t, cf.*.args, &i)) |arg| {
@@ -202,6 +216,14 @@ export const ngx_http_echoz_commands = [_]ngx_command_t{
         .set = ngx_conf_set_echoz,
         .conf = conf.NGX_HTTP_LOC_CONF_OFFSET,
         .offset = 0,
+        .post = NULL,
+    },
+    ngx_command_t{
+        .name = ngx_string("echozn"),
+        .type = conf.NGX_HTTP_LOC_CONF | conf.NGX_CONF_ANY,
+        .set = ngx_conf_set_echoz,
+        .conf = conf.NGX_HTTP_LOC_CONF_OFFSET,
+        .offset = 1,
         .post = NULL,
     },
 };
