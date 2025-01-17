@@ -32,6 +32,7 @@ const NChain = ngx.buf.NChain;
 const echoz_command_type = enum(ngx_int_t) {
     echoz,
     echozn,
+    echoz_duplicate,
 };
 
 const echoz_parameter = extern struct {
@@ -46,7 +47,7 @@ const echoz_command = extern struct {
     params: NArray(echoz_parameter),
 };
 
-const RError = error{
+const ZError = error{
     COMMAND_ERROR,
     SCRIPT_ERROR,
     FILTER_ERROR,
@@ -76,10 +77,43 @@ fn create_loc_conf(cf: [*c]ngx_conf_t) callconv(.C) ?*anyopaque {
     return null;
 }
 
+fn atoz(s: [*c]ngx_str_t) ZError!ngx_uint_t {
+    var x: ngx_uint_t = 0;
+    for (core.slicify(u8, s.*.data, s.*.len)) |c| {
+        switch (c) {
+            '_' => continue,
+            '0', '1', '2', '3', '4', '5', '6', '7', '8', '9' => x = x * 10 + c - '0',
+            else => return ZError.COMMAND_ERROR,
+        }
+    }
+    return x;
+}
+
+fn write_buf(it: *NArray(ngx_str_t).IteratorType, b: [*c]ngx_buf_t) void {
+    while (it.next()) |s| {
+        core.ngz_memcpy(b.*.last, s.*.data, s.*.len);
+        b.*.last += s.*.len;
+    }
+}
+
+fn with_newline(cmd: [*c]echoz_command) bool {
+    return cmd.*.type == .echoz;
+}
+
+fn set_type(offset: ngx_uint_t) ZError!echoz_command_type {
+    return switch (offset) {
+        0 => .echoz,
+        1 => .echozn,
+        2 => .echoz_duplicate,
+        else => ZError.COMMAND_ERROR,
+    };
+}
+
 fn map(
     ps: NArray(echoz_parameter),
     r: [*c]ngx_http_request_t,
     ctx: [*c]echoz_context,
+    total_length: *ngx_uint_t,
 ) !NArray(ngx_str_t) {
     var ss = try NArray(ngx_str_t).init(r.*.pool, ps.size());
     var i: ngx_uint_t = 0;
@@ -96,11 +130,13 @@ fn map(
                 0,
                 p0.*.values.*.elts,
             ) == core.nullptr(core.u_char)) {
-                return RError.SCRIPT_ERROR;
+                return ZError.SCRIPT_ERROR;
             }
+            total_length.* += s0.*.len;
             if (i + 1 < ps.size()) {
                 const space = try ss.append();
                 space.* = ctx.*.space_str;
+                total_length.* += 1;
             }
         }
     }
@@ -113,20 +149,27 @@ fn echoz_exec_command(
     r: [*c]ngx_http_request_t,
     c: [*c]ngx_chain_t,
 ) ![*c]ngx_chain_t {
-    const parameters = try map(cmd.*.params, r, ctx);
-    return ctx.*.chain.allocNStr(parameters, c);
-}
-
-fn with_newline(cmd: [*c]echoz_command) bool {
-    return cmd.*.type == .echoz;
-}
-
-fn set_type(offset: ngx_uint_t) RError!echoz_command_type {
-    return switch (offset) {
-        0 => .echoz,
-        1 => .echozn,
-        else => RError.COMMAND_ERROR,
-    };
+    var total_length: ngx_uint_t = 0;
+    const parameters = try map(cmd.*.params, r, ctx, &total_length);
+    switch (cmd.*.type) {
+        .echoz, .echozn => return ctx.*.chain.allocNStr(parameters, c),
+        .echoz_duplicate => {
+            var it = parameters.iterator();
+            if (it.next()) |first| {
+                const n = try atoz(first);
+                const len = total_length - first.*.len - 1;
+                const cl = try ctx.*.chain.alloc(n * len, c);
+                _ = it.next(); //skip the space
+                for (0..n) |_| {
+                    write_buf(&it, cl.*.buf);
+                    it.resetN(2);
+                }
+                return cl;
+            }
+            return ZError.COMMAND_ERROR;
+        },
+        // else => return ZError.COMMAND_ERROR,
+    }
 }
 
 export fn ngx_http_echoz_handler(r: [*c]ngx_http_request_t) callconv(.C) ngx_int_t {
@@ -224,6 +267,14 @@ export const ngx_http_echoz_commands = [_]ngx_command_t{
         .set = ngx_conf_set_echoz,
         .conf = conf.NGX_HTTP_LOC_CONF_OFFSET,
         .offset = 1,
+        .post = NULL,
+    },
+    ngx_command_t{
+        .name = ngx_string("echoz_duplicate"),
+        .type = conf.NGX_HTTP_LOC_CONF | conf.NGX_CONF_2MORE,
+        .set = ngx_conf_set_echoz,
+        .conf = conf.NGX_HTTP_LOC_CONF_OFFSET,
+        .offset = 2,
         .post = NULL,
     },
 };

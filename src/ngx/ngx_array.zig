@@ -52,6 +52,10 @@ pub fn NArray(comptime T: type) type {
         pub fn reset(self: *Self) void {
             self.offset = 0;
         }
+
+        pub fn resetN(self: *Self, i: ngx_uint_t) void {
+            self.offset = i;
+        }
     };
 
     return extern struct {
