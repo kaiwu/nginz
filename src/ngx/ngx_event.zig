@@ -47,11 +47,21 @@ pub const NTimer = extern struct {
 
     fn timer_handler(ev: [*c]ngx_event_t) callconv(.C) void {
         if (core.castPtr(Self, ev.*.data)) |self| {
+            if (!self.*.timer.flags.timedout) {
+                return;
+            }
+            self.*.timer.flags.timedout = false;
+            if (self.*.timer.flags.timer_set) {
+                ngx_event_del_timer(&self.*.timer);
+            }
+
             const r = self.*.request;
-            // check request validity
+            // might do some with r first
             if (self.*.handler) |handle| {
-                // call specific handler
-                if (handle(r) != core.NGX_OK) {}
+                const rc = handle(r);
+                if (rc != core.NGX_AGAIN or rc != core.NGX_OK) {
+                    http.ngx_http_finalize_request(r, rc);
+                }
             }
         }
     }
@@ -72,12 +82,17 @@ pub const NTimer = extern struct {
         };
     }
 
-    pub fn activate(self: *Self, r: [*c]ngx_http_request_t, d: ngx_msec_t) void {
+    pub fn activate(self: *Self, d: ngx_msec_t) !void {
         self.timer.data = self;
-        if (core.nonNullPtr(http.ngx_http_cleanup_t, http.ngx_http_cleanup_add(r, 0))) |cln| {
+        ngx_event_add_timer(&self.*.timer, d);
+        if (core.nonNullPtr(
+            http.ngx_http_cleanup_t,
+            http.ngx_http_cleanup_add(self.request, 0),
+        )) |cln| {
             cln.*.data = self;
             cln.*.handler = timer_cleanup;
+        } else {
+            return core.NError.TIMER_ERROR;
         }
-        ngx_event_add_timer(&self.*.timer, d);
     }
 };

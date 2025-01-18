@@ -73,6 +73,7 @@ pub const ngx_http_script_run = ngx.ngx_http_script_run;
 pub const ngx_http_send_header = ngx.ngx_http_send_header;
 pub const ngx_http_output_filter = ngx.ngx_http_output_filter;
 pub const ngx_http_send_special = ngx.ngx_http_send_special;
+pub const ngx_http_finalize_request = ngx.ngx_http_finalize_request;
 
 test "http" {
     try expectEqual(@sizeOf(ngx_http_file_cache_node_t), 120);

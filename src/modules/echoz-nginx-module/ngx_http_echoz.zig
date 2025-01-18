@@ -229,7 +229,7 @@ fn echoz_exec_command(cmd: [*c]echoz_command, ctx: [*c]echoz_context, r: [*c]ngx
         .echoz_sleep => {
             var it = parameters.iterator();
             if (it.next()) |delay| {
-                ctx.*.timer.activate(r, atof(delay.*, 3));
+                try ctx.*.timer.activate(atof(delay.*, 3));
                 return ZError.TIMER_EVENT;
             }
             return ZError.COMMAND_ERROR;

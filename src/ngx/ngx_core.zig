@@ -62,6 +62,7 @@ pub const NError = error{
     OOM,
     CONF_ERROR,
     HASH_ERROR,
+    TIMER_ERROR,
     REQUEST_ERROR,
 };
 

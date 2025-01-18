@@ -3187,7 +3187,7 @@ const struct_ngx_event_flags_s = packed struct {
     complete: bool,
     eof: bool,
     @"error": bool,
-    timeout: bool,
+    timedout: bool,
     timer_set: bool,
     delayed: bool,
     deferred_accept: bool,
