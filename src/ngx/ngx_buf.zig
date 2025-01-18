@@ -74,6 +74,19 @@ pub const NChain = extern struct {
         return core.NError.OOM;
     }
 
+    pub fn allocBuf(self: *Self, last: [*c]ngx_chain_t) ![*c]ngx_chain_t {
+        if (core.nonNullPtr(ngx_chain_t, ngx_alloc_chain_link(self.pool))) |cl| {
+            if (core.ngz_pcalloc_c(ngx_buf_t, self.pool)) |b| {
+                b.*.flags.memory = true;
+                cl.*.buf = b;
+                cl.*.next = NP;
+                last.*.next = cl;
+                return cl;
+            }
+        }
+        return core.NError.OOM;
+    }
+
     pub fn allocStr(
         self: *Self,
         str: ngx_str_t,

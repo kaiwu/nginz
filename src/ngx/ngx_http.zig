@@ -37,6 +37,7 @@ pub const ngx_ssl_connection_t = ngx.ngx_ssl_connection_t;
 pub const ngx_ssl_ticket_key_t = ngx.ngx_ssl_ticket_key_t;
 pub const ngx_http_module_t = ngx.ngx_http_module_t;
 pub const ngx_http_cleanup_t = ngx.ngx_http_cleanup_t;
+pub const ngx_http_handler_pt = ngx.ngx_http_handler_pt;
 
 const NError = core.NError;
 const NGX_OK = core.NGX_OK;
@@ -64,10 +65,14 @@ pub inline fn ngz_http_get_module_ctx(
 pub const NGX_HTTP_OK = ngx.NGX_HTTP_OK;
 pub const NGX_HTTP_INTERNAL_SERVER_ERROR = ngx.NGX_HTTP_INTERNAL_SERVER_ERROR;
 
+pub const NGX_HTTP_LAST = ngx.NGX_HTTP_LAST;
+pub const NGX_HTTP_FLUSH = ngx.NGX_HTTP_FLUSH;
+
 pub const ngx_http_cleanup_add = ngx.ngx_http_cleanup_add;
 pub const ngx_http_script_run = ngx.ngx_http_script_run;
 pub const ngx_http_send_header = ngx.ngx_http_send_header;
 pub const ngx_http_output_filter = ngx.ngx_http_output_filter;
+pub const ngx_http_send_special = ngx.ngx_http_send_special;
 
 test "http" {
     try expectEqual(@sizeOf(ngx_http_file_cache_node_t), 120);
