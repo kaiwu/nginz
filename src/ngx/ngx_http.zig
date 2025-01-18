@@ -39,6 +39,7 @@ pub const ngx_ssl_ticket_key_t = ngx.ngx_ssl_ticket_key_t;
 pub const ngx_http_module_t = ngx.ngx_http_module_t;
 pub const ngx_http_cleanup_t = ngx.ngx_http_cleanup_t;
 pub const ngx_http_handler_pt = ngx.ngx_http_handler_pt;
+pub const ngx_http_log_ctx_t = ngx.ngx_http_log_ctx_t;
 
 const NError = core.NError;
 const NGX_OK = core.NGX_OK;

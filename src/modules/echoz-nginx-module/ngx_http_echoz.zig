@@ -36,7 +36,7 @@ const echoz_command_type = enum(ngx_int_t) {
     echoz,
     echozn,
     echoz_duplicate,
-    echoz_sync,
+    echoz_flush,
     echoz_sleep,
 };
 
@@ -162,7 +162,7 @@ fn set_type(offset: ngx_uint_t) ZError!echoz_command_type {
         0 => .echoz,
         1 => .echozn,
         2 => .echoz_duplicate,
-        3 => .echoz_sync,
+        3 => .echoz_flush,
         4 => .echoz_sleep,
         else => ZError.COMMAND_ERROR,
     };
@@ -223,11 +223,11 @@ fn echoz_exec_command(cmd: [*c]echoz_command, ctx: [*c]echoz_context, r: [*c]ngx
                     it.resetN(2);
                 }
             }
-            return ZError.COMMAND_ERROR;
         },
-        .echoz_sync => {
-            const last = try ctx.*.chain.allocBuf(c);
-            last.*.buf.*.flags.sync = true;
+        .echoz_flush => {
+            if (http.ngx_http_send_special(r, http.NGX_HTTP_FLUSH) != NGX_OK) {
+                return ZError.BODY_ERROR;
+            }
         },
         .echoz_sleep => {
             var it = parameters.iterator();
@@ -235,7 +235,6 @@ fn echoz_exec_command(cmd: [*c]echoz_command, ctx: [*c]echoz_context, r: [*c]ngx
                 try ctx.*.timer.activate(atof(delay.*, 3));
                 return ZError.TIMER_EVENT;
             }
-            return ZError.COMMAND_ERROR;
         },
         // else => return ZError.COMMAND_ERROR,
     }
@@ -272,7 +271,7 @@ fn echoz_handle(r: [*c]ngx_http_request_t) !void {
                 out.next = core.nullptr(ngx_chain_t);
             }
         }
-        try send_body(r, &out);
+        try send_body(r, out.next);
     }
 }
 

@@ -90,7 +90,7 @@ pub const NChain = extern struct {
     pub fn allocStr(
         self: *Self,
         str: ngx_str_t,
-        last: ?[*c]ngx_chain_t,
+        last: [*c]ngx_chain_t,
     ) ![*c]ngx_chain_t {
         if (core.ngz_pcalloc_c(ngx_chain_t, self.pool)) |cl| {
             if (core.ngz_pcalloc_c(ngx_buf_t, self.pool)) |b| {
@@ -102,9 +102,7 @@ pub const NChain = extern struct {
 
                 cl.*.buf = b;
                 cl.*.next = NP;
-                if (last) |lc| {
-                    lc.*.next = cl;
-                }
+                last.*.next = cl;
                 return cl;
             }
         }
@@ -128,7 +126,7 @@ pub const NChain = extern struct {
     pub fn alloc(
         self: *Self,
         size: ngx_uint_t,
-        last: ?[*c]ngx_chain_t,
+        last: [*c]ngx_chain_t,
     ) ![*c]ngx_chain_t {
         var cl: [*c]ngx_chain_t = self.pool.*.chain;
         var ll: [*c]ngx_chain_t = cl;
@@ -143,9 +141,7 @@ pub const NChain = extern struct {
         if (cl != NP) {
             cl.*.buf.*.last = cl.*.buf.*.pos;
             cl.*.next = NP;
-            if (last) |lc| {
-                lc.*.next = cl;
-            }
+            last.*.next = cl;
             return cl;
         }
 
@@ -154,9 +150,7 @@ pub const NChain = extern struct {
             if (b != core.nullptr(ngx_buf_t)) {
                 cl0.*.buf = b;
                 cl0.*.next = NP;
-                if (last) |lc| {
-                    lc.*.next = cl0;
-                }
+                last.*.next = cl0;
                 return cl0;
             }
         }

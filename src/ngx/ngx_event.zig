@@ -47,6 +47,18 @@ pub const NTimer = extern struct {
 
     fn timer_handler(ev: [*c]ngx_event_t) callconv(.C) void {
         if (core.castPtr(Self, ev.*.data)) |self| {
+            const r = self.*.request;
+            if (r.*.connection.*.flags.destroyed) {
+                return;
+            }
+            if (r.*.connection.*.flags.@"error") {
+                http.ngx_http_finalize_request(r, core.NGX_ERROR);
+                return;
+            }
+            if (core.castPtr(http.ngx_http_log_ctx_t, r.*.connection.*.log.*.data)) |ctx| {
+                ctx.*.current_request = r;
+            }
+
             if (!self.*.timer.flags.timedout) {
                 return;
             }
@@ -55,8 +67,6 @@ pub const NTimer = extern struct {
                 ngx_event_del_timer(&self.*.timer);
             }
 
-            const r = self.*.request;
-            // might do some with r first
             if (self.*.handler) |handle| {
                 const rc = handle(r);
                 if (rc != core.NGX_AGAIN or rc != core.NGX_OK) {
@@ -85,14 +95,14 @@ pub const NTimer = extern struct {
     pub fn activate(self: *Self, d: ngx_msec_t) !void {
         self.timer.data = self;
         ngx_event_add_timer(&self.*.timer, d);
-        if (core.nonNullPtr(
-            http.ngx_http_cleanup_t,
-            http.ngx_http_cleanup_add(self.request, 0),
-        )) |cln| {
-            cln.*.data = self;
-            cln.*.handler = timer_cleanup;
-        } else {
-            return core.NError.TIMER_ERROR;
-        }
+        // if (core.nonNullPtr(
+        //     http.ngx_http_cleanup_t,
+        //     http.ngx_http_cleanup_add(self.request, 0),
+        // )) |cln| {
+        //     cln.*.data = self;
+        //     cln.*.handler = timer_cleanup;
+        // } else {
+        //     return core.NError.TIMER_ERROR;
+        // }
     }
 };
