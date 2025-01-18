@@ -5,6 +5,7 @@ const nginx = @import("nginx.zig");
 const log = nginx.log;
 const core = nginx.core;
 const conf = nginx.conf;
+const hash = nginx.hash;
 const array = nginx.array;
 const string = nginx.string;
 const module = nginx.module;
@@ -74,6 +75,44 @@ pub const ngx_http_send_header = ngx.ngx_http_send_header;
 pub const ngx_http_output_filter = ngx.ngx_http_output_filter;
 pub const ngx_http_send_special = ngx.ngx_http_send_special;
 pub const ngx_http_finalize_request = ngx.ngx_http_finalize_request;
+
+pub inline fn ngx_http_clear_content_length(r: [*c]ngx_http_request_t) void {
+    r.*.headers_out.content_length_n = -1;
+    if (r.*.headers_out.content_length != core.nullptr(hash.ngx_table_elt_t)) {
+        r.*.headers_out.content_length.*.hash = 0;
+        r.*.headers_out.content_length = core.nullptr(hash.ngx_table_elt_t);
+    }
+}
+
+pub inline fn ngx_http_clear_accept_ranges(r: [*c]ngx_http_request_t) void {
+    r.*.flags1.allow_ranges = false;
+    if (r.*.headers_out.accept_ranges != core.nullptr(hash.ngx_table_elt_t)) {
+        r.*.headers_out.accept_ranges.*.hash = 0;
+        r.*.headers_out.accept_ranges = core.nullptr(hash.ngx_table_elt_t);
+    }
+}
+
+pub inline fn ngx_http_clear_last_modified(r: [*c]ngx_http_request_t) void {
+    r.*.headers_out.last_modified_time = -1;
+    if (r.*.headers_out.last_modified != core.nullptr(hash.ngx_table_elt_t)) {
+        r.*.headers_out.last_modified.*.hash = 0;
+        r.*.headers_out.last_modified = core.nullptr(hash.ngx_table_elt_t);
+    }
+}
+
+pub inline fn ngx_http_clear_location(r: [*c]ngx_http_request_t) void {
+    if (r.*.headers_out.location != core.nullptr(hash.ngx_table_elt_t)) {
+        r.*.headers_out.location.*.hash = 0;
+        r.*.headers_out.location = core.nullptr(hash.ngx_table_elt_t);
+    }
+}
+
+pub inline fn ngx_http_clear_etag(r: [*c]ngx_http_request_t) void {
+    if (r.*.headers_out.etag != core.nullptr(hash.ngx_table_elt_t)) {
+        r.*.headers_out.etag.*.hash = 0;
+        r.*.headers_out.etag = core.nullptr(hash.ngx_table_elt_t);
+    }
+}
 
 test "http" {
     try expectEqual(@sizeOf(ngx_http_file_cache_node_t), 120);

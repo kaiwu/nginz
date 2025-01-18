@@ -10,6 +10,7 @@ const ngx_uint_t = core.ngx_uint_t;
 const ngx_pool_t = core.ngx_pool_t;
 
 pub const ngx_hash_t = ngx.ngx_hash_t;
+pub const ngx_table_elt_t = ngx.ngx_table_elt_t;
 pub const NGX_HASH_SMALL = ngx.NGX_HASH_SMALL;
 pub const NGX_HASH_LARGE = ngx.NGX_HASH_LARGE;
 pub const NGX_HASH_READONLY_KEY = ngx.NGX_HASH_READONLY_KEY;

@@ -125,6 +125,9 @@ fn atoz(s: [*c]ngx_str_t) ZError!ngx_uint_t {
 
 fn send_header(r: [*c]ngx_http_request_t, ctx: [*c]echoz_context) ZError!void {
     r.*.headers_out.status = http.NGX_HTTP_OK;
+    http.ngx_http_clear_content_length(r);
+    http.ngx_http_clear_accept_ranges(r);
+
     if (http.ngx_http_send_header(r) != NGX_OK) {
         return ZError.HEADER_ERROR;
     }
@@ -255,7 +258,7 @@ fn echoz_handle(r: [*c]ngx_http_request_t) !void {
             ctx.*.ready = 1;
         }
 
-        if (ctx.*.header_sent == 0) {
+        if (!r.*.flags1.header_sent and ctx.*.header_sent == 0) {
             try send_header(r, ctx);
         }
         var out = buf.ngx_chain_t{
