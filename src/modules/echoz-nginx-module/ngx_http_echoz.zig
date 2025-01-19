@@ -278,7 +278,7 @@ fn echoz_handle(r: [*c]ngx_http_request_t) !void {
 export fn ngx_http_echoz_handler(r: [*c]ngx_http_request_t) callconv(.C) ngx_int_t {
     echoz_handle(r) catch |e| {
         switch (e) {
-            ZError.TIMER_EVENT => return core.NGX_AGAIN,
+            ZError.TIMER_EVENT => return core.NGX_DONE,
             else => return http.NGX_HTTP_INTERNAL_SERVER_ERROR,
         }
     };
