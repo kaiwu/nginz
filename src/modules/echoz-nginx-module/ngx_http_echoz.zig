@@ -248,7 +248,7 @@ fn echoz_exec_command(cmd: [*c]echoz_command, ctx: [*c]echoz_context, r: [*c]ngx
         },
         .echoz_location => {
             var s2 = try parse_uri(r, &parameters);
-            _ = try ctx.*.subrequest.create(&s2[0], &s2[1], ngx_http_echoz_post_subrequest_handler);
+            _ = try ctx.*.subrequest.create(&s2[0], &s2[1], ngx_http_echoz_subrequest_post_handler);
             return ZError.SUBREQ_EVENT;
         },
         .echoz_location_async => {
@@ -295,10 +295,16 @@ fn echoz_handle(r: [*c]ngx_http_request_t) !void {
     }
 }
 
-fn ngx_http_echoz_post_subrequest_handler(sr: [*c]ngx_http_request_t, ctx: ?*anyopaque, rc: ngx_int_t) callconv(.C) ngx_int_t {
-    _ = sr;
+fn ngx_http_echoz_subrequest_post_handler(sr: [*c]ngx_http_request_t, ctx: ?*anyopaque, rc: ngx_int_t) callconv(.C) ngx_int_t {
     if (core.castPtr(NSubrequest, ctx)) |sub| {
-        _ = sub;
+        const pr = sub.*.parent;
+        if (sr.*.out != core.nullptr(ngx_chain_t)) {
+            send_body(pr, sr.*.out) catch {
+                http.ngx_http_finalize_request(pr, http.NGX_HTTP_INTERNAL_SERVER_ERROR);
+                return NGX_ERROR;
+            };
+        }
+        http.ngx_http_finalize_request(pr, ngx_http_echoz_handler(pr));
     }
     return rc;
 }
