@@ -11,7 +11,7 @@ pub inline fn ngx_string(str: []const u8) ngx_str_t {
     return ngx_str_t{ .len = str.len, .data = @constCast(str.ptr) };
 }
 
-pub const ngx_null_str = ngx_str_t{ .len = 0, .data = NULL };
+pub const ngx_null_str = ngx_str_t{ .len = 0, .data = core.nullptr(u8) };
 
 pub inline fn ngx_str_set(str: [*c]ngx_str_t, text: []const u8) void {
     str.*.len = text.len;

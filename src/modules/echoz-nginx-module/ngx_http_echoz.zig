@@ -31,6 +31,7 @@ const ngx_string = ngx.string.ngx_string;
 const NChain = ngx.buf.NChain;
 const NArray = ngx.array.NArray;
 const NTimer = ngx.event.NTimer;
+const NSubrequest = http.NSubrequest;
 
 const echoz_command_type = enum(ngx_int_t) {
     echoz,
@@ -38,6 +39,8 @@ const echoz_command_type = enum(ngx_int_t) {
     echoz_duplicate,
     echoz_flush,
     echoz_sleep,
+    echoz_location,
+    echoz_location_async,
 };
 
 const echoz_parameter = extern struct {
@@ -58,6 +61,7 @@ const ZError = error{
     HEADER_ERROR,
     BODY_ERROR,
     TIMER_EVENT,
+    SUBREQ_EVENT,
     DECLINE,
 };
 
@@ -73,6 +77,7 @@ const echoz_context = extern struct {
     newline_str: ngx_str_t,
     header_sent: ngx_flag_t,
     timer: NTimer,
+    subrequest: NSubrequest,
 };
 
 fn postconfiguration(cf: [*c]ngx_conf_t) callconv(.C) ngx_int_t {
@@ -85,6 +90,18 @@ fn create_loc_conf(cf: [*c]ngx_conf_t) callconv(.C) ?*anyopaque {
         return p;
     }
     return null;
+}
+
+fn parse_uri(r: [*c]ngx_http_request_t, ps: *const NArray(ngx_str_t)) ![2]ngx_str_t {
+    var s2 = [2]ngx_str_t{ ps.at(0).?.*, ngx.string.ngx_null_str };
+    var flags: ngx_uint_t = 0;
+    if (http.ngx_http_parse_unsafe_uri(r, &s2[0], &s2[1], &flags) != core.NGX_OK) {
+        return ZError.COMMAND_ERROR;
+    }
+    if (ps.size() > 1) {
+        s2[1] = ps.at(1).?.*;
+    }
+    return s2;
 }
 
 fn atof(s: ngx_str_t, precision: ngx_uint_t) ngx_msec_t {
@@ -157,15 +174,8 @@ fn with_newline(cmd: [*c]echoz_command) bool {
     return cmd.*.type == .echoz;
 }
 
-fn set_type(offset: ngx_uint_t) ZError!echoz_command_type {
-    return switch (offset) {
-        0 => .echoz,
-        1 => .echozn,
-        2 => .echoz_duplicate,
-        3 => .echoz_flush,
-        4 => .echoz_sleep,
-        else => ZError.COMMAND_ERROR,
-    };
+fn set_type(offset: ngx_int_t) echoz_command_type {
+    return @enumFromInt(@intFromEnum(echoz_command_type.echoz) + offset);
 }
 
 fn map(
@@ -236,6 +246,15 @@ fn echoz_exec_command(cmd: [*c]echoz_command, ctx: [*c]echoz_context, r: [*c]ngx
                 return ZError.TIMER_EVENT;
             }
         },
+        .echoz_location => {
+            var s2 = try parse_uri(r, &parameters);
+            _ = try ctx.*.subrequest.create(&s2[0], &s2[1], ngx_http_echoz_post_subrequest_handler);
+            return ZError.SUBREQ_EVENT;
+        },
+        .echoz_location_async => {
+            var s2 = try parse_uri(r, &parameters);
+            _ = try ctx.*.subrequest.create(&s2[0], &s2[1], null);
+        },
         // else => return ZError.COMMAND_ERROR,
     }
 }
@@ -254,6 +273,7 @@ fn echoz_handle(r: [*c]ngx_http_request_t) !void {
             ctx.*.newline_str = ngx_string("\n");
             ctx.*.header_sent = 0;
             ctx.*.timer = NTimer.init(r, ngx_http_echoz_handler);
+            ctx.*.subrequest = NSubrequest.init(r);
             ctx.*.ready = 1;
         }
 
@@ -275,10 +295,18 @@ fn echoz_handle(r: [*c]ngx_http_request_t) !void {
     }
 }
 
+fn ngx_http_echoz_post_subrequest_handler(sr: [*c]ngx_http_request_t, ctx: ?*anyopaque, rc: ngx_int_t) callconv(.C) ngx_int_t {
+    _ = sr;
+    if (core.castPtr(NSubrequest, ctx)) |sub| {
+        _ = sub;
+    }
+    return rc;
+}
+
 export fn ngx_http_echoz_handler(r: [*c]ngx_http_request_t) callconv(.C) ngx_int_t {
     echoz_handle(r) catch |e| {
         switch (e) {
-            ZError.TIMER_EVENT => return core.NGX_DONE,
+            ZError.TIMER_EVENT, ZError.SUBREQ_EVENT => return core.NGX_DONE,
             else => return http.NGX_HTTP_INTERNAL_SERVER_ERROR,
         }
     };
@@ -295,7 +323,7 @@ fn ngx_conf_set_echoz(cf: [*c]ngx_conf_t, cmd: [*c]ngx_command_t, loc: ?*anyopaq
         }
 
         const echoz = lccf.*.cmds.append() catch return conf.NGX_CONF_ERROR;
-        echoz.*.type = set_type(cmd.*.offset) catch return conf.NGX_CONF_ERROR;
+        echoz.*.type = set_type(@intCast(cmd.*.offset));
         echoz.*.params = NArray(echoz_parameter).init(cf.*.pool, 1) catch return conf.NGX_CONF_ERROR;
         var i: ngx_uint_t = 1;
         while (ngx.array.ngx_array_next(ngx_str_t, cf.*.args, &i)) |arg| {
@@ -363,6 +391,22 @@ export const ngx_http_echoz_commands = [_]ngx_command_t{
         .set = ngx_conf_set_echoz,
         .conf = conf.NGX_HTTP_LOC_CONF_OFFSET,
         .offset = 4,
+        .post = NULL,
+    },
+    ngx_command_t{
+        .name = ngx_string("echoz_location"),
+        .type = conf.NGX_HTTP_LOC_CONF | conf.NGX_CONF_TAKE12,
+        .set = ngx_conf_set_echoz,
+        .conf = conf.NGX_HTTP_LOC_CONF_OFFSET,
+        .offset = 5,
+        .post = NULL,
+    },
+    ngx_command_t{
+        .name = ngx_string("echoz_location_async"),
+        .type = conf.NGX_HTTP_LOC_CONF | conf.NGX_CONF_TAKE12,
+        .set = ngx_conf_set_echoz,
+        .conf = conf.NGX_HTTP_LOC_CONF_OFFSET,
+        .offset = 6,
         .post = NULL,
     },
 };

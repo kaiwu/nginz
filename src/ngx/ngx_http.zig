@@ -40,10 +40,13 @@ pub const ngx_http_module_t = ngx.ngx_http_module_t;
 pub const ngx_http_cleanup_t = ngx.ngx_http_cleanup_t;
 pub const ngx_http_handler_pt = ngx.ngx_http_handler_pt;
 pub const ngx_http_log_ctx_t = ngx.ngx_http_log_ctx_t;
+pub const ngx_http_post_subrequest_t = ngx.ngx_http_post_subrequest_t;
+pub const ngx_http_post_subrequest_pt = ngx.ngx_http_post_subrequest_pt;
 
 const NError = core.NError;
 const NGX_OK = core.NGX_OK;
 
+const ngx_int_t = core.ngx_int_t;
 const ngx_str_t = core.ngx_str_t;
 const ngx_conf_t = conf.ngx_conf_t;
 const ngx_array_t = array.ngx_array_t;
@@ -76,6 +79,8 @@ pub const ngx_http_send_header = ngx.ngx_http_send_header;
 pub const ngx_http_output_filter = ngx.ngx_http_output_filter;
 pub const ngx_http_send_special = ngx.ngx_http_send_special;
 pub const ngx_http_finalize_request = ngx.ngx_http_finalize_request;
+pub const ngx_http_parse_unsafe_uri = ngx.ngx_http_parse_unsafe_uri;
+pub const ngx_http_subrequest = ngx.ngx_http_subrequest;
 
 pub inline fn ngx_http_clear_content_length(r: [*c]ngx_http_request_t) void {
     r.*.headers_out.content_length_n = -1;
@@ -114,6 +119,54 @@ pub inline fn ngx_http_clear_etag(r: [*c]ngx_http_request_t) void {
         r.*.headers_out.etag = core.nullptr(hash.ngx_table_elt_t);
     }
 }
+
+pub const NSubrequest = extern struct {
+    const Self = @This();
+
+    parent: [*c]ngx_http_request_t,
+    sr: [*c]ngx_http_request_t,
+
+    pub fn init(r: [*c]ngx_http_request_t) Self {
+        return Self{ .parent = r, .sr = core.nullptr(ngx_http_request_t) };
+    }
+
+    pub fn create(
+        self: *Self,
+        location: [*c]ngx_str_t,
+        args: [*c]ngx_str_t,
+        handler: ngx_http_post_subrequest_pt,
+    ) !void {
+        if (handler) |h| {
+            if (core.ngz_pcalloc_c(ngx_http_post_subrequest_t, self.parent.*.pool)) |sub| {
+                sub.*.handler = h;
+                sub.*.data = self;
+                if (ngx_http_subrequest(
+                    self.parent,
+                    location,
+                    args,
+                    &self.sr,
+                    sub,
+                    0,
+                ) != NGX_OK) {
+                    return core.NError.REQUEST_ERROR;
+                }
+            } else {
+                return core.NError.OOM;
+            }
+        } else {
+            if (ngx_http_subrequest(
+                self.parent,
+                location,
+                args,
+                &self.sr,
+                core.nullptr(ngx_http_post_subrequest_t),
+                0,
+            ) != NGX_OK) {
+                return core.NError.REQUEST_ERROR;
+            }
+        }
+    }
+};
 
 test "http" {
     try expectEqual(@sizeOf(ngx_http_file_cache_node_t), 120);
