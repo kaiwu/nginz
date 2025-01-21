@@ -39,7 +39,6 @@ const echoz_command_type = enum(ngx_int_t) {
     echoz_duplicate,
     echoz_flush,
     echoz_sleep,
-    echoz_location,
     echoz_location_async,
 };
 
@@ -61,7 +60,6 @@ const ZError = error{
     HEADER_ERROR,
     BODY_ERROR,
     TIMER_EVENT,
-    SUBREQ_EVENT,
     DECLINE,
 };
 
@@ -246,11 +244,6 @@ fn echoz_exec_command(cmd: [*c]echoz_command, ctx: [*c]echoz_context, r: [*c]ngx
                 return ZError.TIMER_EVENT;
             }
         },
-        .echoz_location => {
-            var s2 = try parse_uri(r, &parameters);
-            _ = try ctx.*.subrequest.create(&s2[0], &s2[1], ngx_http_echoz_subrequest_post_handler);
-            return ZError.SUBREQ_EVENT;
-        },
         .echoz_location_async => {
             var s2 = try parse_uri(r, &parameters);
             _ = try ctx.*.subrequest.create(&s2[0], &s2[1], null);
@@ -295,24 +288,10 @@ fn echoz_handle(r: [*c]ngx_http_request_t) !void {
     }
 }
 
-fn ngx_http_echoz_subrequest_post_handler(sr: [*c]ngx_http_request_t, ctx: ?*anyopaque, rc: ngx_int_t) callconv(.C) ngx_int_t {
-    if (core.castPtr(NSubrequest, ctx)) |sub| {
-        const pr = sub.*.parent;
-        if (sr.*.out != core.nullptr(ngx_chain_t)) {
-            send_body(pr, sr.*.out) catch {
-                http.ngx_http_finalize_request(pr, http.NGX_HTTP_INTERNAL_SERVER_ERROR);
-                return NGX_ERROR;
-            };
-        }
-        http.ngx_http_finalize_request(pr, ngx_http_echoz_handler(pr));
-    }
-    return rc;
-}
-
 export fn ngx_http_echoz_handler(r: [*c]ngx_http_request_t) callconv(.C) ngx_int_t {
     echoz_handle(r) catch |e| {
         switch (e) {
-            ZError.TIMER_EVENT, ZError.SUBREQ_EVENT => return core.NGX_DONE,
+            ZError.TIMER_EVENT => return core.NGX_DONE,
             else => return http.NGX_HTTP_INTERNAL_SERVER_ERROR,
         }
     };
@@ -400,19 +379,11 @@ export const ngx_http_echoz_commands = [_]ngx_command_t{
         .post = NULL,
     },
     ngx_command_t{
-        .name = ngx_string("echoz_location"),
-        .type = conf.NGX_HTTP_LOC_CONF | conf.NGX_CONF_TAKE12,
-        .set = ngx_conf_set_echoz,
-        .conf = conf.NGX_HTTP_LOC_CONF_OFFSET,
-        .offset = 5,
-        .post = NULL,
-    },
-    ngx_command_t{
         .name = ngx_string("echoz_location_async"),
         .type = conf.NGX_HTTP_LOC_CONF | conf.NGX_CONF_TAKE12,
         .set = ngx_conf_set_echoz,
         .conf = conf.NGX_HTTP_LOC_CONF_OFFSET,
-        .offset = 6,
+        .offset = 5,
         .post = NULL,
     },
 };
