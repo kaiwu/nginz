@@ -41,9 +41,17 @@ pub const ngx_http_upstream_rr_peer_t = ngx.ngx_http_upstream_rr_peer_t;
 pub const ngx_http_post_subrequest_pt = ngx.ngx_http_post_subrequest_pt;
 pub const ngx_http_script_regex_code_t = ngx.ngx_http_script_regex_code_t;
 pub const ngx_http_upstream_rr_peers_t = ngx.ngx_http_upstream_rr_peers_t;
+pub const ngx_http_output_body_filter_pt = ngx.ngx_http_output_body_filter_pt;
 pub const ngx_http_upstream_headers_in_t = ngx.ngx_http_upstream_headers_in_t;
+pub const ngx_http_request_body_filter_pt = ngx.ngx_http_request_body_filter_pt;
 pub const ngx_http_script_regex_end_code_t = ngx.ngx_http_script_regex_end_code_t;
 pub const ngx_http_compile_complex_value_t = ngx.ngx_http_compile_complex_value_t;
+pub const ngx_http_output_header_filter_pt = ngx.ngx_http_output_header_filter_pt;
+
+extern var ngx_cycle: [*c]core.ngx_cycle_t;
+extern var ngx_http_top_body_filter: ngx_http_output_body_filter_pt;
+extern var ngx_http_top_header_filter: ngx_http_output_header_filter_pt;
+extern var ngx_http_top_request_body_filter: ngx_http_request_body_filter_pt;
 
 const NError = core.NError;
 const NGX_OK = core.NGX_OK;
@@ -81,8 +89,10 @@ pub const ngx_http_cleanup_add = ngx.ngx_http_cleanup_add;
 pub const ngx_http_send_header = ngx.ngx_http_send_header;
 pub const ngx_http_send_special = ngx.ngx_http_send_special;
 pub const ngx_http_output_filter = ngx.ngx_http_output_filter;
+pub const ngx_http_named_location = ngx.ngx_http_named_location;
 pub const ngx_http_finalize_request = ngx.ngx_http_finalize_request;
 pub const ngx_http_parse_unsafe_uri = ngx.ngx_http_parse_unsafe_uri;
+pub const ngx_http_internal_redirect = ngx.ngx_http_internal_redirect;
 pub const ngx_http_run_posted_requests = ngx.ngx_http_run_posted_requests;
 
 pub inline fn ngx_http_clear_content_length(r: [*c]ngx_http_request_t) void {
