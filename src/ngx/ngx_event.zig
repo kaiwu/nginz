@@ -38,16 +38,15 @@ pub inline fn ngx_event_add_timer(ev: [*c]ngx_event_t, timer: ngx_msec_t) void {
     rbtree.ngx_rbtree_insert(&ngx_event_timer_rbtree, &ev.*.timer);
 }
 
-pub const NTimer = extern struct {
-    const Self = @This();
-
-    request: [*c]ngx_http_request_t,
-    handler: http.ngx_http_handler_pt,
-    cleanup: core.ngx_flag_t,
-    timer: ngx_event_t,
+pub const NTimer = struct {
+    const TimerUnit = extern struct {
+        request: [*c]ngx_http_request_t,
+        handler: http.ngx_http_handler_pt,
+        timer: ngx_event_t,
+    };
 
     fn timer_handler(ev: [*c]ngx_event_t) callconv(.C) void {
-        if (core.castPtr(Self, ev.*.data)) |self| {
+        if (core.castPtr(TimerUnit, ev.*.data)) |self| {
             const r = self.*.request;
             if (r.*.connection.*.flags.destroyed) {
                 return;
@@ -71,43 +70,40 @@ pub const NTimer = extern struct {
             if (self.*.handler) |handle| {
                 const rc = handle(r);
                 http.ngx_http_finalize_request(r, rc);
+                if (r.*.main.*.posted_requests != core.nullptr(http.ngx_http_posted_request_t)) {
+                    http.ngx_http_run_posted_requests(r.*.connection);
+                }
             }
         }
     }
 
     fn timer_cleanup(data: ?*anyopaque) callconv(.C) void {
-        if (core.castPtr(Self, data)) |self| {
+        if (core.castPtr(TimerUnit, data)) |self| {
             if (self.*.timer.flags.timer_set) {
                 ngx_event_del_timer(&self.*.timer);
             }
         }
     }
 
-    pub fn init(r: [*c]ngx_http_request_t, handler: http.ngx_http_handler_pt) Self {
-        return Self{
-            .request = r,
-            .handler = handler,
-            .cleanup = 0,
-            .timer = ngx_event_t{ .handler = timer_handler, .log = r.*.connection.*.log },
-        };
-    }
+    pub fn activate(r: [*c]ngx_http_request_t, handler: http.ngx_http_handler_pt, d: ngx_msec_t) !void {
+        if (core.ngz_pcalloc_c(TimerUnit, r.*.pool)) |self| {
+            self.*.timer.data = self;
+            self.*.timer.handler = timer_handler;
+            self.*.timer.log = r.*.connection.*.log;
+            self.*.handler = handler;
+            self.*.request = r;
+            self.*.request.*.main.*.flags0.count += 1;
+            ngx_event_add_timer(&self.*.timer, d);
 
-    pub fn activate(self: *Self, d: ngx_msec_t) !void {
-        self.timer.data = self;
-        self.request.*.main.*.flags0.count += 1;
-        ngx_event_add_timer(&self.*.timer, d);
-
-        if (self.cleanup == 0) {
-            self.cleanup = 1;
             if (core.nonNullPtr(
                 http.ngx_http_cleanup_t,
-                http.ngx_http_cleanup_add(self.request, 0),
+                http.ngx_http_cleanup_add(r, 0),
             )) |cln| {
                 cln.*.data = self;
                 cln.*.handler = timer_cleanup;
-            } else {
-                return core.NError.TIMER_ERROR;
+                return;
             }
         }
+        return core.NError.TIMER_ERROR;
     }
 };

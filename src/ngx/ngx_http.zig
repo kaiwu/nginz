@@ -33,6 +33,7 @@ pub const ngx_http_script_engine_t = ngx.ngx_http_script_engine_t;
 pub const ngx_http_upstream_conf_t = ngx.ngx_http_upstream_conf_t;
 pub const ngx_http_script_compile_t = ngx.ngx_http_script_compile_t;
 pub const ngx_http_event_handler_pt = ngx.ngx_http_event_handler_pt;
+pub const ngx_http_posted_request_t = ngx.ngx_http_posted_request_t;
 pub const ngx_http_file_cache_node_t = ngx.ngx_http_file_cache_node_t;
 pub const ngx_http_upstream_server_t = ngx.ngx_http_upstream_server_t;
 pub const ngx_http_post_subrequest_t = ngx.ngx_http_post_subrequest_t;
@@ -74,14 +75,15 @@ pub const NGX_HTTP_INTERNAL_SERVER_ERROR = ngx.NGX_HTTP_INTERNAL_SERVER_ERROR;
 pub const NGX_HTTP_LAST = ngx.NGX_HTTP_LAST;
 pub const NGX_HTTP_FLUSH = ngx.NGX_HTTP_FLUSH;
 
-pub const ngx_http_cleanup_add = ngx.ngx_http_cleanup_add;
+pub const ngx_http_subrequest = ngx.ngx_http_subrequest;
 pub const ngx_http_script_run = ngx.ngx_http_script_run;
+pub const ngx_http_cleanup_add = ngx.ngx_http_cleanup_add;
 pub const ngx_http_send_header = ngx.ngx_http_send_header;
-pub const ngx_http_output_filter = ngx.ngx_http_output_filter;
 pub const ngx_http_send_special = ngx.ngx_http_send_special;
+pub const ngx_http_output_filter = ngx.ngx_http_output_filter;
 pub const ngx_http_finalize_request = ngx.ngx_http_finalize_request;
 pub const ngx_http_parse_unsafe_uri = ngx.ngx_http_parse_unsafe_uri;
-pub const ngx_http_subrequest = ngx.ngx_http_subrequest;
+pub const ngx_http_run_posted_requests = ngx.ngx_http_run_posted_requests;
 
 pub inline fn ngx_http_clear_content_length(r: [*c]ngx_http_request_t) void {
     r.*.headers_out.content_length_n = -1;
@@ -124,48 +126,16 @@ pub inline fn ngx_http_clear_etag(r: [*c]ngx_http_request_t) void {
 pub const NSubrequest = extern struct {
     const Self = @This();
 
-    parent: [*c]ngx_http_request_t,
-    sr: [*c]ngx_http_request_t,
-
-    pub fn init(r: [*c]ngx_http_request_t) Self {
-        return Self{ .parent = r, .sr = core.nullptr(ngx_http_request_t) };
-    }
-
     pub fn create(
-        self: *Self,
+        r: [*c]ngx_http_request_t,
         location: [*c]ngx_str_t,
         args: [*c]ngx_str_t,
-        handler: ngx_http_post_subrequest_pt,
-    ) !void {
-        if (handler) |h| {
-            if (core.ngz_pcalloc_c(ngx_http_post_subrequest_t, self.parent.*.pool)) |sub| {
-                sub.*.handler = h;
-                sub.*.data = self;
-                if (ngx_http_subrequest(
-                    self.parent,
-                    location,
-                    args,
-                    &self.sr,
-                    sub,
-                    0,
-                ) != NGX_OK) {
-                    return core.NError.REQUEST_ERROR;
-                }
-            } else {
-                return core.NError.OOM;
-            }
-        } else {
-            if (ngx_http_subrequest(
-                self.parent,
-                location,
-                args,
-                &self.sr,
-                core.nullptr(ngx_http_post_subrequest_t),
-                0,
-            ) != NGX_OK) {
-                return core.NError.REQUEST_ERROR;
-            }
+    ) ![*c]ngx_http_request_t {
+        var sr: [*c]ngx_http_request_t = core.nullptr(ngx_http_request_t);
+        if (ngx_http_subrequest(r, location, args, &sr, core.nullptr(ngx_http_post_subrequest_t), 0) == NGX_OK) {
+            return sr;
         }
+        return core.NError.REQUEST_ERROR;
     }
 };
 

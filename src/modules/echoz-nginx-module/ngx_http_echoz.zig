@@ -74,8 +74,6 @@ const echoz_context = extern struct {
     space_str: ngx_str_t,
     newline_str: ngx_str_t,
     header_sent: ngx_flag_t,
-    timer: NTimer,
-    subrequest: NSubrequest,
 };
 
 fn postconfiguration(cf: [*c]ngx_conf_t) callconv(.C) ngx_int_t {
@@ -240,13 +238,13 @@ fn echoz_exec_command(cmd: [*c]echoz_command, ctx: [*c]echoz_context, r: [*c]ngx
         .echoz_sleep => {
             var it = parameters.iterator();
             if (it.next()) |delay| {
-                try ctx.*.timer.activate(atof(delay.*, 3));
+                try NTimer.activate(r, ngx_http_echoz_handler, atof(delay.*, 3));
                 return ZError.TIMER_EVENT;
             }
         },
         .echoz_location_async => {
             var s2 = try parse_uri(r, &parameters);
-            _ = try ctx.*.subrequest.create(&s2[0], &s2[1], null);
+            _ = try NSubrequest.create(r, &s2[0], &s2[1]);
         },
         // else => return ZError.COMMAND_ERROR,
     }
@@ -265,8 +263,6 @@ fn echoz_handle(r: [*c]ngx_http_request_t) !void {
             ctx.*.space_str = ngx_string(" ");
             ctx.*.newline_str = ngx_string("\n");
             ctx.*.header_sent = 0;
-            ctx.*.timer = NTimer.init(r, ngx_http_echoz_handler);
-            ctx.*.subrequest = NSubrequest.init(r);
             ctx.*.ready = 1;
         }
 
