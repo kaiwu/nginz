@@ -21,10 +21,10 @@ pub inline fn ngx_hash(key: ngx_uint_t, c: u8) ngx_uint_t {
 }
 
 const NGX_CACHELINE_SIZE = core.NGX_CACHELINE_SIZE;
-const ngx_hash_keys_array_t = ngx.ngx_hash_keys_arrays_t;
-const ngx_hash_init_t = ngx.ngx_hash_init_t;
 const ngx_hash_key_t = ngx.ngx_hash_key_t;
+const ngx_hash_init_t = ngx.ngx_hash_init_t;
 const ngx_hash_key_pt = ngx.ngx_hash_key_pt;
+const ngx_hash_keys_array_t = ngx.ngx_hash_keys_arrays_t;
 
 pub const ngx_hash_type = enum(ngx_uint_t) {
     hash_small = NGX_HASH_SMALL,
@@ -32,10 +32,10 @@ pub const ngx_hash_type = enum(ngx_uint_t) {
 };
 
 pub const ngx_hash_key = ngx.ngx_hash_key;
-pub const ngx_hash_keys_array_init = ngx.ngx_hash_keys_array_init;
-pub const ngx_hash_add_key = ngx.ngx_hash_add_key;
 pub const ngx_hash_init = ngx.ngx_hash_init;
 pub const ngx_hash_find = ngx.ngx_hash_find;
+pub const ngx_hash_add_key = ngx.ngx_hash_add_key;
+pub const ngx_hash_keys_array_init = ngx.ngx_hash_keys_array_init;
 
 pub fn NHash(comptime K: type, comptime V: type, comptime M: ngx_uint_t) type {
     const MAX_SIZE = M;
