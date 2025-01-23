@@ -1,0 +1,11 @@
+--- ./submodules/nginx/objs/nginz.c	2025-01-23 18:07:16.243463336 +0800
++++ /tmp/nginz.c	2025-01-23 18:08:12.404662562 +0800
+@@ -194,7 +194,7 @@
+ 
+ 
+ int ngx_cdecl
+-main(int argc, char *const *argv)
++main_nginx(int argc, char *const *argv)
+ {
+     ngx_buf_t        *b;
+     ngx_log_t        *log;
