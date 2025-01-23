@@ -2,7 +2,7 @@ const std = @import("std");
 const fs = std.fs;
 const OOM = std.mem.Allocator.Error.OutOfMemory;
 
-pub fn list(d: []const u8, ii: usize, m: usize, mem: []u8, files: *std.ArrayList([]u8)) !usize {
+pub fn list(d: []const u8, ii: usize, mem: []u8, files: *std.ArrayList([]u8)) !usize {
     var dir = fs.cwd().openDir(d, .{ .iterate = true }) catch {
         return ii;
     };
@@ -18,7 +18,7 @@ pub fn list(d: []const u8, ii: usize, m: usize, mem: []u8, files: *std.ArrayList
             }
 
             const len = d.len + entry.name.len + 1;
-            if (i + len > m) {
+            if (i + len > mem.len) {
                 return OOM;
             } else {
                 @memcpy(mem[i .. i + d.len], d);
@@ -31,7 +31,7 @@ pub fn list(d: []const u8, ii: usize, m: usize, mem: []u8, files: *std.ArrayList
                 i += len;
             }
             if (entry.kind == .directory) {
-                i = try list(mem[i .. i + len], i + len, m, mem, files);
+                i = try list(mem[i .. i + len], i + len, mem, files);
             }
         } else {
             break;
