@@ -90,13 +90,12 @@ pub fn build(b: *std.Build) void {
     httplib.linkLibrary(corelib);
 
     const moduleslib = http_modules.build_modules(b, target, optimize) catch unreachable;
-    moduleslib.step.dependOn(&corelib.step);
     moduleslib.step.dependOn(&httplib.step);
     moduleslib.linkLibrary(corelib);
     moduleslib.linkLibrary(httplib);
 
     const test_step = b.step("test", "Run unit tests");
-    test_step.dependOn(&httplib.step);
+    test_step.dependOn(&moduleslib.step);
 
     for (tests) |case| {
         const t = b.addTest(.{
