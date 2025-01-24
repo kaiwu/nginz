@@ -81,6 +81,6 @@ pub fn build_core(
         .flags = &common.C_FLAGS,
     });
 
-    b.installArtifact(core);
+    // b.installArtifact(core);
     return core;
 }

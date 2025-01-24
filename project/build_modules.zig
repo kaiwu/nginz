@@ -26,6 +26,6 @@ pub fn build_modules(
         .flags = &common.C_FLAGS,
     });
 
-    b.installArtifact(modules);
+    // b.installArtifact(modules);
     return modules;
 }

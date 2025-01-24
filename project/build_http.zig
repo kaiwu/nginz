@@ -25,6 +25,6 @@ pub fn build_http(
         .flags = &common.C_FLAGS,
     });
 
-    b.installArtifact(http);
+    // b.installArtifact(http);
     return http;
 }
