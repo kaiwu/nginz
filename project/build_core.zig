@@ -2,35 +2,34 @@ const std = @import("std");
 const common = @import("build_common.zig");
 
 const lib_files = .{
-    "./submodules/nginx/objs/ngx_modules.c",
     "./submodules/nginx/objs/nginz.c",
 };
 
 const os_files = .{
-    "./submodule/nginx/src/os/unix/ngx_time.c",
-    "./submodule/nginx/src/os/unix/ngx_recv.c",
-    "./submodule/nginx/src/os/unix/ngx_send.c",
-    "./submodule/nginx/src/os/unix/ngx_user.c",
-    "./submodule/nginx/src/os/unix/ngx_errno.c",
-    "./submodule/nginx/src/os/unix/ngx_alloc.c",
-    "./submodule/nginx/src/os/unix/ngx_files.c",
-    "./submodule/nginx/src/os/unix/ngx_shmem.c",
-    "./submodule/nginx/src/os/unix/ngx_socket.c",
-    "./submodule/nginx/src/os/unix/ngx_daemon.c",
-    "./submodule/nginx/src/os/unix/ngx_dlopen.c",
-    "./submodule/nginx/src/os/unix/ngx_channel.c",
-    "./submodule/nginx/src/os/unix/ngx_process.c",
-    "./submodule/nginx/src/os/unix/ngx_udp_recv.c",
-    "./submodule/nginx/src/os/unix/ngx_udp_send.c",
-    "./submodule/nginx/src/os/unix/ngx_posix_init.c",
-    "./submodule/nginx/src/os/unix/ngx_linux_init.c",
-    "./submodule/nginx/src/os/unix/ngx_readv_chain.c",
-    "./submodule/nginx/src/os/unix/ngx_setaffinity.c",
-    "./submodule/nginx/src/os/unix/ngx_writev_chain.c",
-    "./submodule/nginx/src/os/unix/ngx_setproctitle.c",
-    "./submodule/nginx/src/os/unix/ngx_process_cycle.c",
-    "./submodule/nginx/src/os/unix/ngx_udp_sendmsg_chain.c",
-    "./submodule/nginx/src/os/unix/ngx_linux_sendfile_chain.c",
+    "./submodules/nginx/src/os/unix/ngx_time.c",
+    "./submodules/nginx/src/os/unix/ngx_recv.c",
+    "./submodules/nginx/src/os/unix/ngx_send.c",
+    "./submodules/nginx/src/os/unix/ngx_user.c",
+    "./submodules/nginx/src/os/unix/ngx_errno.c",
+    "./submodules/nginx/src/os/unix/ngx_alloc.c",
+    "./submodules/nginx/src/os/unix/ngx_files.c",
+    "./submodules/nginx/src/os/unix/ngx_shmem.c",
+    "./submodules/nginx/src/os/unix/ngx_socket.c",
+    "./submodules/nginx/src/os/unix/ngx_daemon.c",
+    "./submodules/nginx/src/os/unix/ngx_dlopen.c",
+    "./submodules/nginx/src/os/unix/ngx_channel.c",
+    "./submodules/nginx/src/os/unix/ngx_process.c",
+    "./submodules/nginx/src/os/unix/ngx_udp_recv.c",
+    "./submodules/nginx/src/os/unix/ngx_udp_send.c",
+    "./submodules/nginx/src/os/unix/ngx_posix_init.c",
+    "./submodules/nginx/src/os/unix/ngx_linux_init.c",
+    "./submodules/nginx/src/os/unix/ngx_readv_chain.c",
+    "./submodules/nginx/src/os/unix/ngx_setaffinity.c",
+    "./submodules/nginx/src/os/unix/ngx_writev_chain.c",
+    "./submodules/nginx/src/os/unix/ngx_setproctitle.c",
+    "./submodules/nginx/src/os/unix/ngx_process_cycle.c",
+    "./submodules/nginx/src/os/unix/ngx_udp_sendmsg_chain.c",
+    "./submodules/nginx/src/os/unix/ngx_linux_sendfile_chain.c",
 };
 
 const event_files = .{
@@ -47,7 +46,7 @@ const event_files = .{
     "./submodules/nginx/src/event/ngx_event_openssl_stapling.c",
 };
 
-fn append(files: *std.ArrayList([]u8), src: []const []const u8) !void {
+fn append(files: *std.ArrayList([]const u8), src: []const []const u8) !void {
     for (src) |f| {
         try files.append(f);
     }
@@ -55,7 +54,7 @@ fn append(files: *std.ArrayList([]u8), src: []const []const u8) !void {
 
 pub fn build_core(
     b: *std.Build,
-    target: std.zig.CrossTarget,
+    target: std.Build.ResolvedTarget,
     optimize: std.builtin.OptimizeMode,
 ) !*std.Build.Step.Compile {
     const core = b.addStaticLibrary(.{
@@ -64,9 +63,9 @@ pub fn build_core(
         .optimize = optimize,
     });
 
-    var files = std.ArrayList([]u8).init(b.allocator);
+    var files = std.ArrayList([]const u8).init(b.allocator);
     defer files.deinit();
-    try common.list("./submodules/nginx/src/core", 0, &common.BUILD_BUFFER, &files);
+    _ = try common.list("./submodules/nginx/src/core", 0, &common.BUILD_BUFFER, &files);
 
     try append(&files, &lib_files);
     try append(&files, &os_files);
@@ -75,8 +74,10 @@ pub fn build_core(
     for (common.NGX_INCLUDE_PATH) |p| {
         core.addIncludePath(b.path(p));
     }
+    core.linkLibC();
+    core.linkSystemLibrary("crypt");
     core.addCSourceFiles(.{
-        .files = &files,
+        .files = files.items[0..],
         .flags = &common.C_FLAGS,
     });
 

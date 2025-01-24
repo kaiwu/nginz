@@ -1,4 +1,8 @@
 const std = @import("std");
+const core = @import("project/build_core.zig");
+const http = @import("project/build_http.zig");
+const patch = @import("project/build_patch.zig");
+const http_modules = @import("project/build_modules.zig");
 
 const NGINX = "src/ngx/nginx.zig";
 
@@ -78,7 +82,22 @@ pub fn build(b: *std.Build) void {
         b.getInstallStep().dependOn(&install_object.step);
     }
 
+    const corelib = core.build_core(b, target, optimize) catch unreachable;
+    corelib.step.dependOn(patch.patchStep(b));
+
+    const httplib = http.build_http(b, target, optimize) catch unreachable;
+    httplib.step.dependOn(&corelib.step);
+    httplib.linkLibrary(corelib);
+
+    const moduleslib = http_modules.build_modules(b, target, optimize) catch unreachable;
+    moduleslib.step.dependOn(&corelib.step);
+    moduleslib.step.dependOn(&httplib.step);
+    moduleslib.linkLibrary(corelib);
+    moduleslib.linkLibrary(httplib);
+
     const test_step = b.step("test", "Run unit tests");
+    test_step.dependOn(&httplib.step);
+
     for (tests) |case| {
         const t = b.addTest(.{
             .root_source_file = b.path(case),
@@ -91,8 +110,9 @@ pub fn build(b: *std.Build) void {
         t.linkSystemLibrary("ssl");
         t.linkSystemLibrary("crypto");
         t.linkSystemLibrary("pcre2-8");
-        t.addObjectFile(b.path("libs/libngx_core.a"));
-        t.addObjectFile(b.path("libs/libngx_http.a"));
+        t.linkLibrary(corelib);
+        t.linkLibrary(httplib);
+        t.linkLibrary(moduleslib);
         t.addIncludePath(b.path("src/ngx/"));
         t.root_module.addImport("nginx", nginx);
 

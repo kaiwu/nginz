@@ -3,8 +3,8 @@ const fs = std.fs;
 const OOM = std.mem.Allocator.Error.OutOfMemory;
 
 pub var BUILD_BUFFER: [4096 * 10]u8 = undefined;
-pub const C_FLAGS = .{ "-pipe", "-O", "-Wall", "-Wpointer-arith", "-Wno-unused-parameter", "-Werror", "-g" };
-pub const NGX_INCLUDE_PATH = .{
+pub const C_FLAGS = [_][]const u8{ "-std=gnu11", "-Wall", "-Wextra", "-Wno-unused-function", "-Wno-unused-parameter" };
+pub const NGX_INCLUDE_PATH = [_][]const u8{
     "./submodules/nginx/objs",
     "./submodules/nginx/src/core",
     "./submodules/nginx/src/event",
@@ -14,14 +14,23 @@ pub const NGX_INCLUDE_PATH = .{
     "./submodules/nginx/src/http/modules",
 };
 
-const EXCLUDES = .{
+const EXCLUDES = [_][]const u8{
+    "ngx_http_stub_status_module.c",
+    "ngx_http_degradation_module.c",
+    "ngx_http_xslt_filter_module.c",
+    "ngx_http_realip_module.c",
+    "ngx_http_geoip_module.c",
+    "ngx_http_grpc_module.c",
+    "ngx_http_dav_module.c",
+    "ngx_thread_pool.c",
     "nginx.c",
+    "modules",
     "perl",
     "v2",
     "v3",
 };
 
-pub fn list(d: []const u8, ii: usize, mem: []u8, files: *std.ArrayList([]u8)) !usize {
+pub fn list(d: []const u8, ii: usize, mem: []u8, files: *std.ArrayList([]const u8)) !usize {
     var dir = fs.cwd().openDir(d, .{ .iterate = true }) catch {
         return ii;
     };
@@ -36,7 +45,7 @@ pub fn list(d: []const u8, ii: usize, mem: []u8, files: *std.ArrayList([]u8)) !u
                 continue;
             }
             for (EXCLUDES) |ex| {
-                if (std.mem.eql(entry.name, ex)) {
+                if (std.mem.eql(u8, entry.name, ex) or entry.name[entry.name.len - 1] != 'c') {
                     continue :out;
                 }
             }

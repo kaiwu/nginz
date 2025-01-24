@@ -77,7 +77,7 @@ pub fn patchStep(b: *Build) *Step {
 
     const copy = b.step("copy", "copy nginz");
     copy.makeFn = copyOp;
-    copy.dependOn(config);
+    // copy.dependOn(config);
 
     const patch = b.step("patch", "patch nginz");
     patch.makeFn = patchOp;
