@@ -7,27 +7,27 @@ pub const C_FLAGS = [_][]const u8{ "-std=gnu11", "-Wall", "-Wextra", "-Wno-unuse
 pub const NGX_INCLUDE_PATH = [_][]const u8{
     "./submodules/nginx/objs",
     "./submodules/nginx/src/core",
-    "./submodules/nginx/src/event",
-    "./submodules/nginx/src/event/modules",
-    "./submodules/nginx/src/os/unix",
     "./submodules/nginx/src/http",
+    "./submodules/nginx/src/event",
+    "./submodules/nginx/src/os/unix",
     "./submodules/nginx/src/http/modules",
+    "./submodules/nginx/src/event/modules",
 };
 
 const EXCLUDES = [_][]const u8{
+    "v2",
+    "v3",
+    "perl",
+    "nginx.c",
+    "modules",
+    "ngx_thread_pool.c",
+    "ngx_http_dav_module.c",
+    "ngx_http_grpc_module.c",
+    "ngx_http_geoip_module.c",
+    "ngx_http_realip_module.c",
     "ngx_http_stub_status_module.c",
     "ngx_http_degradation_module.c",
     "ngx_http_xslt_filter_module.c",
-    "ngx_http_realip_module.c",
-    "ngx_http_geoip_module.c",
-    "ngx_http_grpc_module.c",
-    "ngx_http_dav_module.c",
-    "ngx_thread_pool.c",
-    "nginx.c",
-    "modules",
-    "perl",
-    "v2",
-    "v3",
 };
 
 pub fn list(d: []const u8, ii: usize, mem: []u8, files: *std.ArrayList([]const u8)) !usize {
@@ -44,8 +44,11 @@ pub fn list(d: []const u8, ii: usize, mem: []u8, files: *std.ArrayList([]const u
             if (entry.kind != .file and entry.kind != .directory) {
                 continue;
             }
+            if (entry.kind == .file and entry.name[entry.name.len - 1] != 'c') {
+                continue;
+            }
             for (EXCLUDES) |ex| {
-                if (std.mem.eql(u8, entry.name, ex) or entry.name[entry.name.len - 1] != 'c') {
+                if (std.mem.eql(u8, entry.name, ex)) {
                     continue :out;
                 }
             }
