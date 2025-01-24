@@ -108,6 +108,64 @@ pub fn NList(comptime T: type) type {
     };
 }
 
+pub fn NSList(comptime T: type) type {
+    return extern struct {
+        const Self = @This();
+
+        node: [*c]T,
+        next: [*c]Self,
+
+        pub fn init(pool: core.ngx_pool_t) ![*c]Self {
+            if (core.ngz_pcalloc_c(Self, pool)) |n| {
+                n.*.node = core.nullptr(T);
+                n.*.next = core.nullptr(Self);
+                return n;
+            }
+            return core.NError.OOM;
+        }
+
+        pub fn empty(head: *[*c]Self) bool {
+            return head.* == core.nullptr(Self);
+        }
+
+        pub fn append(head: *[*c]Self, self: [*c]Self) void {
+            if (head.* == core.nullptr(Self)) {
+                head.* = self;
+            } else {
+                var n = head;
+                while (n.* != core.nullptr(Self)) {
+                    n = &n.*.*.next;
+                }
+                self.*.next = core.nullptr(Self);
+                n.* = self;
+            }
+        }
+
+        pub fn prepend(head: *[*c]Self, self: [*c]Self) void {
+            self.*.next = head.*;
+            head.* = self;
+        }
+
+        pub fn pop(head: *[*c]Self) ?[*c]T {
+            if (head.* == core.nullptr(Self)) {
+                return null;
+            }
+            const n = head.*;
+            head.* = n.*.next;
+            return n.*.node;
+        }
+
+        // next = &head;
+        pub fn next(n: *[*c]Self) ?[*c]T {
+            if (n.* == core.nullptr(Self)) {
+                return null;
+            }
+            defer n = &n.*.*.next;
+            return n.*.*.node;
+        }
+    };
+}
+
 const ngx_log_init = ngx.ngx_log_init;
 const ngx_create_pool = ngx.ngx_create_pool;
 const ngx_destroy_pool = ngx.ngx_destroy_pool;
