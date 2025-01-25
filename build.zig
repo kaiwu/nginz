@@ -1,4 +1,5 @@
 const std = @import("std");
+const exe = @import("project//build_exe.zig");
 const core = @import("project/build_core.zig");
 const http = @import("project/build_http.zig");
 const patch = @import("project/build_patch.zig");
@@ -66,6 +67,10 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
 
+    const patch_step = patch.patchStep(b);
+    const nginz = exe.build_exe(b, target, optimize) catch unreachable;
+    nginz.step.dependOn(patch_step);
+
     for (modules) |m| {
         const pn = module_path(m);
         const o = b.addObject(.{
@@ -78,12 +83,14 @@ pub fn build(b: *std.Build) void {
         o.root_module.addImport("nginx", nginx);
         o.pie = true;
         o.bundle_compiler_rt = true;
+        o.linkLibC();
+        nginz.addObject(o);
         const install_object = b.addInstallFile(o.getEmittedBin(), obj(pn.n));
         b.getInstallStep().dependOn(&install_object.step);
     }
 
     const corelib = core.build_core(b, target, optimize) catch unreachable;
-    corelib.step.dependOn(patch.patchStep(b));
+    corelib.step.dependOn(patch_step);
 
     const httplib = http.build_http(b, target, optimize) catch unreachable;
     httplib.step.dependOn(&corelib.step);
@@ -93,6 +100,16 @@ pub fn build(b: *std.Build) void {
     moduleslib.step.dependOn(&httplib.step);
     moduleslib.linkLibrary(corelib);
     moduleslib.linkLibrary(httplib);
+
+    nginz.linkLibC();
+    nginz.linkSystemLibrary("z");
+    nginz.linkSystemLibrary("ssl");
+    nginz.linkSystemLibrary("crypto");
+    nginz.linkSystemLibrary("pcre2-8");
+    nginz.linkLibrary(corelib);
+    nginz.linkLibrary(httplib);
+    nginz.linkLibrary(moduleslib);
+    b.installArtifact(nginz);
 
     const test_step = b.step("test", "Run unit tests");
     test_step.dependOn(&moduleslib.step);
