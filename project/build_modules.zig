@@ -15,7 +15,7 @@ pub fn build_modules(
     var files = std.ArrayList([]const u8).init(b.allocator);
     defer files.deinit();
     _ = try common.list("submodules/nginx/src/http/modules", 0, &common.BUILD_BUFFER, &files);
-    try files.append("submodules/nginx/objs/ngx_modules.c");
+    // try files.append("submodules/nginx/objs/ngx_modules.c");
 
     for (common.NGX_INCLUDE_PATH) |p| {
         modules.addIncludePath(b.path(p));

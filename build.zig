@@ -71,6 +71,16 @@ pub fn build(b: *std.Build) void {
     const nginz = exe.build_exe(b, target, optimize) catch unreachable;
     nginz.step.dependOn(patch_step);
 
+    const ngz_modules = b.addObject(.{
+        .name = "ngz_modules",
+        .target = target,
+        .optimize = optimize,
+        .root_source_file = b.path("src/ngz_modules.zig"),
+    });
+    ngz_modules.pie = true;
+    ngz_modules.linkLibC();
+    nginz.addObject(ngz_modules);
+
     for (modules) |m| {
         const pn = module_path(m);
         const o = b.addObject(.{
@@ -122,6 +132,7 @@ pub fn build(b: *std.Build) void {
         });
 
         t.linkLibC();
+        t.addObject(ngz_modules);
         t.linkSystemLibrary("z");
         t.linkSystemLibrary("ssl");
         t.linkSystemLibrary("crypto");
