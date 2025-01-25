@@ -3,7 +3,7 @@ const fs = std.fs;
 const OOM = std.mem.Allocator.Error.OutOfMemory;
 
 pub var BUILD_BUFFER: [4096 * 10]u8 = undefined;
-pub const C_FLAGS = [_][]const u8{ "-std=gnu11", "-Wall", "-Wextra", "-Wno-unused-function", "-Wno-unused-parameter" };
+pub const C_FLAGS = [_][]const u8{ "-std=gnu11", "-Wall", "-Wextra", "-Wno-unused-function", "-Wno-unused-parameter", "-fno-sanitize=all" };
 pub const NGX_INCLUDE_PATH = [_][]const u8{
     "submodules/nginx/objs",
     "submodules/nginx/src/core",
