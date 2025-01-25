@@ -61,7 +61,7 @@ pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
-    const nginx = b.addModule("nginx", .{
+    const nginx = b.addModule("ngx", .{
         .root_source_file = b.path(NGINX),
         .target = target,
         .optimize = optimize,
@@ -90,7 +90,7 @@ pub fn build(b: *std.Build) void {
             .optimize = optimize,
         });
         o.addIncludePath(b.path(pn.p));
-        o.root_module.addImport("nginx", nginx);
+        o.root_module.addImport("ngx", nginx);
         o.pie = true;
         o.bundle_compiler_rt = true;
         o.linkLibC();
@@ -122,7 +122,12 @@ pub fn build(b: *std.Build) void {
     b.installArtifact(nginz);
 
     const test_step = b.step("test", "Run unit tests");
-    test_step.dependOn(&moduleslib.step);
+
+    const test_moduleslib = http_modules.build_test_modules(b, target, optimize) catch unreachable;
+    test_moduleslib.step.dependOn(&httplib.step);
+    test_moduleslib.linkLibrary(corelib);
+    test_moduleslib.linkLibrary(httplib);
+    test_step.dependOn(&test_moduleslib.step);
 
     for (tests) |case| {
         const t = b.addTest(.{
@@ -132,16 +137,15 @@ pub fn build(b: *std.Build) void {
         });
 
         t.linkLibC();
-        t.addObject(ngz_modules);
         t.linkSystemLibrary("z");
         t.linkSystemLibrary("ssl");
         t.linkSystemLibrary("crypto");
         t.linkSystemLibrary("pcre2-8");
         t.linkLibrary(corelib);
         t.linkLibrary(httplib);
-        t.linkLibrary(moduleslib);
+        t.linkLibrary(test_moduleslib);
         t.addIncludePath(b.path("src/ngx/"));
-        t.root_module.addImport("nginx", nginx);
+        t.root_module.addImport("ngx", nginx);
 
         const core_unit_tests = b.addRunArtifact(t);
         test_step.dependOn(&core_unit_tests.step);

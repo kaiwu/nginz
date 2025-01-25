@@ -1,5 +1,5 @@
 const std = @import("std");
-const ngx = @import("nginx");
+const ngx = @import("ngx");
 
 const buf = ngx.buf;
 const core = ngx.core;
