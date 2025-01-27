@@ -19,6 +19,7 @@ pub const NGX_DONE = ngx.NGX_DONE;
 pub const NGX_DECLINED = ngx.NGX_DECLINED;
 pub const NGX_ABORT = ngx.NGX_ABORT;
 
+pub const uintptr_t = usize;
 pub const off_t = ngx.off_t;
 pub const u_char = ngx.u_char;
 pub const ngx_dir_t = ngx.ngx_dir_t;

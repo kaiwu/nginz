@@ -83,7 +83,19 @@ const echoz_context = extern struct {
 };
 
 fn postconfiguration(cf: [*c]ngx_conf_t) callconv(.C) ngx_int_t {
-    _ = cf;
+    var vs = [_]http.ngx_http_variable_t{http.ngx_http_variable_t{
+        .name = ngx.string.ngx_string("echoz_request_body"),
+        .set_handler = @ptrCast(core.NULL),
+        .get_handler = ngx_http_echoz_request_body_variable,
+        .data = 0,
+        .flags = http.NGX_HTTP_VAR_NOCACHEABLE,
+        .index = 0,
+    }};
+    for (&vs) |*v| {
+        const x = http.ngx_http_add_variable(cf, &v.name, v.flags);
+        x.*.get_handler = v.get_handler;
+        x.*.data = v.data;
+    }
     return NGX_OK;
 }
 
@@ -334,6 +346,17 @@ fn echoz_handle(r: [*c]ngx_http_request_t) !void {
         }
         try send_body(r, ctx, out.next);
     }
+}
+
+export fn ngx_http_echoz_request_body_variable(
+    r: [*c]ngx_http_request_t,
+    v: [*c]http.ngx_http_variable_value_t,
+    data: core.uintptr_t,
+) callconv(.C) ngx_int_t {
+    _ = r;
+    _ = data;
+    v.*.flags.not_found = true;
+    return NGX_OK;
 }
 
 export fn ngx_http_echoz_client_body_handler(r: [*c]ngx_http_request_t) callconv(.C) void {
