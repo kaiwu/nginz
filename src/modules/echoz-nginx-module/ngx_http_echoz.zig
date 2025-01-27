@@ -42,6 +42,7 @@ const echoz_command_type = enum(ngx_int_t) {
     echoz_location_async,
     echoz_request_body,
     echoz_read_request_body,
+    echoz_exec,
 };
 
 const echoz_parameter = extern struct {
@@ -59,6 +60,7 @@ const echoz_command = extern struct {
 const ZError = error{
     DECLINE,
     BODY_ERROR,
+    REDIRECTING,
     SCRIPT_ERROR,
     HEADER_ERROR,
     READING_BODY,
@@ -151,7 +153,11 @@ fn send_header(r: [*c]ngx_http_request_t, ctx: [*c]echoz_context) ZError!void {
     ctx.*.header_sent = 1;
 }
 
-fn send_body(r: [*c]ngx_http_request_t, chain: [*c]ngx_chain_t) ZError!void {
+fn send_body(r: [*c]ngx_http_request_t, ctx: [*c]echoz_context, chain: [*c]ngx_chain_t) ZError!void {
+    if (!r.*.flags1.header_sent and ctx.*.header_sent == 0) {
+        try send_header(r, ctx);
+    }
+
     if (chain != core.nullptr(ngx_chain_t)) {
         if (http.ngx_http_output_filter(r, chain) != NGX_OK) {
             return ZError.BODY_ERROR;
@@ -277,6 +283,23 @@ fn echoz_exec_command(cmd: [*c]echoz_command, ctx: [*c]echoz_context, r: [*c]ngx
                 return ZError.READING_BODY;
             }
         },
+        .echoz_exec => {
+            var s2 = try parse_uri(r, &parameters);
+            r.*.write_event_handler = http.ngx_http_request_empty_handler;
+            if (s2[0].data[0] == '@') {
+                if (r.*.ctx != core.nullptr(?*anyopaque)) {
+                    @memset(core.slicify(?*anyopaque, r.*.ctx, http.ngx_http_max_module), core.NULL);
+                }
+                if (http.ngx_http_named_location(r, &s2[0]) == core.NGX_DONE) {
+                    return ZError.REDIRECTING;
+                }
+            } else {
+                if (http.ngx_http_internal_redirect(r, &s2[0], &s2[1]) == core.NGX_DONE) {
+                    return ZError.REDIRECTING;
+                }
+            }
+            return ZError.COMMAND_ERROR;
+        },
         // else => return ZError.COMMAND_ERROR,
     }
 }
@@ -298,9 +321,6 @@ fn echoz_handle(r: [*c]ngx_http_request_t) !void {
             ctx.*.ready = 1;
         }
 
-        if (!r.*.flags1.header_sent and ctx.*.header_sent == 0) {
-            try send_header(r, ctx);
-        }
         var out = buf.ngx_chain_t{
             .buf = core.nullptr(ngx_buf_t),
             .next = core.nullptr(ngx_chain_t),
@@ -308,11 +328,11 @@ fn echoz_handle(r: [*c]ngx_http_request_t) !void {
         while (ctx.*.iterator.next()) |cmd| {
             try echoz_exec_command(cmd, ctx, r, &out);
             if (out.next != core.nullptr(ngx_chain_t)) {
-                try send_body(r, out.next);
+                try send_body(r, ctx, out.next);
                 out.next = core.nullptr(ngx_chain_t);
             }
         }
-        try send_body(r, out.next);
+        try send_body(r, ctx, out.next);
     }
 }
 
@@ -328,7 +348,7 @@ export fn ngx_http_echoz_client_body_handler(r: [*c]ngx_http_request_t) callconv
 export fn ngx_http_echoz_handler(r: [*c]ngx_http_request_t) callconv(.C) ngx_int_t {
     echoz_handle(r) catch |e| {
         switch (e) {
-            ZError.WAITING_TIMER, ZError.READING_BODY => return core.NGX_DONE,
+            ZError.WAITING_TIMER, ZError.READING_BODY, ZError.REDIRECTING => return core.NGX_DONE,
             else => return http.NGX_HTTP_INTERNAL_SERVER_ERROR,
         }
     };
@@ -437,6 +457,14 @@ export const ngx_http_echoz_commands = [_]ngx_command_t{
         .set = ngx_conf_set_echoz,
         .conf = conf.NGX_HTTP_LOC_CONF_OFFSET,
         .offset = 7,
+        .post = NULL,
+    },
+    ngx_command_t{
+        .name = ngx_string("echoz_exec"),
+        .type = conf.NGX_HTTP_LOC_CONF | conf.NGX_CONF_TAKE12,
+        .set = ngx_conf_set_echoz,
+        .conf = conf.NGX_HTTP_LOC_CONF_OFFSET,
+        .offset = 8,
         .post = NULL,
     },
 };
