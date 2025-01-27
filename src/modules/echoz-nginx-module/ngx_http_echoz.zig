@@ -252,7 +252,8 @@ fn echoz_exec_command(cmd: [*c]echoz_command, ctx: [*c]echoz_context, r: [*c]ngx
         },
         .echoz_request_body => {
             if (r.*.request_body != core.nullptr(http.ngx_http_request_body_t)) {
-                const it: [*c][*c]ngx_chain_t = &r.*.request_body.*.bufs;
+                var bufs = r.*.request_body.*.bufs;
+                const it: [*c][*c]ngx_chain_t = &bufs;
                 var cl: [*c]ngx_chain_t = c;
                 while (buf.ngz_chain_iterate(it)) |b| {
                     if (b == core.nullptr(ngx_buf_t) or buf.ngx_buf_special(b)) {
