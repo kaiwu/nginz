@@ -56,6 +56,35 @@ pub inline fn ngz_chain_length(cl: [*c]ngx_chain_t) ngx_uint_t {
     return total;
 }
 
+pub inline fn ngz_chain_iterate(cl: [*c][*c]ngx_chain_t) ?[*c]ngx_buf_t {
+    if (cl.* == core.nullptr(ngx_chain_t)) {
+        return null;
+    }
+    defer cl.* = cl.*.*.next;
+    return cl.*.*.buf;
+}
+
+pub const NChainIterator = extern struct {
+    const Self = @This();
+    const NP = core.nullptr(ngx_chain_t);
+
+    chain: [*c]ngx_chain_t,
+
+    pub fn init(c: [*c]ngx_chain_t) Self {
+        return Self{
+            .chain = c,
+        };
+    }
+
+    pub fn next(self: *Self) ?[*c]ngx_buf_t {
+        if (self.chain == core.nullptr(ngx_chain_t)) {
+            return null;
+        }
+        defer self.chain = self.chain.*.next;
+        return self.chain.*.buf;
+    }
+};
+
 pub const NChain = extern struct {
     const Self = @This();
     const NP = core.nullptr(ngx_chain_t);

@@ -40,6 +40,8 @@ const echoz_command_type = enum(ngx_int_t) {
     echoz_flush,
     echoz_sleep,
     echoz_location_async,
+    echoz_request_body,
+    echoz_read_request_body,
 };
 
 const echoz_parameter = extern struct {
@@ -55,12 +57,13 @@ const echoz_command = extern struct {
 };
 
 const ZError = error{
-    COMMAND_ERROR,
+    DECLINE,
+    BODY_ERROR,
     SCRIPT_ERROR,
     HEADER_ERROR,
-    BODY_ERROR,
-    TIMER_EVENT,
-    DECLINE,
+    READING_BODY,
+    WAITING_TIMER,
+    COMMAND_ERROR,
 };
 
 const loc_conf = extern struct {
@@ -74,6 +77,7 @@ const echoz_context = extern struct {
     space_str: ngx_str_t,
     newline_str: ngx_str_t,
     header_sent: ngx_flag_t,
+    reading_body: ngx_flag_t,
 };
 
 fn postconfiguration(cf: [*c]ngx_conf_t) callconv(.C) ngx_int_t {
@@ -239,12 +243,38 @@ fn echoz_exec_command(cmd: [*c]echoz_command, ctx: [*c]echoz_context, r: [*c]ngx
             var it = parameters.iterator();
             if (it.next()) |delay| {
                 try NTimer.activate(r, ngx_http_echoz_handler, atof(delay.*, 3));
-                return ZError.TIMER_EVENT;
+                return ZError.WAITING_TIMER;
             }
         },
         .echoz_location_async => {
             var s2 = try parse_uri(r, &parameters);
             _ = try NSubrequest.create(r, &s2[0], &s2[1]);
+        },
+        .echoz_request_body => {
+            if (r.*.request_body != core.nullptr(http.ngx_http_request_body_t)) {
+                const it: [*c][*c]ngx_chain_t = &r.*.request_body.*.bufs;
+                var cl: [*c]ngx_chain_t = c;
+                while (buf.ngz_chain_iterate(it)) |b| {
+                    if (b == core.nullptr(ngx_buf_t) or buf.ngx_buf_special(b)) {
+                        continue;
+                    }
+                    cl = try ctx.*.chain.allocBuf(cl);
+                    cl.*.buf.* = b.*;
+                    cl.*.buf.*.flags.last_buf = false;
+                    cl.*.buf.*.flags.last_in_chain = false;
+                }
+            }
+        },
+        .echoz_read_request_body => {
+            const rc = http.ngx_http_read_client_request_body(r, ngx_http_echoz_client_body_handler);
+            if (rc == core.NGX_ERROR or rc >= http.NGX_HTTP_SPECIAL_RESPONSE) {
+                return ZError.BODY_ERROR;
+            }
+            r.*.main.*.flags0.count -= 1;
+            if (rc == core.NGX_AGAIN) {
+                ctx.*.reading_body = 1;
+                return ZError.READING_BODY;
+            }
         },
         // else => return ZError.COMMAND_ERROR,
     }
@@ -263,6 +293,7 @@ fn echoz_handle(r: [*c]ngx_http_request_t) !void {
             ctx.*.space_str = ngx_string(" ");
             ctx.*.newline_str = ngx_string("\n");
             ctx.*.header_sent = 0;
+            ctx.*.reading_body = 0;
             ctx.*.ready = 1;
         }
 
@@ -284,10 +315,19 @@ fn echoz_handle(r: [*c]ngx_http_request_t) !void {
     }
 }
 
+export fn ngx_http_echoz_client_body_handler(r: [*c]ngx_http_request_t) callconv(.C) void {
+    if (core.castPtr(echoz_context, r.*.ctx[ngx_http_echoz_module.ctx_index])) |ctx| {
+        if (ctx.*.reading_body == 1) {
+            ctx.*.reading_body = 0;
+            http.ngx_http_finalize_request(r, ngx_http_echoz_handler(r));
+        }
+    }
+}
+
 export fn ngx_http_echoz_handler(r: [*c]ngx_http_request_t) callconv(.C) ngx_int_t {
     echoz_handle(r) catch |e| {
         switch (e) {
-            ZError.TIMER_EVENT => return core.NGX_DONE,
+            ZError.WAITING_TIMER, ZError.READING_BODY => return core.NGX_DONE,
             else => return http.NGX_HTTP_INTERNAL_SERVER_ERROR,
         }
     };
@@ -380,6 +420,22 @@ export const ngx_http_echoz_commands = [_]ngx_command_t{
         .set = ngx_conf_set_echoz,
         .conf = conf.NGX_HTTP_LOC_CONF_OFFSET,
         .offset = 5,
+        .post = NULL,
+    },
+    ngx_command_t{
+        .name = ngx_string("echoz_request_body"),
+        .type = conf.NGX_HTTP_LOC_CONF | conf.NGX_CONF_NOARGS,
+        .set = ngx_conf_set_echoz,
+        .conf = conf.NGX_HTTP_LOC_CONF_OFFSET,
+        .offset = 6,
+        .post = NULL,
+    },
+    ngx_command_t{
+        .name = ngx_string("echoz_read_request_body"),
+        .type = conf.NGX_HTTP_LOC_CONF | conf.NGX_CONF_NOARGS,
+        .set = ngx_conf_set_echoz,
+        .conf = conf.NGX_HTTP_LOC_CONF_OFFSET,
+        .offset = 7,
         .post = NULL,
     },
 };

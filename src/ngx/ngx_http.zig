@@ -44,6 +44,7 @@ pub const ngx_http_upstream_rr_peers_t = ngx.ngx_http_upstream_rr_peers_t;
 pub const ngx_http_output_body_filter_pt = ngx.ngx_http_output_body_filter_pt;
 pub const ngx_http_upstream_headers_in_t = ngx.ngx_http_upstream_headers_in_t;
 pub const ngx_http_request_body_filter_pt = ngx.ngx_http_request_body_filter_pt;
+pub const ngx_http_client_body_handler_pt = ngx.ngx_http_client_body_handler_pt;
 pub const ngx_http_script_regex_end_code_t = ngx.ngx_http_script_regex_end_code_t;
 pub const ngx_http_compile_complex_value_t = ngx.ngx_http_compile_complex_value_t;
 pub const ngx_http_output_header_filter_pt = ngx.ngx_http_output_header_filter_pt;
@@ -78,6 +79,7 @@ pub inline fn ngz_http_get_module_ctx(
 }
 
 pub const NGX_HTTP_OK = ngx.NGX_HTTP_OK;
+pub const NGX_HTTP_SPECIAL_RESPONSE = ngx.NGX_HTTP_SPECIAL_RESPONSE;
 pub const NGX_HTTP_INTERNAL_SERVER_ERROR = ngx.NGX_HTTP_INTERNAL_SERVER_ERROR;
 
 pub const NGX_HTTP_LAST = ngx.NGX_HTTP_LAST;
@@ -94,6 +96,7 @@ pub const ngx_http_finalize_request = ngx.ngx_http_finalize_request;
 pub const ngx_http_parse_unsafe_uri = ngx.ngx_http_parse_unsafe_uri;
 pub const ngx_http_internal_redirect = ngx.ngx_http_internal_redirect;
 pub const ngx_http_run_posted_requests = ngx.ngx_http_run_posted_requests;
+pub const ngx_http_read_client_request_body = ngx.ngx_http_read_client_request_body;
 
 pub inline fn ngx_http_clear_content_length(r: [*c]ngx_http_request_t) void {
     r.*.headers_out.content_length_n = -1;
