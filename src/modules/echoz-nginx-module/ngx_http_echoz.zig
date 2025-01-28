@@ -353,10 +353,44 @@ export fn ngx_http_echoz_request_body_variable(
     v: [*c]http.ngx_http_variable_value_t,
     data: core.uintptr_t,
 ) callconv(.C) ngx_int_t {
-    _ = r;
     _ = data;
+    const b0 = r.*.request_body == core.nullptr(http.ngx_http_request_body_t);
+    const b1 = r.*.request_body.*.bufs == core.nullptr(buf.ngx_chain_t);
+    const b2 = r.*.request_body.*.temp_file != core.nullptr(core.ngx_temp_file_t);
     v.*.flags.not_found = true;
-    return NGX_OK;
+    if (b0 or b1 or b2) {
+        return NGX_OK;
+    }
+    var len: ngx_uint_t = 0;
+    var bufs = r.*.request_body.*.bufs;
+    var it = &bufs;
+    while (buf.ngz_chain_iterate(it)) |b| {
+        if (!buf.ngx_buf_in_memory(b) and b.*.flags.in_file) {
+            return NGX_OK;
+        }
+        len += @intFromPtr(b.*.last) - @intFromPtr(b.*.pos);
+    }
+    if (core.castPtr(u8, core.ngx_pnalloc(r.*.pool, len))) |p| {
+        var i: usize = 0;
+        var s = core.slicify(u8, p, len);
+        it = &bufs;
+        while (buf.ngz_chain_iterate(it)) |b| {
+            if (buf.ngx_buf_in_memory(b)) {
+                const l = @intFromPtr(b.*.last) - @intFromPtr(b.*.pos);
+                @memcpy(s[i .. i + l], core.slicify(u8, b.*.pos, l));
+                i += l;
+            }
+        }
+        if (i == len) {
+            v.*.data = p;
+            v.*.flags.len = @intCast(len);
+            v.*.flags.valid = true;
+            v.*.flags.no_cacheable = false;
+            v.*.flags.not_found = false;
+        }
+        return NGX_OK;
+    }
+    return NGX_ERROR;
 }
 
 export fn ngx_http_echoz_client_body_handler(r: [*c]ngx_http_request_t) callconv(.C) void {
