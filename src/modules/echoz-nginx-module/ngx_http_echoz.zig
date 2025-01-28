@@ -430,6 +430,7 @@ export fn ngx_http_echoz_request_body_variable(
     if (core.castPtr(u8, core.ngx_pnalloc(r.*.pool, len))) |p| {
         var i: usize = 0;
         var s = core.slicify(u8, p, len);
+        bufs = r.*.request_body.*.bufs;
         it = &bufs;
         while (buf.ngz_chain_iterate(it)) |b| {
             if (buf.ngx_buf_in_memory(b)) {

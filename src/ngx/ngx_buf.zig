@@ -129,6 +129,9 @@ pub const NChain = extern struct {
         str: ngx_str_t,
         last: [*c]ngx_chain_t,
     ) ![*c]ngx_chain_t {
+        if (str.len == 0) {
+            return last;
+        }
         if (core.ngz_pcalloc_c(ngx_chain_t, self.pool)) |cl| {
             if (core.ngz_pcalloc_c(ngx_buf_t, self.pool)) |b| {
                 b.*.start = str.data;
