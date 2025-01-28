@@ -64,6 +64,14 @@ pub inline fn ngz_chain_iterate(cl: [*c][*c]ngx_chain_t) ?[*c]ngx_buf_t {
     return cl.*.*.buf;
 }
 
+pub inline fn ngz_chain_last(cl: [*c]ngx_chain_t) [*c]ngx_chain_t {
+    var c = cl;
+    while (c.*.next != core.nullptr(ngx_chain_t)) {
+        c = c.*.next;
+    }
+    return c;
+}
+
 pub const NChainIterator = extern struct {
     const Self = @This();
     const NP = core.nullptr(ngx_chain_t);
