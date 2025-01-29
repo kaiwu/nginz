@@ -20,6 +20,7 @@ namely they are.
   * -lcrypto
   * -lpcre
   * -lssl
+  * -lgd
 
 To ease the development. A `nginz` binary is built as an artifact along with the module objects.
 It is a nginx wrapper, and by default built with
