@@ -13,6 +13,7 @@ var modules = [_][]const u8{
 
 var tests = [_][]const u8{
     "src/ngx/ngx_buf.zig",
+    "src/ngx/ngx_ssl.zig",
     "src/ngx/ngx_log.zig",
     "src/ngx/ngx_conf.zig",
     "src/ngx/ngx_core.zig",

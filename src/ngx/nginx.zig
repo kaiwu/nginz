@@ -2,6 +2,7 @@ pub const Deque = @import("deque.zig").Deque;
 
 pub const log = @import("ngx_log.zig");
 pub const buf = @import("ngx_buf.zig");
+pub const ssl = @import("ngx_ssl.zig");
 pub const core = @import("ngx_core.zig");
 pub const conf = @import("ngx_conf.zig");
 pub const hash = @import("ngx_hash.zig");

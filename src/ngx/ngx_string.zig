@@ -52,3 +52,14 @@ pub inline fn ngx_base64_decoded_length(len: usize) usize {
 test "string" {
     try expectEqual(@sizeOf(ngx_str_t), 16);
 }
+
+pub const ngx_hex_dump = ngx.ngx_hex_dump;
+pub const ngx_escape_uri = ngx.ngx_escape_uri;
+pub const ngx_unescape_uri = ngx.ngx_unescape_uri;
+pub const ngx_encode_base64 = ngx.ngx_encode_base64;
+pub const ngx_decode_base64 = ngx.ngx_decode_base64;
+
+pub const ngx_sprintf = ngx.ngx_sprintf;
+pub const ngx_snprintf = ngx.ngx_snprintf;
+pub const ngx_slprintf = ngx.ngx_slprintf;
+pub const ngx_vslprintf = ngx.ngx_vslprintf;
