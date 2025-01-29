@@ -13,7 +13,7 @@ $ zig build test
 ```
 
 One might need to first address the system library dependencies, a requirement for nginx development.
-namely they are. 
+specifically they are.
   
   * -lz
   * -lcrypt
@@ -22,16 +22,20 @@ namely they are.
   * -lssl
   * -lgd
 
+> [!NOTE]
+> The SSL zig bindings are generated with `OpenSSL 3`.
+
 To ease the development. A `nginz` binary is built as an artifact along with the module objects.
 It is a nginx wrapper, and by default built with
 
 `./auto/configure --with-http_ssl_module --with-debug` 
 
-A module `echoz` is provided as an example, it is a tribute to @agentzh and his [echo][1] module. `echoz`
+A module `echoz` is provided as an example, it is a tribute to @[agentzh][2] and his [echo][1] module. `echoz`
 so far is a simplified version of `echo` and it misses some of the directives.
 
-By all means, deploy the module objects in your own binary building environment.
+By all means, deploy the module objects with your own binary building toolchains.
 
 
 
 [1]: https://github.com/openresty/echo-nginx-module "echo"
+[2]: https://github.com/agentzh "agentzh"
