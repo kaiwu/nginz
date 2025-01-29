@@ -9,6 +9,7 @@ const NGINX = "src/ngx/nginx.zig";
 
 var modules = [_][]const u8{
     "src/modules/echoz-nginx-module/ngx_http_echoz.zig",
+    "src/modules/wechatpay-nginx-module/ngx_http_wechatpay.zig",
 };
 
 var tests = [_][]const u8{
@@ -28,6 +29,7 @@ var tests = [_][]const u8{
     "src/ngx/ngx_string.zig",
 
     "src/modules/echoz-nginx-module/ngx_http_echoz.zig",
+    "src/modules/wechatpay-nginx-module/ngx_http_wechatpay.zig",
 };
 
 const PN = struct {
