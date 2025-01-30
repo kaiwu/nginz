@@ -65,6 +65,7 @@ pub const ngx_random = ngx.ngx_random;
 
 pub const NError = error{
     OOM,
+    SSL_ERROR,
     CONF_ERROR,
     HASH_ERROR,
     TIMER_ERROR,

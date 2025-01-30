@@ -65,6 +65,23 @@ const EVP_DecodeUpdate = ngx.EVP_DecodeUpdate;
 const EVP_DecodeFinal = ngx.EVP_DecodeFinal;
 const EVP_DecodeBlock = ngx.EVP_DecodeBlock;
 
+inline fn not_null(p: ?*anyopaque) bool {
+    return p != core.NULL;
+}
+
+inline fn is_one(r: c_int) bool {
+    return r == 1;
+}
+
+pub fn sslcall(comptime F: anytype, args: anytype, comptime predicate: anytype) !void {
+    const ResultType = @TypeOf(@call(.{}, F, args));
+    const result: ResultType = @call(.{}, F, args);
+
+    if (!predicate(result)) {
+        return core.NError.SSL_ERROR;
+    }
+}
+
 test "ssl" {
     const prvkey: []const u8 =
         \\-----BEGIN RSA PRIVATE KEY-----
