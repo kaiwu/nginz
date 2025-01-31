@@ -11,66 +11,55 @@ const OPENSSL_init_crypto = ngx.OPENSSL_init_crypto;
 const OPENSSL_INIT_ADD_ALL_CIPHERS = ngx.OPENSSL_INIT_ADD_ALL_CIPHERS;
 const OPENSSL_INIT_ADD_ALL_DIGESTS = ngx.OPENSSL_INIT_ADD_ALL_DIGESTS;
 const OPENSSL_INIT_LOAD_CRYPTO_STRINGS = ngx.OPENSSL_INIT_LOAD_CRYPTO_STRINGS;
-const OPENSSL_malloc = ngx.OPENSSL_malloc;
-const OPENSSL_free = ngx.OPENSSL_free;
 
-const SHA256_DIGEST_LENGTH = ngx.SHA256_DIGEST_LENGTH;
-const RSA_PKCS1_OAEP_PADDING = ngx.RSA_PKCS1_OAEP_PADDING;
-const RSA_PKCS1_PADDING = ngx.RSA_PKCS1_PADDING;
-const RSA_NO_PADDING = ngx.RSA_NO_PADDING;
-
+const RAND_bytes = ngx.RAND_bytes;
+const EVP_PKEY_free = ngx.EVP_PKEY_free;
 const EVP_PKEY_CTX_new = ngx.EVP_PKEY_CTX_new;
 const EVP_PKEY_CTX_free = ngx.EVP_PKEY_CTX_free;
 
-const PEM_read_PUBKEY = ngx.PEM_read_PUBKEY;
-const PEM_read_PUBKEY_ex = ngx.PEM_read_PUBKEY_ex;
+const BIO_new_mem_buf = ngx.BIO_new_mem_buf;
 const PEM_read_bio_PUBKEY = ngx.PEM_read_bio_PUBKEY;
-const PEM_read_bio_PUBKEY_ex = ngx.PEM_read_bio_PUBKEY_ex;
-const PEM_read_PrivateKey = ngx.PEM_read_PrivateKey;
-const PEM_read_PrivateKey_ex = ngx.PEM_read_PrivateKey_ex;
 const PEM_read_bio_PrivateKey = ngx.PEM_read_bio_PrivateKey;
-const PEM_read_bio_PrivateKey_ex = ngx.PEM_read_bio_PrivateKey_ex;
-const EVP_PKEY_free = ngx.EVP_PKEY_free;
 
+// AES-256-GCM
+const EVP_CIPHER_CTX_new = ngx.EVP_CIPHER_CTX_new;
+const EVP_CIPHER_CTX_free = ngx.EVP_CIPHER_CTX_free;
 const EVP_aes_256_gcm = ngx.EVP_aes_256_gcm;
-const EVP_PKEY_encrypt_init_ex = ngx.EVP_PKEY_encrypt_init_ex;
+const EVP_CTRL_GCM_SET_TAG = ngx.EVP_CTRL_GCM_SET_TAG;
+
+const EVP_EncryptInit_ex = ngx.EVP_EncryptInit_ex;
+const EVP_EncryptUpdate = ngx.EVP_EncryptUpdate;
+const EVP_EncryptFinal_ex = ngx.EVP_EncryptFinal_ex;
+const EVP_CIPHER_CTX_ctrl = ngx.EVP_CIPHER_CTX_ctrl;
+const EVP_DecryptInit_ex = ngx.EVP_DecryptInit_ex;
+const EVP_DecryptUpdate = ngx.EVP_DecryptUpdate;
+const EVP_DecryptFinal_ex = ngx.EVP_DecryptFinal_ex;
+
+// RSA-OAEP
+const RSA_PKCS1_OAEP_PADDING = ngx.RSA_PKCS1_OAEP_PADDING;
+const RSA_PKCS1_PADDING = ngx.RSA_PKCS1_PADDING;
+const RSA_NO_PADDING = ngx.RSA_NO_PADDING;
+const EVP_PKEY_encrypt_init = ngx.EVP_PKEY_encrypt_init;
+const EVP_PKEY_CTX_set_rsa_padding = ngx.EVP_PKEY_CTX_set_rsa_padding;
 const EVP_PKEY_encrypt = ngx.EVP_PKEY_encrypt;
-const EVP_PKEY_decrypt_init_ex = ngx.EVP_PKEY_decrypt_init_ex;
+const EVP_PKEY_decrypt_init = ngx.EVP_PKEY_decrypt_init;
 const EVP_PKEY_decrypt = ngx.EVP_PKEY_decrypt;
 
-const RAND_bytes = ngx.RAND_bytes;
+// SHA256 DIGEST SIGN/VERIFY
+const SHA256_DIGEST_LENGTH = ngx.SHA256_DIGEST_LENGTH;
 const EVP_sha256 = ngx.EVP_sha256;
-
 const EVP_MD_CTX_new = ngx.EVP_MD_CTX_new;
 const EVP_MD_CTX_free = ngx.EVP_MD_CTX_free;
 const EVP_MD_CTX_reset = ngx.EVP_MD_CTX_reset;
-
-const EVP_DigestVerifyInit_ex = ngx.EVP_DigestVerifyInit_ex;
 const EVP_DigestVerifyInit = ngx.EVP_DigestVerifyInit;
 const EVP_DigestVerifyUpdate = ngx.EVP_DigestVerifyUpdate;
 const EVP_DigestVerifyFinal = ngx.EVP_DigestVerifyFinal;
-
-const EVP_DigestSignInit_ex = ngx.EVP_DigestSignInit_ex;
 const EVP_DigestSignInit = ngx.EVP_DigestSignInit;
 const EVP_DigestSignUpdate = ngx.EVP_DigestSignUpdate;
 const EVP_DigestSignFinal = ngx.EVP_DigestSignFinal;
 
-const BIO_new = ngx.BIO_new;
-const BIO_free = ngx.BIO_free;
-const BIO_new_fp = ngx.BIO_new_fp;
-const BIO_new_ex = ngx.BIO_new_ex;
-const BIO_new_file = ngx.BIO_new_file;
-const BIO_new_mem_buf = ngx.BIO_new_mem_buf;
-
-const EVP_ENCODE_CTX_new = ngx.EVP_ENCODE_CTX_new;
-const EVP_ENCODE_CTX_free = ngx.EVP_ENCODE_CTX_free;
-const EVP_EncodeInit = ngx.EVP_EncodeInit;
-const EVP_EncodeUpdate = ngx.EVP_EncodeUpdate;
-const EVP_EncodeFinal = ngx.EVP_EncodeFinal;
+// base64
 const EVP_EncodeBlock = ngx.EVP_EncodeBlock;
-const EVP_DecodeInit = ngx.EVP_DecodeInit;
-const EVP_DecodeUpdate = ngx.EVP_DecodeUpdate;
-const EVP_DecodeFinal = ngx.EVP_DecodeFinal;
 const EVP_DecodeBlock = ngx.EVP_DecodeBlock;
 
 const ERR_get_error = ngx.ERR_get_error;
@@ -78,8 +67,6 @@ const ERR_error_string_n = ngx.ERR_error_string_n;
 
 const ngx_encode_base64 = ngx.ngx_encode_base64;
 const ngx_decode_base64 = ngx.ngx_decode_base64;
-const ngx_base64_decoded_length = ngx.ngx_base64_decoded_length;
-const ngx_base64_encoded_length = ngx.ngx_base64_encoded_length;
 
 inline fn not_null(p: ?*anyopaque) bool {
     return p != core.NULL;
@@ -99,9 +86,9 @@ pub fn sslcall(comptime F: anytype, args: anytype, comptime predicate: anytype) 
     const result: ResultType = @call(.auto, F, args);
 
     if (!predicate(result)) {
-        @memset(&SSL_ERROR_BUFFER, 0);
-        ERR_error_string_n(ERR_get_error(), &SSL_ERROR_BUFFER, 256);
-        std.debug.print("{s}\n", .{SSL_ERROR_BUFFER});
+        // @memset(&SSL_ERROR_BUFFER, 0);
+        // ERR_error_string_n(ERR_get_error(), &SSL_ERROR_BUFFER, 256);
+        // std.debug.print("{s}\n", .{SSL_ERROR_BUFFER});
         return core.NError.SSL_ERROR;
     } else {
         return result;
@@ -212,7 +199,7 @@ test "ssl" {
         _ = try sslcall(EVP_MD_CTX_reset, .{mdctx}, is_one);
     }
 
-    const pubkey =
+    const pubkey4 =
         \\-----BEGIN PUBLIC KEY-----
         \\MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAwXNI6sdlknHBnK8Fu2U6
         \\Cwor9qY747jP8KAfeBMeveEt1TqaHkLfaSD07trZLhGpfs8/AHqjhgSMO1O10YQW
@@ -235,17 +222,17 @@ test "ssl" {
         \\mfI1CPqvBrgcXfgXMFjdNIhBf27ACE2YyeWsWV9ZI7T7RU0vHvbQpu9Z32ogzc+k8ZC5n3kz7h70eWKjgqNdKQF0eRp8mVKlmfzMLBVHbssB9jEZEDXThOX1XFqX7s7ymia1hoHQxQagPGzkdWxtlZPZ4ZPvr1RiqkgAu6Is8MZgXXrRoBKqjmSdrP1N7uxzJ/cjfSiis9FiLjuADoqmQ1P7p2N876YPAol7Rn0+GswwAwxldbdLrmVSjfytfSBJFqTMHn4itojgxSWWN1byuckQt8hSTEv/Lg97QoeGniYP17T80pJeQyL3b+295FPHSO2AtvCgyIbKMZ0BALilAA==
     ;
 
-    const pub_key_bio = try sslcall(BIO_new_mem_buf, .{ pubkey.ptr, pubkey.len }, not_null);
-    const pub_key = try sslcall(PEM_read_bio_PUBKEY, .{ pub_key_bio, null, null, null }, not_null);
-
-    const ds_pub = [_][2][]const u8{
-        .{ data4, signed4 },
+    const ds_pub = [_][3][]const u8{
+        .{ data4, signed4, pubkey4 },
     };
 
     for (ds_pub) |ds0| {
+        const pub_key_bio = try sslcall(BIO_new_mem_buf, .{ ds0[2].ptr, @as(c_int, @intCast(ds0[2].len)) }, not_null);
+        const pub_key = try sslcall(PEM_read_bio_PUBKEY, .{ pub_key_bio, null, null, null }, not_null);
+
         var d: usize = 0;
         var i: usize = ds0[1].len - 1;
-        while (ds0[1][i] == '=') : (i -= 1) {
+        while (i > 0 and ds0[1][i] == '=') : (i -= 1) {
             d += 1;
         }
         const len: usize = ((344 + 3) / 4) * 3;
@@ -257,3 +244,228 @@ test "ssl" {
         _ = try sslcall(EVP_MD_CTX_reset, .{mdctx}, is_one);
     }
 }
+
+// AES-256-GCM
+// #include <openssl/evp.h>
+// #include <openssl/rand.h>
+// #include <openssl/err.h>
+// #include <stdio.h>
+// #include <stdlib.h>
+// #include <string.h>
+//
+// // 错误处理函数
+// void handle_errors() {
+//     ERR_print_errors_fp(stderr);
+//     abort();
+// }
+//
+// int main() {
+//     // 初始化 OpenSSL 库
+//     OPENSSL_init_crypto(OPENSSL_INIT_ADD_ALL_CIPHERS | OPENSSL_INIT_ADD_ALL_DIGESTS | OPENSSL_INIT_LOAD_CRYPTO_STRINGS, NULL);
+//
+//     // 需要加密的消息
+//     const char *plaintext = "Hello, OpenSSL 3.0 AES-256-GCM!";
+//     size_t plaintext_len = strlen(plaintext);
+//
+//     // 密钥和 IV（初始化向量）
+//     unsigned char key[32];  // AES-256 需要 32 字节的密钥
+//     unsigned char iv[12];   // GCM 需要 12 字节的 IV
+//
+//     // 生成随机密钥和 IV
+//     if (RAND_bytes(key, sizeof(key)) <= 0 || RAND_bytes(iv, sizeof(iv)) <= 0) {
+//         handle_errors();
+//     }
+//
+//     // 加密
+//     EVP_CIPHER_CTX *ctx = EVP_CIPHER_CTX_new();
+//     if (!ctx) handle_errors();
+//
+//     int len;
+//     int ciphertext_len;
+//     unsigned char ciphertext[128];  // 加密后的数据缓冲区
+//     unsigned char tag[16];          // GCM 认证标签
+//
+//     // 初始化加密操作
+//     if (EVP_EncryptInit_ex(ctx, EVP_aes_256_gcm(), NULL, NULL, NULL) <= 0) {
+//         handle_errors();
+//     }
+//
+//     // 设置密钥和 IV
+//     if (EVP_EncryptInit_ex(ctx, NULL, NULL, key, iv) <= 0) {
+//         handle_errors();
+//     }
+//
+//     // 加密数据
+//     if (EVP_EncryptUpdate(ctx, ciphertext, &len, (const unsigned char *)plaintext, plaintext_len) <= 0) {
+//         handle_errors();
+//     }
+//     ciphertext_len = len;
+//
+//     // 结束加密操作
+//     if (EVP_EncryptFinal_ex(ctx, ciphertext + len, &len) <= 0) {
+//         handle_errors();
+//     }
+//     ciphertext_len += len;
+//
+//     // 获取认证标签
+//     if (EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_GCM_GET_TAG, 16, tag) <= 0) {
+//         handle_errors();
+//     }
+//
+//     // 输出加密后的数据
+//     printf("Ciphertext (%d bytes):\n", ciphertext_len);
+//     for (int i = 0; i < ciphertext_len; i++) {
+//         printf("%02x", ciphertext[i]);
+//     }
+//     printf("\n");
+//
+//     // 输出认证标签
+//     printf("Tag (16 bytes):\n");
+//     for (int i = 0; i < 16; i++) {
+//         printf("%02x", tag[i]);
+//     }
+//     printf("\n");
+//
+//     // 解密
+//     unsigned char decryptedtext[128];  // 解密后的数据缓冲区
+//     int decryptedtext_len;
+//
+//     // 初始化解密操作
+//     if (EVP_DecryptInit_ex(ctx, EVP_aes_256_gcm(), NULL, NULL, NULL) <= 0) {
+//         handle_errors();
+//     }
+//
+//     // 设置密钥和 IV
+//     if (EVP_DecryptInit_ex(ctx, NULL, NULL, key, iv) <= 0) {
+//         handle_errors();
+//     }
+//
+//     // 解密数据
+//     if (EVP_DecryptUpdate(ctx, decryptedtext, &len, ciphertext, ciphertext_len) <= 0) {
+//         handle_errors();
+//     }
+//     decryptedtext_len = len;
+//
+//     // 设置认证标签
+//     if (EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_GCM_SET_TAG, 16, tag) <= 0) {
+//         handle_errors();
+//     }
+//
+//     // 结束解密操作
+//     if (EVP_DecryptFinal_ex(ctx, decryptedtext + len, &len) <= 0) {
+//         handle_errors();
+//     }
+//     decryptedtext_len += len;
+//
+//     // 输出解密后的数据
+//     printf("Decrypted text: %.*s\n", decryptedtext_len, decryptedtext);
+//
+//     // 释放资源
+//     EVP_CIPHER_CTX_free(ctx);
+//
+//     // 清理 OpenSSL 库
+//     EVP_cleanup();
+//     ERR_free_strings();
+//
+//     return 0;
+// }
+
+// RSA OAEP
+// #include <openssl/evp.h>
+// #include <openssl/pem.h>
+// #include <openssl/err.h>
+// #include <stdio.h>
+// #include <stdlib.h>
+// #include <string.h>
+//
+// // 错误处理函数
+// void handle_errors() {
+//     ERR_print_errors_fp(stderr);
+//     abort();
+// }
+//
+// int main() {
+//     // 初始化 OpenSSL 库
+//     OPENSSL_init_crypto(OPENSSL_INIT_ADD_ALL_CIPHERS | OPENSSL_INIT_ADD_ALL_DIGESTS | OPENSSL_INIT_LOAD_CRYPTO_STRINGS, NULL);
+//
+//     // 生成 RSA 密钥对
+//     EVP_PKEY *pkey = NULL;
+//     EVP_PKEY_CTX *ctx = EVP_PKEY_CTX_new_id(EVP_PKEY_RSA, NULL);
+//     if (!ctx) handle_errors();
+//
+//     if (EVP_PKEY_keygen_init(ctx) <= 0) handle_errors();
+//     if (EVP_PKEY_CTX_set_rsa_keygen_bits(ctx, 2048) <= 0) handle_errors();
+//     if (EVP_PKEY_keygen(ctx, &pkey) <= 0) handle_errors();
+//
+//     // 需要加密的消息
+//     const char *message = "Hello, OpenSSL 3.0 RSA-OAEP!";
+//     size_t message_len = strlen(message);
+//
+//     // 加密
+//     EVP_PKEY_CTX *enc_ctx = EVP_PKEY_CTX_new(pkey, NULL);
+//     if (!enc_ctx) handle_errors();
+//
+//     if (EVP_PKEY_encrypt_init(enc_ctx) <= 0) handle_errors();
+//     if (EVP_PKEY_CTX_set_rsa_padding(enc_ctx, RSA_PKCS1_OAEP_PADDING) <= 0) handle_errors();
+//
+//     // 获取加密后的长度
+//     size_t encrypted_len;
+//     if (EVP_PKEY_encrypt(enc_ctx, NULL, &encrypted_len, (const unsigned char *)message, message_len) <= 0) {
+//         handle_errors();
+//     }
+//
+//     // 分配加密缓冲区
+//     unsigned char *encrypted = (unsigned char *)OPENSSL_malloc(encrypted_len);
+//     if (!encrypted) handle_errors();
+//
+//     // 执行加密
+//     if (EVP_PKEY_encrypt(enc_ctx, encrypted, &encrypted_len, (const unsigned char *)message, message_len) <= 0) {
+//         handle_errors();
+//     }
+//
+//     // 输出加密后的数据
+//     printf("Encrypted data (%zu bytes):\n", encrypted_len);
+//     for (size_t i = 0; i < encrypted_len; i++) {
+//         printf("%02x", encrypted[i]);
+//     }
+//     printf("\n");
+//
+//     // 解密
+//     EVP_PKEY_CTX *dec_ctx = EVP_PKEY_CTX_new(pkey, NULL);
+//     if (!dec_ctx) handle_errors();
+//
+//     if (EVP_PKEY_decrypt_init(dec_ctx) <= 0) handle_errors();
+//     if (EVP_PKEY_CTX_set_rsa_padding(dec_ctx, RSA_PKCS1_OAEP_PADDING) <= 0) handle_errors();
+//
+//     // 获取解密后的长度
+//     size_t decrypted_len;
+//     if (EVP_PKEY_decrypt(dec_ctx, NULL, &decrypted_len, encrypted, encrypted_len) <= 0) {
+//         handle_errors();
+//     }
+//
+//     // 分配解密缓冲区
+//     unsigned char *decrypted = (unsigned char *)OPENSSL_malloc(decrypted_len);
+//     if (!decrypted) handle_errors();
+//
+//     // 执行解密
+//     if (EVP_PKEY_decrypt(dec_ctx, decrypted, &decrypted_len, encrypted, encrypted_len) <= 0) {
+//         handle_errors();
+//     }
+//
+//     // 输出解密后的数据
+//     printf("Decrypted data: %.*s\n", (int)decrypted_len, decrypted);
+//
+//     // 释放资源
+//     OPENSSL_free(encrypted);
+//     OPENSSL_free(decrypted);
+//     EVP_PKEY_CTX_free(enc_ctx);
+//     EVP_PKEY_CTX_free(dec_ctx);
+//     EVP_PKEY_free(pkey);
+//     EVP_PKEY_CTX_free(ctx);
+//
+//     // 清理 OpenSSL 库
+//     EVP_cleanup();
+//     ERR_free_strings();
+//
+//     return 0;
+// }
