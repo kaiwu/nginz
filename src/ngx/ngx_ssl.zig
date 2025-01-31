@@ -78,6 +78,8 @@ const ERR_error_string_n = ngx.ERR_error_string_n;
 
 const ngx_encode_base64 = ngx.ngx_encode_base64;
 const ngx_decode_base64 = ngx.ngx_decode_base64;
+const ngx_base64_decoded_length = ngx.ngx_base64_decoded_length;
+const ngx_base64_encoded_length = ngx.ngx_base64_encoded_length;
 
 inline fn not_null(p: ?*anyopaque) bool {
     return p != core.NULL;
@@ -91,15 +93,15 @@ inline fn is_zero_or_more(r: c_int) bool {
     return r >= 0;
 }
 
-var ERROR_BUFFER: [256]u8 = undefined;
+var SSL_ERROR_BUFFER: [256]u8 = undefined;
 pub fn sslcall(comptime F: anytype, args: anytype, comptime predicate: anytype) !@TypeOf(@call(.auto, F, args)) {
     const ResultType = @TypeOf(@call(.auto, F, args));
     const result: ResultType = @call(.auto, F, args);
 
     if (!predicate(result)) {
-        @memset(&ERROR_BUFFER, 0);
-        ERR_error_string_n(ERR_get_error(), &ERROR_BUFFER, 256);
-        // std.debug.print("{s}\n", .{ERROR_BUFFER});
+        @memset(&SSL_ERROR_BUFFER, 0);
+        ERR_error_string_n(ERR_get_error(), &SSL_ERROR_BUFFER, 256);
+        std.debug.print("{s}\n", .{SSL_ERROR_BUFFER});
         return core.NError.SSL_ERROR;
     } else {
         return result;
@@ -195,18 +197,63 @@ test "ssl" {
     };
     _ = OPENSSL_init_crypto(OPENSSL_INIT_ADD_ALL_CIPHERS | OPENSSL_INIT_ADD_ALL_DIGESTS | OPENSSL_INIT_LOAD_CRYPTO_STRINGS, null);
     const prv_key_bio = try sslcall(BIO_new_mem_buf, .{ prvkey.ptr, prvkey.len }, not_null);
-    const pkey = try sslcall(PEM_read_bio_PrivateKey, .{ prv_key_bio, null, null, null }, not_null);
+    const prv_key = try sslcall(PEM_read_bio_PrivateKey, .{ prv_key_bio, null, null, null }, not_null);
     const mdctx = try sslcall(EVP_MD_CTX_new, .{}, not_null);
 
     for (ds) |ds0| {
         var buf: [256]u8 = undefined;
         var len: usize = 256;
         var base64: [((256 + 2) / 3) * 4]u8 = undefined;
-        _ = try sslcall(EVP_DigestSignInit, .{ mdctx, null, EVP_sha256(), null, pkey }, is_one);
+        _ = try sslcall(EVP_DigestSignInit, .{ mdctx, null, EVP_sha256(), null, prv_key }, is_one);
         _ = try sslcall(EVP_DigestSignUpdate, .{ mdctx, ds0[0].ptr, ds0[0].len }, is_one);
         _ = try sslcall(EVP_DigestSignFinal, .{ mdctx, &buf, &len }, is_one);
         const blen = try sslcall(EVP_EncodeBlock, .{ &base64, &buf, @as(c_int, @intCast(len)) }, is_zero_or_more);
         try expectEqual(std.mem.eql(u8, ds0[1], core.slicify(u8, &base64, @as(usize, @intCast(blen)))), true);
+        _ = try sslcall(EVP_MD_CTX_reset, .{mdctx}, is_one);
+    }
+
+    const pubkey =
+        \\-----BEGIN PUBLIC KEY-----
+        \\MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAwXNI6sdlknHBnK8Fu2U6
+        \\Cwor9qY747jP8KAfeBMeveEt1TqaHkLfaSD07trZLhGpfs8/AHqjhgSMO1O10YQW
+        \\OrrJ4hjIWPKqxbgrYMkBQc+mwdiWp4W3ByCqxBRagCveCXRWCmuJYovl9H/bsDI0
+        \\iGbpVtEOghJtfciisYSgxcLufUDTRkvwxjIBK1pCRjk33jJ5YTBWTHMRtMAOcFLN
+        \\F6hdEYdX8SPsgHHeLZ5Lv2T/686w1xtgCHef/sd4uSfWmyzsalQdHG/e4IyYmrhx
+        \\+O3VBoNDzE3nx23bFeV/RVNCG7cV6VhmYokJNHa/erIPkEmEFID6A5wQOXuxUkmJ
+        \\WwIDAQAB
+        \\-----END PUBLIC KEY-----
+    ;
+
+    const data4 =
+        \\1722850421
+        \\d824f2e086d3c1df967785d13fcd22ef
+        \\{"code_url":"weixin://wxpay/bizpayurl?pr=JyC91EIz1"}
+        \\
+    ;
+
+    const signed4 =
+        \\mfI1CPqvBrgcXfgXMFjdNIhBf27ACE2YyeWsWV9ZI7T7RU0vHvbQpu9Z32ogzc+k8ZC5n3kz7h70eWKjgqNdKQF0eRp8mVKlmfzMLBVHbssB9jEZEDXThOX1XFqX7s7ymia1hoHQxQagPGzkdWxtlZPZ4ZPvr1RiqkgAu6Is8MZgXXrRoBKqjmSdrP1N7uxzJ/cjfSiis9FiLjuADoqmQ1P7p2N876YPAol7Rn0+GswwAwxldbdLrmVSjfytfSBJFqTMHn4itojgxSWWN1byuckQt8hSTEv/Lg97QoeGniYP17T80pJeQyL3b+295FPHSO2AtvCgyIbKMZ0BALilAA==
+    ;
+
+    const pub_key_bio = try sslcall(BIO_new_mem_buf, .{ pubkey.ptr, pubkey.len }, not_null);
+    const pub_key = try sslcall(PEM_read_bio_PUBKEY, .{ pub_key_bio, null, null, null }, not_null);
+
+    const ds_pub = [_][2][]const u8{
+        .{ data4, signed4 },
+    };
+
+    for (ds_pub) |ds0| {
+        var d: usize = 0;
+        var i: usize = ds0[1].len - 1;
+        while (ds0[1][i] == '=') : (i -= 1) {
+            d += 1;
+        }
+        const len: usize = ((344 + 3) / 4) * 3;
+        var buf: [len]u8 = undefined;
+        const blen = try sslcall(EVP_DecodeBlock, .{ &buf, ds0[1].ptr, @as(c_int, @intCast(ds0[1].len)) }, is_zero_or_more);
+        _ = try sslcall(EVP_DigestVerifyInit, .{ mdctx, null, EVP_sha256(), null, pub_key }, is_one);
+        _ = try sslcall(EVP_DigestVerifyUpdate, .{ mdctx, ds0[0].ptr, ds0[0].len }, is_one);
+        _ = try sslcall(EVP_DigestVerifyFinal, .{ mdctx, &buf, @as(usize, @intCast(blen)) - d }, is_one);
         _ = try sslcall(EVP_MD_CTX_reset, .{mdctx}, is_one);
     }
 }
