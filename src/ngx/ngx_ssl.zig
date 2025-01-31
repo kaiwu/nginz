@@ -6,6 +6,8 @@ const expectEqual = std.testing.expectEqual;
 const NULL = core.NULL;
 const u_char = core.u_char;
 const nullptr = core.nullptr;
+const ngx_str_t = core.ngx_str_t;
+const ngx_pool_t = core.ngx_pool_t;
 
 const CRYPTO_malloc_fn = ngx.CRYPTO_malloc_fn;
 const CRYPTO_realloc_fn = ngx.CRYPTO_realloc_fn;
@@ -22,6 +24,9 @@ const EVP_PKEY_free = ngx.EVP_PKEY_free;
 const EVP_PKEY_CTX_new = ngx.EVP_PKEY_CTX_new;
 const EVP_PKEY_CTX_free = ngx.EVP_PKEY_CTX_free;
 
+const BIO = ngx.BIO;
+const EVP_PKEY = ngx.EVP_PKEY;
+const BIO_free = ngx.BIO_free;
 const BIO_new_mem_buf = ngx.BIO_new_mem_buf;
 const PEM_read_bio_PUBKEY = ngx.PEM_read_bio_PUBKEY;
 const PEM_read_bio_PrivateKey = ngx.PEM_read_bio_PrivateKey;
@@ -53,6 +58,7 @@ const EVP_PKEY_decrypt = ngx.EVP_PKEY_decrypt;
 // SHA256 DIGEST SIGN/VERIFY
 const SHA256_DIGEST_LENGTH = ngx.SHA256_DIGEST_LENGTH;
 const EVP_sha256 = ngx.EVP_sha256;
+const EVP_MD_CTX = ngx.EVP_MD_CTX;
 const EVP_MD_CTX_new = ngx.EVP_MD_CTX_new;
 const EVP_MD_CTX_free = ngx.EVP_MD_CTX_free;
 const EVP_MD_CTX_reset = ngx.EVP_MD_CTX_reset;
@@ -108,6 +114,78 @@ pub fn sslcall(comptime F: anytype, args: anytype, comptime predicate: anytype) 
         return result;
     }
 }
+
+const NSSL_KEYS = extern struct {
+    const Self = @This();
+    prv_key_bio: ?*BIO,
+    pub_key_bio: ?*BIO,
+    prv_key: ?*EVP_PKEY,
+    pub_key: ?*EVP_PKEY,
+    md_ctx: ?*EVP_MD_CTX,
+
+    pub fn init(prvkey: ngx_str_t, pubkey: ngx_str_t) !Self {
+        _ = OPENSSL_init_crypto(OPENSSL_INIT_ADD_ALL_CIPHERS | OPENSSL_INIT_ADD_ALL_DIGESTS | OPENSSL_INIT_LOAD_CRYPTO_STRINGS, null);
+        const prv_key_bio = try sslcall(BIO_new_mem_buf, .{ prvkey.data, @as(c_int, @intCast(prvkey.len)) }, not_null);
+        const pub_key_bio = try sslcall(BIO_new_mem_buf, .{ pubkey.data, @as(c_int, @intCast(pubkey.len)) }, not_null);
+        const prv_key = try sslcall(PEM_read_bio_PrivateKey, .{ prv_key_bio, null, null, null }, not_null);
+        const pub_key = try sslcall(PEM_read_bio_PUBKEY, .{ pub_key_bio, null, null, null }, not_null);
+        const md_ctx = try sslcall(EVP_MD_CTX_new, .{}, not_null);
+
+        return Self{
+            .prv_key_bio = prv_key_bio,
+            .pub_key_bio = pub_key_bio,
+            .prv_key = prv_key,
+            .pub_key = pub_key,
+            .md_ctx = md_ctx,
+        };
+    }
+
+    pub fn deinit(self: *Self) void {
+        EVP_MD_CTX_free(self.md_ctx);
+        EVP_PKEY_free(self.prv_key);
+        EVP_PKEY_free(self.pub_key);
+        BIO_free(self.prv_key_bio);
+        BIO_free(self.pub_key_bio);
+    }
+
+    pub fn sign_sha256(self: *Self, msg: ngx_str_t, pool: ngx_pool_t) !ngx_str_t {
+        var buf: [256]u8 = undefined;
+        var len: usize = buf.len;
+        if (core.castPtr(u8, core.ngx_pnalloc(pool, ngx_base64_encoded_length(len)))) |p| {
+            _ = try sslcall(EVP_DigestSignInit, .{ self.md_ctx, null, EVP_sha256(), null, self.prv_key }, is_one);
+            _ = try sslcall(EVP_DigestSignUpdate, .{ self.md_ctx, msg.data, msg.len }, is_one);
+            _ = try sslcall(EVP_DigestSignFinal, .{ self.mdctx, &buf, &len }, is_one);
+            const blen = try sslcall(EVP_EncodeBlock, .{ p, &buf, @as(c_int, @intCast(len)) }, is_zero_or_more);
+            _ = try sslcall(EVP_MD_CTX_reset, .{self.md_ctx}, is_one);
+            return ngx_str_t{ .len = blen, .data = p };
+        }
+        return core.NError.OOM;
+    }
+
+    pub fn verify_sha256(self: *Self, sig: ngx_str_t, pool: ngx_pool_t) !bool {
+        if (sig.len == 0) {
+            return false;
+        }
+        var d: usize = 0;
+        var i: usize = sig.len - 1;
+        while (i > 0 and sig.data[i] == '=') : (i -= 1) {
+            d += 1;
+        }
+        if (core.castPtr(u8, core.ngx_pnalloc(pool, ngx_base64_decoded_length(sig.len)))) |p| {
+            defer core.ngx_pfree(p);
+            defer _ = EVP_MD_CTX_reset(self.md_ctx);
+
+            const blen = try sslcall(EVP_DecodeBlock, .{ p, sig.data, @as(c_int, @intCast(sig.len)) }, is_zero_or_more);
+            _ = try sslcall(EVP_DigestVerifyInit, .{ self.md_ctx, null, EVP_sha256(), null, self.pub_key }, is_one);
+            _ = try sslcall(EVP_DigestVerifyUpdate, .{ self.md_ctx, sig.data, sig.len }, is_one);
+            _ = try sslcall(EVP_DigestVerifyFinal, .{ self.md_ctx, p, @as(usize, @intCast(blen)) - d }, is_one) catch return false;
+            //_ = try sslcall(EVP_MD_CTX_reset, .{self.md_ctx}, is_one);
+            return true;
+        }
+
+        return core.NError.OOM;
+    }
+};
 
 test "ssl" {
     const prvkey: []const u8 =
