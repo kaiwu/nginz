@@ -41,14 +41,6 @@ pub inline fn ngx_strlchr(p: [*c]u_char, last: [*c]u_char, c: u_char) [*c]u_char
     return NULL;
 }
 
-pub inline fn ngx_base64_encoded_length(len: usize) usize {
-    return ((len + 2) / 3) * 4;
-}
-
-pub inline fn ngx_base64_decoded_length(len: usize) usize {
-    return ((len + 3) / 4) * 3;
-}
-
 test "string" {
     try expectEqual(@sizeOf(ngx_str_t), 16);
 }

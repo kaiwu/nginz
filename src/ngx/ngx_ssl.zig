@@ -7,7 +7,12 @@ const NULL = core.NULL;
 const u_char = core.u_char;
 const nullptr = core.nullptr;
 
+const CRYPTO_malloc_fn = ngx.CRYPTO_malloc_fn;
+const CRYPTO_realloc_fn = ngx.CRYPTO_realloc_fn;
+const CRYPTO_free_fn = ngx.CRYPTO_free_fn;
+
 const OPENSSL_init_crypto = ngx.OPENSSL_init_crypto;
+const CRYPTO_set_mem_functions = ngx.CRYPTO_set_mem_functions;
 const OPENSSL_INIT_ADD_ALL_CIPHERS = ngx.OPENSSL_INIT_ADD_ALL_CIPHERS;
 const OPENSSL_INIT_ADD_ALL_DIGESTS = ngx.OPENSSL_INIT_ADD_ALL_DIGESTS;
 const OPENSSL_INIT_LOAD_CRYPTO_STRINGS = ngx.OPENSSL_INIT_LOAD_CRYPTO_STRINGS;
@@ -64,9 +69,18 @@ const EVP_DecodeBlock = ngx.EVP_DecodeBlock;
 
 const ERR_get_error = ngx.ERR_get_error;
 const ERR_error_string_n = ngx.ERR_error_string_n;
+const ERR_print_errors_cb = ngx.ERR_print_errors_cb;
 
 const ngx_encode_base64 = ngx.ngx_encode_base64;
 const ngx_decode_base64 = ngx.ngx_decode_base64;
+
+pub inline fn ngx_base64_encoded_length(len: usize) usize {
+    return ((len + 2) / 3) * 4;
+}
+
+pub inline fn ngx_base64_decoded_length(len: usize) usize {
+    return ((len + 3) / 4) * 3;
+}
 
 inline fn not_null(p: ?*anyopaque) bool {
     return p != core.NULL;
