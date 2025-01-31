@@ -5,6 +5,14 @@ const expectEqual = std.testing.expectEqual;
 
 const NULL = core.NULL;
 const u_char = core.u_char;
+const nullptr = core.nullptr;
+
+const OPENSSL_init_crypto = ngx.OPENSSL_init_crypto;
+const OPENSSL_INIT_ADD_ALL_CIPHERS = ngx.OPENSSL_INIT_ADD_ALL_CIPHERS;
+const OPENSSL_INIT_ADD_ALL_DIGESTS = ngx.OPENSSL_INIT_ADD_ALL_DIGESTS;
+const OPENSSL_INIT_LOAD_CRYPTO_STRINGS = ngx.OPENSSL_INIT_LOAD_CRYPTO_STRINGS;
+const OPENSSL_malloc = ngx.OPENSSL_malloc;
+const OPENSSL_free = ngx.OPENSSL_free;
 
 const SHA256_DIGEST_LENGTH = ngx.SHA256_DIGEST_LENGTH;
 const RSA_PKCS1_OAEP_PADDING = ngx.RSA_PKCS1_OAEP_PADDING;
@@ -16,10 +24,13 @@ const EVP_PKEY_CTX_free = ngx.EVP_PKEY_CTX_free;
 
 const PEM_read_PUBKEY = ngx.PEM_read_PUBKEY;
 const PEM_read_PUBKEY_ex = ngx.PEM_read_PUBKEY_ex;
+const PEM_read_bio_PUBKEY = ngx.PEM_read_bio_PUBKEY;
 const PEM_read_bio_PUBKEY_ex = ngx.PEM_read_bio_PUBKEY_ex;
 const PEM_read_PrivateKey = ngx.PEM_read_PrivateKey;
 const PEM_read_PrivateKey_ex = ngx.PEM_read_PrivateKey_ex;
+const PEM_read_bio_PrivateKey = ngx.PEM_read_bio_PrivateKey;
 const PEM_read_bio_PrivateKey_ex = ngx.PEM_read_bio_PrivateKey_ex;
+const EVP_PKEY_free = ngx.EVP_PKEY_free;
 
 const EVP_aes_256_gcm = ngx.EVP_aes_256_gcm;
 const EVP_PKEY_encrypt_init_ex = ngx.EVP_PKEY_encrypt_init_ex;
@@ -32,6 +43,7 @@ const EVP_sha256 = ngx.EVP_sha256;
 
 const EVP_MD_CTX_new = ngx.EVP_MD_CTX_new;
 const EVP_MD_CTX_free = ngx.EVP_MD_CTX_free;
+const EVP_MD_CTX_reset = ngx.EVP_MD_CTX_reset;
 
 const EVP_DigestVerifyInit_ex = ngx.EVP_DigestVerifyInit_ex;
 const EVP_DigestVerifyInit = ngx.EVP_DigestVerifyInit;
@@ -42,10 +54,6 @@ const EVP_DigestSignInit_ex = ngx.EVP_DigestSignInit_ex;
 const EVP_DigestSignInit = ngx.EVP_DigestSignInit;
 const EVP_DigestSignUpdate = ngx.EVP_DigestSignUpdate;
 const EVP_DigestSignFinal = ngx.EVP_DigestSignFinal;
-
-const OpenSSL_add_all_algorithms = ngx.OpenSSL_add_all_algorithms;
-const ERR_load_crypto_strings = ngx.ERR_load_crypto_strings;
-const OPENSSL_free = ngx.OPENSSL_free;
 
 const BIO_new = ngx.BIO_new;
 const BIO_free = ngx.BIO_free;
@@ -65,6 +73,12 @@ const EVP_DecodeUpdate = ngx.EVP_DecodeUpdate;
 const EVP_DecodeFinal = ngx.EVP_DecodeFinal;
 const EVP_DecodeBlock = ngx.EVP_DecodeBlock;
 
+const ERR_get_error = ngx.ERR_get_error;
+const ERR_error_string_n = ngx.ERR_error_string_n;
+
+const ngx_encode_base64 = ngx.ngx_encode_base64;
+const ngx_decode_base64 = ngx.ngx_decode_base64;
+
 inline fn not_null(p: ?*anyopaque) bool {
     return p != core.NULL;
 }
@@ -73,12 +87,22 @@ inline fn is_one(r: c_int) bool {
     return r == 1;
 }
 
-pub fn sslcall(comptime F: anytype, args: anytype, comptime predicate: anytype) !void {
-    const ResultType = @TypeOf(@call(.{}, F, args));
-    const result: ResultType = @call(.{}, F, args);
+inline fn is_zero_or_more(r: c_int) bool {
+    return r >= 0;
+}
+
+var ERROR_BUFFER: [256]u8 = undefined;
+pub fn sslcall(comptime F: anytype, args: anytype, comptime predicate: anytype) !@TypeOf(@call(.auto, F, args)) {
+    const ResultType = @TypeOf(@call(.auto, F, args));
+    const result: ResultType = @call(.auto, F, args);
 
     if (!predicate(result)) {
+        @memset(&ERROR_BUFFER, 0);
+        ERR_error_string_n(ERR_get_error(), &ERROR_BUFFER, 256);
+        // std.debug.print("{s}\n", .{ERROR_BUFFER});
         return core.NError.SSL_ERROR;
+    } else {
+        return result;
     }
 }
 
@@ -118,6 +142,7 @@ test "ssl" {
         \\1554208460
         \\593BEC0C930BF1AFEB40B4A08C8FB242
         \\
+        \\
     ;
     const signed0 =
         \\Lc9VXxmeonkdV8Xk9tmigQFLhl0vRWTerdmoRu01aAnYwIrD/5nsSwE1WlmZGLRlAFTNQ3QsMa0+VRDlJp1Wp5p0nO8EK68b5sJBbjouxaFciIfq1zfDWWz+jqhcMoKXI1A6dPm1AW7D4d30WsMTNzp6g23OXakIsh9LO3lUmwvTuE0BY8ncf6tNGk4wKmvXwERd/ZpoQY3MAVKz+Nakwc+2XBmzT66KcUehU5kr4IvGa/lEU5RZb/q00zP9VLdBhC/jQSX3X1UcJLCtEc4gTmib4tnmAT+bHF/e17ZAuxDNcx6rqT8gNEXqaJGG+1OflMSTU2tpyG65G4dMKdFcoA==
@@ -129,6 +154,7 @@ test "ssl" {
         \\1554208460
         \\593BEC0C930BF1AFEB40B4A08C8FB242
         \\{"appid":"wxd678efh567hg6787","mchid":"1230000109","description":"Image形象店-深圳腾大-QQ公仔","out_trade_no":"1217752501201407033233368018","notify_url":"https://www.weixin.qq.com/wxpay/pay.php","amount":{"total":100,"currency":"CNY"},"payer":{"openid":"oUpF8uMuAJO_M2pxb1Q9zNjWeS6o"}}
+        \\
     ;
 
     const signed1 =
@@ -141,6 +167,7 @@ test "ssl" {
         \\1554208460
         \\593BEC0C930BF1AFEB40B4A08C8FB242
         \\
+        \\
     ;
 
     const signed2 =
@@ -152,19 +179,34 @@ test "ssl" {
         \\/v3/marketing/favor/media/image-upload
         \\1554208460
         \\593BEC0C930BF1AFEB40B4A08C8FB242
-        \\{ "filename": "wechatpay_logo.png", "sha256": "d2973a45b1d528c21ebb77792ef3fcea40fa9a4e04a17e35369102ba9c84c8b1" }
+        \\{ "filename": "wechatpay_logo.png", "sha256": "d2973a45b1d528c21ebb77792ef3fcea40fa9a4e04a17e35369102ba9c84c8b1"}
+        \\
     ;
 
     const signed3 =
         \\oykQTJijZbHL+0QjYjOcwvovGxlU9LMcfVheUUdvr94DIzN02MBwwAwnBMsDqGTnXe0fr7kxFbXz3cd53e7Fx2VU8S9Lt3u1dCMQV+b5Ut6wpReTMBcfSVVXl4AbmLHxvyi1KhVg+O3KGL2BT4dEbuR93voru/p/9CS7gyMSviZiupf1cuaipyTdZ/1Nn4ESeuPX8H7p2nwaxNLbS/rdLltvQGU1ecK0m4u5p4uXh1mdM1Kh8fymJHvkurOzVORoB3Y23g2RUFT0WwNBVxpp19bdAWsqIoouPjyY6tFGD9cnQIVmIbm9oRDrOWmQMHubWlmjYL5UfP39pq1T+/hNpw==
     ;
 
-    _ = prvkey;
     const ds = [_][2][]const u8{
         .{ data0, signed0 },
         .{ data1, signed1 },
         .{ data2, signed2 },
         .{ data3, signed3 },
     };
-    _ = ds;
+    _ = OPENSSL_init_crypto(OPENSSL_INIT_ADD_ALL_CIPHERS | OPENSSL_INIT_ADD_ALL_DIGESTS | OPENSSL_INIT_LOAD_CRYPTO_STRINGS, null);
+    const prv_key_bio = try sslcall(BIO_new_mem_buf, .{ prvkey.ptr, prvkey.len }, not_null);
+    const pkey = try sslcall(PEM_read_bio_PrivateKey, .{ prv_key_bio, null, null, null }, not_null);
+    const mdctx = try sslcall(EVP_MD_CTX_new, .{}, not_null);
+
+    for (ds) |ds0| {
+        var buf: [256]u8 = undefined;
+        var len: usize = 256;
+        var base64: [((256 + 2) / 3) * 4]u8 = undefined;
+        _ = try sslcall(EVP_DigestSignInit, .{ mdctx, null, EVP_sha256(), null, pkey }, is_one);
+        _ = try sslcall(EVP_DigestSignUpdate, .{ mdctx, ds0[0].ptr, ds0[0].len }, is_one);
+        _ = try sslcall(EVP_DigestSignFinal, .{ mdctx, &buf, &len }, is_one);
+        const blen = try sslcall(EVP_EncodeBlock, .{ &base64, &buf, @as(c_int, @intCast(len)) }, is_zero_or_more);
+        try expectEqual(std.mem.eql(u8, ds0[1], core.slicify(u8, &base64, @as(usize, @intCast(blen)))), true);
+        _ = try sslcall(EVP_MD_CTX_reset, .{mdctx}, is_one);
+    }
 }
