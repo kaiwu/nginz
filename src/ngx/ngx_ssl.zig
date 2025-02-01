@@ -32,10 +32,13 @@ const PEM_read_bio_PUBKEY = ngx.PEM_read_bio_PUBKEY;
 const PEM_read_bio_PrivateKey = ngx.PEM_read_bio_PrivateKey;
 
 // AES-256-GCM
+const EVP_CIPHER_CTX = ngx.EVP_CIPHER_CTX;
+const EVP_aes_256_gcm = ngx.EVP_aes_256_gcm;
 const EVP_CIPHER_CTX_new = ngx.EVP_CIPHER_CTX_new;
 const EVP_CIPHER_CTX_free = ngx.EVP_CIPHER_CTX_free;
-const EVP_aes_256_gcm = ngx.EVP_aes_256_gcm;
+const EVP_CIPHER_CTX_reset = ngx.EVP_CIPHER_CTX_reset;
 const EVP_CTRL_GCM_SET_TAG = ngx.EVP_CTRL_GCM_SET_TAG;
+const EVP_CIPHER_CTX_set_padding = ngx.EVP_CIPHER_CTX_set_padding;
 
 const EVP_EncryptInit_ex = ngx.EVP_EncryptInit_ex;
 const EVP_EncryptUpdate = ngx.EVP_EncryptUpdate;
@@ -46,6 +49,7 @@ const EVP_DecryptUpdate = ngx.EVP_DecryptUpdate;
 const EVP_DecryptFinal_ex = ngx.EVP_DecryptFinal_ex;
 
 // RSA-OAEP
+const EVP_PKEY_CTX = ngx.EVP_PKEY_CTX;
 const RSA_PKCS1_OAEP_PADDING = ngx.RSA_PKCS1_OAEP_PADDING;
 const RSA_PKCS1_PADDING = ngx.RSA_PKCS1_PADDING;
 const RSA_NO_PADDING = ngx.RSA_NO_PADDING;
@@ -115,13 +119,16 @@ pub fn sslcall(comptime F: anytype, args: anytype, comptime predicate: anytype) 
     }
 }
 
-const NSSL_KEYS = extern struct {
+const NSSL_RSA = extern struct {
     const Self = @This();
     prv_key_bio: ?*BIO,
     pub_key_bio: ?*BIO,
     prv_key: ?*EVP_PKEY,
     pub_key: ?*EVP_PKEY,
+
     md_ctx: ?*EVP_MD_CTX,
+    en_ctx: ?*EVP_PKEY_CTX,
+    de_ctx: ?*EVP_PKEY_CTX,
 
     pub fn init(prvkey: ngx_str_t, pubkey: ngx_str_t) !Self {
         _ = OPENSSL_init_crypto(OPENSSL_INIT_ADD_ALL_CIPHERS | OPENSSL_INIT_ADD_ALL_DIGESTS | OPENSSL_INIT_LOAD_CRYPTO_STRINGS, null);
@@ -130,6 +137,13 @@ const NSSL_KEYS = extern struct {
         const prv_key = try sslcall(PEM_read_bio_PrivateKey, .{ prv_key_bio, null, null, null }, not_null);
         const pub_key = try sslcall(PEM_read_bio_PUBKEY, .{ pub_key_bio, null, null, null }, not_null);
         const md_ctx = try sslcall(EVP_MD_CTX_new, .{}, not_null);
+        const en_ctx = try sslcall(EVP_PKEY_CTX_new, .{ pub_key, null }, not_null);
+        _ = try sslcall(EVP_PKEY_encrypt_init, .{en_ctx}, is_one);
+        _ = try sslcall(EVP_PKEY_CTX_set_rsa_padding, .{ en_ctx, RSA_PKCS1_OAEP_PADDING }, is_one);
+
+        const de_ctx = try sslcall(EVP_PKEY_CTX_new, .{ prv_key, null }, not_null);
+        _ = try sslcall(EVP_PKEY_decrypt_init, .{de_ctx}, is_one);
+        _ = try sslcall(EVP_PKEY_CTX_set_rsa_padding, .{ de_ctx, RSA_PKCS1_OAEP_PADDING }, is_one);
 
         return Self{
             .prv_key_bio = prv_key_bio,
@@ -137,11 +151,16 @@ const NSSL_KEYS = extern struct {
             .prv_key = prv_key,
             .pub_key = pub_key,
             .md_ctx = md_ctx,
+            .en_ctx = en_ctx,
+            .de_ctx = de_ctx,
         };
     }
 
     pub fn deinit(self: *Self) void {
         EVP_MD_CTX_free(self.md_ctx);
+        EVP_PKEY_CTX_free(self.en_ctx);
+        EVP_PKEY_CTX_free(self.de_ctx);
+
         EVP_PKEY_free(self.prv_key);
         EVP_PKEY_free(self.pub_key);
         BIO_free(self.prv_key_bio);
@@ -154,7 +173,7 @@ const NSSL_KEYS = extern struct {
         if (core.castPtr(u8, core.ngx_pnalloc(pool, ngx_base64_encoded_length(len)))) |p| {
             _ = try sslcall(EVP_DigestSignInit, .{ self.md_ctx, null, EVP_sha256(), null, self.prv_key }, is_one);
             _ = try sslcall(EVP_DigestSignUpdate, .{ self.md_ctx, msg.data, msg.len }, is_one);
-            _ = try sslcall(EVP_DigestSignFinal, .{ self.mdctx, &buf, &len }, is_one);
+            _ = try sslcall(EVP_DigestSignFinal, .{ self.md_ctx, &buf, &len }, is_one);
             const blen = try sslcall(EVP_EncodeBlock, .{ p, &buf, @as(c_int, @intCast(len)) }, is_zero_or_more);
             _ = try sslcall(EVP_MD_CTX_reset, .{self.md_ctx}, is_one);
             return ngx_str_t{ .len = blen, .data = p };
@@ -185,10 +204,102 @@ const NSSL_KEYS = extern struct {
 
         return core.NError.OOM;
     }
+
+    pub fn rsa_oaep_encrypt(self: *Self, msg: ngx_str_t, pool: ngx_pool_t) !ngx_str_t {
+        var len: usize = 0;
+        _ = try sslcall(EVP_PKEY_encrypt, .{ self.en_ctx, null, &len, msg.data, msg.len }, is_one);
+        if (core.castPtr(u8, core.ngx_pnalloc(pool, len))) |p0| {
+            defer core.ngx_pfree(p0);
+            _ = try sslcall(EVP_PKEY_encrypt, .{ self.en_ctx, p0, &len, msg.data, msg.len }, is_one);
+            if (core.castPtr(u8, core.ngx_pnalloc(pool, ngx_base64_encoded_length(len)))) |p1| {
+                const blen = try sslcall(EVP_EncodeBlock, .{ p1, p0, @as(c_int, @intCast(len)) }, is_zero_or_more);
+                return ngx_str_t{ .len = blen, .data = p1 };
+            }
+        }
+        return core.NError.OOM;
+    }
+
+    pub fn rsa_oaep_decrypt(self: *Self, msg: ngx_str_t, pool: ngx_pool_t) !ngx_str_t {
+        if (core.castPtr(u8, core.ngx_pnalloc(pool, ngx_base64_decoded_length(msg.len)))) |p0| {
+            defer core.ngx_pfree(p0);
+            const blen = try sslcall(EVP_DecodeBlock, .{ p0, msg.data, @as(c_int, @intCast(msg.len)) }, is_zero_or_more);
+            var len: usize = 0;
+            _ = try sslcall(EVP_PKEY_decrypt, .{ self.de_ctx, null, &len, p0, blen }, is_one);
+            if (core.castPtr(u8, core.ngx_pnalloc(pool, len))) |p1| {
+                _ = try sslcall(EVP_PKEY_decrypt, .{ self.de_ctx, p1, &len, p0, blen }, is_one);
+                return ngx_str_t{ .len = len, .data = p1 };
+            }
+        }
+        return core.NError.OOM;
+    }
+};
+
+const NSSL_AES_256_GCM = extern struct {
+    const Self = @This();
+    const KEY_SIZE = 32;
+    const IV_SIZE = 12;
+    const TAG_SIZE = 16;
+
+    ctx: ?*EVP_CIPHER_CTX,
+    key: [KEY_SIZE]u8 = undefined,
+
+    pub fn init(k: ngx_str_t) !Self {
+        _ = OPENSSL_init_crypto(OPENSSL_INIT_ADD_ALL_CIPHERS | OPENSSL_INIT_ADD_ALL_DIGESTS | OPENSSL_INIT_LOAD_CRYPTO_STRINGS, null);
+        const ctx = try sslcall(EVP_CIPHER_CTX_new, .{}, not_null);
+        const cipher = Self{
+            .ctx = ctx,
+        };
+        @memcpy(core.slicify(u8, cipher.key, KEY_SIZE), core.slicify(u8, k.data, KEY_SIZE));
+        return cipher;
+    }
+
+    pub fn deinit(self: *Self) void {
+        EVP_CIPHER_CTX_free(self.ctx);
+    }
+
+    pub fn encrypt(self: *Self, msg: ngx_str_t, iv: ngx_str_t, pool: ngx_pool_t) !ngx_str_t {
+        _ = sslcall(EVP_EncryptInit_ex, .{ self.ctx, EVP_aes_256_gcm(), null, self.key, iv.data }, is_one);
+        _ = sslcall(EVP_CIPHER_CTX_set_padding, .{ self.ctx, 0 }, is_one);
+        defer _ = EVP_CIPHER_CTX_reset(self.ctx);
+        if (core.castPtr(u8, core.ngx_pnalloc(pool, msg.len + TAG_SIZE))) |p0| {
+            defer core.ngx_pfree(p0);
+            var len: c_int = 0;
+            var tlen: c_int = 0;
+            _ = try sslcall(EVP_EncryptUpdate, .{ self.ctx, p0, &len, msg.data, @as(c_int, @intCast(msg.len)) }, is_one);
+            _ = try sslcall(EVP_EncryptFinal_ex, .{ self.ctx, p0 + @as(usize, @intCast(len)), &tlen }, is_one);
+            const tag: [TAG_SIZE]u8 = undefined;
+            _ = try sslcall(EVP_CIPHER_CTX_ctrl, .{ self.ctx, EVP_CTRL_GCM_SET_TAG, TAG_SIZE, tag }, is_one);
+            if (core.castPtr(u8, core.ngx_pnalloc(pool, ngx_base64_encoded_length(len + TAG_SIZE)))) |p1| {
+                const blen = try sslcall(EVP_EncodeBlock, .{ p1, p0, len + TAG_SIZE }, is_zero_or_more);
+                return ngx_str_t{ .len = blen, .data = p1 };
+            }
+        }
+        return core.NError.OOM;
+    }
+
+    pub fn decrypt(self: *Self, msg: ngx_str_t, iv: ngx_str_t, pool: ngx_pool_t) !ngx_str_t {
+        _ = sslcall(EVP_DecryptInit_ex, .{ self.ctx, EVP_aes_256_gcm(), null, self.key, iv.data }, is_one);
+        _ = sslcall(EVP_CIPHER_CTX_set_padding, .{ self.ctx, 0 }, is_one);
+        defer _ = EVP_CIPHER_CTX_reset(self.ctx);
+        if (core.castPtr(u8, core.ngx_pnalloc(pool, ngx_base64_decoded_length(msg.len)))) |p0| {
+            defer core.ngx_pfree(p0);
+            const blen = try sslcall(EVP_DecodeBlock, .{ p0, msg.data, @as(c_int, @intCast(msg.len)) }, is_zero_or_more);
+            if (core.castPtr(u8, core.ngx_pnalloc(pool, blen))) |p1| {
+                var len: c_int = 0;
+                var tlen: c_int = 0;
+                _ = try sslcall(EVP_DecryptUpdate, .{ self.ctx, p1, &len, p0, blen - TAG_SIZE }, is_one);
+                const tag: [TAG_SIZE]u8 = undefined;
+                _ = try sslcall(EVP_CIPHER_CTX_ctrl, .{ self.ctx, EVP_CTRL_GCM_SET_TAG, TAG_SIZE, tag }, is_one);
+                _ = try sslcall(EVP_DecryptFinal_ex, .{ self.ctx, p1 + @as(usize, @intCast(len)), &tlen }, is_one);
+                return ngx_str_t{ .data = p1, .len = len };
+            }
+        }
+        return core.NError.OOM;
+    }
 };
 
 test "ssl" {
-    const prvkey: []const u8 =
+    const keys = [2][]const u8{
         \\-----BEGIN RSA PRIVATE KEY-----
         \\MIIEogIBAAKCAQEAptpm+qvIDCh/9wjU26SQCK26ogYkBhDrYxnAaw2JbbBsp1oD
         \\bHKk+1r381NeBUG2HEFAuU+Fr72u5ot3yKdzoF/FajAzQNKnm569/D3upKoi8mYB
@@ -216,7 +327,21 @@ test "ssl" {
         \\1KkID7Yksh+dZ6t7XaPBtGACXX5Eryr537JVvdX8hAVCp5HVtaN/9VBVP8Ka2e4s
         \\VS/xeNgOMQ7uzhRPBJ8HiTmdI1nHhDnYQpGiBgQn0Z5RAkSvFMk=
         \\-----END RSA PRIVATE KEY-----
-    ;
+        ,
+        \\-----BEGIN PUBLIC KEY-----
+        \\MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAwXNI6sdlknHBnK8Fu2U6
+        \\Cwor9qY747jP8KAfeBMeveEt1TqaHkLfaSD07trZLhGpfs8/AHqjhgSMO1O10YQW
+        \\OrrJ4hjIWPKqxbgrYMkBQc+mwdiWp4W3ByCqxBRagCveCXRWCmuJYovl9H/bsDI0
+        \\iGbpVtEOghJtfciisYSgxcLufUDTRkvwxjIBK1pCRjk33jJ5YTBWTHMRtMAOcFLN
+        \\F6hdEYdX8SPsgHHeLZ5Lv2T/686w1xtgCHef/sd4uSfWmyzsalQdHG/e4IyYmrhx
+        \\+O3VBoNDzE3nx23bFeV/RVNCG7cV6VhmYokJNHa/erIPkEmEFID6A5wQOXuxUkmJ
+        \\WwIDAQAB
+        \\-----END PUBLIC KEY-----
+        ,
+    };
+
+    _ = keys;
+
     const data0 =
         \\GET
         \\/v3/refund/domestic/refunds/123123123123
@@ -268,41 +393,6 @@ test "ssl" {
         \\oykQTJijZbHL+0QjYjOcwvovGxlU9LMcfVheUUdvr94DIzN02MBwwAwnBMsDqGTnXe0fr7kxFbXz3cd53e7Fx2VU8S9Lt3u1dCMQV+b5Ut6wpReTMBcfSVVXl4AbmLHxvyi1KhVg+O3KGL2BT4dEbuR93voru/p/9CS7gyMSviZiupf1cuaipyTdZ/1Nn4ESeuPX8H7p2nwaxNLbS/rdLltvQGU1ecK0m4u5p4uXh1mdM1Kh8fymJHvkurOzVORoB3Y23g2RUFT0WwNBVxpp19bdAWsqIoouPjyY6tFGD9cnQIVmIbm9oRDrOWmQMHubWlmjYL5UfP39pq1T+/hNpw==
     ;
 
-    const ds = [_][2][]const u8{
-        .{ data0, signed0 },
-        .{ data1, signed1 },
-        .{ data2, signed2 },
-        .{ data3, signed3 },
-    };
-    _ = OPENSSL_init_crypto(OPENSSL_INIT_ADD_ALL_CIPHERS | OPENSSL_INIT_ADD_ALL_DIGESTS | OPENSSL_INIT_LOAD_CRYPTO_STRINGS, null);
-    const prv_key_bio = try sslcall(BIO_new_mem_buf, .{ prvkey.ptr, prvkey.len }, not_null);
-    const prv_key = try sslcall(PEM_read_bio_PrivateKey, .{ prv_key_bio, null, null, null }, not_null);
-    const mdctx = try sslcall(EVP_MD_CTX_new, .{}, not_null);
-
-    for (ds) |ds0| {
-        var buf: [256]u8 = undefined;
-        var len: usize = 256;
-        var base64: [((256 + 2) / 3) * 4]u8 = undefined;
-        _ = try sslcall(EVP_DigestSignInit, .{ mdctx, null, EVP_sha256(), null, prv_key }, is_one);
-        _ = try sslcall(EVP_DigestSignUpdate, .{ mdctx, ds0[0].ptr, ds0[0].len }, is_one);
-        _ = try sslcall(EVP_DigestSignFinal, .{ mdctx, &buf, &len }, is_one);
-        const blen = try sslcall(EVP_EncodeBlock, .{ &base64, &buf, @as(c_int, @intCast(len)) }, is_zero_or_more);
-        try expectEqual(std.mem.eql(u8, ds0[1], core.slicify(u8, &base64, @as(usize, @intCast(blen)))), true);
-        _ = try sslcall(EVP_MD_CTX_reset, .{mdctx}, is_one);
-    }
-
-    const pubkey4 =
-        \\-----BEGIN PUBLIC KEY-----
-        \\MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAwXNI6sdlknHBnK8Fu2U6
-        \\Cwor9qY747jP8KAfeBMeveEt1TqaHkLfaSD07trZLhGpfs8/AHqjhgSMO1O10YQW
-        \\OrrJ4hjIWPKqxbgrYMkBQc+mwdiWp4W3ByCqxBRagCveCXRWCmuJYovl9H/bsDI0
-        \\iGbpVtEOghJtfciisYSgxcLufUDTRkvwxjIBK1pCRjk33jJ5YTBWTHMRtMAOcFLN
-        \\F6hdEYdX8SPsgHHeLZ5Lv2T/686w1xtgCHef/sd4uSfWmyzsalQdHG/e4IyYmrhx
-        \\+O3VBoNDzE3nx23bFeV/RVNCG7cV6VhmYokJNHa/erIPkEmEFID6A5wQOXuxUkmJ
-        \\WwIDAQAB
-        \\-----END PUBLIC KEY-----
-    ;
-
     const data4 =
         \\1722850421
         \\d824f2e086d3c1df967785d13fcd22ef
@@ -314,250 +404,68 @@ test "ssl" {
         \\mfI1CPqvBrgcXfgXMFjdNIhBf27ACE2YyeWsWV9ZI7T7RU0vHvbQpu9Z32ogzc+k8ZC5n3kz7h70eWKjgqNdKQF0eRp8mVKlmfzMLBVHbssB9jEZEDXThOX1XFqX7s7ymia1hoHQxQagPGzkdWxtlZPZ4ZPvr1RiqkgAu6Is8MZgXXrRoBKqjmSdrP1N7uxzJ/cjfSiis9FiLjuADoqmQ1P7p2N876YPAol7Rn0+GswwAwxldbdLrmVSjfytfSBJFqTMHn4itojgxSWWN1byuckQt8hSTEv/Lg97QoeGniYP17T80pJeQyL3b+295FPHSO2AtvCgyIbKMZ0BALilAA==
     ;
 
-    const ds_pub = [_][3][]const u8{
-        .{ data4, signed4, pubkey4 },
+    _ = [_][2][]const u8{
+        .{ data0, signed0 },
+        .{ data1, signed1 },
+        .{ data2, signed2 },
+        .{ data3, signed3 },
+        .{ data4, signed4 },
     };
 
-    for (ds_pub) |ds0| {
-        const pub_key_bio = try sslcall(BIO_new_mem_buf, .{ ds0[2].ptr, @as(c_int, @intCast(ds0[2].len)) }, not_null);
-        const pub_key = try sslcall(PEM_read_bio_PUBKEY, .{ pub_key_bio, null, null, null }, not_null);
+    const rsa_oaep = [3][]const u8{
+        \\-----BEGIN PRIVATE KEY-----
+        \\MIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQDGPEEIEpWHQinm
+        \\tCzGsnfGYhM2lqgtP/AGgbiM62MZWJMRhUtlZMV/Ownm6x3ZLEgXAzRYWOdVqq/w
+        \\PrWxc4W5d4dmjjaKjc7erW0Z+l6mn8kXAJ7UbmdXaisX1fbHvls5WdKx+4nN2Lmn
+        \\2Fy3cWdIbXebvrobf65t6pcOqsC4YDDTRGwr+TfE6k/MAv2025U3H7biXB3tuRya
+        \\TOqDddC9IKTwROenoJDLnF0maEBfkvLokJ2GZCuYRuNdOJsayzrp3kl462soo/vO
+        \\VZyPz8ejP1OeltmxDX9xyuz/6ywSO0o7VU5YX+qcakzjNuIeUKh51joxIBEG8PbR
+        \\2m3ExYerAgMBAAECggEADdOvryIP6MDmSBk5Jk+i2xhSjsD9A54tRJO3wHYkRP63
+        \\A2A9kHNYjM9PzLOJmXEYdijbD259p3puwZGEl6QFjjIwJFvqO5Y4kuYCpIhtVOHz
+        \\fMJzHnSBvZWO++w73yLMtutbYhHrD4vJjbnufaODUlUp8P5H4BmMnE4VZNVNxY5d
+        \\Z6VMhonvSvoc30hKyNwG7JuGkpIuL8lhJcQS2Y4bssXqaYVCbOi1mDW2gQ0UJ4wE
+        \\a3Ik+AgcUYJeFp6oDa4R0RUhLjavjCF65UtKSFSWJ67dTxoPco21Dj42AUP4t09g
+        \\HKBFOBbxDp9ssps4mhdCYACTS2HJcNinXrNZLdJxAQKBgQDpI3A3tIUqsbiPis5h
+        \\LWoxag1OJi1vVRKSQzO09WP6iclhlMjhx/UIyqkHV8oZQt3aMrEEhrrDGdA6yOVa
+        \\0lBJxNzBGttyGIQC1ucxKYYHS8hrg5reJr1NJgpBmkCMZKuhsPAzMYPzrLQ6mZq6
+        \\pK3jvec4/ZVSWF5Wm2IXaljq+wKBgQDZrKGGJnKPQ5d15Ptq6c47cYnDborupJed
+        \\HYx+5QWgB7Pkf28q8CkyHHP9WNsmlZMA/s1ifKT0Ac7DIvqHAcw9zcpMl91h1QSb
+        \\qtTcdPT7D/KjwvA8bKJiutvC0C9lbjSnD+JcAVnLb3XRerfAfa0AiqpFy8OkdaVu
+        \\P+fP4YY3EQKBgQCHDhV636NpGS0OUl29474pxALTK8CURxcMDcwNXz48q8cyNSut
+        \\x9UF88i5TTzxJ1A3j7gGJDpavUBoXWqoEz+ZjGZJo1JOpS8MKgwh6akP3vHKfqGf
+        \\YZe18nxshnwwGD1o3IQ5U8zZw0lgzQzaZH2reZ5R4Gy5GCIGT9siL2Q1MwKBgB8P
+        \\y1zhT6ex9YMVUetHwe4pnYcN1zWGtzvsY4gYFl1nu/v3U13FN5u3A7Y7X8p5vah+
+        \\s8BCGSfYujCOZUGut/55x0x2v1ielTHBhu6OogbRl8ZWowF8Xw/HqmR6YMkQmOLe
+        \\GWcXqkClfyKNaHtHc9CH+RRMp3Zoc1rwM5wuioCBAoGAV4thpW1oCKAXf+O5+KZH
+        \\dTPrRcHSwRZzhjfwlb3f2jlmJBx8JscXXf0Ro0kZCd3rMVdgThU70TgJMNsCsAoE
+        \\iVEP9wZC6IQ3+9g2FVwEv8P6LZevCe9E22Iatx5AmIt2wrygUrGAvxOCjKGZjzZB
+        \\6I7+OFjwOHYwndji7Tw8tIM=
+        \\-----END PRIVATE KEY-----
+        ,
+        \\-----BEGIN PUBLIC KEY-----
+        \\MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAxjxBCBKVh0Ip5rQsxrJ3
+        \\xmITNpaoLT/wBoG4jOtjGViTEYVLZWTFfzsJ5usd2SxIFwM0WFjnVaqv8D61sXOF
+        \\uXeHZo42io3O3q1tGfpepp/JFwCe1G5nV2orF9X2x75bOVnSsfuJzdi5p9hct3Fn
+        \\SG13m766G3+ubeqXDqrAuGAw00RsK/k3xOpPzAL9tNuVNx+24lwd7bkcmkzqg3XQ
+        \\vSCk8ETnp6CQy5xdJmhAX5Ly6JCdhmQrmEbjXTibGss66d5JeOtrKKP7zlWcj8/H
+        \\oz9TnpbZsQ1/ccrs/+ssEjtKO1VOWF/qnGpM4zbiHlCoedY6MSARBvD20dptxMWH
+        \\qwIDAQAB
+        \\-----END PUBLIC KEY-----
+        ,
+        \\Hello, OpenSSL 3.0 RSA-OAEP!
+        ,
+    };
 
-        var d: usize = 0;
-        var i: usize = ds0[1].len - 1;
-        while (i > 0 and ds0[1][i] == '=') : (i -= 1) {
-            d += 1;
-        }
-        const len: usize = ((344 + 3) / 4) * 3;
-        var buf: [len]u8 = undefined;
-        const blen = try sslcall(EVP_DecodeBlock, .{ &buf, ds0[1].ptr, @as(c_int, @intCast(ds0[1].len)) }, is_zero_or_more);
-        _ = try sslcall(EVP_DigestVerifyInit, .{ mdctx, null, EVP_sha256(), null, pub_key }, is_one);
-        _ = try sslcall(EVP_DigestVerifyUpdate, .{ mdctx, ds0[0].ptr, ds0[0].len }, is_one);
-        _ = try sslcall(EVP_DigestVerifyFinal, .{ mdctx, &buf, @as(usize, @intCast(blen)) - d }, is_one);
-        _ = try sslcall(EVP_MD_CTX_reset, .{mdctx}, is_one);
-    }
+    _ = rsa_oaep;
+
+    const aes_256_gcm = [3][]const u8{
+        \\000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f
+        ,
+        \\000102030405060708090a0b
+        ,
+        \\Hello, OpenSSL 3.0 AES-256-GCM!
+        ,
+    };
+
+    _ = aes_256_gcm;
 }
-
-// AES-256-GCM
-// #include <openssl/evp.h>
-// #include <openssl/rand.h>
-// #include <openssl/err.h>
-// #include <stdio.h>
-// #include <stdlib.h>
-// #include <string.h>
-//
-// // 错误处理函数
-// void handle_errors() {
-//     ERR_print_errors_fp(stderr);
-//     abort();
-// }
-//
-// int main() {
-//     // 初始化 OpenSSL 库
-//     OPENSSL_init_crypto(OPENSSL_INIT_ADD_ALL_CIPHERS | OPENSSL_INIT_ADD_ALL_DIGESTS | OPENSSL_INIT_LOAD_CRYPTO_STRINGS, NULL);
-//
-//     // 需要加密的消息
-//     const char *plaintext = "Hello, OpenSSL 3.0 AES-256-GCM!";
-//     size_t plaintext_len = strlen(plaintext);
-//
-//     // 密钥和 IV（初始化向量）
-//     unsigned char key[32];  // AES-256 需要 32 字节的密钥
-//     unsigned char iv[12];   // GCM 需要 12 字节的 IV
-//
-//     // 生成随机密钥和 IV
-//     if (RAND_bytes(key, sizeof(key)) <= 0 || RAND_bytes(iv, sizeof(iv)) <= 0) {
-//         handle_errors();
-//     }
-//
-//     // 加密
-//     EVP_CIPHER_CTX *ctx = EVP_CIPHER_CTX_new();
-//     if (!ctx) handle_errors();
-//
-//     int len;
-//     int ciphertext_len;
-//     unsigned char ciphertext[128];  // 加密后的数据缓冲区
-//     unsigned char tag[16];          // GCM 认证标签
-//
-//     // 初始化加密操作
-//     if (EVP_EncryptInit_ex(ctx, EVP_aes_256_gcm(), NULL, NULL, NULL) <= 0) {
-//         handle_errors();
-//     }
-//
-//     // 设置密钥和 IV
-//     if (EVP_EncryptInit_ex(ctx, NULL, NULL, key, iv) <= 0) {
-//         handle_errors();
-//     }
-//
-//     // 加密数据
-//     if (EVP_EncryptUpdate(ctx, ciphertext, &len, (const unsigned char *)plaintext, plaintext_len) <= 0) {
-//         handle_errors();
-//     }
-//     ciphertext_len = len;
-//
-//     // 结束加密操作
-//     if (EVP_EncryptFinal_ex(ctx, ciphertext + len, &len) <= 0) {
-//         handle_errors();
-//     }
-//     ciphertext_len += len;
-//
-//     // 获取认证标签
-//     if (EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_GCM_GET_TAG, 16, tag) <= 0) {
-//         handle_errors();
-//     }
-//
-//     // 输出加密后的数据
-//     printf("Ciphertext (%d bytes):\n", ciphertext_len);
-//     for (int i = 0; i < ciphertext_len; i++) {
-//         printf("%02x", ciphertext[i]);
-//     }
-//     printf("\n");
-//
-//     // 输出认证标签
-//     printf("Tag (16 bytes):\n");
-//     for (int i = 0; i < 16; i++) {
-//         printf("%02x", tag[i]);
-//     }
-//     printf("\n");
-//
-//     // 解密
-//     unsigned char decryptedtext[128];  // 解密后的数据缓冲区
-//     int decryptedtext_len;
-//
-//     // 初始化解密操作
-//     if (EVP_DecryptInit_ex(ctx, EVP_aes_256_gcm(), NULL, NULL, NULL) <= 0) {
-//         handle_errors();
-//     }
-//
-//     // 设置密钥和 IV
-//     if (EVP_DecryptInit_ex(ctx, NULL, NULL, key, iv) <= 0) {
-//         handle_errors();
-//     }
-//
-//     // 解密数据
-//     if (EVP_DecryptUpdate(ctx, decryptedtext, &len, ciphertext, ciphertext_len) <= 0) {
-//         handle_errors();
-//     }
-//     decryptedtext_len = len;
-//
-//     // 设置认证标签
-//     if (EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_GCM_SET_TAG, 16, tag) <= 0) {
-//         handle_errors();
-//     }
-//
-//     // 结束解密操作
-//     if (EVP_DecryptFinal_ex(ctx, decryptedtext + len, &len) <= 0) {
-//         handle_errors();
-//     }
-//     decryptedtext_len += len;
-//
-//     // 输出解密后的数据
-//     printf("Decrypted text: %.*s\n", decryptedtext_len, decryptedtext);
-//
-//     // 释放资源
-//     EVP_CIPHER_CTX_free(ctx);
-//
-//     // 清理 OpenSSL 库
-//     EVP_cleanup();
-//     ERR_free_strings();
-//
-//     return 0;
-// }
-
-// RSA OAEP
-// #include <openssl/evp.h>
-// #include <openssl/pem.h>
-// #include <openssl/err.h>
-// #include <stdio.h>
-// #include <stdlib.h>
-// #include <string.h>
-//
-// // 错误处理函数
-// void handle_errors() {
-//     ERR_print_errors_fp(stderr);
-//     abort();
-// }
-//
-// int main() {
-//     // 初始化 OpenSSL 库
-//     OPENSSL_init_crypto(OPENSSL_INIT_ADD_ALL_CIPHERS | OPENSSL_INIT_ADD_ALL_DIGESTS | OPENSSL_INIT_LOAD_CRYPTO_STRINGS, NULL);
-//
-//     // 生成 RSA 密钥对
-//     EVP_PKEY *pkey = NULL;
-//     EVP_PKEY_CTX *ctx = EVP_PKEY_CTX_new_id(EVP_PKEY_RSA, NULL);
-//     if (!ctx) handle_errors();
-//
-//     if (EVP_PKEY_keygen_init(ctx) <= 0) handle_errors();
-//     if (EVP_PKEY_CTX_set_rsa_keygen_bits(ctx, 2048) <= 0) handle_errors();
-//     if (EVP_PKEY_keygen(ctx, &pkey) <= 0) handle_errors();
-//
-//     // 需要加密的消息
-//     const char *message = "Hello, OpenSSL 3.0 RSA-OAEP!";
-//     size_t message_len = strlen(message);
-//
-//     // 加密
-//     EVP_PKEY_CTX *enc_ctx = EVP_PKEY_CTX_new(pkey, NULL);
-//     if (!enc_ctx) handle_errors();
-//
-//     if (EVP_PKEY_encrypt_init(enc_ctx) <= 0) handle_errors();
-//     if (EVP_PKEY_CTX_set_rsa_padding(enc_ctx, RSA_PKCS1_OAEP_PADDING) <= 0) handle_errors();
-//
-//     // 获取加密后的长度
-//     size_t encrypted_len;
-//     if (EVP_PKEY_encrypt(enc_ctx, NULL, &encrypted_len, (const unsigned char *)message, message_len) <= 0) {
-//         handle_errors();
-//     }
-//
-//     // 分配加密缓冲区
-//     unsigned char *encrypted = (unsigned char *)OPENSSL_malloc(encrypted_len);
-//     if (!encrypted) handle_errors();
-//
-//     // 执行加密
-//     if (EVP_PKEY_encrypt(enc_ctx, encrypted, &encrypted_len, (const unsigned char *)message, message_len) <= 0) {
-//         handle_errors();
-//     }
-//
-//     // 输出加密后的数据
-//     printf("Encrypted data (%zu bytes):\n", encrypted_len);
-//     for (size_t i = 0; i < encrypted_len; i++) {
-//         printf("%02x", encrypted[i]);
-//     }
-//     printf("\n");
-//
-//     // 解密
-//     EVP_PKEY_CTX *dec_ctx = EVP_PKEY_CTX_new(pkey, NULL);
-//     if (!dec_ctx) handle_errors();
-//
-//     if (EVP_PKEY_decrypt_init(dec_ctx) <= 0) handle_errors();
-//     if (EVP_PKEY_CTX_set_rsa_padding(dec_ctx, RSA_PKCS1_OAEP_PADDING) <= 0) handle_errors();
-//
-//     // 获取解密后的长度
-//     size_t decrypted_len;
-//     if (EVP_PKEY_decrypt(dec_ctx, NULL, &decrypted_len, encrypted, encrypted_len) <= 0) {
-//         handle_errors();
-//     }
-//
-//     // 分配解密缓冲区
-//     unsigned char *decrypted = (unsigned char *)OPENSSL_malloc(decrypted_len);
-//     if (!decrypted) handle_errors();
-//
-//     // 执行解密
-//     if (EVP_PKEY_decrypt(dec_ctx, decrypted, &decrypted_len, encrypted, encrypted_len) <= 0) {
-//         handle_errors();
-//     }
-//
-//     // 输出解密后的数据
-//     printf("Decrypted data: %.*s\n", (int)decrypted_len, decrypted);
-//
-//     // 释放资源
-//     OPENSSL_free(encrypted);
-//     OPENSSL_free(decrypted);
-//     EVP_PKEY_CTX_free(enc_ctx);
-//     EVP_PKEY_CTX_free(dec_ctx);
-//     EVP_PKEY_free(pkey);
-//     EVP_PKEY_CTX_free(ctx);
-//
-//     // 清理 OpenSSL 库
-//     EVP_cleanup();
-//     ERR_free_strings();
-//
-//     return 0;
-// }
