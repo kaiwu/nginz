@@ -1,6 +1,7 @@
 const std = @import("std");
 const ngx = @import("ngx.zig");
 const core = @import("ngx_core.zig");
+const string = @import("ngx_string.zig");
 const expectEqual = std.testing.expectEqual;
 
 const NULL = core.NULL;
@@ -8,6 +9,7 @@ const u_char = core.u_char;
 const nullptr = core.nullptr;
 const ngx_str_t = core.ngx_str_t;
 const ngx_pool_t = core.ngx_pool_t;
+const ngx_string = string.ngx_string;
 
 const CRYPTO_malloc_fn = ngx.CRYPTO_malloc_fn;
 const CRYPTO_realloc_fn = ngx.CRYPTO_realloc_fn;
@@ -37,6 +39,7 @@ const EVP_aes_256_gcm = ngx.EVP_aes_256_gcm;
 const EVP_CIPHER_CTX_new = ngx.EVP_CIPHER_CTX_new;
 const EVP_CIPHER_CTX_free = ngx.EVP_CIPHER_CTX_free;
 const EVP_CIPHER_CTX_reset = ngx.EVP_CIPHER_CTX_reset;
+const EVP_CTRL_GCM_GET_TAG = ngx.EVP_CTRL_GCM_GET_TAG;
 const EVP_CTRL_GCM_SET_TAG = ngx.EVP_CTRL_GCM_SET_TAG;
 const EVP_CIPHER_CTX_set_padding = ngx.EVP_CIPHER_CTX_set_padding;
 
@@ -119,6 +122,17 @@ pub fn sslcall(comptime F: anytype, args: anytype, comptime predicate: anytype) 
     }
 }
 
+inline fn base64_decoded_len(b64: ngx_str_t, blen: c_int) usize {
+    var len: usize = @intCast(blen);
+    if (b64.len > 0) {
+        var i: usize = b64.len - 1;
+        while (i > 0 and len > 0 and b64.data[i] == '=') : (i -= 1) {
+            len -= 1;
+        }
+    }
+    return len;
+}
+
 const NSSL_RSA = extern struct {
     const Self = @This();
     prv_key_bio: ?*BIO,
@@ -163,11 +177,11 @@ const NSSL_RSA = extern struct {
 
         EVP_PKEY_free(self.prv_key);
         EVP_PKEY_free(self.pub_key);
-        BIO_free(self.prv_key_bio);
-        BIO_free(self.pub_key_bio);
+        _ = BIO_free(self.prv_key_bio);
+        _ = BIO_free(self.pub_key_bio);
     }
 
-    pub fn sign_sha256(self: *Self, msg: ngx_str_t, pool: ngx_pool_t) !ngx_str_t {
+    pub fn sign_sha256(self: *Self, msg: ngx_str_t, pool: [*c]ngx_pool_t) !ngx_str_t {
         var buf: [256]u8 = undefined;
         var len: usize = buf.len;
         if (core.castPtr(u8, core.ngx_pnalloc(pool, ngx_base64_encoded_length(len)))) |p| {
@@ -176,28 +190,20 @@ const NSSL_RSA = extern struct {
             _ = try sslcall(EVP_DigestSignFinal, .{ self.md_ctx, &buf, &len }, is_one);
             const blen = try sslcall(EVP_EncodeBlock, .{ p, &buf, @as(c_int, @intCast(len)) }, is_zero_or_more);
             _ = try sslcall(EVP_MD_CTX_reset, .{self.md_ctx}, is_one);
-            return ngx_str_t{ .len = blen, .data = p };
+            return ngx_str_t{ .len = @intCast(blen), .data = p };
         }
         return core.NError.OOM;
     }
 
-    pub fn verify_sha256(self: *Self, sig: ngx_str_t, pool: ngx_pool_t) !bool {
-        if (sig.len == 0) {
-            return false;
-        }
-        var d: usize = 0;
-        var i: usize = sig.len - 1;
-        while (i > 0 and sig.data[i] == '=') : (i -= 1) {
-            d += 1;
-        }
+    pub fn verify_sha256(self: *Self, sig: ngx_str_t, msg: ngx_str_t, pool: [*c]ngx_pool_t) !bool {
         if (core.castPtr(u8, core.ngx_pnalloc(pool, ngx_base64_decoded_length(sig.len)))) |p| {
-            defer core.ngx_pfree(p);
+            defer _ = core.ngx_pfree(pool, p);
             defer _ = EVP_MD_CTX_reset(self.md_ctx);
 
             const blen = try sslcall(EVP_DecodeBlock, .{ p, sig.data, @as(c_int, @intCast(sig.len)) }, is_zero_or_more);
             _ = try sslcall(EVP_DigestVerifyInit, .{ self.md_ctx, null, EVP_sha256(), null, self.pub_key }, is_one);
-            _ = try sslcall(EVP_DigestVerifyUpdate, .{ self.md_ctx, sig.data, sig.len }, is_one);
-            _ = try sslcall(EVP_DigestVerifyFinal, .{ self.md_ctx, p, @as(usize, @intCast(blen)) - d }, is_one) catch return false;
+            _ = try sslcall(EVP_DigestVerifyUpdate, .{ self.md_ctx, msg.data, msg.len }, is_one);
+            _ = sslcall(EVP_DigestVerifyFinal, .{ self.md_ctx, p, base64_decoded_len(sig, blen) }, is_one) catch return false;
             //_ = try sslcall(EVP_MD_CTX_reset, .{self.md_ctx}, is_one);
             return true;
         }
@@ -205,34 +211,42 @@ const NSSL_RSA = extern struct {
         return core.NError.OOM;
     }
 
-    pub fn rsa_oaep_encrypt(self: *Self, msg: ngx_str_t, pool: ngx_pool_t) !ngx_str_t {
+    pub fn rsa_oaep_encrypt(self: *Self, msg: ngx_str_t, pool: [*c]ngx_pool_t) !ngx_str_t {
         var len: usize = 0;
         _ = try sslcall(EVP_PKEY_encrypt, .{ self.en_ctx, null, &len, msg.data, msg.len }, is_one);
         if (core.castPtr(u8, core.ngx_pnalloc(pool, len))) |p0| {
-            defer core.ngx_pfree(p0);
+            defer _ = core.ngx_pfree(pool, p0);
             _ = try sslcall(EVP_PKEY_encrypt, .{ self.en_ctx, p0, &len, msg.data, msg.len }, is_one);
             if (core.castPtr(u8, core.ngx_pnalloc(pool, ngx_base64_encoded_length(len)))) |p1| {
                 const blen = try sslcall(EVP_EncodeBlock, .{ p1, p0, @as(c_int, @intCast(len)) }, is_zero_or_more);
-                return ngx_str_t{ .len = blen, .data = p1 };
+                return ngx_str_t{ .len = @intCast(blen), .data = p1 };
             }
         }
         return core.NError.OOM;
     }
 
-    pub fn rsa_oaep_decrypt(self: *Self, msg: ngx_str_t, pool: ngx_pool_t) !ngx_str_t {
+    pub fn rsa_oaep_decrypt(self: *Self, msg: ngx_str_t, pool: [*c]ngx_pool_t) !ngx_str_t {
         if (core.castPtr(u8, core.ngx_pnalloc(pool, ngx_base64_decoded_length(msg.len)))) |p0| {
-            defer core.ngx_pfree(p0);
+            defer _ = core.ngx_pfree(pool, p0);
             const blen = try sslcall(EVP_DecodeBlock, .{ p0, msg.data, @as(c_int, @intCast(msg.len)) }, is_zero_or_more);
+            const dlen = base64_decoded_len(msg, blen);
             var len: usize = 0;
-            _ = try sslcall(EVP_PKEY_decrypt, .{ self.de_ctx, null, &len, p0, blen }, is_one);
+            _ = try sslcall(EVP_PKEY_decrypt, .{ self.de_ctx, null, &len, p0, dlen }, is_one);
             if (core.castPtr(u8, core.ngx_pnalloc(pool, len))) |p1| {
-                _ = try sslcall(EVP_PKEY_decrypt, .{ self.de_ctx, p1, &len, p0, blen }, is_one);
+                _ = try sslcall(EVP_PKEY_decrypt, .{ self.de_ctx, p1, &len, p0, dlen }, is_one);
                 return ngx_str_t{ .len = len, .data = p1 };
             }
         }
         return core.NError.OOM;
     }
 };
+
+fn ptag(tag: [*c]u8) void {
+    for (0..16) |i| {
+        std.debug.print("{x}", .{tag[i]});
+    }
+    std.debug.print("\n", .{});
+}
 
 const NSSL_AES_256_GCM = extern struct {
     const Self = @This();
@@ -246,10 +260,10 @@ const NSSL_AES_256_GCM = extern struct {
     pub fn init(k: ngx_str_t) !Self {
         _ = OPENSSL_init_crypto(OPENSSL_INIT_ADD_ALL_CIPHERS | OPENSSL_INIT_ADD_ALL_DIGESTS | OPENSSL_INIT_LOAD_CRYPTO_STRINGS, null);
         const ctx = try sslcall(EVP_CIPHER_CTX_new, .{}, not_null);
-        const cipher = Self{
+        var cipher = Self{
             .ctx = ctx,
         };
-        @memcpy(core.slicify(u8, cipher.key, KEY_SIZE), core.slicify(u8, k.data, KEY_SIZE));
+        @memcpy(core.slicify(u8, &cipher.key[0], KEY_SIZE), core.slicify(u8, k.data, KEY_SIZE));
         return cipher;
     }
 
@@ -257,48 +271,57 @@ const NSSL_AES_256_GCM = extern struct {
         EVP_CIPHER_CTX_free(self.ctx);
     }
 
-    pub fn encrypt(self: *Self, msg: ngx_str_t, iv: ngx_str_t, pool: ngx_pool_t) !ngx_str_t {
-        _ = sslcall(EVP_EncryptInit_ex, .{ self.ctx, EVP_aes_256_gcm(), null, self.key, iv.data }, is_one);
-        _ = sslcall(EVP_CIPHER_CTX_set_padding, .{ self.ctx, 0 }, is_one);
+    pub fn encrypt(self: *Self, msg: ngx_str_t, iv: ngx_str_t, pool: [*c]ngx_pool_t) !ngx_str_t {
+        _ = try sslcall(EVP_EncryptInit_ex, .{ self.ctx, EVP_aes_256_gcm(), null, null, null }, is_one);
+        _ = try sslcall(EVP_EncryptInit_ex, .{ self.ctx, null, null, &self.key[0], iv.data }, is_one);
+        _ = try sslcall(EVP_CIPHER_CTX_set_padding, .{ self.ctx, 0 }, is_one);
         defer _ = EVP_CIPHER_CTX_reset(self.ctx);
         if (core.castPtr(u8, core.ngx_pnalloc(pool, msg.len + TAG_SIZE))) |p0| {
-            defer core.ngx_pfree(p0);
+            defer _ = core.ngx_pfree(pool, p0);
             var len: c_int = 0;
             var tlen: c_int = 0;
             _ = try sslcall(EVP_EncryptUpdate, .{ self.ctx, p0, &len, msg.data, @as(c_int, @intCast(msg.len)) }, is_one);
-            _ = try sslcall(EVP_EncryptFinal_ex, .{ self.ctx, p0 + @as(usize, @intCast(len)), &tlen }, is_one);
-            const tag: [TAG_SIZE]u8 = undefined;
-            _ = try sslcall(EVP_CIPHER_CTX_ctrl, .{ self.ctx, EVP_CTRL_GCM_SET_TAG, TAG_SIZE, tag }, is_one);
-            if (core.castPtr(u8, core.ngx_pnalloc(pool, ngx_base64_encoded_length(len + TAG_SIZE)))) |p1| {
+            const tag = p0 + @as(usize, @intCast(len));
+            _ = try sslcall(EVP_EncryptFinal_ex, .{ self.ctx, tag, &tlen }, is_one);
+            _ = try sslcall(EVP_CIPHER_CTX_ctrl, .{ self.ctx, EVP_CTRL_GCM_GET_TAG, TAG_SIZE, tag }, is_one);
+            if (core.castPtr(u8, core.ngx_pnalloc(pool, ngx_base64_encoded_length(@as(usize, @intCast(len + TAG_SIZE)))))) |p1| {
                 const blen = try sslcall(EVP_EncodeBlock, .{ p1, p0, len + TAG_SIZE }, is_zero_or_more);
-                return ngx_str_t{ .len = blen, .data = p1 };
+                return ngx_str_t{ .len = @intCast(blen), .data = p1 };
             }
         }
         return core.NError.OOM;
     }
 
-    pub fn decrypt(self: *Self, msg: ngx_str_t, iv: ngx_str_t, pool: ngx_pool_t) !ngx_str_t {
-        _ = sslcall(EVP_DecryptInit_ex, .{ self.ctx, EVP_aes_256_gcm(), null, self.key, iv.data }, is_one);
-        _ = sslcall(EVP_CIPHER_CTX_set_padding, .{ self.ctx, 0 }, is_one);
+    pub fn decrypt(self: *Self, msg: ngx_str_t, iv: ngx_str_t, pool: [*c]ngx_pool_t) !ngx_str_t {
+        _ = try sslcall(EVP_DecryptInit_ex, .{ self.ctx, EVP_aes_256_gcm(), null, null, null }, is_one);
+        _ = try sslcall(EVP_DecryptInit_ex, .{ self.ctx, null, null, &self.key[0], iv.data }, is_one);
+        _ = try sslcall(EVP_CIPHER_CTX_set_padding, .{ self.ctx, 0 }, is_one);
         defer _ = EVP_CIPHER_CTX_reset(self.ctx);
         if (core.castPtr(u8, core.ngx_pnalloc(pool, ngx_base64_decoded_length(msg.len)))) |p0| {
-            defer core.ngx_pfree(p0);
+            defer _ = core.ngx_pfree(pool, p0);
             const blen = try sslcall(EVP_DecodeBlock, .{ p0, msg.data, @as(c_int, @intCast(msg.len)) }, is_zero_or_more);
-            if (core.castPtr(u8, core.ngx_pnalloc(pool, blen))) |p1| {
+            const dlen = base64_decoded_len(msg, blen);
+            if (core.castPtr(u8, core.ngx_pnalloc(pool, dlen))) |p1| {
                 var len: c_int = 0;
                 var tlen: c_int = 0;
-                _ = try sslcall(EVP_DecryptUpdate, .{ self.ctx, p1, &len, p0, blen - TAG_SIZE }, is_one);
-                const tag: [TAG_SIZE]u8 = undefined;
-                _ = try sslcall(EVP_CIPHER_CTX_ctrl, .{ self.ctx, EVP_CTRL_GCM_SET_TAG, TAG_SIZE, tag }, is_one);
+                _ = try sslcall(EVP_CIPHER_CTX_ctrl, .{ self.ctx, EVP_CTRL_GCM_SET_TAG, TAG_SIZE, p0 + (dlen - TAG_SIZE) }, is_one);
+                _ = try sslcall(EVP_DecryptUpdate, .{ self.ctx, p1, &len, p0, @as(c_int, @intCast(dlen - TAG_SIZE)) }, is_one);
                 _ = try sslcall(EVP_DecryptFinal_ex, .{ self.ctx, p1 + @as(usize, @intCast(len)), &tlen }, is_one);
-                return ngx_str_t{ .data = p1, .len = len };
+                return ngx_str_t{ .data = p1, .len = @intCast(len) };
             }
         }
         return core.NError.OOM;
     }
 };
 
+const ngx_log_init = ngx.ngx_log_init;
+const ngx_create_pool = ngx.ngx_create_pool;
+const ngx_destroy_pool = ngx.ngx_destroy_pool;
 test "ssl" {
+    const log = ngx_log_init(core.c_str(""), core.c_str(""));
+    const pool = ngx_create_pool(1024, log);
+    defer ngx_destroy_pool(pool);
+
     const keys = [2][]const u8{
         \\-----BEGIN RSA PRIVATE KEY-----
         \\MIIEogIBAAKCAQEAptpm+qvIDCh/9wjU26SQCK26ogYkBhDrYxnAaw2JbbBsp1oD
@@ -339,8 +362,6 @@ test "ssl" {
         \\-----END PUBLIC KEY-----
         ,
     };
-
-    _ = keys;
 
     const data0 =
         \\GET
@@ -404,7 +425,7 @@ test "ssl" {
         \\mfI1CPqvBrgcXfgXMFjdNIhBf27ACE2YyeWsWV9ZI7T7RU0vHvbQpu9Z32ogzc+k8ZC5n3kz7h70eWKjgqNdKQF0eRp8mVKlmfzMLBVHbssB9jEZEDXThOX1XFqX7s7ymia1hoHQxQagPGzkdWxtlZPZ4ZPvr1RiqkgAu6Is8MZgXXrRoBKqjmSdrP1N7uxzJ/cjfSiis9FiLjuADoqmQ1P7p2N876YPAol7Rn0+GswwAwxldbdLrmVSjfytfSBJFqTMHn4itojgxSWWN1byuckQt8hSTEv/Lg97QoeGniYP17T80pJeQyL3b+295FPHSO2AtvCgyIbKMZ0BALilAA==
     ;
 
-    _ = [_][2][]const u8{
+    const ds = [_][2][]const u8{
         .{ data0, signed0 },
         .{ data1, signed1 },
         .{ data2, signed2 },
@@ -412,7 +433,19 @@ test "ssl" {
         .{ data4, signed4 },
     };
 
-    const rsa_oaep = [3][]const u8{
+    var rsa = try NSSL_RSA.init(ngx_string(keys[0]), ngx_string(keys[1]));
+    defer rsa.deinit();
+
+    for (ds, 0..) |t, i| {
+        if (i < 4) {
+            const signed = try rsa.sign_sha256(ngx_string(t[0]), pool);
+            try expectEqual(std.mem.eql(u8, core.slicify(u8, signed.data, signed.len), t[1]), true);
+        } else {
+            try expectEqual(rsa.verify_sha256(ngx_string(t[1]), ngx_string(t[0]), pool), true);
+        }
+    }
+
+    const keys1 = [3][]const u8{
         \\-----BEGIN PRIVATE KEY-----
         \\MIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQDGPEEIEpWHQinm
         \\tCzGsnfGYhM2lqgtP/AGgbiM62MZWJMRhUtlZMV/Ownm6x3ZLEgXAzRYWOdVqq/w
@@ -456,16 +489,26 @@ test "ssl" {
         ,
     };
 
-    _ = rsa_oaep;
+    var rsa_oaep = try NSSL_RSA.init(ngx_string(keys1[0]), ngx_string(keys1[1]));
+    defer rsa_oaep.deinit();
+
+    const b64 = try rsa_oaep.rsa_oaep_encrypt(ngx_string(keys1[2]), pool);
+    const txt = try rsa_oaep.rsa_oaep_decrypt(b64, pool);
+    try std.testing.expectEqualSlices(u8, core.slicify(u8, txt.data, txt.len), keys1[2]);
 
     const aes_256_gcm = [3][]const u8{
         \\000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f
         ,
         \\000102030405060708090a0b
         ,
-        \\Hello, OpenSSL 3.0 AES-256-GCM!
+        \\Hello, OpenSSL 3.0 AES-256-GCM!!!
         ,
     };
 
-    _ = aes_256_gcm;
+    var aes = try NSSL_AES_256_GCM.init(ngx_string(aes_256_gcm[0]));
+    defer aes.deinit();
+
+    const bb = try aes.encrypt(ngx_string(aes_256_gcm[2]), ngx_string(aes_256_gcm[1]), pool);
+    const tt = try aes.decrypt(bb, ngx_string(aes_256_gcm[1]), pool);
+    try std.testing.expectEqualSlices(u8, core.slicify(u8, tt.data, tt.len), aes_256_gcm[2]);
 }
