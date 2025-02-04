@@ -40,15 +40,8 @@ const wechatpay_loc_conf = extern struct {
     wechatpay_public_key: ngx_str_t,
     wechatpay_serial: ngx_str_t,
     mch_id: ngx_str_t,
-    aes_apiv3_key: ngx_str_t,
+    apiv3_key: ngx_str_t,
 };
-
-fn ngx_conf_set_wechatpay(cf: [*c]ngx_conf_t, cmd: [*c]ngx_command_t, loc: ?*anyopaque) callconv(.C) [*c]u8 {
-    _ = cf;
-    _ = cmd;
-    _ = loc;
-    return conf.NGX_CONF_OK;
-}
 
 export const ngx_http_wechatpay_module_ctx = ngx_http_module_t{
     .preconfiguration = @ptrCast(NULL),
@@ -65,73 +58,57 @@ export const ngx_http_wechatpay_commands = [_]ngx_command_t{
     ngx_command_t{
         .name = ngx_string("wechatpay_proxy"),
         .type = conf.NGX_HTTP_LOC_CONF | conf.NGX_HTTP_SRV_CONF | conf.NGX_CONF_TAKE1,
-        .set = ngx_conf_set_wechatpay,
+        .set = conf.ngx_conf_set_str_slot,
         .conf = conf.NGX_HTTP_LOC_CONF_OFFSET,
-        .offset = 0,
-        .post = NULL,
-    },
-    ngx_command_t{
-        .name = ngx_string("wechatpay_apiclient_key"),
-        .type = conf.NGX_HTTP_LOC_CONF | conf.NGX_HTTP_SRV_CONF | conf.NGX_CONF_TAKE1,
-        .set = ngx_conf_set_wechatpay,
-        .conf = conf.NGX_HTTP_LOC_CONF_OFFSET,
-        .offset = 1,
+        .offset = @offsetOf(wechatpay_loc_conf, "proxy"),
         .post = NULL,
     },
     ngx_command_t{
         .name = ngx_string("wechatpay_apiclient_key_file"),
         .type = conf.NGX_HTTP_LOC_CONF | conf.NGX_HTTP_SRV_CONF | conf.NGX_CONF_TAKE1,
-        .set = ngx_conf_set_wechatpay,
+        .set = conf.ngx_conf_set_file_slot,
         .conf = conf.NGX_HTTP_LOC_CONF_OFFSET,
-        .offset = 2,
-        .post = NULL,
-    },
-    ngx_command_t{
-        .name = ngx_string("wechatpay_public_key"),
-        .type = conf.NGX_HTTP_LOC_CONF | conf.NGX_HTTP_SRV_CONF | conf.NGX_CONF_TAKE1,
-        .set = ngx_conf_set_wechatpay,
-        .conf = conf.NGX_HTTP_LOC_CONF_OFFSET,
-        .offset = 3,
-        .post = NULL,
-    },
-    ngx_command_t{
-        .name = ngx_string("wechatpay_public_key_file"),
-        .type = conf.NGX_HTTP_LOC_CONF | conf.NGX_HTTP_SRV_CONF | conf.NGX_CONF_TAKE1,
-        .set = ngx_conf_set_wechatpay,
-        .conf = conf.NGX_HTTP_LOC_CONF_OFFSET,
-        .offset = 4,
+        .offset = @offsetOf(wechatpay_loc_conf, "apiclient_key"),
         .post = NULL,
     },
     ngx_command_t{
         .name = ngx_string("wechatpay_apiclient_serial"),
         .type = conf.NGX_HTTP_LOC_CONF | conf.NGX_HTTP_SRV_CONF | conf.NGX_CONF_TAKE1,
-        .set = ngx_conf_set_wechatpay,
+        .set = conf.ngx_conf_set_str_slot,
         .conf = conf.NGX_HTTP_LOC_CONF_OFFSET,
-        .offset = 5,
+        .offset = @offsetOf(wechatpay_loc_conf, "apiclient_serial"),
         .post = NULL,
     },
     ngx_command_t{
-        .name = ngx_string("wechatpay_platform_serial"),
+        .name = ngx_string("wechatpay_public_key_file"),
         .type = conf.NGX_HTTP_LOC_CONF | conf.NGX_HTTP_SRV_CONF | conf.NGX_CONF_TAKE1,
-        .set = ngx_conf_set_wechatpay,
+        .set = conf.ngx_conf_set_file_slot,
         .conf = conf.NGX_HTTP_LOC_CONF_OFFSET,
-        .offset = 6,
+        .offset = @offsetOf(wechatpay_loc_conf, "wechatpay_public_key"),
+        .post = NULL,
+    },
+    ngx_command_t{
+        .name = ngx_string("wechatpay_serial"),
+        .type = conf.NGX_HTTP_LOC_CONF | conf.NGX_HTTP_SRV_CONF | conf.NGX_CONF_TAKE1,
+        .set = conf.ngx_conf_set_str_slot,
+        .conf = conf.NGX_HTTP_LOC_CONF_OFFSET,
+        .offset = @offsetOf(wechatpay_loc_conf, "wechatpay_serial"),
         .post = NULL,
     },
     ngx_command_t{
         .name = ngx_string("wechatpay_mch_id"),
         .type = conf.NGX_HTTP_LOC_CONF | conf.NGX_HTTP_SRV_CONF | conf.NGX_CONF_TAKE1,
-        .set = ngx_conf_set_wechatpay,
+        .set = conf.ngx_conf_set_str_slot,
         .conf = conf.NGX_HTTP_LOC_CONF_OFFSET,
-        .offset = 7,
+        .offset = @offsetOf(wechatpay_loc_conf, "mch_id"),
         .post = NULL,
     },
     ngx_command_t{
         .name = ngx_string("wechatpay_apiv3_key"),
-        .type = conf.NGX_HTTP_LOC_CONF | conf.NGX_HTTP_SRV_CONF | conf.NGX_CONF_TAKE1,
-        .set = ngx_conf_set_wechatpay,
+        .type = conf.NGX_HTTP_LOC_CONF | conf.NGX_CONF_TAKE1,
+        .set = conf.ngx_conf_set_str_slot,
         .conf = conf.NGX_HTTP_LOC_CONF_OFFSET,
-        .offset = 8,
+        .offset = @offsetOf(wechatpay_loc_conf, "apiv3_key"),
         .post = NULL,
     },
 };

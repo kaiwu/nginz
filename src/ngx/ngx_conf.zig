@@ -2,6 +2,7 @@ const std = @import("std");
 const ngx = @import("ngx.zig");
 const core = @import("ngx_core.zig");
 const http = @import("ngx_http.zig");
+const file = @import("ngx_file.zig");
 const array = @import("ngx_array.zig");
 const string = @import("ngx_string.zig");
 const module = @import("ngx_module.zig");
@@ -63,11 +64,28 @@ pub const NGX_HTTP_SRV_CONF = ngx.NGX_HTTP_SRV_CONF;
 pub const NGX_HTTP_UPS_CONF = ngx.NGX_HTTP_UPS_CONF;
 
 const NULL = core.NULL;
+const ngx_str_t = string.ngx_str_t;
 const ngx_array_t = array.ngx_array_t;
 const ngx_module_t = module.ngx_module_t;
 const ngx_http_request_t = http.ngx_http_request_t;
 
 pub const ngx_null_command = ngx_command_t{ .name = string.ngx_null_str, .type = 0, .set = NULL, .conf = 0, .offset = 0, .post = NULL };
+
+pub fn ngx_conf_set_file_slot(cf: [*c]ngx_conf_t, cmd: [*c]ngx_command_t, conf: ?*anyopaque) callconv(.C) [*c]u8 {
+    if (core.castPtr(u8, conf)) |p| {
+        if (core.castPtr(ngx_str_t, @ptrCast(p + cmd.*.offset))) |f| {
+            if (f.*.data != core.nullptr(u8)) {
+                return @as([*c]u8, @constCast("is duplicate"));
+            }
+            if (core.castPtr(ngx_str_t, cf.*.args.*.elts)) |param| {
+                const path = param[1];
+                f.* = file.ngz_open_file(path, cf.*.log, cf.*.pool) catch return NGX_CONF_ERROR;
+                return NGX_CONF_OK;
+            }
+        }
+    }
+    return NGX_CONF_ERROR;
+}
 
 // http{}
 pub inline fn ngx_http_get_module_main_conf(r: [*c]ngx_http_request_t, m: *ngx_module_t) ?*anyopaque {
