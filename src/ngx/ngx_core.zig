@@ -35,7 +35,6 @@ pub const ngx_msec_t = ngx.ngx_msec_t;
 pub const ngx_cycle_t = ngx.ngx_cycle_t;
 
 pub const ngx_url_t = ngx.ngx_url_t;
-pub const ngx_file_t = ngx.ngx_file_t;
 pub const ngx_event_t = ngx.ngx_event_t;
 pub const ngx_resolver_t = ngx.ngx_resolver_t;
 pub const ngx_slab_pool_t = ngx.ngx_slab_pool_t;
@@ -67,6 +66,7 @@ pub const NError = error{
     OOM,
     SSL_ERROR,
     CONF_ERROR,
+    FILE_ERROR,
     HASH_ERROR,
     TIMER_ERROR,
     REQUEST_ERROR,
@@ -149,7 +149,6 @@ test "core" {
     try expectEqual(@sizeOf(ngx_output_chain_ctx_t), 104);
     try expectEqual(@sizeOf(ngx_listening_t), 296);
     try expectEqual(@sizeOf(ngx_connection_t), 232);
-    try expectEqual(@sizeOf(ngx_file_t), 200);
     try expectEqual(@sizeOf(ngx_temp_file_t), 248);
     try expectEqual(@sizeOf(ngx_ext_rename_file_t), 40);
     try expectEqual(@sizeOf(ngx_url_t), 224);

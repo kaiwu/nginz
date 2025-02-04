@@ -5,6 +5,7 @@ pub const buf = @import("ngx_buf.zig");
 pub const ssl = @import("ngx_ssl.zig");
 pub const core = @import("ngx_core.zig");
 pub const conf = @import("ngx_conf.zig");
+pub const file = @import("ngx_file.zig");
 pub const hash = @import("ngx_hash.zig");
 pub const http = @import("ngx_http.zig");
 pub const list = @import("ngx_list.zig");
