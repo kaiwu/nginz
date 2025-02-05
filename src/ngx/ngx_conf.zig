@@ -71,6 +71,17 @@ const ngx_http_request_t = http.ngx_http_request_t;
 
 pub const ngx_null_command = ngx_command_t{ .name = string.ngx_null_str, .type = 0, .set = NULL, .conf = 0, .offset = 0, .post = NULL };
 
+pub inline fn ngx_conf_merge_str_value(cf: [*c]ngx_str_t, pr: [*c]ngx_str_t, de: ngx_str_t) void {
+    if (cf.*.data == core.nullptr(u8)) {
+        if (pr.*.data != core.nullptr(u8)) {
+            cf.*.data = pr.*.data;
+            cf.*.len = pr.*.len;
+        } else {
+            cf.* = de;
+        }
+    }
+}
+
 pub fn ngx_conf_set_file_slot(cf: [*c]ngx_conf_t, cmd: [*c]ngx_command_t, conf: ?*anyopaque) callconv(.C) [*c]u8 {
     if (core.castPtr(u8, conf)) |p| {
         if (core.castPtr(ngx_str_t, @ptrCast(p + cmd.*.offset))) |f| {

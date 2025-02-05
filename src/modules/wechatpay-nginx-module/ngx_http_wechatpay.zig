@@ -2,6 +2,7 @@ const std = @import("std");
 const ngx = @import("ngx");
 
 const buf = ngx.buf;
+const ssl = ngx.ssl;
 const core = ngx.core;
 const conf = ngx.conf;
 const http = ngx.http;
@@ -41,23 +42,90 @@ const wechatpay_loc_conf = extern struct {
     wechatpay_serial: ngx_str_t,
     mch_id: ngx_str_t,
     apiv3_key: ngx_str_t,
+    oaep_encrypt: ngx_flag_t,
+    oaep_decrypt: ngx_flag_t,
 };
+
+const wechatpay_context = extern struct {};
+
+fn wechatpay_create_loc_conf(cf: [*c]ngx_conf_t) callconv(.C) ?*anyopaque {
+    if (core.ngz_pcalloc_c(wechatpay_loc_conf, cf.*.pool)) |p| {
+        p.*.oaep_encrypt = conf.NGX_CONF_UNSET;
+        p.*.oaep_decrypt = conf.NGX_CONF_UNSET;
+        return p;
+    }
+    return null;
+}
+
+fn wechatpay_merge_loc_conf(cf: [*c]ngx_conf_t, parent: ?*anyopaque, child: ?*anyopaque) callconv(.C) [*c]u8 {
+    if (core.castPtr(wechatpay_loc_conf, parent)) |pr| {
+        if (core.castPtr(wechatpay_loc_conf, child)) |ch| {
+            conf.ngx_conf_merge_str_value(&ch.*.apiclient_key, &pr.*.apiclient_key, ngx_string(""));
+            conf.ngx_conf_merge_str_value(&ch.*.apiclient_serial, &pr.*.apiclient_serial, ngx_string(""));
+            conf.ngx_conf_merge_str_value(&ch.*.wechatpay_public_key, &pr.*.wechatpay_public_key, ngx_string(""));
+            conf.ngx_conf_merge_str_value(&ch.*.wechatpay_serial, &pr.*.wechatpay_serial, ngx_string(""));
+            conf.ngx_conf_merge_str_value(&ch.*.mch_id, &pr.*.mch_id, ngx_string(""));
+
+            const b0 = ssl.check_public_key(ch.*.wechatpay_public_key) catch false;
+            const b1 = ssl.check_private_key(ch.*.apiclient_key) catch false;
+            const b2 = ch.*.wechatpay_serial.len > 0 and ch.*.apiclient_serial.len > 0 and ch.*.mch_id.len > 0;
+            if (!b0 or !b1 or !b2) {
+                return conf.NGX_CONF_ERROR;
+            }
+            if (conf.ngx_http_conf_get_core_module_loc_conf(cf)) |cocf| {
+                if (ch.*.proxy.len > 0) {
+                    cocf.*.handler = ngx_http_wechatpay_proxy_handler;
+                    return conf.NGX_CONF_OK;
+                }
+                if (ch.*.apiv3_key.len > 0) {
+                    cocf.*.handler = ngx_http_wechatpay_notify_handler;
+                    return conf.NGX_CONF_OK;
+                }
+                if (ch.*.oaep_decrypt != conf.NGX_CONF_UNSET or ch.*.oaep_encrypt != conf.NGX_CONF_UNSET) {
+                    cocf.*.handler = ngx_http_wechatpay_oaep_handler;
+                    return conf.NGX_CONF_OK;
+                }
+            }
+        }
+    }
+    return conf.NGX_CONF_ERROR;
+}
+
+fn wechatpay_postconfiguration(cf: [*c]ngx_conf_t) callconv(.C) ngx_int_t {
+    _ = cf;
+    return NGX_OK;
+}
+
+export fn ngx_http_wechatpay_proxy_handler(r: [*c]ngx_http_request_t) callconv(.C) ngx_int_t {
+    _ = r;
+    return NGX_OK;
+}
+
+export fn ngx_http_wechatpay_oaep_handler(r: [*c]ngx_http_request_t) callconv(.C) ngx_int_t {
+    _ = r;
+    return NGX_OK;
+}
+
+export fn ngx_http_wechatpay_notify_handler(r: [*c]ngx_http_request_t) callconv(.C) ngx_int_t {
+    _ = r;
+    return NGX_OK;
+}
 
 export const ngx_http_wechatpay_module_ctx = ngx_http_module_t{
     .preconfiguration = @ptrCast(NULL),
-    .postconfiguration = @ptrCast(NULL),
+    .postconfiguration = wechatpay_postconfiguration,
     .create_main_conf = @ptrCast(NULL),
     .init_main_conf = @ptrCast(NULL),
     .create_srv_conf = @ptrCast(NULL),
     .merge_srv_conf = @ptrCast(NULL),
-    .create_loc_conf = @ptrCast(NULL),
-    .merge_loc_conf = @ptrCast(NULL),
+    .create_loc_conf = wechatpay_create_loc_conf,
+    .merge_loc_conf = wechatpay_merge_loc_conf,
 };
 
 export const ngx_http_wechatpay_commands = [_]ngx_command_t{
     ngx_command_t{
         .name = ngx_string("wechatpay_proxy"),
-        .type = conf.NGX_HTTP_LOC_CONF | conf.NGX_HTTP_SRV_CONF | conf.NGX_CONF_TAKE1,
+        .type = conf.NGX_HTTP_LOC_CONF | conf.NGX_CONF_TAKE1,
         .set = conf.ngx_conf_set_str_slot,
         .conf = conf.NGX_HTTP_LOC_CONF_OFFSET,
         .offset = @offsetOf(wechatpay_loc_conf, "proxy"),
@@ -101,6 +169,22 @@ export const ngx_http_wechatpay_commands = [_]ngx_command_t{
         .set = conf.ngx_conf_set_str_slot,
         .conf = conf.NGX_HTTP_LOC_CONF_OFFSET,
         .offset = @offsetOf(wechatpay_loc_conf, "mch_id"),
+        .post = NULL,
+    },
+    ngx_command_t{
+        .name = ngx_string("wechatpay_oaep_encrypt"),
+        .type = conf.NGX_HTTP_LOC_CONF | conf.NGX_CONF_FLAG,
+        .set = conf.ngx_conf_set_flag_slot,
+        .conf = conf.NGX_HTTP_LOC_CONF_OFFSET,
+        .offset = @offsetOf(wechatpay_loc_conf, "oaep_encrypt"),
+        .post = NULL,
+    },
+    ngx_command_t{
+        .name = ngx_string("wechatpay_oaep_decrypt"),
+        .type = conf.NGX_HTTP_LOC_CONF | conf.NGX_CONF_FLAG,
+        .set = conf.ngx_conf_set_flag_slot,
+        .conf = conf.NGX_HTTP_LOC_CONF_OFFSET,
+        .offset = @offsetOf(wechatpay_loc_conf, "oaep_decrypt"),
         .post = NULL,
     },
     ngx_command_t{

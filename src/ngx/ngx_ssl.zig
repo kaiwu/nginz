@@ -61,6 +61,8 @@ const EVP_PKEY_CTX_set_rsa_padding = ngx.EVP_PKEY_CTX_set_rsa_padding;
 const EVP_PKEY_encrypt = ngx.EVP_PKEY_encrypt;
 const EVP_PKEY_decrypt_init = ngx.EVP_PKEY_decrypt_init;
 const EVP_PKEY_decrypt = ngx.EVP_PKEY_decrypt;
+const EVP_PKEY_public_check = ngx.EVP_PKEY_public_check;
+const EVP_PKEY_private_check = ngx.EVP_PKEY_private_check;
 
 // SHA256 DIGEST SIGN/VERIFY
 const SHA256_DIGEST_LENGTH = ngx.SHA256_DIGEST_LENGTH;
@@ -120,6 +122,28 @@ pub fn sslcall(comptime F: anytype, args: anytype, comptime predicate: anytype) 
     } else {
         return result;
     }
+}
+
+pub fn check_public_key(key: ngx_str_t) !bool {
+    const pkey_bio = try sslcall(BIO_new_mem_buf, .{ key.data, @as(c_int, @intCast(key.len)) }, not_null);
+    defer _ = BIO_free(pkey_bio);
+    const pkey = try sslcall(PEM_read_bio_PUBKEY, .{ pkey_bio, null, null, null }, not_null);
+    defer EVP_PKEY_free(pkey);
+    const ctx = try sslcall(EVP_PKEY_CTX_new, .{ pkey, null }, not_null);
+    defer EVP_PKEY_CTX_free(ctx);
+    _ = sslcall(EVP_PKEY_public_check, .{ctx}, is_one) catch return false;
+    return true;
+}
+
+pub fn check_private_key(key: ngx_str_t) !bool {
+    const pkey_bio = try sslcall(BIO_new_mem_buf, .{ key.data, @as(c_int, @intCast(key.len)) }, not_null);
+    defer _ = BIO_free(pkey_bio);
+    const pkey = try sslcall(PEM_read_bio_PrivateKey, .{ pkey_bio, null, null, null }, not_null);
+    defer EVP_PKEY_free(pkey);
+    const ctx = try sslcall(EVP_PKEY_CTX_new, .{ pkey, null }, not_null);
+    defer EVP_PKEY_CTX_free(ctx);
+    _ = sslcall(EVP_PKEY_private_check, .{ctx}, is_one) catch return false;
+    return true;
 }
 
 inline fn base64_decoded_len(b64: ngx_str_t, blen: c_int) usize {
