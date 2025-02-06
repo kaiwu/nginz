@@ -41,7 +41,7 @@ const wechatpay_loc_conf = extern struct {
     wechatpay_public_key: ngx_str_t,
     wechatpay_serial: ngx_str_t,
     mch_id: ngx_str_t,
-    apiv3_key: ngx_str_t,
+    notify_proxy: ?*anyopaque,
     oaep_encrypt: ngx_flag_t,
     oaep_decrypt: ngx_flag_t,
 };
@@ -52,6 +52,7 @@ fn wechatpay_create_loc_conf(cf: [*c]ngx_conf_t) callconv(.C) ?*anyopaque {
     if (core.ngz_pcalloc_c(wechatpay_loc_conf, cf.*.pool)) |p| {
         p.*.oaep_encrypt = conf.NGX_CONF_UNSET;
         p.*.oaep_decrypt = conf.NGX_CONF_UNSET;
+        p.*.notify_proxy = @ptrCast(conf.NGX_CONF_UNSET_PTR);
         return p;
     }
     return null;
@@ -77,9 +78,13 @@ fn wechatpay_merge_loc_conf(cf: [*c]ngx_conf_t, parent: ?*anyopaque, child: ?*an
                     cocf.*.handler = ngx_http_wechatpay_proxy_handler;
                     return conf.NGX_CONF_OK;
                 }
-                if (ch.*.apiv3_key.len > 0) {
-                    cocf.*.handler = ngx_http_wechatpay_notify_handler;
-                    return conf.NGX_CONF_OK;
+                if (ch.*.notify_proxy != conf.NGX_CONF_UNSET_PTR) {
+                    if (core.castPtr(ngx_array_t, ch.*.notify_proxy)) |notify_proxy| {
+                        if (notify_proxy.*.nelts > 0) {
+                            cocf.*.handler = ngx_http_wechatpay_notify_handler;
+                            return conf.NGX_CONF_OK;
+                        }
+                    }
                 }
                 if (ch.*.oaep_decrypt != conf.NGX_CONF_UNSET or ch.*.oaep_encrypt != conf.NGX_CONF_UNSET) {
                     cocf.*.handler = ngx_http_wechatpay_oaep_handler;
@@ -188,11 +193,11 @@ export const ngx_http_wechatpay_commands = [_]ngx_command_t{
         .post = NULL,
     },
     ngx_command_t{
-        .name = ngx_string("wechatpay_apiv3_key"),
-        .type = conf.NGX_HTTP_LOC_CONF | conf.NGX_CONF_TAKE1,
-        .set = conf.ngx_conf_set_str_slot,
+        .name = ngx_string("wechatpay_notify_proxy"),
+        .type = conf.NGX_HTTP_LOC_CONF | conf.NGX_CONF_TAKE2,
+        .set = conf.ngx_conf_set_keyval_slot,
         .conf = conf.NGX_HTTP_LOC_CONF_OFFSET,
-        .offset = @offsetOf(wechatpay_loc_conf, "apiv3_key"),
+        .offset = @offsetOf(wechatpay_loc_conf, "notify_proxy"),
         .post = NULL,
     },
 };
