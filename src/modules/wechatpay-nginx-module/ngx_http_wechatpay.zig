@@ -91,6 +91,9 @@ fn wechatpay_merge_loc_conf(cf: [*c]ngx_conf_t, parent: ?*anyopaque, child: ?*an
                 if (ch.*.notify_proxy != conf.NGX_CONF_UNSET_PTR) {
                     if (core.castPtr(ngx_array_t, ch.*.notify_proxy)) |notify_proxy| {
                         if (notify_proxy.*.nelts > 0) {
+                            if (core.castPtr(ngx.string.ngx_keyval_t, notify_proxy.*.elts)) |kv| {
+                                ngx.log.ngx_http_conf_debug(cf, "aes key is %V notify url is %V", .{ &kv.*.key, &kv.*.value });
+                            }
                             cocf.*.handler = ngx_http_wechatpay_notify_handler;
                             return conf.NGX_CONF_OK;
                         }
