@@ -84,7 +84,6 @@ const echoz_context = extern struct {
     iterator: NArray(echoz_command).IteratorType,
     chain: NChain,
     header_sent: ngx_flag_t = 0,
-    reading_body: ngx_flag_t = 0,
 };
 
 fn postconfiguration(cf: [*c]ngx_conf_t) callconv(.C) ngx_int_t {
@@ -296,9 +295,7 @@ fn echoz_exec_command(cmd: [*c]echoz_command, ctx: [*c]echoz_context, r: [*c]ngx
             if (rc == core.NGX_ERROR or rc >= http.NGX_HTTP_SPECIAL_RESPONSE) {
                 return ZError.BODY_ERROR;
             }
-            r.*.main.*.flags0.count -= 1;
             if (rc == core.NGX_AGAIN) {
-                ctx.*.reading_body = 1;
                 return ZError.READING_BODY;
             }
         },
@@ -334,7 +331,6 @@ fn echoz_handle(r: [*c]ngx_http_request_t) !void {
             ctx.*.iterator = lccf.*.content_handlers.iterator();
             ctx.*.chain = NChain.init(r.*.pool);
             ctx.*.header_sent = 0;
-            ctx.*.reading_body = 0;
             ctx.*.ready = 1;
         }
 
@@ -452,12 +448,7 @@ export fn ngx_http_echoz_request_body_variable(
 }
 
 export fn ngx_http_echoz_client_body_handler(r: [*c]ngx_http_request_t) callconv(.C) void {
-    if (core.castPtr(echoz_context, r.*.ctx[ngx_http_echoz_module.ctx_index])) |ctx| {
-        if (ctx.*.reading_body == 1) {
-            ctx.*.reading_body = 0;
-            http.ngx_http_finalize_request(r, ngx_http_echoz_handler(r));
-        }
-    }
+    http.ngx_http_finalize_request(r, ngx_http_echoz_handler(r));
 }
 
 export fn ngx_http_echoz_handler(r: [*c]ngx_http_request_t) callconv(.C) ngx_int_t {

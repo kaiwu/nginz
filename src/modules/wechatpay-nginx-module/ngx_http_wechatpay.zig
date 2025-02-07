@@ -279,10 +279,6 @@ export fn ngx_http_wechatpay_oaep_handler(r: [*c]ngx_http_request_t) callconv(.C
     if (core.castPtr(wechatpay_loc_conf, conf.ngx_http_get_module_loc_conf(r, &ngx_http_wechatpay_module))) |lccf| {
         _ = http.ngz_http_getor_module_ctx(wechatpay_context, r, &ngx_http_wechatpay_module, lccf.*.ctx);
         const rc = http.ngx_http_read_client_request_body(r, ngx_http_wechatpay_oaep_body_handler);
-        if (rc == core.NGX_ERROR or rc >= http.NGX_HTTP_SPECIAL_RESPONSE) {
-            return rc;
-        }
-        r.*.main.*.flags0.count -= 1;
         return if (rc == core.NGX_AGAIN) core.NGX_DONE else rc;
     }
     return NGX_OK;
