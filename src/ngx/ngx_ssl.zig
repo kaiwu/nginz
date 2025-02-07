@@ -157,7 +157,7 @@ inline fn base64_decoded_len(b64: ngx_str_t, blen: c_int) usize {
     return len;
 }
 
-const NSSL_RSA = extern struct {
+pub const NSSL_RSA = extern struct {
     const Self = @This();
     prv_key_bio: ?*BIO,
     pub_key_bio: ?*BIO,
@@ -269,7 +269,7 @@ fn ptag(tag: [*c]u8) void {
     std.debug.print("\n", .{});
 }
 
-const NSSL_AES_256_GCM = extern struct {
+pub const NSSL_AES_256_GCM = extern struct {
     const Self = @This();
     const KEY_SIZE = 32;
     const IV_SIZE = 12;

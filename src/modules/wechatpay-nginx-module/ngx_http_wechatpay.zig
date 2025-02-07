@@ -34,6 +34,8 @@ const NChain = ngx.buf.NChain;
 const NArray = ngx.array.NArray;
 const NTimer = ngx.event.NTimer;
 const NSubrequest = http.NSubrequest;
+const NSSL_RSA = ssl.NSSL_RSA;
+const NSSL_AES_256_GCM = ssl.NSSL_AES_256_GCM;
 
 const wechatpay_loc_conf = extern struct {
     proxy: ngx_str_t,
@@ -47,7 +49,33 @@ const wechatpay_loc_conf = extern struct {
     oaep_decrypt: ngx_flag_t,
 };
 
-const wechatpay_context = extern struct {};
+const wechatpay_context = extern struct {
+    rsa: [*c]NSSL_RSA,
+    aes: [*c]NSSL_AES_256_GCM,
+    notify: ngx_str_t,
+    ready: ngx_flag_t = 0,
+};
+
+fn get_wechatpay_context(cf: [*c]wechatpay_loc_conf, r: [*c]ngx_http_request_t) ![*c]wechatpay_context {
+    const ctx = try http.ngz_http_get_module_ctx(wechatpay_context, r, &ngx_http_wechatpay_module);
+    if (ctx.*.ready == 0) {
+        if (core.ngz_pcalloc_c(NSSL_RSA, r.*.pool)) |rsa| {
+            rsa.* = try NSSL_RSA.init(cf.*.apiclient_key, cf.*.wechatpay_public_key);
+            ctx.*.rsa = rsa;
+        }
+        if (core.castPtr(ngx_array_t, cf.*.notify_proxy)) |notify_proxy| {
+            if (core.castPtr(ngx.string.ngx_keyval_t, notify_proxy.*.elts)) |kv| {
+                if (core.ngz_pcalloc_c(NSSL_AES_256_GCM, r.*.pool)) |aes| {
+                    aes.* = try NSSL_AES_256_GCM.init(kv.*.key);
+                    ctx.*.aes = aes;
+                    ctx.*.notify = kv.*.value;
+                }
+            }
+        }
+        ctx.*.ready = 1;
+    }
+    return ctx;
+}
 
 fn wechatpay_create_loc_conf(cf: [*c]ngx_conf_t) callconv(.C) ?*anyopaque {
     if (core.ngz_pcalloc_c(wechatpay_loc_conf, cf.*.pool)) |p| {
@@ -114,17 +142,29 @@ fn wechatpay_postconfiguration(cf: [*c]ngx_conf_t) callconv(.C) ngx_int_t {
     return NGX_OK;
 }
 
+export fn ngx_http_wechatpay_proxy_body_handler(r: [*c]ngx_http_request_t) callconv(.C) void {
+    _ = r;
+}
+
 export fn ngx_http_wechatpay_proxy_handler(r: [*c]ngx_http_request_t) callconv(.C) ngx_int_t {
     _ = r;
     return NGX_OK;
 }
 
-export fn ngx_http_wechatpay_oaep_handler(r: [*c]ngx_http_request_t) callconv(.C) ngx_int_t {
+export fn ngx_http_wechatpay_notify_body_handler(r: [*c]ngx_http_request_t) callconv(.C) void {
+    _ = r;
+}
+
+export fn ngx_http_wechatpay_notify_handler(r: [*c]ngx_http_request_t) callconv(.C) ngx_int_t {
     _ = r;
     return NGX_OK;
 }
 
-export fn ngx_http_wechatpay_notify_handler(r: [*c]ngx_http_request_t) callconv(.C) ngx_int_t {
+export fn ngx_http_wechatpay_oaep_body_handler(r: [*c]ngx_http_request_t) callconv(.C) void {
+    _ = r;
+}
+
+export fn ngx_http_wechatpay_oaep_handler(r: [*c]ngx_http_request_t) callconv(.C) ngx_int_t {
     _ = r;
     return NGX_OK;
 }
