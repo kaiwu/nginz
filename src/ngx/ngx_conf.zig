@@ -41,6 +41,7 @@ pub const NGX_CONF_2MORE = ngx.NGX_CONF_2MORE;
 pub const NGX_CONF_OK = @as([*c]u8, @ptrCast(ngx.NGX_CONF_OK));
 pub const NGX_CONF_ERROR = @as([*c]u8, @ptrCast(ngx.NGX_CONF_ERROR));
 
+pub const ngx_conf_full_name = ngx.ngx_conf_full_name;
 pub const ngx_conf_set_flag_slot = ngx.ngx_conf_set_flag_slot;
 pub const ngx_conf_set_str_slot = ngx.ngx_conf_set_str_slot;
 pub const ngx_conf_set_str_array_slot = ngx.ngx_conf_set_str_array_slot;
@@ -89,9 +90,11 @@ pub fn ngx_conf_set_file_slot(cf: [*c]ngx_conf_t, cmd: [*c]ngx_command_t, conf: 
                 return @as([*c]u8, @constCast("is duplicate"));
             }
             if (core.castPtr(ngx_str_t, cf.*.args.*.elts)) |param| {
-                const path = param[1];
-                f.* = file.ngz_open_file(path, cf.*.log, cf.*.pool) catch return NGX_CONF_ERROR;
-                return NGX_CONF_OK;
+                var path = param[1];
+                if (ngx_conf_full_name(cf.*.cycle, &path, 1) == core.NGX_OK) {
+                    f.* = file.ngz_open_file(path, cf.*.log, cf.*.pool) catch return NGX_CONF_ERROR;
+                    return NGX_CONF_OK;
+                }
             }
         }
     }
