@@ -84,6 +84,19 @@ pub inline fn ngz_http_get_module_ctx(
     return core.NError.OOM;
 }
 
+pub inline fn ngz_http_getor_module_ctx(
+    comptime T: type,
+    r: [*c]ngx_http_request_t,
+    m: [*c]ngx_module_t,
+    ctx: [*c]T,
+) [*c]T {
+    if (core.castPtr(T, r.*.ctx[m.*.ctx_index])) |ctx0| {
+        return ctx0;
+    }
+    r.*.ctx[m.*.ctx_index] = ctx;
+    return ctx;
+}
+
 pub const NGX_HTTP_OK = ngx.NGX_HTTP_OK;
 pub const NGX_HTTP_SPECIAL_RESPONSE = ngx.NGX_HTTP_SPECIAL_RESPONSE;
 pub const NGX_HTTP_INTERNAL_SERVER_ERROR = ngx.NGX_HTTP_INTERNAL_SERVER_ERROR;

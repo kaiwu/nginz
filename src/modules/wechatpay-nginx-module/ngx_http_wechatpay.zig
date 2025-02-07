@@ -37,6 +37,12 @@ const NSubrequest = http.NSubrequest;
 const NSSL_RSA = ssl.NSSL_RSA;
 const NSSL_AES_256_GCM = ssl.NSSL_AES_256_GCM;
 
+const wechatpay_context = extern struct {
+    rsa: [*c]NSSL_RSA,
+    aes: [*c]NSSL_AES_256_GCM,
+    notify: ngx_str_t,
+};
+
 const wechatpay_loc_conf = extern struct {
     proxy: ngx_str_t,
     apiclient_key: ngx_str_t,
@@ -47,34 +53,32 @@ const wechatpay_loc_conf = extern struct {
     notify_proxy: ?*anyopaque,
     oaep_encrypt: ngx_flag_t,
     oaep_decrypt: ngx_flag_t,
+    ctx: [*c]wechatpay_context,
 };
 
-const wechatpay_context = extern struct {
-    rsa: [*c]NSSL_RSA,
-    aes: [*c]NSSL_AES_256_GCM,
-    notify: ngx_str_t,
-    ready: ngx_flag_t = 0,
-};
-
-fn get_wechatpay_context(cf: [*c]wechatpay_loc_conf, r: [*c]ngx_http_request_t) ![*c]wechatpay_context {
-    const ctx = try http.ngz_http_get_module_ctx(wechatpay_context, r, &ngx_http_wechatpay_module);
-    if (ctx.*.ready == 0) {
-        if (core.ngz_pcalloc_c(NSSL_RSA, r.*.pool)) |rsa| {
+fn init_wechatpay_context(cf: [*c]wechatpay_loc_conf, p: [*c]ngx_pool_t) ![*c]wechatpay_context {
+    if (core.ngz_pcalloc_c(wechatpay_context, p)) |ctx| {
+        if (core.ngz_pcalloc_c(NSSL_RSA, p)) |rsa| {
             rsa.* = try NSSL_RSA.init(cf.*.apiclient_key, cf.*.wechatpay_public_key);
             ctx.*.rsa = rsa;
         }
         if (core.castPtr(ngx_array_t, cf.*.notify_proxy)) |notify_proxy| {
             if (core.castPtr(ngx.string.ngx_keyval_t, notify_proxy.*.elts)) |kv| {
-                if (core.ngz_pcalloc_c(NSSL_AES_256_GCM, r.*.pool)) |aes| {
+                if (core.ngz_pcalloc_c(NSSL_AES_256_GCM, p)) |aes| {
                     aes.* = try NSSL_AES_256_GCM.init(kv.*.key);
                     ctx.*.aes = aes;
                     ctx.*.notify = kv.*.value;
                 }
             }
         }
-        ctx.*.ready = 1;
+        return ctx;
     }
-    return ctx;
+    return core.NError.OOM;
+}
+
+fn deinit_wechatpay_context(ctx: [*c]wechatpay_context) void {
+    ctx.*.rsa.*.deinit();
+    ctx.*.aes.*.deinit();
 }
 
 fn wechatpay_create_loc_conf(cf: [*c]ngx_conf_t) callconv(.C) ?*anyopaque {
@@ -103,6 +107,7 @@ fn config_check(cf: [*c]ngx_conf_t, ch: [*c]wechatpay_loc_conf) [*c]u8 {
     config_assert(cf, ch.*.apiclient_serial.len > 0, "invalid apiclient serial") catch return conf.NGX_CONF_ERROR;
     config_assert(cf, ch.*.mch_id.len > 0, "invalid wechatpay mch_id") catch return conf.NGX_CONF_ERROR;
 
+    ch.*.ctx = init_wechatpay_context(ch, cf.*.pool) catch return conf.NGX_CONF_ERROR;
     return conf.NGX_CONF_OK;
 }
 
@@ -165,7 +170,10 @@ export fn ngx_http_wechatpay_oaep_body_handler(r: [*c]ngx_http_request_t) callco
 }
 
 export fn ngx_http_wechatpay_oaep_handler(r: [*c]ngx_http_request_t) callconv(.C) ngx_int_t {
-    _ = r;
+    if (core.castPtr(wechatpay_loc_conf, conf.ngx_http_get_module_loc_conf(r, &ngx_http_wechatpay_module))) |lccf| {
+        const ctx = http.ngz_http_getor_module_ctx(wechatpay_context, r, &ngx_http_wechatpay_module, lccf.*.ctx);
+        _ = ctx;
+    }
     return NGX_OK;
 }
 
