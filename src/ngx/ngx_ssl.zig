@@ -1,5 +1,6 @@
 const std = @import("std");
 const ngx = @import("ngx.zig");
+const log = @import("ngx_log.zig");
 const core = @import("ngx_core.zig");
 const string = @import("ngx_string.zig");
 const expectEqual = std.testing.expectEqual;
@@ -109,15 +110,21 @@ inline fn is_zero_or_more(r: c_int) bool {
     return r >= 0;
 }
 
-var SSL_ERROR_BUFFER: [256]u8 = undefined;
+pub var SSL_LOG: ?*anyopaque = null;
+fn ssl_log(msg: [*c]const u8, len: usize, logger: ?*anyopaque) callconv(.C) c_int {
+    if (core.castPtr(log.ngx_log_t, logger)) |l| {
+        var str = ngx_str_t{ .len = len, .data = @constCast(msg) };
+        log.ngz_log_error(log.NGX_LOG_WARN, l, 0, "%V", .{&str});
+    }
+    return core.NGX_OK;
+}
+
 pub fn sslcall(comptime F: anytype, args: anytype, comptime predicate: anytype) !@TypeOf(@call(.auto, F, args)) {
     const ResultType = @TypeOf(@call(.auto, F, args));
     const result: ResultType = @call(.auto, F, args);
 
     if (!predicate(result)) {
-        // @memset(&SSL_ERROR_BUFFER, 0);
-        // ERR_error_string_n(ERR_get_error(), &SSL_ERROR_BUFFER, 256);
-        // std.debug.print("{s}\n", .{SSL_ERROR_BUFFER});
+        ERR_print_errors_cb(ssl_log, SSL_LOG);
         return core.NError.SSL_ERROR;
     } else {
         return result;
@@ -345,8 +352,8 @@ const ngx_log_init = ngx.ngx_log_init;
 const ngx_create_pool = ngx.ngx_create_pool;
 const ngx_destroy_pool = ngx.ngx_destroy_pool;
 test "ssl" {
-    const log = ngx_log_init(core.c_str(""), core.c_str(""));
-    const pool = ngx_create_pool(1024, log);
+    const nlog = ngx_log_init(core.c_str(""), core.c_str(""));
+    const pool = ngx_create_pool(1024, nlog);
     defer ngx_destroy_pool(pool);
 
     const keys = [2][]const u8{

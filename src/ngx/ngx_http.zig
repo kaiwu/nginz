@@ -98,6 +98,7 @@ pub inline fn ngz_http_getor_module_ctx(
 }
 
 pub const NGX_HTTP_OK = ngx.NGX_HTTP_OK;
+pub const NGX_HTTP_BAD_REQUEST = ngx.NGX_HTTP_BAD_REQUEST;
 pub const NGX_HTTP_SPECIAL_RESPONSE = ngx.NGX_HTTP_SPECIAL_RESPONSE;
 pub const NGX_HTTP_INTERNAL_SERVER_ERROR = ngx.NGX_HTTP_INTERNAL_SERVER_ERROR;
 

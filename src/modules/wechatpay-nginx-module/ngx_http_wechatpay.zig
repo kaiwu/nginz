@@ -184,6 +184,11 @@ fn send_body(r: [*c]ngx_http_request_t, chain: [*c]ngx_chain_t) WError!ngx_int_t
     }
 }
 
+fn wechatpay_preconfiguration(cf: [*c]ngx_conf_t) callconv(.C) ngx_int_t {
+    ssl.SSL_LOG = cf.*.log;
+    return NGX_OK;
+}
+
 fn wechatpay_postconfiguration(cf: [*c]ngx_conf_t) callconv(.C) ngx_int_t {
     _ = cf;
     return NGX_OK;
@@ -270,7 +275,12 @@ fn execute_oaep_action(r: [*c]ngx_http_request_t, ctx: [*c]wechatpay_context) !n
 
 export fn ngx_http_wechatpay_oaep_body_handler(r: [*c]ngx_http_request_t) callconv(.C) void {
     if (core.castPtr(wechatpay_context, r.*.ctx[ngx_http_wechatpay_module.ctx_index])) |ctx| {
-        const rc = execute_oaep_action(r, ctx) catch return http.ngx_http_finalize_request(r, http.NGX_HTTP_INTERNAL_SERVER_ERROR);
+        const rc = execute_oaep_action(r, ctx) catch |e| {
+            switch (e) {
+                core.NError.SSL_ERROR => return http.ngx_http_finalize_request(r, http.NGX_HTTP_BAD_REQUEST),
+                else => return http.ngx_http_finalize_request(r, http.NGX_HTTP_INTERNAL_SERVER_ERROR),
+            }
+        };
         http.ngx_http_finalize_request(r, rc);
     }
 }
@@ -285,7 +295,7 @@ export fn ngx_http_wechatpay_oaep_handler(r: [*c]ngx_http_request_t) callconv(.C
 }
 
 export const ngx_http_wechatpay_module_ctx = ngx_http_module_t{
-    .preconfiguration = @ptrCast(NULL),
+    .preconfiguration = wechatpay_preconfiguration,
     .postconfiguration = wechatpay_postconfiguration,
     .create_main_conf = @ptrCast(NULL),
     .init_main_conf = @ptrCast(NULL),
