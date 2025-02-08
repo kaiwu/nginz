@@ -105,17 +105,25 @@ pub fn init_cjson(pool: [*c]core.ngx_pool_t) void {
     cJSON_InitHooks(&hooks);
 }
 
-pub fn parse_cjson(str: ngx_str_t) [*c]cJSON {
+pub fn decode(str: ngx_str_t) [*c]cJSON {
     return cJSON_ParseWithLength(str.data, str.len);
 }
 
-pub fn decode(str: ngx_str_t) [*c]cJSON {
-    return parse_cjson(str);
+const CJSON_BUFFER_LENTH = 512;
+pub fn encode(j: [*c]cJSON) !ngx_str_t {
+    var size: usize = CJSON_BUFFER_LENTH;
+    var len: usize = 0;
+    while (core.castPtr(u8, core.ngx_pnalloc(cjson_pool, size))) |p| {
+        const b = cJSON_PrintPreallocatedWithLength(j, p, @as(c_int, @intCast(size)), 0, &len);
+        if (b == 1) {
+            return ngx_str_t{ .len = len, .data = p };
+        } else {
+            size *= 2;
+            _ = core.ngx_pfree(cjson_pool, p);
+        }
+    }
+    return core.NError.OOM;
 }
-
-// pub fn encode(j: [*c]cJSON) ngx_str_t {
-//
-// }
 
 pub fn free_cjson(p: ?*anyopaque) void {
     cJSON_free(p);
@@ -137,14 +145,13 @@ test "cjson" {
         \\}
     ;
     init_cjson(pool);
-    const parsed = parse_cjson(ngx_string(json));
+    const parsed = decode(ngx_string(json));
     try expectEqual(cJSON_IsObject(parsed), 1);
     try expectEqual(cJSON_IsArray(cJSON_GetObjectItem(parsed, "b")), 1);
 
-    var len: usize = 0;
-    var buf: [512]u8 = std.mem.zeroes([512]u8);
-    _ = cJSON_PrintPreallocatedWithLength(parsed, &buf, buf.len, 0, &len);
-    try expectEqual(len, 50);
+    const j = try encode(parsed);
+    try expectEqual(j.len, 50);
+    // std.debug.print("{s}", .{core.slicify(u8, j.data, j.len)});
 
     free_cjson(parsed);
 }
