@@ -26,7 +26,7 @@ pub const CJSON_C_FLAGS = [_][]const u8{
     "-Wformat-overflow",
     "-Wunused-macros",
     "-Wmissing-variable-declarations",
-    "-Wused-but-marked-unused",
+    //"-Wused-but-marked-unused",
     "-Wswitch-enum",
     "-fno-sanitize=all",
 };
