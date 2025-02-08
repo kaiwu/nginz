@@ -1,3 +1,6 @@
 [submodule "submodules/nginx"]
 	path = submodules/nginx
 	url = https://github.com/nginx/nginx.git
+[submodule "submodules/cjson"]
+	path = submodules/cjson
+	url = https://github.com/DaveGamble/cJSON.git
