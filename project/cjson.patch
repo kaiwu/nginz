@@ -1,0 +1,30 @@
+--- cJSON.c	2025-02-02 22:37:11.694130781 +0800
++++ /tmp/cJSON.c	2025-02-08 18:24:53.311028238 +0800
+@@ -1332,6 +1332,27 @@
+     return print_value(item, &p);
+ }
+ 
++CJSON_PUBLIC(cJSON_bool) cJSON_PrintPreallocatedWithLength(cJSON *item, char *buffer, const int length, const cJSON_bool format, size_t* len)
++{
++    printbuffer p = { 0, 0, 0, 0, 0, 0, { 0, 0, 0 } };
++    cJSON_bool b = 0;
++
++    if ((length < 0) || (buffer == NULL))
++    {
++        return false;
++    }
++
++    p.buffer = (unsigned char*)buffer;
++    p.length = (size_t)length;
++    p.offset = 0;
++    p.noalloc = true;
++    p.format = format;
++    p.hooks = global_hooks;
++    b = print_value(item, &p);
++    *len = p.offset + 1;
++    return b;
++}
++
+ /* Parser core - when encountering text, process appropriately. */
+ static cJSON_bool parse_value(cJSON * const item, parse_buffer * const input_buffer)
+ {

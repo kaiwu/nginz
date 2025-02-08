@@ -87,6 +87,7 @@ pub extern fn cJSON_Print(item: [*c]const cJSON) [*c]u8;
 pub extern fn cJSON_PrintUnformatted(item: [*c]const cJSON) [*c]u8;
 pub extern fn cJSON_PrintBuffered(item: [*c]const cJSON, prebuffer: c_int, fmt: cJSON_bool) [*c]u8;
 pub extern fn cJSON_PrintPreallocated(item: [*c]cJSON, buffer: [*c]u8, length: c_int, format: cJSON_bool) cJSON_bool;
+pub extern fn cJSON_PrintPreallocatedWithLength(item: [*c]cJSON, buffer: [*c]u8, length: c_int, format: cJSON_bool, len: [*c]usize) cJSON_bool;
 pub extern fn cJSON_Delete(item: [*c]cJSON) void;
 pub extern fn cJSON_GetArraySize(array: [*c]const cJSON) c_int;
 pub extern fn cJSON_GetArrayItem(array: [*c]const cJSON, index: c_int) [*c]cJSON;

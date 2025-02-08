@@ -1,0 +1,10 @@
+--- cJSON.h	2025-02-02 22:37:11.694130781 +0800
++++ /tmp/cJSON.h	2025-02-08 18:27:11.426250451 +0800
+@@ -167,6 +167,7 @@
+ /* Render a cJSON entity to text using a buffer already allocated in memory with given length. Returns 1 on success and 0 on failure. */
+ /* NOTE: cJSON is not always 100% accurate in estimating how much memory it will use, so to be safe allocate 5 bytes more than you actually need */
+ CJSON_PUBLIC(cJSON_bool) cJSON_PrintPreallocated(cJSON *item, char *buffer, const int length, const cJSON_bool format);
++CJSON_PUBLIC(cJSON_bool) cJSON_PrintPreallocatedWithLength(cJSON *item, char *buffer, const int length, const cJSON_bool format, size_t* len);
+ /* Delete a cJSON entity and all subentities. */
+ CJSON_PUBLIC(void) cJSON_Delete(cJSON *item);
+ 

@@ -32,7 +32,7 @@ pub const CJSON_C_FLAGS = [_][]const u8{
 };
 
 const files = [_][]const u8{
-    "submodules/cjson/cJSON.c",
+    "submodules/nginx/objs/cJSON.c",
 };
 
 pub fn build_cjson(
@@ -46,7 +46,6 @@ pub fn build_cjson(
         .optimize = optimize,
     });
 
-    cjson.addIncludePath(b.path("submodules/cjson"));
     cjson.linkLibC();
     cjson.addCSourceFiles(.{
         .files = &files,

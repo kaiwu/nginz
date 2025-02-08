@@ -19,6 +19,7 @@ const cJSON_Print = cjson.cJSON_Print;
 const cJSON_PrintUnformatted = cjson.cJSON_PrintUnformatted;
 const cJSON_PrintBuffered = cjson.cJSON_PrintBuffered;
 const cJSON_PrintPreallocated = cjson.cJSON_PrintPreallocated;
+const cJSON_PrintPreallocatedWithLength = cjson.cJSON_PrintPreallocatedWithLength;
 const cJSON_Delete = cjson.cJSON_Delete;
 const cJSON_GetArraySize = cjson.cJSON_GetArraySize;
 const cJSON_GetArrayItem = cjson.cJSON_GetArrayItem;
@@ -108,6 +109,14 @@ pub fn parse_cjson(str: ngx_str_t) [*c]cJSON {
     return cJSON_ParseWithLength(str.data, str.len);
 }
 
+pub fn decode(str: ngx_str_t) [*c]cJSON {
+    return parse_cjson(str);
+}
+
+// pub fn encode(j: [*c]cJSON) ngx_str_t {
+//
+// }
+
 pub fn free_cjson(p: ?*anyopaque) void {
     cJSON_free(p);
 }
@@ -122,7 +131,7 @@ test "cjson" {
 
     const json =
         \\{
-        \\"a": 1,
+        \\"a": "hello nginz",
         \\"b": [0,1,2],
         \\"c": {"x": 1, "y": 42}
         \\}
@@ -131,5 +140,11 @@ test "cjson" {
     const parsed = parse_cjson(ngx_string(json));
     try expectEqual(cJSON_IsObject(parsed), 1);
     try expectEqual(cJSON_IsArray(cJSON_GetObjectItem(parsed, "b")), 1);
+
+    var len: usize = 0;
+    var buf: [512]u8 = std.mem.zeroes([512]u8);
+    _ = cJSON_PrintPreallocatedWithLength(parsed, &buf, buf.len, 0, &len);
+    try expectEqual(len, 50);
+
     free_cjson(parsed);
 }
