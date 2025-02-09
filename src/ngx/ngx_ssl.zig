@@ -228,7 +228,6 @@ pub const NSSL_RSA = extern struct {
 
     pub fn verify_sha256(self: *Self, sig: ngx_str_t, msg: ngx_str_t, pool: [*c]ngx_pool_t) !bool {
         if (core.castPtr(u8, core.ngx_pnalloc(pool, ngx_base64_decoded_length(sig.len)))) |p| {
-            defer _ = core.ngx_pfree(pool, p);
             defer _ = EVP_MD_CTX_reset(self.md_ctx);
             const blen = try sslcall(EVP_DecodeBlock, .{ p, sig.data, @as(c_int, @intCast(sig.len)) }, is_zero_or_more);
             _ = try sslcall(EVP_DigestVerifyInit, .{ self.md_ctx, null, EVP_sha256(), null, self.pub_key }, is_one);
@@ -243,7 +242,6 @@ pub const NSSL_RSA = extern struct {
         var len: usize = 0;
         _ = try sslcall(EVP_PKEY_encrypt, .{ self.en_ctx, null, &len, msg.data, msg.len }, is_one);
         if (core.castPtr(u8, core.ngx_pnalloc(pool, len))) |p0| {
-            defer _ = core.ngx_pfree(pool, p0);
             _ = try sslcall(EVP_PKEY_encrypt, .{ self.en_ctx, p0, &len, msg.data, msg.len }, is_one);
             if (core.castPtr(u8, core.ngx_pnalloc(pool, ngx_base64_encoded_length(len)))) |p1| {
                 const blen = try sslcall(EVP_EncodeBlock, .{ p1, p0, @as(c_int, @intCast(len)) }, is_zero_or_more);
@@ -255,7 +253,6 @@ pub const NSSL_RSA = extern struct {
 
     pub fn oaep_decrypt(self: *Self, msg: ngx_str_t, pool: [*c]ngx_pool_t) !ngx_str_t {
         if (core.castPtr(u8, core.ngx_pnalloc(pool, ngx_base64_decoded_length(msg.len)))) |p0| {
-            defer _ = core.ngx_pfree(pool, p0);
             const blen = try sslcall(EVP_DecodeBlock, .{ p0, msg.data, @as(c_int, @intCast(msg.len)) }, is_zero_or_more);
             const dlen = base64_decoded_len(msg, blen);
             var len: usize = 0;
@@ -305,7 +302,6 @@ pub const NSSL_AES_256_GCM = extern struct {
         _ = try sslcall(EVP_EncryptInit_ex, .{ self.ctx, null, null, &self.key[0], iv.data }, is_one);
         _ = try sslcall(EVP_CIPHER_CTX_set_padding, .{ self.ctx, 0 }, is_one);
         if (core.castPtr(u8, core.ngx_pnalloc(pool, msg.len + TAG_SIZE))) |p0| {
-            defer _ = core.ngx_pfree(pool, p0);
             var len: c_int = 0;
             var tlen: c_int = 0;
             if (aad.len > 0) {
@@ -329,7 +325,6 @@ pub const NSSL_AES_256_GCM = extern struct {
         _ = try sslcall(EVP_DecryptInit_ex, .{ self.ctx, null, null, &self.key[0], iv.data }, is_one);
         _ = try sslcall(EVP_CIPHER_CTX_set_padding, .{ self.ctx, 0 }, is_one);
         if (core.castPtr(u8, core.ngx_pnalloc(pool, ngx_base64_decoded_length(msg.len)))) |p0| {
-            defer _ = core.ngx_pfree(pool, p0);
             const blen = try sslcall(EVP_DecodeBlock, .{ p0, msg.data, @as(c_int, @intCast(msg.len)) }, is_zero_or_more);
             const dlen = base64_decoded_len(msg, blen);
             if (core.castPtr(u8, core.ngx_pnalloc(pool, dlen))) |p1| {

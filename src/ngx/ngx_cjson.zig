@@ -89,41 +89,47 @@ const cJSON_SetValuestring = cjson.cJSON_SetValuestring;
 const cJSON_malloc = cjson.cJSON_malloc;
 const cJSON_free = cjson.cJSON_free;
 
-var cjson_pool: [*c]core.ngx_pool_t = core.nullptr(core.ngx_pool_t);
-
-fn cjson_palloc(size: usize) callconv(.C) ?*anyopaque {
-    return core.ngx_pcalloc(cjson_pool, size);
+fn cjson_palloc(size: usize, ctx: ?*anyopaque) callconv(.C) ?*anyopaque {
+    if (core.castPtr(core.ngx_pool_t, ctx)) |p| {
+        return core.ngx_pcalloc(p, size);
+    }
+    return null;
 }
 
 fn cjson_pfree(p: ?*anyopaque) callconv(.C) void {
-    _ = core.ngx_pfree(cjson_pool, p);
+    _ = p;
 }
 
-pub fn init_cjson(pool: [*c]core.ngx_pool_t) void {
-    cjson_pool = pool;
-    var hooks = cJSON_Hooks{ .malloc_fn = cjson_palloc, .free_fn = cjson_pfree };
-    cJSON_InitHooks(&hooks);
-}
+pub const CJson = extern struct {
+    const Self = @This();
+    const CJSON_BUFFER_LENTH = 512;
+    pool: [*c]core.ngx_pool_t,
 
-pub fn decode(str: ngx_str_t) [*c]cJSON {
-    return cJSON_ParseWithLength(str.data, str.len);
-}
-
-const CJSON_BUFFER_LENTH = 512;
-pub fn encode(j: [*c]cJSON) !ngx_str_t {
-    var size: usize = CJSON_BUFFER_LENTH;
-    var len: usize = 0;
-    while (core.castPtr(u8, core.ngx_pnalloc(cjson_pool, size))) |p| {
-        const b = cJSON_PrintPreallocatedWithLength(j, p, @as(c_int, @intCast(size)), 0, &len);
-        if (b == 1) {
-            return ngx_str_t{ .len = len, .data = p };
-        } else {
-            size *= 2;
-            _ = core.ngx_pfree(cjson_pool, p);
-        }
+    pub fn init(pool: [*c]core.ngx_pool_t) Self {
+        var hooks = cJSON_Hooks{ .malloc_fn = cjson_palloc, .free_fn = cjson_pfree, .ctx = pool };
+        cJSON_InitHooks(&hooks);
+        return Self{ .pool = pool };
     }
-    return core.NError.OOM;
-}
+
+    pub fn decode(self: *Self, str: ngx_str_t) [*c]cJSON {
+        _ = self;
+        return cJSON_ParseWithLength(str.data, str.len);
+    }
+
+    pub fn encode(self: *Self, j: [*c]cJSON) !ngx_str_t {
+        var size: usize = CJSON_BUFFER_LENTH;
+        var len: usize = 0;
+        while (core.castPtr(u8, core.ngx_pnalloc(self.pool, size))) |p| {
+            const b = cJSON_PrintPreallocatedWithLength(j, p, @as(c_int, @intCast(size)), 0, &len);
+            if (b == 1) {
+                return ngx_str_t{ .len = len, .data = p };
+            } else {
+                size *= 2;
+            }
+        }
+        return core.NError.OOM;
+    }
+};
 
 pub fn free_cjson(p: ?*anyopaque) void {
     cJSON_free(p);
@@ -144,12 +150,12 @@ test "cjson" {
         \\"c": {"x": 1, "y": 42}
         \\}
     ;
-    init_cjson(pool);
-    const parsed = decode(ngx_string(json));
+    var cj = CJson.init(pool);
+    const parsed = cj.decode(ngx_string(json));
     try expectEqual(cJSON_IsObject(parsed), 1);
     try expectEqual(cJSON_IsArray(cJSON_GetObjectItem(parsed, "b")), 1);
 
-    const j = try encode(parsed);
+    const j = try cj.encode(parsed);
     try expectEqual(j.len, 50);
     // std.debug.print("{s}", .{core.slicify(u8, j.data, j.len)});
 

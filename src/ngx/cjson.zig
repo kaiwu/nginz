@@ -72,8 +72,9 @@ pub const struct_cJSON = extern struct {
 };
 pub const cJSON = struct_cJSON;
 pub const struct_cJSON_Hooks = extern struct {
-    malloc_fn: ?*const fn (usize) callconv(.C) ?*anyopaque = @import("std").mem.zeroes(?*const fn (usize) callconv(.C) ?*anyopaque),
+    malloc_fn: ?*const fn (usize, ?*anyopaque) callconv(.C) ?*anyopaque = @import("std").mem.zeroes(?*const fn (usize, ?*anyopaque) callconv(.C) ?*anyopaque),
     free_fn: ?*const fn (?*anyopaque) callconv(.C) void = @import("std").mem.zeroes(?*const fn (?*anyopaque) callconv(.C) void),
+    ctx: ?*anyopaque,
 };
 pub const cJSON_Hooks = struct_cJSON_Hooks;
 pub const cJSON_bool = c_int;

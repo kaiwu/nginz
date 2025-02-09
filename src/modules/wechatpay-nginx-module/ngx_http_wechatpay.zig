@@ -254,7 +254,6 @@ fn execute_oaep_action(r: [*c]ngx_http_request_t, ctx: [*c]wechatpay_context) !n
     if (body.len == 0) {
         return NGX_OK;
     }
-    // defer core.ngx_pfree(r.*.pool, msg.data);
     const msg = switch (action) {
         .OAEP_DECRYPT => try ctx.*.rsa.*.oaep_decrypt(body, r.*.pool),
         .OAEP_ENCRYPT => try ctx.*.rsa.*.oaep_encrypt(body, r.*.pool),

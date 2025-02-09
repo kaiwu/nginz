@@ -1,6 +1,17 @@
---- cJSON.h	2025-02-02 22:37:11.694130781 +0800
-+++ /tmp/cJSON.h	2025-02-08 18:27:11.426250451 +0800
-@@ -167,6 +167,7 @@
+--- cJSON.h	2025-02-09 11:15:17.266697451 +0800
++++ /tmp/cJSON.h	2025-02-09 11:15:10.646482315 +0800
+@@ -125,8 +125,9 @@
+ typedef struct cJSON_Hooks
+ {
+       /* malloc/free are CDECL on Windows regardless of the default calling convention of the compiler, so ensure the hooks allow passing those functions directly. */
+-      void *(CJSON_CDECL *malloc_fn)(size_t sz);
++      void *(CJSON_CDECL *malloc_fn)(size_t sz, void *ctx);
+       void (CJSON_CDECL *free_fn)(void *ptr);
++      void *ctx;
+ } cJSON_Hooks;
+ 
+ typedef int cJSON_bool;
+@@ -161,6 +162,7 @@
  /* Render a cJSON entity to text using a buffer already allocated in memory with given length. Returns 1 on success and 0 on failure. */
  /* NOTE: cJSON is not always 100% accurate in estimating how much memory it will use, so to be safe allocate 5 bytes more than you actually need */
  CJSON_PUBLIC(cJSON_bool) cJSON_PrintPreallocated(cJSON *item, char *buffer, const int length, const cJSON_bool format);
