@@ -2,7 +2,6 @@ const std = @import("std");
 const exe = @import("project//build_exe.zig");
 const core = @import("project/build_core.zig");
 const http = @import("project/build_http.zig");
-const cjson = @import("project/build_cjson.zig");
 const patch = @import("project/build_patch.zig");
 const http_modules = @import("project/build_modules.zig");
 
@@ -23,7 +22,6 @@ var tests = [_][]const u8{
     "src/ngx/ngx_hash.zig",
     "src/ngx/ngx_http.zig",
     "src/ngx/ngx_list.zig",
-    "src/ngx/ngx_cjson.zig",
     "src/ngx/ngx_event.zig",
     "src/ngx/ngx_queue.zig",
     "src/ngx/ngx_array.zig",
@@ -105,8 +103,6 @@ pub fn build(b: *std.Build) void {
         b.getInstallStep().dependOn(&install_object.step);
     }
 
-    const cjsonlib = cjson.build_cjson(b, target, optimize);
-
     const corelib = core.build_core(b, target, optimize) catch unreachable;
     corelib.step.dependOn(patch_step);
 
@@ -127,7 +123,6 @@ pub fn build(b: *std.Build) void {
     nginz.linkLibrary(corelib);
     nginz.linkLibrary(httplib);
     nginz.linkLibrary(moduleslib);
-    nginz.linkLibrary(cjsonlib);
     b.installArtifact(nginz);
 
     const test_step = b.step("test", "Run unit tests");
@@ -152,7 +147,6 @@ pub fn build(b: *std.Build) void {
         t.linkSystemLibrary("pcre2-8");
         t.linkLibrary(corelib);
         t.linkLibrary(httplib);
-        t.linkLibrary(cjsonlib);
         t.linkLibrary(test_moduleslib);
         t.addIncludePath(b.path("src/ngx/"));
         t.root_module.addImport("ngx", nginx);

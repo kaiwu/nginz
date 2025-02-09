@@ -1,4 +1,3 @@
-pub const cjson = @import("ngx_cjson.zig");
 pub const Deque = @import("deque.zig").Deque;
 
 pub const log = @import("ngx_log.zig");
