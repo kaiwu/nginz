@@ -188,15 +188,21 @@ pub fn NAllocator(comptime PAGE_SIZE: ngx_uint_t) type {
     return extern struct {
         const Self = @This();
         fba: ?*anyopaque,
+        pool: [*c]ngx_pool_t,
 
         pub fn init(p: [*c]ngx_pool_t) !Self {
             if (ngz_pcalloc(std.heap.FixedBufferAllocator, p)) |fba| {
                 if (castPtr(u8, ngx_pmemalign(p, PAGE_SIZE, NGX_ALIGNMENT))) |buf| {
                     fba.* = std.heap.FixedBufferAllocator.init(slicify(u8, buf, PAGE_SIZE));
-                    return Self{ .fba = @alignCast(@ptrCast(fba)) };
+                    return Self{ .fba = @ptrCast(@alignCast(fba)), .pool = p };
                 }
             }
             return NError.OOM;
+        }
+
+        pub fn deinit(self: *Self) void {
+            const fba = @as(*std.heap.FixedBufferAllocator, @ptrCast(@alignCast(self.fba)));
+            _ = ngx_pfree(self.pool, fba.buffer.ptr);
         }
 
         pub fn allocator(self: *Self) std.mem.Allocator {
@@ -211,17 +217,17 @@ pub fn NAllocator(comptime PAGE_SIZE: ngx_uint_t) type {
         }
 
         fn alloc(ctx: *anyopaque, len: usize, ptr_align: u8, ret_addr: usize) ?[*]u8 {
-            var fba: *std.heap.FixedBufferAllocator = @alignCast(@ptrCast(ctx));
+            var fba: *std.heap.FixedBufferAllocator = @ptrCast(@alignCast(ctx));
             return fba.allocator().rawAlloc(len, ptr_align, ret_addr);
         }
 
         fn resize(ctx: *anyopaque, buf: []u8, buf_align: u8, new_len: usize, ret_addr: usize) bool {
-            var fba: *std.heap.FixedBufferAllocator = @alignCast(@ptrCast(ctx));
+            var fba: *std.heap.FixedBufferAllocator = @ptrCast(@alignCast(ctx));
             return fba.allocator().rawResize(buf, buf_align, new_len, ret_addr);
         }
 
         fn free(ctx: *anyopaque, buf: []u8, buf_align: u8, ret_addr: usize) void {
-            var fba: *std.heap.FixedBufferAllocator = @alignCast(@ptrCast(ctx));
+            var fba: *std.heap.FixedBufferAllocator = @ptrCast(@alignCast(ctx));
             return fba.allocator().rawFree(buf, buf_align, ret_addr);
         }
     };
@@ -239,6 +245,7 @@ test "allocator" {
     defer ngx_destroy_pool(pool);
 
     var fba = try NAllocator(1024).init(pool);
+    defer fba.deinit();
     const allocator = fba.allocator();
 
     var as = std.ArrayList(usize).init(allocator);
