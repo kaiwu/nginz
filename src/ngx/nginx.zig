@@ -9,6 +9,7 @@ pub const file = @import("ngx_file.zig");
 pub const hash = @import("ngx_hash.zig");
 pub const http = @import("ngx_http.zig");
 pub const list = @import("ngx_list.zig");
+pub const cjson = @import("ngx_cjson.zig");
 pub const event = @import("ngx_event.zig");
 pub const array = @import("ngx_array.zig");
 pub const queue = @import("ngx_queue.zig");
