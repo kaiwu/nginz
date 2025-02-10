@@ -4,6 +4,7 @@ const core = @import("project/build_core.zig");
 const http = @import("project/build_http.zig");
 const cjson = @import("project/build_cjson.zig");
 const patch = @import("project/build_patch.zig");
+const quickjs = @import("project//build_quickjs.zig");
 const http_modules = @import("project/build_modules.zig");
 
 const NGINX = "src/ngx/nginx.zig";
@@ -106,6 +107,8 @@ pub fn build(b: *std.Build) void {
     }
 
     const cjsonlib = cjson.build_cjson(b, target, optimize);
+    _ = quickjs.build_quickjs(b, target, optimize);
+
     const corelib = core.build_core(b, target, optimize) catch unreachable;
     corelib.step.dependOn(patch_step);
 
