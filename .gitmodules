@@ -4,9 +4,9 @@
 [submodule "submodules/cjson"]
 	path = submodules/cjson
 	url = https://github.com/DaveGamble/cJSON.git
-[submodule "submodules/quickjs-ng"]
-	path = submodules/quickjs-ng
-	url = https://github.com/quickjs-ng/quickjs.git
 [submodule "submodules/njs"]
 	path = submodules/njs
 	url = https://github.com/nginx/njs.git
+[submodule "submodules/quickjs"]
+	path = submodules/quickjs
+	url = https://github.com/bellard/quickjs.git
