@@ -56,6 +56,7 @@ extern var ngx_http_copy_filter_module: ngx_module_t;
 extern var ngx_http_range_body_filter_module: ngx_module_t;
 extern var ngx_http_not_modified_filter_module: ngx_module_t;
 
+extern var ngx_http_js_module: ngx_module_t;
 extern var ngx_http_echoz_module: ngx_module_t;
 extern var ngx_http_echoz_filter_module: ngx_module_t;
 extern var ngx_http_wechatpay_module: ngx_module_t;
@@ -95,6 +96,7 @@ export const ngx_modules = [_][*c]ngx_module_t{
     &ngx_http_scgi_module,
     &ngx_http_memcached_module,
     &ngx_http_empty_gif_module,
+    &ngx_http_js_module,
     &ngx_http_echoz_module,
     &ngx_http_wechatpay_module,
     &ngx_http_browser_module,
@@ -156,6 +158,7 @@ export const ngx_module_names = [_][*c]const u8{
     "ngx_http_scgi_module",
     "ngx_http_memcached_module",
     "ngx_http_empty_gif_module",
+    "ngx_http_js_module",
     "ngx_http_echoz_module",
     "ngx_http_wechatpay_module",
     "ngx_http_browser_module",

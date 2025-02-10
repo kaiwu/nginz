@@ -1,5 +1,6 @@
 const std = @import("std");
 const exe = @import("project//build_exe.zig");
+const njs = @import("project//build_njs.zig");
 const core = @import("project/build_core.zig");
 const http = @import("project/build_http.zig");
 const cjson = @import("project/build_cjson.zig");
@@ -79,18 +80,19 @@ pub fn build(b: *std.Build) void {
     nginz.step.dependOn(patch_step);
 
     const ngz_modules = b.addObject(.{
+        .pic = true,
         .name = "ngz_modules",
         .target = target,
         .optimize = optimize,
         .root_source_file = b.path("src/ngz_modules.zig"),
     });
-    ngz_modules.pie = true;
     ngz_modules.linkLibC();
     nginz.addObject(ngz_modules);
 
     for (modules) |m| {
         const pn = module_path(m);
         const o = b.addObject(.{
+            .pic = true,
             .name = pn.n,
             .root_source_file = b.path(m),
             .target = target,
@@ -98,7 +100,6 @@ pub fn build(b: *std.Build) void {
         });
         o.addIncludePath(b.path(pn.p));
         o.root_module.addImport("ngx", nginx);
-        o.pie = true;
         o.bundle_compiler_rt = true;
         o.linkLibC();
         nginz.addObject(o);
@@ -107,7 +108,9 @@ pub fn build(b: *std.Build) void {
     }
 
     const cjsonlib = cjson.build_cjson(b, target, optimize);
-    _ = quickjs.build_quickjs(b, target, optimize);
+    const quickjslib = quickjs.build_quickjs(b, target, optimize);
+    const njs_http_module = njs.build_njs(b, target, optimize, quickjslib) catch unreachable;
+    nginz.addObject(njs_http_module);
 
     const corelib = core.build_core(b, target, optimize) catch unreachable;
     corelib.step.dependOn(patch_step);
