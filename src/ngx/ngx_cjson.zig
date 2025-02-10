@@ -102,6 +102,59 @@ pub const CJSON = extern struct {
     const Self = @This();
     const CJSON_BUFFER_LENTH = 512;
 
+    pub const Iterator = struct {
+        const Iter = @This();
+        v: [*c]cJSON,
+
+        pub fn init(j: [*c]cJSON) Iter {
+            if (cJSON_IsObject(j) == 1 or cJSON_IsArray(j) == 1) {
+                return Iter{ .v = j.*.child };
+            }
+            return Iter{ .v = j };
+        }
+
+        pub fn next(self: *Iter) ?[*c]cJSON {
+            if (self.v == core.nullptr(cJSON)) {
+                return null;
+            }
+            defer self.v = self.v.*.next;
+            return self.v;
+        }
+    };
+
+    pub fn query(j: [*c]cJSON, path: []const u8) ?[*c]cJSON {
+        if (j == core.nullptr(cJSON)) {
+            return null;
+        }
+        if (path.len == 0) {
+            return j;
+        }
+        if (path[0] == '$') {
+            return query(j, path[1..]);
+        }
+        if (path[0] == '.') {
+            var i: usize = 1;
+            var d: ?usize = 0;
+            while (i < path.len and path[i] != '.') : (i += 1) {
+                if (d != null and path[i] >= '0' and path[i] <= '9') {
+                    d = d.? * 10 + path[i] - '0';
+                } else {
+                    d = null;
+                }
+            }
+            if (i > 1) {
+                if (d == null) { // object
+                    var key: [256]u8 = std.mem.zeroes([256]u8);
+                    @memcpy(key[0..path[1..i].len], path[1..i]);
+                    return query(cJSON_GetObjectItem(j, &key), path[i..]);
+                } else { // array
+                    return query(cJSON_GetArrayItem(j, @intCast(d.?)), path[i..]);
+                }
+            }
+        }
+        return null;
+    }
+
     alloc: Allocator,
 
     pub fn init(pool: [*c]core.ngx_pool_t) Self {
@@ -151,7 +204,7 @@ test "cjson" {
     const json =
         \\{
         \\"a": "hello nginz",
-        \\"b": [0,1,2],
+        \\"b": [1,2,3],
         \\"c": {"x": 1, "y": 42}
         \\}
     ;
@@ -160,9 +213,21 @@ test "cjson" {
     try expectEqual(cJSON_IsObject(parsed), 1);
     try expectEqual(cJSON_GetArraySize(cJSON_GetObjectItem(parsed, "b")), 3);
 
+    try expectEqual(CJSON.query(parsed, "$.5"), null);
+    try expectEqual(CJSON.query(parsed, "$.5.z"), null);
+    try expectEqual(CJSON.query(parsed, "$.c.z"), null);
+    try expectEqual(@as(i32, @intFromFloat(cJSON_GetNumberValue(CJSON.query(parsed, "$.b.2").?))), 3);
+    try expectEqual(@as(i32, @intFromFloat(cJSON_GetNumberValue(CJSON.query(parsed, "$.c.y").?))), 42);
+
+    var it = CJSON.Iterator.init(CJSON.query(parsed, "$.b").?);
+    var sum: i32 = 0;
+    while (it.next()) |j| {
+        sum += @intFromFloat(cJSON_GetNumberValue(j));
+    }
+    try expectEqual(sum, 6);
+
     const j = try cj.encode(parsed);
     try expectEqual(j.len, 50);
     // std.debug.print("{s}", .{core.slicify(u8, j.data, j.len)});
-
     cj.free(parsed);
 }
