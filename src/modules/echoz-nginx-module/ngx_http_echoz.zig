@@ -632,7 +632,7 @@ var ngx_http_echoz_next_output_body_filter: http.ngx_http_output_body_filter_pt 
 
 const expectEqual = std.testing.expectEqual;
 test "echoz module" {
-    try expectEqual(ngx_http_echoz_module.version, 1027003);
+    try expectEqual(ngx_http_echoz_module.version, 1027004);
     const len = core.sizeof(ngx.module.NGX_MODULE_SIGNATURE);
     const slice = core.make_slice(@constCast(ngx_http_echoz_module.signature), len);
     try expectEqual(slice.len, 40);

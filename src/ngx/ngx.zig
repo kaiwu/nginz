@@ -17753,6 +17753,7 @@ pub const ngx_http_connection_t = extern struct {
     busy: [*c]ngx_chain_t = @import("std").mem.zeroes([*c]ngx_chain_t),
     nbusy: ngx_int_t = @import("std").mem.zeroes(ngx_int_t),
     free: [*c]ngx_chain_t = @import("std").mem.zeroes([*c]ngx_chain_t),
+    keepalive_timeout: ngx_msec_t = @import("std").mem.zeroes(ngx_msec_t),
     flags: ngx_http_connection_flags_t = @import("std").mem.zeroes(ngx_http_connection_flags_t),
 };
 pub const ngx_http_post_subrequest_pt = ?*const fn ([*c]ngx_http_request_t, ?*anyopaque, ngx_int_t) callconv(.C) ngx_int_t;
@@ -18149,6 +18150,7 @@ pub const ngx_http_upstream_conf_t = extern struct {
     ssl_verify: ngx_flag_t = @import("std").mem.zeroes(ngx_flag_t),
     ssl_certificate: [*c]ngx_http_complex_value_t = @import("std").mem.zeroes([*c]ngx_http_complex_value_t),
     ssl_certificate_key: [*c]ngx_http_complex_value_t = @import("std").mem.zeroes([*c]ngx_http_complex_value_t),
+    ssl_certificate_cache: ?*anyopaque = @import("std").mem.zeroes(?*anyopaque),
     ssl_passwords: [*c]ngx_array_t = @import("std").mem.zeroes([*c]ngx_array_t),
     module: ngx_str_t = @import("std").mem.zeroes(ngx_str_t),
 };
@@ -18351,6 +18353,7 @@ pub const struct_ngx_http_core_loc_conf_s = extern struct {
     send_timeout: ngx_msec_t = @import("std").mem.zeroes(ngx_msec_t),
     keepalive_time: ngx_msec_t = @import("std").mem.zeroes(ngx_msec_t),
     keepalive_timeout: ngx_msec_t = @import("std").mem.zeroes(ngx_msec_t),
+    keepalive_min_timeout: ngx_msec_t = @import("std").mem.zeroes(ngx_msec_t),
     lingering_time: ngx_msec_t = @import("std").mem.zeroes(ngx_msec_t),
     lingering_timeout: ngx_msec_t = @import("std").mem.zeroes(ngx_msec_t),
     resolver_timeout: ngx_msec_t = @import("std").mem.zeroes(ngx_msec_t),
