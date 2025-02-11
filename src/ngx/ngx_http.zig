@@ -112,6 +112,7 @@ pub const NGX_HTTP_VAR_NOHASH = ngx.NGX_HTTP_VAR_NOHASH;
 pub const NGX_HTTP_VAR_WEAK = ngx.NGX_HTTP_VAR_WEAK;
 pub const NGX_HTTP_VAR_PREFIX = ngx.NGX_HTTP_VAR_PREFIX;
 
+pub const ngx_parse_url = ngx.ngx_parse_url;
 pub const ngx_http_subrequest = ngx.ngx_http_subrequest;
 pub const ngx_http_script_run = ngx.ngx_http_script_run;
 pub const ngx_http_cleanup_add = ngx.ngx_http_cleanup_add;
@@ -119,7 +120,9 @@ pub const ngx_http_send_header = ngx.ngx_http_send_header;
 pub const ngx_http_add_variable = ngx.ngx_http_add_variable;
 pub const ngx_http_send_special = ngx.ngx_http_send_special;
 pub const ngx_http_output_filter = ngx.ngx_http_output_filter;
+pub const ngx_http_upstream_init = ngx.ngx_http_upstream_init;
 pub const ngx_http_named_location = ngx.ngx_http_named_location;
+pub const ngx_http_upstream_create = ngx.ngx_http_upstream_create;
 pub const ngx_http_finalize_request = ngx.ngx_http_finalize_request;
 pub const ngx_http_parse_unsafe_uri = ngx.ngx_http_parse_unsafe_uri;
 pub const ngx_http_internal_redirect = ngx.ngx_http_internal_redirect;

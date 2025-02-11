@@ -59,8 +59,8 @@ pub const ngx_pnalloc = ngx.ngx_pnalloc;
 pub const ngx_pmemalign = ngx.ngx_pmemalign;
 
 pub const ngx_time = ngx.ngx_time;
-pub const ngx_timeofday = ngx.ngx_timeofday;
 pub const ngx_random = ngx.ngx_random;
+pub const ngx_timeofday = ngx.ngx_timeofday;
 
 pub const NError = error{
     OOM,
