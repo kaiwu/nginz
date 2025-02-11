@@ -44,6 +44,12 @@ const EXCLUDES = [_][]const u8{
     "ngx_http_xslt_filter_module.c",
 };
 
+pub fn append(files: *std.ArrayList([]const u8), src: []const []const u8) !void {
+    for (src) |f| {
+        try files.append(f);
+    }
+}
+
 pub fn list(d: []const u8, ii: usize, mem: []u8, files: *std.ArrayList([]const u8)) !usize {
     var dir = fs.cwd().openDir(d, .{ .iterate = true }) catch {
         return ii;

@@ -7,6 +7,7 @@ pub fn build_modules(
     optimize: std.builtin.OptimizeMode,
 ) !*std.Build.Step.Compile {
     const modules = b.addStaticLibrary(.{
+        .pic = true,
         .name = "ngx_modules",
         .target = target,
         .optimize = optimize,
@@ -36,6 +37,7 @@ pub fn build_test_modules(
     optimize: std.builtin.OptimizeMode,
 ) !*std.Build.Step.Compile {
     const modules = b.addStaticLibrary(.{
+        .pic = true,
         .name = "ngx_test_modules",
         .target = target,
         .optimize = optimize,

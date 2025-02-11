@@ -46,18 +46,13 @@ const event_files = .{
     "submodules/nginx/src/event/ngx_event_openssl_stapling.c",
 };
 
-fn append(files: *std.ArrayList([]const u8), src: []const []const u8) !void {
-    for (src) |f| {
-        try files.append(f);
-    }
-}
-
 pub fn build_core(
     b: *std.Build,
     target: std.Build.ResolvedTarget,
     optimize: std.builtin.OptimizeMode,
 ) !*std.Build.Step.Compile {
     const core = b.addStaticLibrary(.{
+        .pic = true,
         .name = "ngx_core",
         .target = target,
         .optimize = optimize,
@@ -67,9 +62,9 @@ pub fn build_core(
     defer files.deinit();
     _ = try common.list("./submodules/nginx/src/core", 0, &common.BUILD_BUFFER, &files);
 
-    try append(&files, &lib_files);
-    try append(&files, &os_files);
-    try append(&files, &event_files);
+    try common.append(&files, &lib_files);
+    try common.append(&files, &os_files);
+    try common.append(&files, &event_files);
 
     for (common.NGX_INCLUDE_PATH) |p| {
         core.addIncludePath(b.path(p));

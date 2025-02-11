@@ -7,6 +7,7 @@ pub fn build_http(
     optimize: std.builtin.OptimizeMode,
 ) !*std.Build.Step.Compile {
     const http = b.addStaticLibrary(.{
+        .pic = true,
         .name = "ngx_http",
         .target = target,
         .optimize = optimize,

@@ -35,6 +35,7 @@ pub fn build_quickjs(
     optimize: std.builtin.OptimizeMode,
 ) *std.Build.Step.Compile {
     const quickjs = b.addStaticLibrary(.{
+        .pic = true,
         .name = "quickjs",
         .target = target,
         .optimize = optimize,

@@ -33,12 +33,6 @@ const http_module_files = .{
     "submodules/njs/nginx/ngx_js_shared_dict.c",
 };
 
-fn append(files: *std.ArrayList([]const u8), src: []const []const u8) !void {
-    for (src) |f| {
-        try files.append(f);
-    }
-}
-
 pub fn build_njs(
     b: *std.Build,
     target: std.Build.ResolvedTarget,
@@ -46,6 +40,7 @@ pub fn build_njs(
     quickjs: *std.Build.Step.Compile,
 ) !*std.Build.Step.Compile {
     const njs = b.addStaticLibrary(.{
+        .pic = true,
         .name = "njs",
         .target = target,
         .optimize = optimize,
@@ -56,7 +51,7 @@ pub fn build_njs(
     const n = try common.list("./submodules/njs/src", 0, &common.BUILD_BUFFER, &files);
     _ = try common.list("./submodules/njs/external", n, &common.BUILD_BUFFER, &files);
 
-    try append(&files, &modules_files);
+    try common.append(&files, &modules_files);
 
     for (NJS_INCLUDE_PATH) |p| {
         njs.addIncludePath(b.path(p));

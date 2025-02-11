@@ -41,6 +41,7 @@ pub fn build_cjson(
     optimize: std.builtin.OptimizeMode,
 ) *std.Build.Step.Compile {
     const cjson = b.addStaticLibrary(.{
+        .pic = true,
         .name = "cjson",
         .target = target,
         .optimize = optimize,
