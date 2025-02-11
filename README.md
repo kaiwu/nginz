@@ -30,7 +30,7 @@ It is a nginx wrapper, and by default built with
 
 `./auto/configure --with-http_ssl_module --with-debug` 
 
-nginz also has built-in `ngx_http_js_module` with quickjs engine, excluding all the xml2/xslt related features.
+nginz also has built-in `ngx_http_js_module` with quickjs engine, excluding all the `xml/xslt` related features.
 
 A module `echoz` is provided as an example, it is a tribute to @[agentzh][2] and his [echo][1] module. `echoz`
 so far is a simplified version of `echo` and it misses some of the directives.
