@@ -357,9 +357,7 @@ fn echoz_filter(r: [*c]ngx_http_request_t, c: [*c]ngx_chain_t) ![*c]ngx_chain_t 
 
     if (core.castPtr(loc_conf, conf.ngx_http_get_module_loc_conf(r, &ngx_http_echoz_filter_module))) |lccf| {
         const ctx = try http.ngz_http_get_module_ctx(echoz_context, r, &ngx_http_echoz_filter_module);
-
         const is_first = ctx.*.ready == 0;
-        const is_last = c.*.buf.*.flags.last_buf;
 
         if (ctx.*.ready == 0) {
             ctx.*.chain = NChain.init(r.*.pool);
@@ -377,9 +375,12 @@ fn echoz_filter(r: [*c]ngx_http_request_t, c: [*c]ngx_chain_t) ![*c]ngx_chain_t 
             last.*.next = c;
         }
 
-        if (is_last and lccf.*.append_filters.inited() and lccf.*.append_filters.size() > 0) {
-            var last = buf.ngz_chain_last(c);
-            last.*.buf.*.flags.last_buf = false;
+        if (lccf.*.append_filters.inited() and lccf.*.append_filters.size() > 0) {
+            var last: [*c]ngx_chain_t = &out;
+            if (c != core.nullptr(ngx_chain_t) and c.*.buf != core.nullptr(ngx_buf_t) and c.*.buf.*.flags.last_buf) {
+                last = buf.ngz_chain_last(c);
+                last.*.buf.*.flags.last_buf = false;
+            }
 
             var it = lccf.*.append_filters.iterator();
             while (it.next()) |cmd| {
