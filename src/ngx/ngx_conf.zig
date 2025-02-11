@@ -70,7 +70,14 @@ const ngx_array_t = array.ngx_array_t;
 const ngx_module_t = module.ngx_module_t;
 const ngx_http_request_t = http.ngx_http_request_t;
 
-pub const ngx_null_command = ngx_command_t{ .name = string.ngx_null_str, .type = 0, .set = NULL, .conf = 0, .offset = 0, .post = NULL };
+pub const ngx_null_command = ngx_command_t{
+    .name = string.ngx_null_str,
+    .type = 0,
+    .set = @ptrCast(NULL),
+    .conf = 0,
+    .offset = 0,
+    .post = @ptrCast(NULL),
+};
 
 pub inline fn ngx_conf_merge_str_value(cf: [*c]ngx_str_t, pr: [*c]ngx_str_t, de: ngx_str_t) void {
     if (cf.*.data == core.nullptr(u8)) {

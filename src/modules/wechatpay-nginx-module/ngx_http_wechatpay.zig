@@ -377,6 +377,7 @@ export const ngx_http_wechatpay_commands = [_]ngx_command_t{
         .offset = @offsetOf(wechatpay_loc_conf, "notify_proxy"),
         .post = NULL,
     },
+    conf.ngx_null_command,
 };
 
 export var ngx_http_wechatpay_module = ngx.module.make_module(

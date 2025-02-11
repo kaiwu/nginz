@@ -587,6 +587,7 @@ export const ngx_http_echoz_commands = [_]ngx_command_t{
         .offset = 8,
         .post = NULL,
     },
+    conf.ngx_null_command,
 };
 
 export var ngx_http_echoz_module = ngx.module.make_module(
@@ -622,6 +623,7 @@ export const ngx_http_echoz_filter_commands = [_]ngx_command_t{
         .offset = 10,
         .post = NULL,
     },
+    conf.ngx_null_command,
 };
 
 export var ngx_http_echoz_filter_module = ngx.module.make_module(
