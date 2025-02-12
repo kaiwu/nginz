@@ -22,7 +22,7 @@ const OPENSSL_INIT_ADD_ALL_CIPHERS = ngx.OPENSSL_INIT_ADD_ALL_CIPHERS;
 const OPENSSL_INIT_ADD_ALL_DIGESTS = ngx.OPENSSL_INIT_ADD_ALL_DIGESTS;
 const OPENSSL_INIT_LOAD_CRYPTO_STRINGS = ngx.OPENSSL_INIT_LOAD_CRYPTO_STRINGS;
 
-const RAND_bytes = ngx.RAND_bytes;
+pub const RAND_bytes = ngx.RAND_bytes;
 const EVP_PKEY_free = ngx.EVP_PKEY_free;
 const EVP_PKEY_CTX_new = ngx.EVP_PKEY_CTX_new;
 const EVP_PKEY_CTX_free = ngx.EVP_PKEY_CTX_free;

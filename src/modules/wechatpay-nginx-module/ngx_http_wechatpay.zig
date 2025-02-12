@@ -37,6 +37,8 @@ const NSubrequest = http.NSubrequest;
 const NSSL_RSA = ssl.NSSL_RSA;
 const NSSL_AES_256_GCM = ssl.NSSL_AES_256_GCM;
 
+const WECHATPAY_AUTH_HEADER = "WECHATPAY2-SHA256-RSA2048";
+
 const WError = error{
     BODY_ERROR,
     HEADER_ERROR,
@@ -160,6 +162,37 @@ fn wechatpay_merge_loc_conf(cf: [*c]ngx_conf_t, parent: ?*anyopaque, child: ?*an
         }
     }
     return conf.NGX_CONF_OK;
+}
+
+fn nonce(p: [*c]ngx_pool_t) !ngx_str_t {
+    var bf: [16]u8 = undefined;
+    if (ssl.RAND_bytes(&bf, bf.len) != 1) {
+        return WError.HEADER_ERROR;
+    }
+    if (core.castPtr(u8, core.ngx_pnalloc(p, bf.len * 2))) |b| {
+        _ = ngx.string.ngx_hex_dump(b, &bf, bf.len);
+        return ngx_str_t{ .data = b, .len = bf.len * 2 };
+    }
+    return core.NError.OOM;
+}
+
+fn timestamp(p: [*c]ngx_pool_t) !ngx_str_t {
+    if (core.castPtr(u8, core.ngx_pnalloc(p, 16))) |b| {
+        var t = core.ngx_time();
+        var t0 = t;
+        var len: usize = 0;
+        while (t0 > 0) : (len += 1) {
+            t0 = @divTrunc(t0, 10);
+        }
+
+        var i = len;
+        while (i > 0) : (i -= 1) {
+            b[i - 1] = '0' + @as(u8, @intCast(@mod(t, 10)));
+            t = @divTrunc(t, 10);
+        }
+        return ngx_str_t{ .data = b, .len = len };
+    }
+    return core.NError.OOM;
 }
 
 fn read_body(r: [*c]ngx_http_request_t) ngx_str_t {
