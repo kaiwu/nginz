@@ -2,6 +2,7 @@ const std = @import("std");
 const ngx = @import("ngx.zig");
 const core = @import("ngx_core.zig");
 const array = @import("ngx_array.zig");
+const string = @import("ngx_string.zig");
 const expectEqual = std.testing.expectEqual;
 
 pub const ngx_buf_t = ngx.ngx_buf_t;
@@ -64,12 +65,47 @@ pub inline fn ngz_chain_iterate(cl: [*c][*c]ngx_chain_t) ?[*c]ngx_buf_t {
     return cl.*.*.buf;
 }
 
+pub inline fn ngz_chain_content(cl: [*c]ngx_chain_t, p: [*c]ngx_pool_t) !ngx_str_t {
+    const len = ngz_chain_length(cl);
+    if (len == 0) {
+        return string.ngx_null_str;
+    }
+    if (core.castPtr(u8, core.ngx_pnalloc(p, len))) |b| {
+        var ll = cl;
+        var i: usize = 0;
+        while (ngz_chain_iterate(&ll)) |bf| {
+            const l = @intFromPtr(bf.*.last) - @intFromPtr(bf.*.pos);
+            @memcpy(b[i .. i + l], core.slicify(u8, bf.*.pos, l));
+            i += l;
+        }
+        return ngx_str_t{ .data = b, .len = len };
+    }
+    return core.NError.OOM;
+}
+
 pub inline fn ngz_chain_last(cl: [*c]ngx_chain_t) [*c]ngx_chain_t {
     var c = cl;
     while (c.*.next != core.nullptr(ngx_chain_t)) {
         c = c.*.next;
     }
     return c;
+}
+
+// no copy
+// ref ngx_http_upstream_non_buffered_filter
+pub inline fn ngz_chain_append(cl: [*c]ngx_chain_t, p: [*c]ngx_pool_t) ![*c]ngx_buf_t {
+    const last = ngz_chain_last(cl);
+    if (core.nonNullPtr(ngx_chain_t, ngx_alloc_chain_link(p))) |ll| {
+        if (core.ngz_pcalloc_c(ngx_buf_t, p)) |b| {
+            b.*.flags.memory = true;
+            b.*.flags.flush = true;
+            ll.*.buf = b;
+            ll.*.next = core.nullptr(ngx_chain_t);
+            last.*.next = ll;
+            return ll.*.buf;
+        }
+    }
+    return core.NError.OOM;
 }
 
 pub const NChainIterator = extern struct {
