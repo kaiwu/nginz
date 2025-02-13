@@ -223,15 +223,14 @@ fn timestamp(p: [*c]ngx_pool_t) !ngx_str_t {
 }
 
 fn read_body(r: [*c]ngx_http_request_t) ngx_str_t {
-    var res: ngx_str_t = ngx.string.ngx_null_str;
+    const res: ngx_str_t = ngx.string.ngx_null_str;
     const b0 = r.*.request_body == core.nullptr(http.ngx_http_request_body_t);
     const b1 = r.*.request_body.*.bufs == core.nullptr(buf.ngx_chain_t);
     const b2 = r.*.request_body.*.temp_file != core.nullptr(core.ngx_temp_file_t); //TODO
     if (b0 or b1 or b2) {
         return res;
     }
-    res = buf.ngz_chain_content(r.*.request_body.*.bufs, r.*.pool) catch res;
-    return res;
+    return buf.ngz_chain_content(r.*.request_body.*.bufs, r.*.pool) catch res;
 }
 
 fn sign_request(lccf: [*c]wechatpay_loc_conf, r: [*c]ngx_http_request_t) !ngx_str_t {
@@ -272,7 +271,7 @@ fn build_request(lccf: [*c]wechatpay_loc_conf, r: [*c]ngx_http_request_t) !ngx_s
         write = ngx_sprintf(write, "%V %V?%V HTTP/1.1\r\n", &r.*.method_name, &r.*.uri, &r.*.args);
         write = ngx_sprintf(write, "Host: %V\r\n", &r.*.upstream.*.resolved.*.host);
 
-        var headers = NList(ngx.string.ngx_keyval_t).init0(&r.*.headers_in.headers);
+        var headers = NList(ngx.hash.ngx_table_elt_t).init0(&r.*.headers_in.headers);
         var it = headers.iterator();
         while (it.next()) |h| {
             write = ngx_sprintf(write, "%V: %V\r\n", &h.*.key, &h.*.value);
@@ -354,7 +353,6 @@ fn ngx_http_wechatpay_proxy_upstream_create_request(r: [*c]ngx_http_request_t) c
 
         r.*.upstream.*.flags.header_sent = false;
         r.*.upstream.*.flags.request_sent = false;
-        r.*.header_hash = 1;
     }
     return NGX_OK;
 }
@@ -447,8 +445,14 @@ export fn ngx_http_wechatpay_notify_body_handler(r: [*c]ngx_http_request_t) call
 }
 
 export fn ngx_http_wechatpay_notify_handler(r: [*c]ngx_http_request_t) callconv(.C) ngx_int_t {
-    // ALWAYS READ BODY
-    _ = r;
+    if (core.castPtr(wechatpay_loc_conf, conf.ngx_http_get_module_loc_conf(r, &ngx_http_wechatpay_module))) |lccf| {
+        const rctx = http.ngz_http_get_module_ctx(wechatpay_request_context, r, &ngx_http_wechatpay_module) catch return http.NGX_HTTP_INTERNAL_SERVER_ERROR;
+        if (rctx.*.lccf == core.nullptr(wechatpay_loc_conf)) {
+            rctx.*.lccf = lccf;
+        }
+        const rc = http.ngx_http_read_client_request_body(r, ngx_http_wechatpay_notify_body_handler);
+        return if (rc == core.NGX_AGAIN) core.NGX_DONE else rc;
+    }
     return NGX_OK;
 }
 

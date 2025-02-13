@@ -34,6 +34,7 @@ pub const ngx_hash_type = enum(ngx_uint_t) {
 pub const ngx_hash_key = ngx.ngx_hash_key;
 pub const ngx_hash_init = ngx.ngx_hash_init;
 pub const ngx_hash_find = ngx.ngx_hash_find;
+pub const ngx_hash_key_lc = ngx.ngx_hash_key_lc;
 pub const ngx_hash_add_key = ngx.ngx_hash_add_key;
 pub const ngx_hash_keys_array_init = ngx.ngx_hash_keys_array_init;
 
