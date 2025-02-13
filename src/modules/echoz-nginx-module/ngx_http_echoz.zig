@@ -6,7 +6,6 @@ const core = ngx.core;
 const conf = ngx.conf;
 const http = ngx.http;
 
-const NULL = core.NULL;
 const NGX_OK = core.NGX_OK;
 const NGX_ERROR = core.NGX_ERROR;
 const NGX_DECLINED = core.NGX_DECLINED;
@@ -89,7 +88,7 @@ const echoz_context = extern struct {
 fn postconfiguration(cf: [*c]ngx_conf_t) callconv(.C) ngx_int_t {
     var vs = [_]http.ngx_http_variable_t{http.ngx_http_variable_t{
         .name = ngx.string.ngx_string("echoz_request_body"),
-        .set_handler = @ptrCast(core.NULL),
+        .set_handler = null,
         .get_handler = ngx_http_echoz_request_body_variable,
         .data = 0,
         .flags = http.NGX_HTTP_VAR_NOCACHEABLE,
@@ -304,7 +303,7 @@ fn echoz_exec_command(cmd: [*c]echoz_command, ctx: [*c]echoz_context, r: [*c]ngx
             r.*.write_event_handler = http.ngx_http_request_empty_handler;
             if (s2[0].data[0] == '@') {
                 if (r.*.ctx != core.nullptr(?*anyopaque)) {
-                    @memset(core.slicify(?*anyopaque, r.*.ctx, http.ngx_http_max_module), core.NULL);
+                    @memset(core.slicify(?*anyopaque, r.*.ctx, http.ngx_http_max_module), null);
                 }
                 if (http.ngx_http_named_location(r, &s2[0]) == core.NGX_DONE) {
                     return ZError.REDIRECTING;
@@ -504,14 +503,14 @@ fn ngx_conf_set_echoz(cf: [*c]ngx_conf_t, cmd: [*c]ngx_command_t, loc: ?*anyopaq
 }
 
 export const ngx_http_echoz_module_ctx = ngx_http_module_t{
-    .preconfiguration = @ptrCast(NULL),
+    .preconfiguration = null,
     .postconfiguration = postconfiguration,
-    .create_main_conf = @ptrCast(NULL),
-    .init_main_conf = @ptrCast(NULL),
-    .create_srv_conf = @ptrCast(NULL),
-    .merge_srv_conf = @ptrCast(NULL),
+    .create_main_conf = null,
+    .init_main_conf = null,
+    .create_srv_conf = null,
+    .merge_srv_conf = null,
     .create_loc_conf = create_loc_conf,
-    .merge_loc_conf = @ptrCast(NULL),
+    .merge_loc_conf = null,
 };
 
 export const ngx_http_echoz_commands = [_]ngx_command_t{
@@ -521,7 +520,7 @@ export const ngx_http_echoz_commands = [_]ngx_command_t{
         .set = ngx_conf_set_echoz,
         .conf = conf.NGX_HTTP_LOC_CONF_OFFSET,
         .offset = 0,
-        .post = NULL,
+        .post = null,
     },
     ngx_command_t{
         .name = ngx_string("echozn"),
@@ -529,7 +528,7 @@ export const ngx_http_echoz_commands = [_]ngx_command_t{
         .set = ngx_conf_set_echoz,
         .conf = conf.NGX_HTTP_LOC_CONF_OFFSET,
         .offset = 1,
-        .post = NULL,
+        .post = null,
     },
     ngx_command_t{
         .name = ngx_string("echoz_duplicate"),
@@ -537,7 +536,7 @@ export const ngx_http_echoz_commands = [_]ngx_command_t{
         .set = ngx_conf_set_echoz,
         .conf = conf.NGX_HTTP_LOC_CONF_OFFSET,
         .offset = 2,
-        .post = NULL,
+        .post = null,
     },
     ngx_command_t{
         .name = ngx_string("echoz_flush"),
@@ -545,7 +544,7 @@ export const ngx_http_echoz_commands = [_]ngx_command_t{
         .set = ngx_conf_set_echoz,
         .conf = conf.NGX_HTTP_LOC_CONF_OFFSET,
         .offset = 3,
-        .post = NULL,
+        .post = null,
     },
     ngx_command_t{
         .name = ngx_string("echoz_sleep"),
@@ -553,7 +552,7 @@ export const ngx_http_echoz_commands = [_]ngx_command_t{
         .set = ngx_conf_set_echoz,
         .conf = conf.NGX_HTTP_LOC_CONF_OFFSET,
         .offset = 4,
-        .post = NULL,
+        .post = null,
     },
     ngx_command_t{
         .name = ngx_string("echoz_location_async"),
@@ -561,7 +560,7 @@ export const ngx_http_echoz_commands = [_]ngx_command_t{
         .set = ngx_conf_set_echoz,
         .conf = conf.NGX_HTTP_LOC_CONF_OFFSET,
         .offset = 5,
-        .post = NULL,
+        .post = null,
     },
     ngx_command_t{
         .name = ngx_string("echoz_request_body"),
@@ -569,7 +568,7 @@ export const ngx_http_echoz_commands = [_]ngx_command_t{
         .set = ngx_conf_set_echoz,
         .conf = conf.NGX_HTTP_LOC_CONF_OFFSET,
         .offset = 6,
-        .post = NULL,
+        .post = null,
     },
     ngx_command_t{
         .name = ngx_string("echoz_read_request_body"),
@@ -577,7 +576,7 @@ export const ngx_http_echoz_commands = [_]ngx_command_t{
         .set = ngx_conf_set_echoz,
         .conf = conf.NGX_HTTP_LOC_CONF_OFFSET,
         .offset = 7,
-        .post = NULL,
+        .post = null,
     },
     ngx_command_t{
         .name = ngx_string("echoz_exec"),
@@ -585,7 +584,7 @@ export const ngx_http_echoz_commands = [_]ngx_command_t{
         .set = ngx_conf_set_echoz,
         .conf = conf.NGX_HTTP_LOC_CONF_OFFSET,
         .offset = 8,
-        .post = NULL,
+        .post = null,
     },
     conf.ngx_null_command,
 };
@@ -596,14 +595,14 @@ export var ngx_http_echoz_module = ngx.module.make_module(
 );
 
 export const ngx_http_echoz_filter_module_ctx = ngx_http_module_t{
-    .preconfiguration = @ptrCast(NULL),
+    .preconfiguration = null,
     .postconfiguration = postconfiguration_filter,
-    .create_main_conf = @ptrCast(NULL),
-    .init_main_conf = @ptrCast(NULL),
-    .create_srv_conf = @ptrCast(NULL),
-    .merge_srv_conf = @ptrCast(NULL),
+    .create_main_conf = null,
+    .init_main_conf = null,
+    .create_srv_conf = null,
+    .merge_srv_conf = null,
     .create_loc_conf = create_loc_conf,
-    .merge_loc_conf = @ptrCast(NULL),
+    .merge_loc_conf = null,
 };
 
 export const ngx_http_echoz_filter_commands = [_]ngx_command_t{
@@ -613,7 +612,7 @@ export const ngx_http_echoz_filter_commands = [_]ngx_command_t{
         .set = ngx_conf_set_echoz,
         .conf = conf.NGX_HTTP_LOC_CONF_OFFSET,
         .offset = 9,
-        .post = NULL,
+        .post = null,
     },
     ngx_command_t{
         .name = ngx_string("echoz_after_body"),
@@ -621,7 +620,7 @@ export const ngx_http_echoz_filter_commands = [_]ngx_command_t{
         .set = ngx_conf_set_echoz,
         .conf = conf.NGX_HTTP_LOC_CONF_OFFSET,
         .offset = 10,
-        .post = NULL,
+        .post = null,
     },
     conf.ngx_null_command,
 };
@@ -631,7 +630,7 @@ export var ngx_http_echoz_filter_module = ngx.module.make_module(
     @constCast(&ngx_http_echoz_filter_module_ctx),
 );
 
-var ngx_http_echoz_next_output_body_filter: http.ngx_http_output_body_filter_pt = @ptrCast(core.NULL);
+var ngx_http_echoz_next_output_body_filter: http.ngx_http_output_body_filter_pt = null;
 
 const expectEqual = std.testing.expectEqual;
 test "echoz module" {

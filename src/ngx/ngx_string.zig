@@ -3,7 +3,6 @@ const ngx = @import("ngx.zig");
 const core = @import("ngx_core.zig");
 const expectEqual = std.testing.expectEqual;
 
-const NULL = core.NULL;
 const u_char = core.u_char;
 pub const ngx_str_t = core.ngx_str_t;
 pub const ngx_keyval_t = ngx.ngx_keyval_t;
@@ -21,7 +20,7 @@ pub inline fn ngx_str_set(str: [*c]ngx_str_t, text: []const u8) void {
 
 pub inline fn ngx_str_null(str: [*c]ngx_str_t) void {
     str.*.len = 0;
-    str.*.data = NULL;
+    str.*.data = core.nullptr(u8);
 }
 
 pub inline fn ngx_tolower(c: u8) u8 {
@@ -39,7 +38,7 @@ pub inline fn ngx_strlchr(p: [*c]u_char, last: [*c]u_char, c: u_char) [*c]u_char
             return vp;
         }
     }
-    return NULL;
+    return core.nullptr(u_char);
 }
 
 test "string" {

@@ -5,7 +5,6 @@ const core = @import("ngx_core.zig");
 const string = @import("ngx_string.zig");
 const expectEqual = std.testing.expectEqual;
 
-const NULL = core.NULL;
 const u_char = core.u_char;
 const nullptr = core.nullptr;
 const ngx_str_t = core.ngx_str_t;
