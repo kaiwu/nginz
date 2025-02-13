@@ -72,6 +72,13 @@ pub const NError = error{
     REQUEST_ERROR,
 };
 
+pub fn Pair(comptime T: type, comptime U: type) type {
+    return struct {
+        t: T,
+        u: U,
+    };
+}
+
 pub inline fn sizeof(comptime s: []const u8) usize {
     return s.len;
 }
