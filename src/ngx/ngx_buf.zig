@@ -51,8 +51,10 @@ pub inline fn ngz_chain_length(cl: [*c]ngx_chain_t) ngx_uint_t {
     var total: ngx_uint_t = 0;
     var n: [*c]ngx_chain_t = cl;
     while (n != NChain.NP) {
-        total += @intFromPtr(n.*.buf.*.last) - @intFromPtr(n.*.buf.*.pos);
-        n = n.*.next;
+        if (ngx_buf_in_memory_only(n.*.buf)) {
+            total += @intFromPtr(n.*.buf.*.last) - @intFromPtr(n.*.buf.*.pos);
+            n = n.*.next;
+        }
     }
     return total;
 }
@@ -73,10 +75,13 @@ pub inline fn ngz_chain_content(cl: [*c]ngx_chain_t, p: [*c]ngx_pool_t) !ngx_str
     if (core.castPtr(u8, core.ngx_pnalloc(p, len))) |b| {
         var ll = cl;
         var i: usize = 0;
+        var s = core.slicify(u8, b, len);
         while (ngz_chain_iterate(&ll)) |bf| {
-            const l = @intFromPtr(bf.*.last) - @intFromPtr(bf.*.pos);
-            @memcpy(b[i .. i + l], core.slicify(u8, bf.*.pos, l));
-            i += l;
+            if (ngx_buf_in_memory_only(bf)) {
+                const l = @intFromPtr(bf.*.last) - @intFromPtr(bf.*.pos);
+                @memcpy(s[i .. i + l], core.slicify(u8, bf.*.pos, l));
+                i += l;
+            }
         }
         return ngx_str_t{ .data = b, .len = len };
     }
