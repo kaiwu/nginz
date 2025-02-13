@@ -10,6 +10,16 @@ const ngx_list_part_t = ngx.ngx_list_part_t;
 const ngx_list_create = ngx.ngx_list_create;
 const ngx_list_push = ngx.ngx_list_push;
 
+pub inline fn ngz_list_length(l: [*c]ngx_list_t) ngx_uint_t {
+    var len: ngx_uint_t = 0;
+    var p: [*c]ngx_list_part_t = &l.*.part;
+    while (p != l.*.last) : (p = p.*.next) {
+        len += l.*.nalloc;
+    }
+    len += p.*.nelts;
+    return len;
+}
+
 pub fn NList(comptime T: type) type {
     if (@alignOf(T) != core.NGX_ALIGNMENT) {
         @compileError("NList invalid element");
@@ -68,6 +78,11 @@ pub fn NList(comptime T: type) type {
                 return Self{ .pl = p0, .ready = 1 };
             }
             return core.NError.OOM;
+        }
+
+        pub fn init0(pl: [*c]ngx_list_t) Self {
+            const len = ngz_list_length(pl);
+            return Self{ .pl = pl, .len = len };
         }
 
         pub fn inited(self: *Self) bool {
@@ -185,6 +200,7 @@ test "list" {
         const p = try ns.append();
         p.* = i;
     }
+    try expectEqual(ngz_list_length(ns.pl), 20);
     try expectEqual(ns.at(10).?.*, 10);
     try expectEqual(ns.at(20), null);
     try expectEqual(ns.size(), 20);
