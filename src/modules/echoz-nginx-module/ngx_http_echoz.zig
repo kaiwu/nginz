@@ -235,6 +235,7 @@ fn map(
     return ss;
 }
 
+extern var ngx_http_core_module: ngx_module_t;
 fn echoz_exec_command(cmd: [*c]echoz_command, ctx: [*c]echoz_context, r: [*c]ngx_http_request_t, c: [*c]ngx_chain_t) !void {
     var total_length: ngx_uint_t = 0;
     const parameters = try map(cmd.*.params, r, &total_length);
@@ -271,7 +272,13 @@ fn echoz_exec_command(cmd: [*c]echoz_command, ctx: [*c]echoz_context, r: [*c]ngx
         },
         .echoz_location_async => {
             const s2 = try parse_uri(r, &parameters);
-            _ = try NSubrequest.create(r, s2, s2 + 1);
+            const sr = try NSubrequest.create(r, s2, s2 + 1);
+            sr.*.header_in = r.*.header_in;
+            if (core.castPtr(http.ngx_http_core_main_conf_t, conf.ngx_http_get_module_main_conf(r, &ngx_http_core_module))) |cmcf| {
+                if (core.ngz_pcalloc_n(cmcf.*.variables.nelts, http.ngx_http_variable_value_t, sr.*.pool)) |v| {
+                    sr.*.variables = v;
+                }
+            }
         },
         .echoz_request_body => {
             if (r.*.request_body != core.nullptr(http.ngx_http_request_body_t)) {
