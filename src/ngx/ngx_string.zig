@@ -35,6 +35,12 @@ pub inline fn eql(s0: ngx_str_t, s1: ngx_str_t) bool {
     return std.mem.eql(u8, core.slicify(u8, s0.data, s0.len), core.slicify(u8, s1.data, s1.len));
 }
 
+pub inline fn strlen(s: [*c]u8) usize {
+    var len: usize = 0;
+    while (s[len] != 0) : (len += 1) {}
+    return len;
+}
+
 pub inline fn ngx_strlchr(p: [*c]u_char, last: [*c]u_char, c: u_char) [*c]u_char {
     var vp: [*c]u_char = p;
     while (vp < last) : (vp += 1) {

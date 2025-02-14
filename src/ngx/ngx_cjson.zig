@@ -122,6 +122,34 @@ pub const CJSON = extern struct {
         }
     };
 
+    pub fn intValue(j: [*c]cJSON) ?i64 {
+        if (cJSON_IsNumber(j) == 1) {
+            return @as(i64, @intFromFloat(cJSON_GetNumberValue(j)));
+        }
+        return null;
+    }
+
+    pub fn floatValue(j: [*c]cJSON) ?f64 {
+        if (cJSON_IsNumber(j) == 1) {
+            return cJSON_GetNumberValue(j);
+        }
+        return null;
+    }
+
+    pub fn boolValue(j: [*c]cJSON) ?bool {
+        if (cJSON_IsBool(j) == 1) {
+            return cJSON_IsTrue(j) == 1;
+        }
+        return null;
+    }
+
+    pub fn stringValue(j: [*c]cJSON) ?ngx_str_t {
+        if (cJSON_IsString(j) == 1) {
+            return ngx_str_t{ .data = j.*.valuestring, .len = string.strlen(j.*.valuestring) };
+        }
+        return null;
+    }
+
     pub fn query(j: [*c]cJSON, path: []const u8) ?[*c]cJSON {
         if (j == core.nullptr(cJSON)) {
             return null;

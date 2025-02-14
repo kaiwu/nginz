@@ -7,6 +7,7 @@ const core = ngx.core;
 const conf = ngx.conf;
 const http = ngx.http;
 const cjson = ngx.cjson;
+const CJSON = cjson.CJSON;
 
 const Pair = core.Pair;
 const NGX_OK = core.NGX_OK;
@@ -107,10 +108,13 @@ fn init_wechatpay_context(cf: [*c]wechatpay_loc_conf, p: [*c]ngx_pool_t) ![*c]we
         }
         if (core.castPtr(ngx_array_t, cf.*.notify_location)) |notify_location| {
             if (core.castPtr(ngx.string.ngx_keyval_t, notify_location.*.elts)) |kv| {
-                if (core.ngz_pcalloc_c(NSSL_AES_256_GCM, p)) |aes| {
-                    aes.* = try NSSL_AES_256_GCM.init(kv.*.key);
-                    ctx.*.aes = aes;
-                    ctx.*.notify = kv.*.value;
+                ctx.*.notify = kv.*.value;
+                ctx.*.aes = core.nullptr(NSSL_AES_256_GCM);
+                if (kv.*.key.len == NSSL_AES_256_GCM.KEY_SIZE) {
+                    if (core.ngz_pcalloc_c(NSSL_AES_256_GCM, p)) |aes| {
+                        aes.* = try NSSL_AES_256_GCM.init(kv.*.key);
+                        ctx.*.aes = aes;
+                    }
                 }
             }
         }
@@ -468,6 +472,38 @@ export fn ngx_http_wechatpay_proxy_handler(r: [*c]ngx_http_request_t) callconv(.
 
 ///////////////////////////////////////   NOTIFY LOCATION  //////////////////////////////////////////////////////
 
+// if verified aes decrypt https://pay.weixin.qq.com/doc/v3/merchant/4012791902
+fn aes_decode(r: [*c]ngx_http_request_t, body: ngx_str_t, aes: [*c]NSSL_AES_256_GCM, data: [*c]u8) !ngx_str_t {
+    if (aes == core.nullptr(NSSL_AES_256_GCM)) {
+        return body;
+    }
+    var cj = CJSON.init(r.*.pool);
+    const json = cj.decode(body);
+    const resource = CJSON.query(json, "$.resource");
+    const ciphertext = CJSON.query(json, "$.resource.ciphertext");
+    const aad = CJSON.query(json, "$.resource.associated_data");
+    const iv = CJSON.query(json, "$.resource.nonce");
+    if (resource == null or ciphertext == null or aad == null or iv == null) {
+        return WError.BODY_ERROR;
+    }
+    const plaintxt = try aes.*.decrypt(
+        CJSON.stringValue(ciphertext.?).?,
+        CJSON.stringValue(iv.?).?,
+        CJSON.stringValue(aad.?).?,
+        r.*.pool,
+    );
+    var write: [*c]u8 = data;
+    write = ngx_sprintf(write, "plaintxt");
+    write.* = 0;
+    write = ngx_sprintf(write + 1, "%V", &plaintxt);
+    write.* = 0;
+
+    if (cjson.cJSON_AddStringToObject(resource.?, data, data + 9, &cj.alloc) == core.nullptr(cjson.cJSON)) {
+        return WError.BODY_ERROR;
+    }
+    return cj.encode(json);
+}
+
 fn notify(r: [*c]ngx_http_request_t) !ngx_int_t {
     if (core.castPtr(wechatpay_request_context, r.*.ctx[ngx_http_wechatpay_module.ctx_index])) |rctx| {
         if (core.castPtr(u8, core.ngx_pmemalign(r.*.pool, 2 * ngx_pagesize, core.NGX_ALIGNMENT))) |data| {
@@ -482,36 +518,18 @@ fn notify(r: [*c]ngx_http_request_t) !ngx_int_t {
                 return WError.SIGNATURE_ERROR;
             }
 
-            // if verified aes decrypt https://pay.weixin.qq.com/doc/v3/merchant/4012791902
-            // var cj = cjson.CJSON.init(r.*.pool);
-            // const json = cj.decode(body);
-            // const resource = cjson.CJSON.query(json, "$.resource");
-            // const ciphertext = cjson.CJSON.query(json, "$.resource.ciphertext");
-            // const aad = cjson.CJSON.query(json, "$.resource.associated_data");
-            // const iv = cjson.CJSON.query(json, "$.resource.nonce");
-            // if (resource == null or ciphertext == null or aad == null or iv == null) {
-            //     return WError.BODY_ERROR;
-            // }
-            // const plaintxt = try rctx.*.lccf.*.ctx.*.aes.*.decrypt(ciphertext.?, iv.?, aad.?, r.*.pool);
-            // var write: [*c]u8 = data;
-            // write = ngx_sprintf(write, "plaintxt");
-            // write.* = 0;
-            // write = ngx_sprintf(write + 1, "%V", &plaintxt);
-            // write.* = 0;
-
-            // if (cjson.cJSON_AddStringToObject(resource.?, data, data + 9, &cj.alloc) == core.nullptr(cjson.cJSON)) {
-            //     return http.NGX_HTTP_INTERNAL_SERVER_ERROR;
-            // }
-            // const new_body = try cj.encode(json);
-            // var chain = NChain.init(r.*.pool);
-            // var out = buf.ngx_chain_t{
-            //     .buf = core.nullptr(ngx_buf_t),
-            //     .next = core.nullptr(ngx_chain_t),
-            // };
-            // const last = try chain.allocStr(new_body, &out);
-            // last.*.buf.*.flags.last_buf = true;
-            // last.*.buf.*.flags.last_in_chain = true;
-            // r.*.request_body.*.bufs = last;
+            const new_body = try aes_decode(r, body, rctx.*.lccf.*.ctx.*.aes, data);
+            if (new_body.len != body.len) {
+                var chain = NChain.init(r.*.pool);
+                var out = buf.ngx_chain_t{
+                    .buf = core.nullptr(ngx_buf_t),
+                    .next = core.nullptr(ngx_chain_t),
+                };
+                const last = try chain.allocStr(new_body, &out);
+                last.*.buf.*.flags.last_buf = true;
+                last.*.buf.*.flags.last_in_chain = true;
+                r.*.request_body.*.bufs = last;
+            }
 
             // init subrequest to proxy location
             // TODO

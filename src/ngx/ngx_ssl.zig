@@ -274,9 +274,9 @@ fn ptag(tag: [*c]u8) void {
 
 pub const NSSL_AES_256_GCM = extern struct {
     const Self = @This();
-    const KEY_SIZE = 32;
-    const IV_SIZE = 12;
-    const TAG_SIZE = 16;
+    pub const KEY_SIZE = 32;
+    pub const IV_SIZE = 12;
+    pub const TAG_SIZE = 16;
 
     ctx: ?*EVP_CIPHER_CTX,
     key: [KEY_SIZE]u8 = undefined,
