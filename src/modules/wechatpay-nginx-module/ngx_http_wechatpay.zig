@@ -509,15 +509,17 @@ fn notify(r: [*c]ngx_http_request_t) !ngx_int_t {
         if (core.castPtr(u8, core.ngx_pmemalign(r.*.pool, 2 * ngx_pagesize, core.NGX_ALIGNMENT))) |data| {
             defer _ = core.ngx_pfree(r.*.pool, data);
 
+            const lccf = rctx.*.lccf;
+            const mch_id = lccf.*.mch_id;
             // verify signature
             const body = read_body(r);
-            const verify = verify_request(rctx.*.lccf, r, body, data) catch false;
+            const verify = verify_request(lccf, r, body, data) catch false;
             if (!verify) {
-                ngx.log.ngz_log_error(ngx.log.NGX_LOG_WARN, r.*.connection.*.log, 0, "signature verification failed", .{});
+                ngx.log.ngz_log_error(ngx.log.NGX_LOG_WARN, r.*.connection.*.log, 0, "mch_id %V signature verification failed", .{&mch_id});
                 return WError.SIGNATURE_ERROR;
             }
 
-            const new_body = try aes_decode(r, body, rctx.*.lccf.*.ctx.*.aes, data);
+            const new_body = try aes_decode(r, body, lccf.*.ctx.*.aes, data);
             if (new_body.len != body.len) {
                 var chain = NChain.init(r.*.pool);
                 var out = buf.ngx_chain_t{
@@ -532,7 +534,7 @@ fn notify(r: [*c]ngx_http_request_t) !ngx_int_t {
 
             // init subrequest to proxy location
             if (core.ngz_pcalloc_c(ngx_str_t, r.*.pool)) |args| {
-                _ = try NSubrequest.create(r, &rctx.*.lccf.*.ctx.*.notify, args);
+                _ = try NSubrequest.create(r, &lccf.*.ctx.*.notify, args);
                 return NGX_OK;
             }
         }
