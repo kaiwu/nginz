@@ -510,9 +510,8 @@ fn notify(r: [*c]ngx_http_request_t) !ngx_int_t {
             defer _ = core.ngx_pfree(r.*.pool, data);
 
             // verify signature
-            var verify = false;
             const body = read_body(r);
-            verify = verify_request(rctx.*.lccf, r, body, data) catch false;
+            const verify = verify_request(rctx.*.lccf, r, body, data) catch false;
             if (!verify) {
                 ngx.log.ngz_log_error(ngx.log.NGX_LOG_WARN, r.*.connection.*.log, 0, "signature verification failed", .{});
                 return WError.SIGNATURE_ERROR;
@@ -532,9 +531,10 @@ fn notify(r: [*c]ngx_http_request_t) !ngx_int_t {
             }
 
             // init subrequest to proxy location
-            // TODO
-
-            return NGX_OK;
+            if (core.ngz_pcalloc_c(ngx_str_t, r.*.pool)) |args| {
+                _ = try NSubrequest.create(r, &rctx.*.lccf.*.ctx.*.notify, args);
+                return NGX_OK;
+            }
         }
     }
     return http.NGX_HTTP_SERVICE_UNAVAILABLE;

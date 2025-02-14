@@ -116,16 +116,16 @@ fn create_loc_conf(cf: [*c]ngx_conf_t) callconv(.C) ?*anyopaque {
     return null;
 }
 
-fn parse_uri(r: [*c]ngx_http_request_t, ps: *const NArray(ngx_str_t)) ![2]ngx_str_t {
-    var s2 = [2]ngx_str_t{ ps.at(0).?.*, ngx.string.ngx_null_str };
-    var flags: ngx_uint_t = 0;
-    if (http.ngx_http_parse_unsafe_uri(r, &s2[0], &s2[1], &flags) != core.NGX_OK) {
-        return ZError.COMMAND_ERROR;
+fn parse_uri(r: [*c]ngx_http_request_t, ps: *const NArray(ngx_str_t)) ![*c]ngx_str_t {
+    if (core.ngz_pcalloc_n(2, ngx_str_t, r.*.pool)) |s2| {
+        @memcpy(core.slicify(ngx_str_t, s2, ps.size()), NArray(ngx_str_t).slice(@constCast(ps)));
+        var flags: ngx_uint_t = 0;
+        if (http.ngx_http_parse_unsafe_uri(r, s2, s2 + 1, &flags) != core.NGX_OK) {
+            return ZError.COMMAND_ERROR;
+        }
+        return s2;
     }
-    if (ps.size() > 1) {
-        s2[1] = ps.at(1).?.*;
-    }
-    return s2;
+    return core.NError.OOM;
 }
 
 fn atof(s: ngx_str_t, precision: ngx_uint_t) ngx_msec_t {
@@ -270,8 +270,8 @@ fn echoz_exec_command(cmd: [*c]echoz_command, ctx: [*c]echoz_context, r: [*c]ngx
             }
         },
         .echoz_location_async => {
-            var s2 = try parse_uri(r, &parameters);
-            _ = try NSubrequest.create(r, &s2[0], &s2[1]);
+            const s2 = try parse_uri(r, &parameters);
+            _ = try NSubrequest.create(r, s2, s2 + 1);
         },
         .echoz_request_body => {
             if (r.*.request_body != core.nullptr(http.ngx_http_request_body_t)) {
@@ -299,17 +299,17 @@ fn echoz_exec_command(cmd: [*c]echoz_command, ctx: [*c]echoz_context, r: [*c]ngx
             }
         },
         .echoz_exec => {
-            var s2 = try parse_uri(r, &parameters);
+            const s2 = try parse_uri(r, &parameters);
             r.*.write_event_handler = http.ngx_http_request_empty_handler;
             if (s2[0].data[0] == '@') {
                 if (r.*.ctx != core.nullptr(?*anyopaque)) {
                     @memset(core.slicify(?*anyopaque, r.*.ctx, http.ngx_http_max_module), null);
                 }
-                if (http.ngx_http_named_location(r, &s2[0]) == core.NGX_DONE) {
+                if (http.ngx_http_named_location(r, s2) == core.NGX_DONE) {
                     return ZError.REDIRECTING;
                 }
             } else {
-                if (http.ngx_http_internal_redirect(r, &s2[0], &s2[1]) == core.NGX_DONE) {
+                if (http.ngx_http_internal_redirect(r, s2, s2 + 1) == core.NGX_DONE) {
                     return ZError.REDIRECTING;
                 }
             }

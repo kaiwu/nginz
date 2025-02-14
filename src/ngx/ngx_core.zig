@@ -122,6 +122,13 @@ pub inline fn ngz_pcalloc_c(comptime T: type, p: [*c]ngx_pool_t) ?[*c]T {
     return null;
 }
 
+pub inline fn ngz_pcalloc_n(N: ngx_uint_t, comptime T: type, p: [*c]ngx_pool_t) ?[*c]T {
+    if (ngx_pcalloc(p, @sizeOf(T) * N)) |p0| {
+        return @as([*c]T, @ptrCast(@alignCast(p0)));
+    }
+    return null;
+}
+
 pub inline fn ngz_pcalloc(comptime T: type, p: [*c]ngx_pool_t) ?*T {
     if (ngx_pcalloc(p, @sizeOf(T))) |p0| {
         return @as(*T, @ptrCast(@alignCast(p0)));
