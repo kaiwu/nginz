@@ -12,6 +12,8 @@ const module = nginx.module;
 const expectEqual = std.testing.expectEqual;
 
 pub const ngx_http_cache_t = ngx.ngx_http_cache_t;
+pub const ngx_http_header_t = ngx.ngx_http_header_t;
+pub const ngx_http_status_t = ngx.ngx_http_status_t;
 pub const ngx_http_module_t = ngx.ngx_http_module_t;
 pub const ngx_http_request_t = ngx.ngx_http_request_t;
 pub const ngx_http_cleanup_t = ngx.ngx_http_cleanup_t;
@@ -39,6 +41,7 @@ pub const ngx_http_script_compile_t = ngx.ngx_http_script_compile_t;
 pub const ngx_http_variable_value_t = ngx.ngx_http_variable_value_t;
 pub const ngx_http_event_handler_pt = ngx.ngx_http_event_handler_pt;
 pub const ngx_http_posted_request_t = ngx.ngx_http_posted_request_t;
+pub const ngx_http_upstream_state_t = ngx.ngx_http_upstream_state_t;
 pub const ngx_http_file_cache_node_t = ngx.ngx_http_file_cache_node_t;
 pub const ngx_http_upstream_server_t = ngx.ngx_http_upstream_server_t;
 pub const ngx_http_post_subrequest_t = ngx.ngx_http_post_subrequest_t;
@@ -99,6 +102,37 @@ pub inline fn ngz_http_getor_module_ctx(
     return ctx;
 }
 
+pub fn ngz_set_upstream_header(h: [*c]hash.ngx_table_elt_t, r: [*c]ngx_http_request_t, umcf: [*c]ngx_http_upstream_main_conf_t) ngx_int_t {
+    h.*.hash = r.*.header_hash;
+    h.*.key.len = core.ngz_len(r.*.header_name_start, r.*.header_name_end);
+    h.*.value.len = core.ngz_len(r.*.header_start, r.*.header_end);
+    const total = h.*.key.len + 1 + h.*.value.len + 1 + h.*.key.len;
+    if (core.castPtr(u8, core.ngx_pnalloc(r.*.pool, total))) |p| {
+        h.*.key.data = p;
+        @memcpy(core.slicify(u8, h.*.key.data, h.*.key.len), core.slicify(u8, r.*.header_name_start, h.*.key.len));
+        h.*.key.data[h.*.key.len] = 0;
+
+        h.*.value.data = p + h.*.key.len + 1;
+        @memcpy(core.slicify(u8, h.*.value.data, h.*.value.len), core.slicify(u8, r.*.header_start, h.*.value.len));
+        h.*.value.data[h.*.value.len] = 0;
+
+        h.*.lowcase_key = p + h.*.key.len + 1 + h.*.value.len + 1;
+        if (h.*.key.len == r.*.lowcase_index) {
+            @memcpy(core.slicify(u8, h.*.lowcase_key, h.*.key.len), core.slicify(u8, &r.*.lowcase_header, h.*.key.len));
+        } else {
+            string.ngx_strlow(h.*.lowcase_key, h.*.key.data, h.*.key.len);
+        }
+        const hh = hash.ngx_hash_find(&umcf.*.headers_in_hash, h.*.hash, h.*.lowcase_key, h.*.key.len);
+        if (core.castPtr(ngx_http_header_t, hh)) |h0| {
+            if (h0.*.handler) |handle| {
+                return handle(r, h, h0.*.offset);
+            }
+        }
+    }
+    h.*.hash = 0;
+    return core.NGX_ERROR;
+}
+
 pub const NGX_HTTP_OK = ngx.NGX_HTTP_OK;
 pub const NGX_HTTP_ACCEPTED = ngx.NGX_HTTP_ACCEPTED;
 pub const NGX_HTTP_FORBIDDEN = ngx.NGX_HTTP_FORBIDDEN;
@@ -110,6 +144,7 @@ pub const NGX_HTTP_UNAUTHORIZED = ngx.NGX_HTTP_UNAUTHORIZED;
 pub const NGX_HTTP_SPECIAL_RESPONSE = ngx.NGX_HTTP_SPECIAL_RESPONSE;
 pub const NGX_HTTP_SERVICE_UNAVAILABLE = ngx.NGX_HTTP_SERVICE_UNAVAILABLE;
 pub const NGX_HTTP_INTERNAL_SERVER_ERROR = ngx.NGX_HTTP_INTERNAL_SERVER_ERROR;
+pub const NGX_HTTP_UPSTREAM_INVALID_HEADER = ngx.NGX_HTTP_UPSTREAM_INVALID_HEADER;
 
 pub const NGX_HTTP_GET = ngx.NGX_HTTP_GET;
 pub const NGX_HTTP_PUT = ngx.NGX_HTTP_PUT;
@@ -125,6 +160,9 @@ pub const NGX_HTTP_VAR_INDEXED = ngx.NGX_HTTP_VAR_INDEXED;
 pub const NGX_HTTP_VAR_NOHASH = ngx.NGX_HTTP_VAR_NOHASH;
 pub const NGX_HTTP_VAR_WEAK = ngx.NGX_HTTP_VAR_WEAK;
 pub const NGX_HTTP_VAR_PREFIX = ngx.NGX_HTTP_VAR_PREFIX;
+
+pub const NGX_HTTP_PARSE_HEADER_DONE = ngx.NGX_HTTP_PARSE_HEADER_DONE;
+pub const NGX_HTTP_PARSE_INVALID_HEADER = ngx.NGX_HTTP_PARSE_INVALID_HEADER;
 
 pub const ngx_parse_url = ngx.ngx_parse_url;
 pub const ngx_http_subrequest = ngx.ngx_http_subrequest;

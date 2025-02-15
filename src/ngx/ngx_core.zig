@@ -87,6 +87,10 @@ pub inline fn c_str(s: []const u8) [*c]u_char {
     return @constCast(s.ptr);
 }
 
+pub inline fn ngz_len(p0: [*c]u8, p1: [*c]u8) ngx_uint_t {
+    return @intFromPtr(p1) - @intFromPtr(p0);
+}
+
 pub inline fn ngx_align(d: ngx_uint_t, comptime a: ngx_uint_t) ngx_uint_t {
     if (a < 1) {
         @compileError("cannot align to 0");

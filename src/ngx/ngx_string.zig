@@ -55,6 +55,7 @@ test "string" {
     try expectEqual(@sizeOf(ngx_str_t), 16);
 }
 
+pub const ngx_strlow = ngx.ngx_strlow;
 pub const ngx_hex_dump = ngx.ngx_hex_dump;
 pub const ngx_escape_uri = ngx.ngx_escape_uri;
 pub const ngx_unescape_uri = ngx.ngx_unescape_uri;
