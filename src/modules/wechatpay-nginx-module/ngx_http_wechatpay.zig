@@ -58,6 +58,12 @@ const oaep_action = enum(ngx_uint_t) {
     OAEP_NONE,
 };
 
+const signature_verification_status = enum(ngx_uint_t) {
+    SIG_VERIFICATION_FAILED,
+    SIG_VERIFICATION_SUCCESS,
+    SIG_VERIFICATION_PENDDING,
+};
+
 const wechatpay_context = extern struct {
     rsa: [*c]NSSL_RSA,
     aes: [*c]NSSL_AES_256_GCM,
@@ -85,7 +91,7 @@ const wechatpay_loc_conf = extern struct {
 
 fn init_upstream_conf(p: [*c]ngx_pool_t) ![*c]http.ngx_http_upstream_conf_t {
     if (core.ngz_pcalloc_c(http.ngx_http_upstream_conf_t, p)) |cf| {
-        cf.*.buffering = 0;
+        cf.*.buffering = 0; // use a single buffer
         cf.*.buffer_size = 4 * ngx_pagesize;
         cf.*.ssl_verify = 0;
         cf.*.module = ngx_string("ngx_http_wechatpay_module");
@@ -366,7 +372,7 @@ fn is_http(host: ngx_str_t) Pair(bool, ngx_str_t) {
 /////////////////////////////////////////  WECHATPAY UPSTREAM  //////////////////////////////////////////////////
 const wechatpay_upstream_context = extern struct {
     r: [*c]ngx_http_request_t,
-    can_send_header: ngx_flag_t,
+    sig_verify: signature_verification_status,
 };
 
 fn ngx_http_wechatpay_proxy_upstream_create_request(r: [*c]ngx_http_request_t) callconv(.C) ngx_int_t {
@@ -396,18 +402,6 @@ fn ngx_http_wechatpay_proxy_upstream_process_header(r: [*c]ngx_http_request_t) c
     return NGX_OK;
 }
 
-fn ngx_http_wechatpay_proxy_upstream_input_filter_init(ctx: ?*anyopaque) callconv(.C) ngx_int_t {
-    _ = ctx;
-    return NGX_OK;
-}
-
-fn ngx_http_wechatpay_proxy_upstream_input_filter(ctx: ?*anyopaque, size: isize) callconv(.C) ngx_int_t {
-    // verify signature in upstream response
-    _ = ctx;
-    _ = size;
-    return NGX_OK;
-}
-
 fn ngx_http_wechatpay_proxy_upstream_finalize_request(r: [*c]ngx_http_request_t, rc: ngx_int_t) callconv(.C) void {
     _ = r;
     _ = rc;
@@ -418,12 +412,10 @@ fn create_upstream(r: [*c]ngx_http_request_t, lccf: [*c]wechatpay_loc_conf) !ngx
         return WError.UPSTREAM_ERROR;
     }
     r.*.upstream.*.conf = lccf.*.ups;
-    r.*.upstream.*.flags.buffering = lccf.*.ups.*.buffering == 1;
+    r.*.upstream.*.flags.buffering = true;
     r.*.upstream.*.create_request = ngx_http_wechatpay_proxy_upstream_create_request;
     r.*.upstream.*.process_header = ngx_http_wechatpay_proxy_upstream_process_header;
     r.*.upstream.*.finalize_request = ngx_http_wechatpay_proxy_upstream_finalize_request;
-    r.*.upstream.*.input_filter_init = ngx_http_wechatpay_proxy_upstream_input_filter_init;
-    r.*.upstream.*.input_filter = ngx_http_wechatpay_proxy_upstream_input_filter;
     const hhost = is_http(lccf.*.proxy);
     if (hhost.t) {
         r.*.upstream.*.resolved.*.host = hhost.u;
@@ -437,7 +429,7 @@ fn create_upstream(r: [*c]ngx_http_request_t, lccf: [*c]wechatpay_loc_conf) !ngx
     r.*.upstream.*.resolved.*.naddrs = 1;
     if (core.ngz_pcalloc_c(wechatpay_upstream_context, r.*.pool)) |ups_ctx| {
         ups_ctx.*.r = r;
-        ups_ctx.*.can_send_header = 0;
+        ups_ctx.*.sig_verify = .SIG_VERIFICATION_PENDDING;
         r.*.upstream.*.input_filter_ctx = ups_ctx; //TODO
         http.ngx_http_upstream_init(r);
         return core.NGX_DONE;
@@ -717,11 +709,15 @@ fn postconfiguration_filter(cf: [*c]ngx_conf_t) callconv(.C) ngx_int_t {
 }
 
 export fn ngx_http_wechatpay_header_filter(r: [*c]ngx_http_request_t) callconv(.C) ngx_int_t {
-    if (r.*.upstream != core.nullptr(http.ngx_http_upstream_t) and r.*.upstream.*.input_filter != null and r.*.upstream.*.input_filter.? == ngx_http_wechatpay_proxy_upstream_input_filter) {
+    if (r.*.upstream != core.nullptr(http.ngx_http_upstream_t) and r.*.upstream.*.input_filter != null and r.*.upstream.*.finalize_request.? == ngx_http_wechatpay_proxy_upstream_finalize_request) {
         if (core.castPtr(wechatpay_upstream_context, r.*.upstream.*.input_filter_ctx)) |ups_ctx| {
-            if (ups_ctx.*.can_send_header == 0) {
-                r.*.flags1.header_sent = false;
-                return NGX_OK;
+            switch (ups_ctx.*.sig_verify) {
+                .SIG_VERIFICATION_PENDDING => return NGX_OK,
+                .SIG_VERIFICATION_FAILED => {
+                    r.*.headers_out.status = http.NGX_HTTP_UNAUTHORIZED;
+                    r.*.headers_out.status_line = ngx_string("SIGN_VERIFICATION_ERROR");
+                }, //TODO
+                .SIG_VERIFICATION_SUCCESS => {},
             }
         }
     }
