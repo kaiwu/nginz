@@ -527,12 +527,7 @@ fn ngx_http_wechatpay_proxy_upstream_input_filter(ctx: ?*anyopaque, bytes: isize
             u.*.length -= @min(u.*.length, bytes);
             @memcpy(core.slicify(u8, ups_ctx.*.last, len), core.slicify(u8, u.*.buffer.last, len));
             ups_ctx.*.last += len;
-
-            if (core.ngz_len(u.*.buffer.last, u.*.buffer.end) > len) {
-                u.*.buffer.last += len;
-            } else {
-                u.*.buffer.last = u.*.buffer.pos;
-            }
+            u.*.buffer.last = u.*.buffer.start;
             return NGX_OK;
         }
         ngx.log.ngz_log_error(ngx.log.NGX_LOG_ERR, r.*.connection.*.log, 0, "upstream exceeds its content length %d", .{ups_ctx.*.len});
