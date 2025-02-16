@@ -63,6 +63,7 @@ pub extern var ngx_cycle: [*c]core.ngx_cycle_t;
 pub extern var ngx_http_top_body_filter: ngx_http_output_body_filter_pt;
 pub extern var ngx_http_top_header_filter: ngx_http_output_header_filter_pt;
 pub extern var ngx_http_top_request_body_filter: ngx_http_request_body_filter_pt;
+pub extern fn ngx_http_upstream_finalize_request(r: [*c]ngx_http_request_t, u: [*c]ngx_http_upstream_t, rc: ngx_int_t) callconv(.C) void;
 
 const NError = core.NError;
 const NGX_OK = core.NGX_OK;
