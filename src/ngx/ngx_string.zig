@@ -15,6 +15,18 @@ pub inline fn ngx_string_from_ptr(p0: [*c]u8, p1: [*c]u8) ngx_str_t {
     return ngx_str_t{ .data = p0, .len = core.ngz_len(p0, p1) };
 }
 
+pub inline fn make_slice(s: ngx_str_t) []u8 {
+    return core.make_slice(s.data, s.len);
+}
+
+pub inline fn ngx_string_from_pool(p: [*c]u8, l: usize, pool: [*c]core.ngx_pool_t) !ngx_str_t {
+    if (core.castPtr(u8, core.ngx_pnalloc(pool, l))) |p0| {
+        core.ngz_memcpy(p0, p, l);
+        return ngx_str_t{ .data = p0, .len = l };
+    }
+    return core.NError.OOM;
+}
+
 pub const ngx_null_str = ngx_str_t{ .len = 0, .data = core.nullptr(u8) };
 
 pub inline fn ngx_str_set(str: [*c]ngx_str_t, text: []const u8) void {

@@ -270,11 +270,7 @@ fn sign_request(lccf: [*c]wechatpay_loc_conf, r: [*c]ngx_http_request_t, data: [
     write = ngx_sprintf(write, "timestamp=\"%V\",", &tstr);
     write = ngx_sprintf(write, "signature=\"%V\"\r\n", &signed);
     len = core.ngz_len(data, write);
-    if (core.castPtr(u8, core.ngx_pnalloc(r.*.pool, len))) |b| {
-        @memcpy(core.slicify(u8, b, len), core.slicify(u8, data, len));
-        return ngx_str_t{ .data = b, .len = len };
-    }
-    return core.NError.OOM;
+    return ngx.string.ngx_string_from_pool(data, len, r.*.pool);
 }
 
 fn build_request(lccf: [*c]wechatpay_loc_conf, r: [*c]ngx_http_request_t) !ngx_str_t {
@@ -294,10 +290,7 @@ fn build_request(lccf: [*c]wechatpay_loc_conf, r: [*c]ngx_http_request_t) !ngx_s
         }
         write = ngx_sprintf(write, "%V\r\n", &sign);
         const len = core.ngz_len(data, write);
-        if (core.castPtr(u8, core.ngx_pnalloc(r.*.pool, len))) |b| {
-            @memcpy(core.slicify(u8, b, len), core.slicify(u8, data, len));
-            return ngx_str_t{ .data = b, .len = len };
-        }
+        return ngx.string.ngx_string_from_pool(data, len, r.*.pool);
     }
     return core.NError.OOM;
 }
@@ -456,7 +449,8 @@ fn ngx_http_wechatpay_proxy_upstream_process_status(r: [*c]ngx_http_request_t) c
         const len = core.ngz_len(rctx.*.status.start, rctx.*.status.end);
         u.*.headers_in.status_line.len = len;
         if (core.castPtr(u8, core.ngx_pnalloc(r.*.pool, len))) |data| {
-            @memcpy(core.slicify(u8, data, len), core.slicify(u8, rctx.*.status.start, len));
+            core.ngz_memcpy(data, rctx.*.status.start, len);
+            u.*.headers_in.status_line.data = data;
             u.*.process_header = ngx_http_wechatpay_proxy_upstream_process_header;
             return ngx_http_wechatpay_proxy_upstream_process_header(r);
         }
@@ -525,7 +519,7 @@ fn ngx_http_wechatpay_proxy_upstream_input_filter(ctx: ?*anyopaque, bytes: isize
         const len: usize = @intCast(bytes);
         if (u.*.length > 0 and core.ngz_len(ups_ctx.*.data, ups_ctx.*.last) + len <= ups_ctx.*.len) {
             u.*.length -= @min(u.*.length, bytes);
-            @memcpy(core.slicify(u8, ups_ctx.*.last, len), core.slicify(u8, u.*.buffer.last, len));
+            core.ngz_memcpy(ups_ctx.*.last, u.*.buffer.last, len);
             ups_ctx.*.last += len;
             u.*.buffer.last = u.*.buffer.start;
             return NGX_OK;
