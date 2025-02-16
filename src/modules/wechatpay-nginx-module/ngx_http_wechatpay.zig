@@ -259,7 +259,7 @@ fn sign_request(lccf: [*c]wechatpay_loc_conf, r: [*c]ngx_http_request_t, data: [
     write = ngx_sprintf(write, "%V\n", &nstr);
     const body = read_body(r);
     write = ngx_sprintf(write, "%V\n", &body);
-    var len = @intFromPtr(write) - @intFromPtr(&data);
+    var len = core.ngz_len(data, write);
     const signed = try lccf.*.ctx.*.rsa.*.sign_sha256(ngx_str_t{ .data = data, .len = len }, r.*.pool);
 
     write = data;
@@ -269,7 +269,7 @@ fn sign_request(lccf: [*c]wechatpay_loc_conf, r: [*c]ngx_http_request_t, data: [
     write = ngx_sprintf(write, "nonce_str=\"%V\",", &nstr);
     write = ngx_sprintf(write, "timestamp=\"%V\",", &tstr);
     write = ngx_sprintf(write, "signature=\"%V\"\r\n", &signed);
-    len = @intFromPtr(write) - @intFromPtr(&data);
+    len = core.ngz_len(data, write);
     if (core.castPtr(u8, core.ngx_pnalloc(r.*.pool, len))) |b| {
         @memcpy(core.slicify(u8, b, len), core.slicify(u8, data, len));
         return ngx_str_t{ .data = b, .len = len };
@@ -293,7 +293,7 @@ fn build_request(lccf: [*c]wechatpay_loc_conf, r: [*c]ngx_http_request_t) !ngx_s
             write = ngx_sprintf(write, "%V: %V\r\n", &h.*.key, &h.*.value);
         }
         write = ngx_sprintf(write, "%V\r\n", &sign);
-        const len = @intFromPtr(write) - @intFromPtr(&data);
+        const len = core.ngz_len(data, write);
         if (core.castPtr(u8, core.ngx_pnalloc(r.*.pool, len))) |b| {
             @memcpy(core.slicify(u8, b, len), core.slicify(u8, data, len));
             return ngx_str_t{ .data = b, .len = len };
@@ -332,7 +332,7 @@ fn verify_request(
     write = ngx_sprintf(write, "%V\n", &w_timestamp);
     write = ngx_sprintf(write, "%V\n", &w_nonce);
     write = ngx_sprintf(write, "%V\n", &body);
-    const len = @intFromPtr(write) - @intFromPtr(&data);
+    const len = core.ngz_len(data, write);
     return lccf.*.ctx.*.rsa.*.verify_sha256(w_signature, ngx_str_t{ .data = data, .len = len }, pool);
 }
 
@@ -453,7 +453,7 @@ fn ngx_http_wechatpay_proxy_upstream_process_status(r: [*c]ngx_http_request_t) c
             u.*.state.*.status = rctx.*.status.code;
         }
         u.*.headers_in.status_n = rctx.*.status.code;
-        const len = @intFromPtr(rctx.*.status.end) - @intFromPtr(rctx.*.status.start);
+        const len = core.ngz_len(rctx.*.status.start, rctx.*.status.end);
         u.*.headers_in.status_line.len = len;
         if (core.castPtr(u8, core.ngx_pnalloc(r.*.pool, len))) |data| {
             @memcpy(core.slicify(u8, data, len), core.slicify(u8, rctx.*.status.start, len));
