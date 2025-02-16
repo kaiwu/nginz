@@ -11,6 +11,10 @@ pub inline fn ngx_string(str: []const u8) ngx_str_t {
     return ngx_str_t{ .len = str.len, .data = @constCast(str.ptr) };
 }
 
+pub inline fn ngx_string_from_ptr(p0: [*c]u8, p1: [*c]u8) ngx_str_t {
+    return ngx_str_t{ .data = p0, .len = core.ngz_len(p0, p1) };
+}
+
 pub const ngx_null_str = ngx_str_t{ .len = 0, .data = core.nullptr(u8) };
 
 pub inline fn ngx_str_set(str: [*c]ngx_str_t, text: []const u8) void {

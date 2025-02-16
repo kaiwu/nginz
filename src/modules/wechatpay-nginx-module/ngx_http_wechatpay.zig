@@ -9,7 +9,6 @@ const http = ngx.http;
 const cjson = ngx.cjson;
 const CJSON = cjson.CJSON;
 
-const Pair = core.Pair;
 const NGX_OK = core.NGX_OK;
 const NGX_ERROR = core.NGX_ERROR;
 const NGX_AGAIN = core.NGX_AGAIN;
@@ -186,7 +185,7 @@ fn wechatpay_merge_loc_conf(cf: [*c]ngx_conf_t, parent: ?*anyopaque, child: ?*an
             conf.ngx_conf_merge_str_value(&ch.*.mch_id, &pr.*.mch_id, ngx_string(""));
 
             if (conf.ngx_http_conf_get_core_module_loc_conf(cf)) |cocf| {
-                if (ch.*.proxy.len > 5) { // http:// or https://
+                if (ch.*.proxy.len > 0) {
                     cocf.*.handler = ngx_http_wechatpay_proxy_handler;
                     ch.*.ups = init_upstream_conf(cf.*.pool) catch return conf.NGX_CONF_ERROR;
                     return config_check(cf, ch);
@@ -369,15 +368,49 @@ fn wechatpay_postconfiguration(cf: [*c]ngx_conf_t) callconv(.C) ngx_int_t {
     return NGX_OK;
 }
 
-fn is_http(host: ngx_str_t) Pair(bool, ngx_str_t) {
-    const h5 = core.slicify(u8, host.data, 5);
-    if (std.mem.eql(u8, "http:", h5) and host.len > 7) {
-        return Pair(bool, ngx_str_t){ .t = true, .u = .{ .data = host.data + 7, .len = host.len - 7 } };
+const Host = struct {
+    host: ngx_str_t,
+    port: u16,
+    ssl: bool,
+};
+
+fn get_port(p0: [*c]u8, p1: [*c]u8) ?u16 {
+    var d: usize = 0;
+    var p: [*c]u8 = p0 + 1;
+    while (p < p1) : (p += 1) {
+        if (p.* >= '0' and p.* <= '9') {
+            d = d * 10 + p.* - '0';
+        } else {
+            return null;
+        }
     }
-    if (std.mem.eql(u8, "https", h5) and host.len > 8) {
-        return Pair(bool, ngx_str_t){ .t = false, .u = .{ .data = host.data + 8, .len = host.len - 8 } };
+    return if (d > 65535 or d == 0) null else @as(u16, @intCast(d));
+}
+
+fn get_host(host: ngx_str_t) Host {
+    var h = Host{ .host = host, .port = 80, .ssl = false };
+    var i: usize = @min(host.len, 6);
+    while (i < host.len) : (i += 1) {
+        if (host.data[i] == ':') {
+            h.host = ngx.string.ngx_string_from_ptr(host.data, host.data + i);
+            break;
+        }
     }
-    return Pair(bool, ngx_str_t){ .t = false, .u = host };
+    const port = get_port(host.data + i, host.data + host.len);
+    h.port = port orelse 80;
+
+    if (host.len > 7 and std.mem.eql(u8, core.slicify(u8, host.data, 7), "http://")) {
+        h.host = ngx.string.ngx_string_from_ptr(host.data + 7, host.data + i);
+        h.port = port orelse 80;
+    }
+
+    if (host.len > 8 and std.mem.eql(u8, core.slicify(u8, host.data, 8), "https://")) {
+        h.host = ngx.string.ngx_string_from_ptr(host.data + 8, host.data + i);
+        h.port = port orelse 443;
+        h.ssl = true;
+    }
+
+    return h;
 }
 
 /////////////////////////////////////////  WECHATPAY UPSTREAM  //////////////////////////////////////////////////
@@ -564,16 +597,10 @@ fn create_upstream(r: [*c]ngx_http_request_t, lccf: [*c]wechatpay_loc_conf) !ngx
     r.*.upstream.*.input_filter = ngx_http_wechatpay_proxy_upstream_input_filter;
     r.*.upstream.*.finalize_request = ngx_http_wechatpay_proxy_upstream_finalize_request;
 
-    const hhost = is_http(lccf.*.proxy);
-    if (hhost.t) {
-        r.*.upstream.*.resolved.*.host = hhost.u;
-        r.*.upstream.*.resolved.*.port = 80;
-        r.*.upstream.*.flags.ssl = false;
-    } else {
-        r.*.upstream.*.resolved.*.host = hhost.u;
-        r.*.upstream.*.resolved.*.port = 443;
-        r.*.upstream.*.flags.ssl = true;
-    }
+    const host = get_host(lccf.*.proxy);
+    r.*.upstream.*.resolved.*.host = host.host;
+    r.*.upstream.*.resolved.*.port = host.port;
+    r.*.upstream.*.flags.ssl = host.ssl;
     r.*.upstream.*.resolved.*.naddrs = 1;
 
     if (core.ngz_pcalloc_c(wechatpay_upstream_context, r.*.pool)) |ups_ctx| {
@@ -926,15 +953,18 @@ var ngx_http_wechatpay_next_output_body_filter: http.ngx_http_output_body_filter
 
 const expectEqual = std.testing.expectEqual;
 test "wechatpay module" {
-    const h1 = is_http(ngx_string("http://abc"));
-    try expectEqual(h1.t, true);
-    try expectEqual(std.mem.eql(u8, core.slicify(u8, h1.u.data, h1.u.len), "abc"), true);
+    const host0 = get_host(ngx_string("https://abcd.com:80"));
+    try expectEqual(host0.port, 80);
+    try expectEqual(host0.ssl, true);
+    try expectEqual(ngx.string.eql(host0.host, ngx_string("abcd.com")), true);
 
-    const h2 = is_http(ngx_string("https://abcd.com"));
-    try expectEqual(h2.t, false);
-    try expectEqual(std.mem.eql(u8, core.slicify(u8, h2.u.data, h2.u.len), "abcd.com"), true);
+    const host1 = get_host(ngx_string("https://abcd.com"));
+    try expectEqual(host1.port, 443);
+    try expectEqual(host1.ssl, true);
+    try expectEqual(ngx.string.eql(host1.host, ngx_string("abcd.com")), true);
 
-    const h3 = is_http(ngx_string("abcd.com"));
-    try expectEqual(h3.t, false);
-    try expectEqual(std.mem.eql(u8, core.slicify(u8, h3.u.data, h3.u.len), "abcd.com"), true);
+    const host2 = get_host(ngx_string("abcd.com:8080"));
+    try expectEqual(host2.port, 8080);
+    try expectEqual(host2.ssl, false);
+    try expectEqual(ngx.string.eql(host2.host, ngx_string("abcd.com")), true);
 }
