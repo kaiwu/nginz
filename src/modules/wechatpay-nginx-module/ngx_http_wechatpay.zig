@@ -472,7 +472,7 @@ fn ngx_http_wechatpay_proxy_upstream_input_filter_init(ctx: ?*anyopaque) callcon
         const r = ups_ctx.*.r;
         const u = r.*.upstream;
         const content_length = u.*.headers_in.content_length_n;
-        if (content_length > 0) {
+        if (content_length > 0 and u.*.length > 0) {
             ups_ctx.*.len = @intCast(content_length);
             if (core.castPtr(u8, core.ngx_pmemalign(r.*.pool, core.ngx_align(ups_ctx.*.len, PAGE_SIZE), core.NGX_ALIGNMENT))) |data| {
                 ups_ctx.*.data = data;
@@ -490,7 +490,8 @@ fn ngx_http_wechatpay_proxy_upstream_input_filter(ctx: ?*anyopaque, bytes: isize
         const r = ups_ctx.*.r;
         const u = r.*.upstream;
         const len: usize = @intCast(bytes);
-        if (core.ngz_len(ups_ctx.*.data, ups_ctx.*.last) + len <= ups_ctx.*.len) {
+        if (u.*.length > 0 and core.ngz_len(ups_ctx.*.data, ups_ctx.*.last) + len <= ups_ctx.*.len) {
+            u.*.length -= @min(u.*.length, bytes);
             @memcpy(core.slicify(u8, ups_ctx.*.last, len), core.slicify(u8, u.*.buffer.last, len));
             ups_ctx.*.last += len;
 
