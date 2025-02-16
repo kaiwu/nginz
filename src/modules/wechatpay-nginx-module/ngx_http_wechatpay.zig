@@ -95,13 +95,9 @@ const wechatpay_loc_conf = extern struct {
 
 fn init_upstream_conf(p: [*c]ngx_pool_t) ![*c]http.ngx_http_upstream_conf_t {
     if (core.ngz_pcalloc_c(http.ngx_http_upstream_conf_t, p)) |cf| {
-        cf.*.buffering = 1;
-        cf.*.buffer_size = 4 * ngx_pagesize;
-        cf.*.bufs.num = 8;
-        cf.*.bufs.size = 4 * ngx_pagesize;
+        cf.*.buffering = 0;
+        cf.*.buffer_size = 32 * ngx_pagesize;
         cf.*.ssl_verify = 0;
-        cf.*.max_temp_file_size = 0;
-        cf.*.temp_file_write_size = 0;
         cf.*.module = ngx_string("ngx_http_wechatpay_module");
         if (core.ngz_pcalloc_c(ngx_array_t, p)) |hide| {
             cf.*.hide_headers = hide;
@@ -282,7 +278,8 @@ fn sign_request(lccf: [*c]wechatpay_loc_conf, r: [*c]ngx_http_request_t, data: [
 }
 
 fn build_request(lccf: [*c]wechatpay_loc_conf, r: [*c]ngx_http_request_t) !ngx_str_t {
-    if (core.castPtr(u8, core.ngx_pmemalign(r.*.pool, 2 * ngx_pagesize, core.NGX_ALIGNMENT))) |data| {
+    const content_length: usize = @intCast(r.*.headers_in.content_length_n);
+    if (core.castPtr(u8, core.ngx_pmemalign(r.*.pool, core.ngx_align(content_length + 1024, 4096), core.NGX_ALIGNMENT))) |data| {
         defer _ = core.ngx_pfree(r.*.pool, data);
 
         const sign = try sign_request(lccf, r, data);
@@ -462,57 +459,20 @@ fn ngx_http_wechatpay_proxy_upstream_process_header(r: [*c]ngx_http_request_t) c
     return NGX_OK;
 }
 
-fn finalize_request(body: [*c]ngx_str_t, r: [*c]ngx_http_request_t, rc: ngx_int_t, rctx: [*c]wechatpay_request_context) !bool {
-    if (rc != NGX_OK) {
-        return false;
-    }
-    if (core.castPtr(u8, core.ngx_pmemalign(r.*.pool, 2 * ngx_pagesize, core.NGX_ALIGNMENT))) |data| {
-        defer _ = core.ngx_pfree(r.*.pool, data);
-        const u = r.*.upstream;
-        var headers = NList(ngx_table_elt_t).init0(&u.*.headers_in.headers);
-        const content_length: ngx_uint_t = @intCast(u.*.headers_in.content_length_n);
-        body.* = ngx_str_t{ .data = u.*.buffer.pos, .len = core.ngz_len(u.*.buffer.pos, u.*.buffer.last) };
-        if (content_length == body.*.len) {
-            return verify_request(rctx.*.lccf, &headers, body.*, r.*.pool, data);
-        }
+fn ngx_http_wechatpay_proxy_upstream_input_filter_init(ctx: ?*anyopaque) callconv(.C) ngx_int_t {
+    _ = ctx;
+    return NGX_OK;
+}
 
-        const olen = buf.ngz_chain_length(u.*.out_bufs);
-        if (olen > 0 and content_length == body.*.len + olen) {
-            if (core.castPtr(u8, core.ngx_pnalloc(r.*.pool, content_length))) |p| {
-                const out = try buf.ngz_chain_content(u.*.out_bufs, r.*.pool);
-                @memcpy(core.slicify(u8, p, body.*.len), core.slicify(u8, body.*.data, body.*.len));
-                @memcpy(core.slicify(u8, p + body.*.len, olen), core.slicify(u8, out.data, olen));
-                body.* = ngx_str_t{ .data = p, .len = content_length };
-                return verify_request(rctx.*.lccf, &headers, body.*, r.*.pool, data);
-            }
-        }
-    }
-    return false;
+fn ngx_http_wechatpay_proxy_upstream_input_filter(ctx: ?*anyopaque, size: isize) callconv(.C) ngx_int_t {
+    _ = ctx;
+    _ = size;
+    return NGX_OK;
 }
 
 fn ngx_http_wechatpay_proxy_upstream_finalize_request(r: [*c]ngx_http_request_t, rc: ngx_int_t) callconv(.C) void {
-    if (core.castPtr(wechatpay_request_context, r.*.ctx[ngx_http_wechatpay_module.ctx_index])) |rctx| {
-        if (core.ngz_pcalloc_c(ngx_str_t, r.*.pool)) |body| {
-            const verify = finalize_request(body, r, rc, rctx) catch false;
-            const header_wait = rctx.*.sig_verify == .SIG_VERIFICATION_PENDDING;
-            rctx.*.sig_verify = if (verify) .SIG_VERIFICATION_SUCCESS else .SIG_VERIFICATION_FAILED;
-            if (header_wait) {
-                _ = http.ngx_http_send_header(r);
-            }
-            // send body explicitly
-            if (body.*.len > 0) {
-                var chain = NChain.init(r.*.pool);
-                var out = buf.ngx_chain_t{
-                    .buf = core.nullptr(ngx_buf_t),
-                    .next = core.nullptr(ngx_chain_t),
-                };
-                const last = chain.allocStr(body.*, &out) catch return;
-                last.*.buf.*.flags.last_buf = true;
-                last.*.buf.*.flags.last_in_chain = true;
-                _ = http.ngx_http_output_filter(r, last);
-            }
-        }
-    }
+    _ = r;
+    _ = rc;
 }
 
 fn create_upstream(r: [*c]ngx_http_request_t, lccf: [*c]wechatpay_loc_conf) !ngx_int_t {
@@ -520,9 +480,11 @@ fn create_upstream(r: [*c]ngx_http_request_t, lccf: [*c]wechatpay_loc_conf) !ngx
         return WError.UPSTREAM_ERROR;
     }
     r.*.upstream.*.conf = lccf.*.ups;
-    r.*.upstream.*.flags.buffering = true;
+    r.*.upstream.*.flags.buffering = false;
     r.*.upstream.*.create_request = ngx_http_wechatpay_proxy_upstream_create_request;
     r.*.upstream.*.process_header = ngx_http_wechatpay_proxy_upstream_process_status;
+    r.*.upstream.*.input_filter_init = ngx_http_wechatpay_proxy_upstream_input_filter_init;
+    r.*.upstream.*.input_filter = ngx_http_wechatpay_proxy_upstream_input_filter;
     r.*.upstream.*.finalize_request = ngx_http_wechatpay_proxy_upstream_finalize_request;
     const hhost = is_http(lccf.*.proxy);
     if (hhost.t) {
@@ -600,7 +562,8 @@ fn aes_decode(r: [*c]ngx_http_request_t, body: ngx_str_t, aes: [*c]NSSL_AES_256_
 
 fn notify(r: [*c]ngx_http_request_t) !ngx_int_t {
     if (core.castPtr(wechatpay_request_context, r.*.ctx[ngx_http_wechatpay_module.ctx_index])) |rctx| {
-        if (core.castPtr(u8, core.ngx_pmemalign(r.*.pool, 2 * ngx_pagesize, core.NGX_ALIGNMENT))) |data| {
+        const content_length: usize = @intCast(r.*.headers_in.content_length_n);
+        if (core.castPtr(u8, core.ngx_pmemalign(r.*.pool, core.ngx_align(content_length + 1024, 4096), core.NGX_ALIGNMENT))) |data| {
             defer _ = core.ngx_pfree(r.*.pool, data);
 
             const lccf = rctx.*.lccf;
@@ -808,6 +771,28 @@ fn postconfiguration_filter(cf: [*c]ngx_conf_t) callconv(.C) ngx_int_t {
     _ = cf;
     ngx_http_wechatpay_next_header_filter = http.ngx_http_top_header_filter;
     http.ngx_http_top_header_filter = ngx_http_wechatpay_header_filter;
+
+    ngx_http_wechatpay_next_output_body_filter = http.ngx_http_top_body_filter;
+    http.ngx_http_top_body_filter = ngx_http_wechatpay_output_body_filter;
+
+    return NGX_OK;
+}
+
+export fn ngx_http_wechatpay_output_body_filter(r: [*c]ngx_http_request_t, c: [*c]ngx_chain_t) callconv(.C) ngx_int_t {
+    if (r.*.upstream != core.nullptr(http.ngx_http_upstream_t) and
+        r.*.upstream.*.finalize_request.? == ngx_http_wechatpay_proxy_upstream_finalize_request)
+    {
+        if (core.castPtr(wechatpay_request_context, r.*.ctx[ngx_http_wechatpay_module.ctx_index])) |rctx| {
+            switch (rctx.*.sig_verify) {
+                .SIG_VERIFICATION_PENDDING => return NGX_OK,
+                .SIG_VERIFICATION_FAILED => {},
+                .SIG_VERIFICATION_SUCCESS => {},
+            }
+        }
+    }
+    if (ngx_http_wechatpay_next_output_body_filter) |filter| {
+        return filter(r, c);
+    }
     return NGX_OK;
 }
 
@@ -821,7 +806,7 @@ export fn ngx_http_wechatpay_header_filter(r: [*c]ngx_http_request_t) callconv(.
                 .SIG_VERIFICATION_FAILED => {
                     r.*.headers_out.status = http.NGX_HTTP_UNAUTHORIZED;
                     r.*.headers_out.status_line = ngx_string("SIGN VERIFICATION ERROR");
-                }, //TODO
+                },
                 .SIG_VERIFICATION_SUCCESS => {},
             }
         }
@@ -853,6 +838,7 @@ export var ngx_http_wechatpay_filter_module = ngx.module.make_module(
 );
 
 var ngx_http_wechatpay_next_header_filter: http.ngx_http_output_header_filter_pt = null;
+var ngx_http_wechatpay_next_output_body_filter: http.ngx_http_output_body_filter_pt = null;
 
 const expectEqual = std.testing.expectEqual;
 test "wechatpay module" {

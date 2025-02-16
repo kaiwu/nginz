@@ -153,6 +153,10 @@ test "core" {
     try expectEqual(ngx_align(6, 4), 8);
     try expectEqual(ngx_align(8, 8), 8);
     try expectEqual(ngx_align(10, 8), 16);
+    try expectEqual(ngx_align(798, 1024), 1024);
+    try expectEqual(ngx_align(1025, 1024), 2048);
+    try expectEqual(ngx_align(1025, 4096), 4096);
+    try expectEqual(ngx_align(4100, 4096), 4096 * 2);
 
     try expectEqual(@sizeOf(c_uint), 4);
     try expectEqual(@sizeOf([4]c_uint), 16);
