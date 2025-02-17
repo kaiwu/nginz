@@ -509,9 +509,11 @@ fn ngx_http_wechatpay_proxy_upstream_input_filter(ctx: ?*anyopaque, bytes: isize
             cl.*.buf.*.last += len;
             u.*.buffer.last += len;
 
+            ngx.log.ngz_log_error(ngx.log.NGX_LOG_DEBUG, r.*.connection.*.log, 0, "reading upstream %d bytes", .{bytes});
             if (u.*.length > 0) {
                 u.*.length -= @min(u.*.length, bytes);
             }
+            return NGX_OK;
         }
     }
     return NGX_ERROR;
@@ -541,7 +543,6 @@ fn ngx_http_wechatpay_proxy_upstream_finalize_request(r: [*c]ngx_http_request_t,
             last.*.buf.*.flags.last_buf = true;
             last.*.buf.*.flags.last_in_chain = true;
         }
-        ngx.log.ngz_log_error(ngx.log.NGX_LOG_WARN, r.*.connection.*.log, 0, "SENDING BODY !!!", .{});
         _ = send_body(r, rctx.*.res.*.next) catch NGX_ERROR;
     }
 }
