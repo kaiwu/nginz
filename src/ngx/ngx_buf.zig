@@ -51,10 +51,10 @@ pub inline fn ngz_chain_length(cl: [*c]ngx_chain_t) ngx_uint_t {
     var total: ngx_uint_t = 0;
     var n: [*c]ngx_chain_t = cl;
     while (n != NChain.NP) {
-        if (ngx_buf_in_memory_only(n.*.buf)) {
+        if (n.*.buf != core.nullptr(ngx_buf_t) and ngx_buf_in_memory_only(n.*.buf)) {
             total += @intFromPtr(n.*.buf.*.last) - @intFromPtr(n.*.buf.*.pos);
-            n = n.*.next;
         }
+        n = n.*.next;
     }
     return total;
 }
@@ -77,7 +77,7 @@ pub inline fn ngz_chain_content(cl: [*c]ngx_chain_t, p: [*c]ngx_pool_t) !ngx_str
         var i: usize = 0;
         var s = core.slicify(u8, b, len);
         while (ngz_chain_iterate(&ll)) |bf| {
-            if (ngx_buf_in_memory_only(bf)) {
+            if (bf != core.nullptr(ngx_buf_t) and ngx_buf_in_memory_only(bf)) {
                 const l = @intFromPtr(bf.*.last) - @intFromPtr(bf.*.pos);
                 @memcpy(s[i .. i + l], core.slicify(u8, bf.*.pos, l));
                 i += l;
@@ -209,23 +209,6 @@ pub const NChain = extern struct {
         size: ngx_uint_t,
         last: [*c]ngx_chain_t,
     ) ![*c]ngx_chain_t {
-        var cl: [*c]ngx_chain_t = self.pool.*.chain;
-        var ll: [*c]ngx_chain_t = cl;
-        while (cl != NP) {
-            if (@intFromPtr(cl.*.buf.*.end) - @intFromPtr(cl.*.buf.*.start) >= size) {
-                ll.*.next = cl.*.next;
-                break;
-            }
-            ll = cl;
-            cl = cl.*.next;
-        }
-        if (cl != NP) {
-            cl.*.buf.*.last = cl.*.buf.*.pos;
-            cl.*.next = NP;
-            last.*.next = cl;
-            return cl;
-        }
-
         if (core.ngz_pcalloc_c(ngx_chain_t, self.pool)) |cl0| {
             const b = ngx_create_temp_buf(self.pool, size);
             if (b != core.nullptr(ngx_buf_t)) {

@@ -111,16 +111,16 @@ pub fn ngz_set_upstream_header(h: [*c]hash.ngx_table_elt_t, r: [*c]ngx_http_requ
     const total = h.*.key.len + 1 + h.*.value.len + 1 + h.*.key.len;
     if (core.castPtr(u8, core.ngx_pnalloc(r.*.pool, total))) |p| {
         h.*.key.data = p;
-        @memcpy(core.slicify(u8, h.*.key.data, h.*.key.len), core.slicify(u8, r.*.header_name_start, h.*.key.len));
+        core.ngz_memcpy(h.*.key.data, r.*.header_name_start, h.*.key.len);
         h.*.key.data[h.*.key.len] = 0;
 
         h.*.value.data = p + h.*.key.len + 1;
-        @memcpy(core.slicify(u8, h.*.value.data, h.*.value.len), core.slicify(u8, r.*.header_start, h.*.value.len));
+        core.ngz_memcpy(h.*.value.data, r.*.header_start, h.*.value.len);
         h.*.value.data[h.*.value.len] = 0;
 
         h.*.lowcase_key = p + h.*.key.len + 1 + h.*.value.len + 1;
         if (h.*.key.len == r.*.lowcase_index) {
-            @memcpy(core.slicify(u8, h.*.lowcase_key, h.*.key.len), core.slicify(u8, &r.*.lowcase_header, h.*.key.len));
+            core.ngz_memcpy(h.*.lowcase_key, &r.*.lowcase_header, h.*.key.len);
         } else {
             string.ngx_strlow(h.*.lowcase_key, h.*.key.data, h.*.key.len);
         }
