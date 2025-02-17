@@ -105,7 +105,12 @@ pub inline fn ngz_http_getor_module_ctx(
     return ctx;
 }
 
-pub fn ngz_set_upstream_header(h: [*c]hash.ngx_table_elt_t, r: [*c]ngx_http_request_t, umcf: [*c]ngx_http_upstream_main_conf_t) ngx_int_t {
+pub fn ngz_set_upstream_header(
+    h: [*c]hash.ngx_table_elt_t,
+    r: [*c]ngx_http_request_t,
+    umcf: [*c]ngx_http_upstream_main_conf_t,
+    pass: [*c]ngx_str_t,
+) ngx_int_t {
     h.*.hash = r.*.header_hash;
     h.*.key.len = core.ngz_len(r.*.header_name_start, r.*.header_name_end);
     h.*.value.len = core.ngz_len(r.*.header_start, r.*.header_end);
@@ -124,6 +129,12 @@ pub fn ngz_set_upstream_header(h: [*c]hash.ngx_table_elt_t, r: [*c]ngx_http_requ
             core.ngz_memcpy(h.*.lowcase_key, &r.*.lowcase_header, h.*.key.len);
         } else {
             string.ngx_strlow(h.*.lowcase_key, h.*.key.data, h.*.key.len);
+        }
+        var i: usize = 0;
+        while (pass[i].len > 0) : (i += 1) {
+            if (string.eql(pass[i], h.*.key)) {
+                return NGX_OK;
+            }
         }
         const hh = hash.ngx_hash_find(&umcf.*.headers_in_hash, h.*.hash, h.*.lowcase_key, h.*.key.len);
         if (core.castPtr(ngx_http_upstream_header_t, hh)) |h0| {

@@ -108,7 +108,7 @@ const wechatpay_pass_headers = [_]ngx_str_t{
     ngx.string.ngx_null_str,
 };
 
-fn init_upstream_conf(cf: [*c]http.ngx_http_upstream_conf_t, pool: [*c]ngx_pool_t) !void {
+fn init_upstream_conf(cf: [*c]http.ngx_http_upstream_conf_t) void {
     cf.*.buffering = 0;
     cf.*.buffer_size = 32 * ngx_pagesize;
     cf.*.ssl_verify = 0;
@@ -117,15 +117,7 @@ fn init_upstream_conf(cf: [*c]http.ngx_http_upstream_conf_t, pool: [*c]ngx_pool_
     cf.*.read_timeout = 60000;
     cf.*.module = ngx_string("ngx_http_wechatpay_module");
     cf.*.hide_headers = conf.NGX_CONF_UNSET_PTR;
-
-    var pass_headers = try NArray(ngx_str_t).init(pool, 6);
-    for (wechatpay_pass_headers) |header| {
-        if (header.len > 0) {
-            const h = try pass_headers.append();
-            h.* = header;
-        }
-    }
-    cf.*.pass_headers = pass_headers.pa;
+    cf.*.pass_headers = conf.NGX_CONF_UNSET_PTR;
 }
 
 fn init_wechatpay_context(cf: [*c]wechatpay_loc_conf, p: [*c]ngx_pool_t) ![*c]wechatpay_context {
@@ -169,7 +161,7 @@ fn wechatpay_create_loc_conf(cf: [*c]ngx_conf_t) callconv(.C) ?*anyopaque {
         p.*.oaep_decrypt = conf.NGX_CONF_UNSET;
         p.*.notify_location = null;
 
-        init_upstream_conf(&p.*.ups, cf.*.pool) catch return null;
+        init_upstream_conf(&p.*.ups);
         return p;
     }
     return null;
@@ -491,7 +483,7 @@ fn ngx_http_wechatpay_proxy_upstream_process_header(r: [*c]ngx_http_request_t) c
             switch (rc) {
                 NGX_OK => {
                     const h = headers.append() catch return NGX_ERROR;
-                    if (http.ngz_set_upstream_header(h, r, umcf) != NGX_OK) {
+                    if (http.ngz_set_upstream_header(h, r, umcf, @constCast(&wechatpay_pass_headers)) != NGX_OK) {
                         return NGX_ERROR;
                     }
                     continue;
