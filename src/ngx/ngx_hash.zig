@@ -22,7 +22,7 @@ pub inline fn ngx_hash(key: ngx_uint_t, c: u8) ngx_uint_t {
 
 const NGX_CACHELINE_SIZE = core.NGX_CACHELINE_SIZE;
 const ngx_hash_key_t = ngx.ngx_hash_key_t;
-const ngx_hash_init_t = ngx.ngx_hash_init_t;
+pub const ngx_hash_init_t = ngx.ngx_hash_init_t;
 const ngx_hash_key_pt = ngx.ngx_hash_key_pt;
 const ngx_hash_keys_array_t = ngx.ngx_hash_keys_arrays_t;
 

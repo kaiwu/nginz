@@ -45,6 +45,7 @@ pub const ngx_http_upstream_state_t = ngx.ngx_http_upstream_state_t;
 pub const ngx_http_file_cache_node_t = ngx.ngx_http_file_cache_node_t;
 pub const ngx_http_upstream_server_t = ngx.ngx_http_upstream_server_t;
 pub const ngx_http_post_subrequest_t = ngx.ngx_http_post_subrequest_t;
+pub const ngx_http_upstream_header_t = ngx.ngx_http_upstream_header_t;
 pub const ngx_http_upstream_rr_peer_t = ngx.ngx_http_upstream_rr_peer_t;
 pub const ngx_http_post_subrequest_pt = ngx.ngx_http_post_subrequest_pt;
 pub const ngx_http_upstream_resolved_t = ngx.ngx_http_upstream_resolved_t;
@@ -125,7 +126,7 @@ pub fn ngz_set_upstream_header(h: [*c]hash.ngx_table_elt_t, r: [*c]ngx_http_requ
             string.ngx_strlow(h.*.lowcase_key, h.*.key.data, h.*.key.len);
         }
         const hh = hash.ngx_hash_find(&umcf.*.headers_in_hash, h.*.hash, h.*.lowcase_key, h.*.key.len);
-        if (core.castPtr(ngx_http_header_t, hh)) |h0| {
+        if (core.castPtr(ngx_http_upstream_header_t, hh)) |h0| {
             if (h0.*.handler) |handle| {
                 return handle(r, h, h0.*.offset);
             }
@@ -186,6 +187,7 @@ pub const ngx_http_parse_request_line = ngx.ngx_http_parse_request_line;
 pub const ngx_http_run_posted_requests = ngx.ngx_http_run_posted_requests;
 pub const ngx_http_request_empty_handler = ngx.ngx_http_request_empty_handler;
 pub const ngx_http_read_client_request_body = ngx.ngx_http_read_client_request_body;
+pub const ngx_http_upstream_hide_headers_hash = ngx.ngx_http_upstream_hide_headers_hash;
 
 pub inline fn ngx_http_clear_content_length(r: [*c]ngx_http_request_t) void {
     r.*.headers_out.content_length_n = -1;
