@@ -457,6 +457,8 @@ fn echoz_init_parameters(cf: [*c]ngx_conf_t, cmd: [*c]ngx_command_t, cs: *NArray
         ngx.log.ngx_http_conf_debug(cf, "%V", .{arg});
         const param = echoz.*.params.append() catch return conf.NGX_CONF_ERROR;
         param.*.raw = arg.*;
+        param.*.lengths = core.nullptr(ngx_array_t);
+        param.*.values = core.nullptr(ngx_array_t);
         param.*.variables = conf.ngz_http_conf_variables_parse(
             cf,
             arg,

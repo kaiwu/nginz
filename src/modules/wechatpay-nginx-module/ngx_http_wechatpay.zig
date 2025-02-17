@@ -587,17 +587,21 @@ fn create_upstream(r: [*c]ngx_http_request_t, lccf: [*c]wechatpay_loc_conf) !ngx
     r.*.upstream.*.finalize_request = ngx_http_wechatpay_proxy_upstream_finalize_request;
 
     const host = get_host(lccf.*.proxy);
-    r.*.upstream.*.resolved.*.host = host.host;
-    r.*.upstream.*.resolved.*.port = host.port;
-    r.*.upstream.*.flags.ssl = host.ssl;
-    r.*.upstream.*.resolved.*.naddrs = 1;
+    if (core.ngz_pcalloc_c(http.ngx_http_upstream_resolved_t, r.*.pool)) |resolved| {
+        r.*.upstream.*.resolved = resolved;
+        r.*.upstream.*.resolved.*.host = host.host;
+        r.*.upstream.*.resolved.*.port = host.port;
+        r.*.upstream.*.flags.ssl = host.ssl;
+        r.*.upstream.*.resolved.*.naddrs = 1;
 
-    if (core.ngz_pcalloc_c(wechatpay_upstream_context, r.*.pool)) |ups_ctx| {
-        ups_ctx.*.r = r;
-        r.*.upstream.*.input_filter_ctx = ups_ctx;
-        http.ngx_http_upstream_init(r);
-        return core.NGX_DONE;
+        if (core.ngz_pcalloc_c(wechatpay_upstream_context, r.*.pool)) |ups_ctx| {
+            ups_ctx.*.r = r;
+            r.*.upstream.*.input_filter_ctx = ups_ctx;
+            http.ngx_http_upstream_init(r);
+            return core.NGX_DONE;
+        }
     }
+
     return core.NError.OOM;
 }
 
