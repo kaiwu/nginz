@@ -225,13 +225,8 @@ fn wechatpay_merge_loc_conf(cf: [*c]ngx_conf_t, parent: ?*anyopaque, child: ?*an
                     return config_check(cf, ch);
                 }
             }
-            if (conf.ngx_http_conf_get_core_module_main_conf(cf)) |cmcf| {
-                if (ch.*.access_control == 1) {
-                    var handlers = NArray(http.ngx_http_handler_pt).init0(&cmcf.*.phases[http.NGX_HTTP_ACCESS_PHASE].handlers);
-                    const h = handlers.append() catch return conf.NGX_CONF_ERROR;
-                    h.* = ngx_http_wechatpay_access_handler;
-                    return config_check(cf, ch);
-                }
+            if (ch.*.access_control == 1) {
+                return config_check(cf, ch);
             }
         }
     }
@@ -386,7 +381,11 @@ fn wechatpay_preconfiguration(cf: [*c]ngx_conf_t) callconv(.C) ngx_int_t {
 }
 
 fn wechatpay_postconfiguration(cf: [*c]ngx_conf_t) callconv(.C) ngx_int_t {
-    _ = cf;
+    if (core.castPtr(http.ngx_http_core_main_conf_t, conf.ngx_http_conf_get_module_main_conf(cf, &ngx_http_core_module))) |cmcf| {
+        var handlers = NArray(http.ngx_http_handler_pt).init0(&cmcf.*.phases[http.NGX_HTTP_ACCESS_PHASE].handlers);
+        const h = handlers.append() catch return NGX_ERROR;
+        h.* = ngx_http_wechatpay_access_handler;
+    }
     return NGX_OK;
 }
 
@@ -717,6 +716,9 @@ export fn ngx_http_wechatpay_access_body_handler(r: [*c]ngx_http_request_t) call
 
 export fn ngx_http_wechatpay_access_handler(r: [*c]ngx_http_request_t) callconv(.C) ngx_int_t {
     if (core.castPtr(wechatpay_loc_conf, conf.ngx_http_get_module_loc_conf(r, &ngx_http_wechatpay_module))) |lccf| {
+        if (lccf.*.access_control == 0) {
+            return NGX_DECLINED;
+        }
         const rctx = http.ngz_http_get_module_ctx(wechatpay_request_context, r, &ngx_http_wechatpay_module) catch return http.NGX_HTTP_FORBIDDEN;
         if (rctx.*.lccf == core.nullptr(wechatpay_loc_conf)) {
             rctx.*.lccf = lccf;
