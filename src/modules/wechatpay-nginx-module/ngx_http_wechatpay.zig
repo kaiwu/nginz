@@ -168,7 +168,7 @@ fn wechatpay_create_loc_conf(cf: [*c]ngx_conf_t) callconv(.C) ?*anyopaque {
     return null;
 }
 
-fn ngx_conf_set_wechatpay_acess(cf: [*c]ngx_conf_t, cmd: [*c]ngx_command_t, loc: ?*anyopaque) callconv(.C) [*c]u8 {
+fn ngx_conf_set_wechatpay_access(cf: [*c]ngx_conf_t, cmd: [*c]ngx_command_t, loc: ?*anyopaque) callconv(.C) [*c]u8 {
     _ = cmd;
     if (core.castPtr(wechatpay_loc_conf, loc)) |lccf| {
         lccf.*.access_control = 1;
@@ -720,8 +720,19 @@ export fn ngx_http_wechatpay_access_handler(r: [*c]ngx_http_request_t) callconv(
         if (rctx.*.lccf == core.nullptr(wechatpay_loc_conf)) {
             rctx.*.lccf = lccf;
         }
-        const rc = http.ngx_http_read_client_request_body(r, ngx_http_wechatpay_access_body_handler);
-        return if (rc == NGX_AGAIN) core.NGX_DONE else http.NGX_HTTP_FORBIDDEN;
+        if (r.*.request_body == core.nullptr(http.ngx_http_request_body_t) or r.*.request_body.*.bufs == core.nullptr(buf.ngx_chain_t)) {
+            const rc = http.ngx_http_read_client_request_body(r, ngx_http_wechatpay_access_body_handler);
+            return if (rc == NGX_AGAIN) core.NGX_DONE else http.NGX_HTTP_FORBIDDEN;
+        } else {
+            const rc = wechatpay_check_access(r) catch |e| {
+                switch (e) {
+                    WError.SIGNATURE_ERROR => return http.NGX_HTTP_UNAUTHORIZED,
+                    WError.BODY_ERROR => return http.NGX_HTTP_BAD_REQUEST,
+                    else => return http.NGX_HTTP_FORBIDDEN,
+                }
+            };
+            return rc;
+        }
     }
     return NGX_DECLINED;
 }
@@ -856,7 +867,7 @@ export const ngx_http_wechatpay_commands = [_]ngx_command_t{
     ngx_command_t{
         .name = ngx_string("wechatpay_access"),
         .type = conf.NGX_HTTP_LOC_CONF | conf.NGX_CONF_ANY,
-        .set = ngx_conf_set_wechatpay_acess,
+        .set = ngx_conf_set_wechatpay_access,
         .conf = conf.NGX_HTTP_LOC_CONF_OFFSET,
         .offset = 0,
         .post = null,
