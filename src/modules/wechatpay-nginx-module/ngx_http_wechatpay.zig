@@ -697,7 +697,7 @@ fn wechatpay_check_access(r: [*c]ngx_http_request_t) !ngx_int_t {
                 last.*.buf.*.flags.last_in_chain = true;
                 r.*.request_body.*.bufs = last;
             }
-            return NGX_OK;
+            return NGX_DECLINED;
         }
     }
     return http.NGX_HTTP_FORBIDDEN;
