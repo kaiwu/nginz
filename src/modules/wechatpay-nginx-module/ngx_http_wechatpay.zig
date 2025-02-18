@@ -623,15 +623,16 @@ export fn ngx_http_wechatpay_proxy_handler(r: [*c]ngx_http_request_t) callconv(.
         if (rctx.*.lccf == core.nullptr(wechatpay_loc_conf)) {
             rctx.*.lccf = lccf;
         }
-        if (r.*.method & (http.NGX_HTTP_PUT | http.NGX_HTTP_POST) == 0) {
-            const rc = create_upstream(r, rctx) catch http.NGX_HTTP_INTERNAL_SERVER_ERROR;
-            return rc;
+        const no_need_body = r.*.method & (http.NGX_HTTP_PUT | http.NGX_HTTP_POST) == 0;
+        const no_read_body = r.*.request_body == core.nullptr(http.ngx_http_request_body_t) or r.*.request_body.*.bufs == core.nullptr(buf.ngx_chain_t);
+        if (no_need_body or !no_read_body) {
+            return create_upstream(r, rctx) catch http.NGX_HTTP_INTERNAL_SERVER_ERROR;
         } else {
             const rc = http.ngx_http_read_client_request_body(r, ngx_http_wechatpay_proxy_body_handler);
             return if (rc == NGX_AGAIN) core.NGX_DONE else rc;
         }
     }
-    return NGX_OK;
+    return NGX_DECLINED;
 }
 
 ///////////////////////////////////////   WECHATPAY ACCESS //////////////////////////////////////////////////////
@@ -720,7 +721,8 @@ export fn ngx_http_wechatpay_access_handler(r: [*c]ngx_http_request_t) callconv(
         if (rctx.*.lccf == core.nullptr(wechatpay_loc_conf)) {
             rctx.*.lccf = lccf;
         }
-        if (r.*.request_body == core.nullptr(http.ngx_http_request_body_t) or r.*.request_body.*.bufs == core.nullptr(buf.ngx_chain_t)) {
+        const no_read_body = r.*.request_body == core.nullptr(http.ngx_http_request_body_t) or r.*.request_body.*.bufs == core.nullptr(buf.ngx_chain_t);
+        if (no_read_body) {
             const rc = http.ngx_http_read_client_request_body(r, ngx_http_wechatpay_access_body_handler);
             return if (rc == NGX_AGAIN) core.NGX_DONE else http.NGX_HTTP_FORBIDDEN;
         } else {
@@ -782,10 +784,21 @@ export fn ngx_http_wechatpay_oaep_handler(r: [*c]ngx_http_request_t) callconv(.C
         if (rctx.*.lccf == core.nullptr(wechatpay_loc_conf)) {
             rctx.*.lccf = lccf;
         }
-        const rc = http.ngx_http_read_client_request_body(r, ngx_http_wechatpay_oaep_body_handler);
-        return if (rc == NGX_AGAIN) core.NGX_DONE else rc;
+        const no_read_body = r.*.request_body == core.nullptr(http.ngx_http_request_body_t) or r.*.request_body.*.bufs == core.nullptr(buf.ngx_chain_t);
+        if (no_read_body) {
+            const rc = http.ngx_http_read_client_request_body(r, ngx_http_wechatpay_oaep_body_handler);
+            return if (rc == NGX_AGAIN) core.NGX_DONE else rc;
+        } else {
+            const rc = execute_oaep_action(r, rctx.*.lccf.*.ctx) catch |e| {
+                switch (e) {
+                    core.NError.SSL_ERROR => return http.NGX_HTTP_BAD_REQUEST,
+                    else => return http.NGX_HTTP_INTERNAL_SERVER_ERROR,
+                }
+            };
+            return rc;
+        }
     }
-    return NGX_OK;
+    return NGX_DECLINED;
 }
 
 export const ngx_http_wechatpay_module_ctx = ngx_http_module_t{
