@@ -402,9 +402,12 @@ fn get_port(p0: [*c]u8, p1: [*c]u8) ?u16 {
     while (p < p1) : (p += 1) {
         if (p.* >= '0' and p.* <= '9') {
             d = d * 10 + p.* - '0';
-        } else {
-            return null;
+            continue;
         }
+        if (p.* == '/') {
+            break;
+        }
+        return null;
     }
     return if (d > 65535 or d == 0) null else @as(u16, @intCast(d));
 }
@@ -952,7 +955,7 @@ test "wechatpay module" {
     try expectEqual(host1.ssl, true);
     try expectEqual(ngx.string.eql(host1.host, ngx_string("abcd.com")), true);
 
-    const host2 = get_host(ngx_string("abcd.com:8080"));
+    const host2 = get_host(ngx_string("abcd.com:8080/"));
     try expectEqual(host2.port, 8080);
     try expectEqual(host2.ssl, false);
     try expectEqual(ngx.string.eql(host2.host, ngx_string("abcd.com")), true);
