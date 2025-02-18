@@ -109,7 +109,7 @@ pub fn ngz_set_upstream_header(
     h: [*c]hash.ngx_table_elt_t,
     r: [*c]ngx_http_request_t,
     umcf: [*c]ngx_http_upstream_main_conf_t,
-    pass: [*c]ngx_str_t,
+    pass: [*c]const ngx_str_t,
 ) ngx_int_t {
     h.*.hash = r.*.header_hash;
     h.*.key.len = core.ngz_len(r.*.header_name_start, r.*.header_name_end);
@@ -146,6 +146,9 @@ pub fn ngz_set_upstream_header(
     h.*.hash = 0;
     return core.NGX_ERROR;
 }
+
+pub const NGX_HTTP_ACCESS_PHASE = ngx.NGX_HTTP_ACCESS_PHASE;
+pub const NGX_HTTP_CONTENT_PHASE = ngx.NGX_HTTP_CONTENT_PHASE;
 
 pub const NGX_HTTP_OK = ngx.NGX_HTTP_OK;
 pub const NGX_HTTP_ACCEPTED = ngx.NGX_HTTP_ACCEPTED;

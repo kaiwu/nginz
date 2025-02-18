@@ -72,6 +72,10 @@ pub fn NArray(comptime T: type) type {
             return core.NError.OOM;
         }
 
+        pub fn init0(pa: [*c]ngx_array_t) Self {
+            return Self{ .pa = pa, .ready = 1 };
+        }
+
         pub fn inited(self: *Self) bool {
             return self.ready == 1;
         }
@@ -106,6 +110,7 @@ pub fn NArray(comptime T: type) type {
 
         pub fn append(self: *Self) ![*c]T {
             if (core.castPtr(T, ngx_array_push(self.pa))) |p0| {
+                p0.* = std.mem.zeroes(T);
                 return p0;
             } else {
                 return core.NError.OOM;

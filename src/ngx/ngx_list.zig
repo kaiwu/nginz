@@ -82,7 +82,7 @@ pub fn NList(comptime T: type) type {
 
         pub fn init0(pl: [*c]ngx_list_t) Self {
             const len = ngz_list_length(pl);
-            return Self{ .pl = pl, .len = len };
+            return Self{ .pl = pl, .len = len, .ready = 1 };
         }
 
         pub fn inited(self: *Self) bool {
@@ -115,6 +115,7 @@ pub fn NList(comptime T: type) type {
         pub fn append(self: *Self) ![*c]T {
             if (core.castPtr(T, ngx_list_push(self.pl))) |p0| {
                 defer self.len += 1;
+                p0.* = std.mem.zeroes(T);
                 return p0;
             } else {
                 return core.NError.OOM;
