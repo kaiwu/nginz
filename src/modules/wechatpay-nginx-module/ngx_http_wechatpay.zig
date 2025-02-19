@@ -697,7 +697,7 @@ fn wechatpay_check_access(r: [*c]ngx_http_request_t) !ngx_int_t {
                 last.*.buf.*.flags.last_in_chain = true;
                 r.*.request_body.*.bufs = last;
             }
-            return NGX_DECLINED;
+            return NGX_OK;
         }
     }
     return http.NGX_HTTP_FORBIDDEN;
@@ -726,7 +726,7 @@ export fn ngx_http_wechatpay_access_handler(r: [*c]ngx_http_request_t) callconv(
         const no_read_body = r.*.request_body == core.nullptr(http.ngx_http_request_body_t) or r.*.request_body.*.bufs == core.nullptr(buf.ngx_chain_t);
         if (no_read_body) {
             const rc = http.ngx_http_read_client_request_body(r, ngx_http_wechatpay_access_body_handler);
-            return if (rc == NGX_AGAIN) core.NGX_DONE else http.NGX_HTTP_FORBIDDEN;
+            return if (rc == NGX_AGAIN) core.NGX_DONE else rc;
         } else {
             const rc = wechatpay_check_access(r) catch |e| {
                 switch (e) {
