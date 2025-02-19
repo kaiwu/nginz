@@ -275,7 +275,7 @@ test "cjson" {
 
     const json =
         \\{
-        \\"a": "hello nginz",
+        \\"a": {"x": 100},
         \\"b": [1,2,3],
         \\"c": {"x": 1, "y": 42}
         \\}
@@ -287,10 +287,16 @@ test "cjson" {
 
     var rt = CJSON.RecursiveIterator.init(parsed);
     var sum: i32 = 0;
-    while (rt.next()) |_| {
+    var cstr = [4]u8{ 'c', 0, '5', 0 };
+    while (rt.next()) |j| {
+        if (CJSON.query(j, "$.x")) |_| {
+            if (cJSON_AddStringToObject(j, &cstr, @as([*c]u8, @ptrCast(&cstr)) + 2, &cj.alloc) == core.nullptr(cJSON)) {
+                unreachable;
+            }
+        }
         sum += 1;
     }
-    try expectEqual(sum, 9);
+    try expectEqual(sum, 12);
 
     try expectEqual(CJSON.query(parsed, "$.5"), null);
     try expectEqual(CJSON.query(parsed, "$.5.z"), null);
@@ -306,7 +312,7 @@ test "cjson" {
     try expectEqual(sum, 6);
 
     const j = try cj.encode(parsed);
-    try expectEqual(j.len, 50);
+    try expectEqual(j.len, 62);
     // std.debug.print("{s}", .{core.slicify(u8, j.data, j.len)});
     cj.free(parsed);
 }
