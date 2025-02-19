@@ -301,12 +301,7 @@ fn echoz_exec_command(cmd: [*c]echoz_command, ctx: [*c]echoz_context, r: [*c]ngx
         },
         .echoz_read_request_body => {
             const rc = http.ngx_http_read_client_request_body(r, ngx_http_echoz_client_body_handler);
-            if (rc == core.NGX_ERROR or rc >= http.NGX_HTTP_SPECIAL_RESPONSE) {
-                return ZError.BODY_ERROR;
-            }
-            if (rc == core.NGX_AGAIN) {
-                return ZError.READING_BODY;
-            }
+            return if (rc >= http.NGX_HTTP_SPECIAL_RESPONSE) ZError.BODY_ERROR else ZError.READING_BODY;
         },
         .echoz_exec => {
             const s2 = try parse_uri(r, &parameters);
