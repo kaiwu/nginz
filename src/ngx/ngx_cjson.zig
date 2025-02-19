@@ -103,26 +103,7 @@ fn cjson_pfree(p: ?*anyopaque) callconv(.C) void {
 pub const CJSON = extern struct {
     const Self = @This();
     const CJSON_BUFFER_LENTH = 512;
-
-    pub const Iterator = struct {
-        const Iter = @This();
-        v: [*c]cJSON,
-
-        pub fn init(j: [*c]cJSON) Iter {
-            if (cJSON_IsObject(j) == 1 or cJSON_IsArray(j) == 1) {
-                return Iter{ .v = j.*.child };
-            }
-            return Iter{ .v = j };
-        }
-
-        pub fn next(self: *Iter) ?[*c]cJSON {
-            if (self.v == core.nullptr(cJSON)) {
-                return null;
-            }
-            defer self.v = self.v.*.next;
-            return self.v;
-        }
-    };
+    const CJSON_DEPTH = 256;
 
     pub fn intValue(j: [*c]cJSON) ?i64 {
         if (cJSON_IsNumber(j) == 1) {
@@ -150,6 +131,29 @@ pub const CJSON = extern struct {
             return ngx_str_t{ .data = j.*.valuestring, .len = string.strlen(j.*.valuestring) };
         }
         return null;
+    }
+
+    // p[] must be long/deep enough and p[0] == j.*
+    pub fn iterate(j: [*c][*c]cJSON, p: [*c][*c]cJSON, i: *ngx_uint_t) ?[*c]cJSON {
+        outer: while (j.* == core.nullptr(cJSON)) {
+            while (i.* > 0) {
+                if (p[i.*].*.next != core.nullptr(cJSON)) {
+                    j.* = p[i.*].*.next;
+                    i.* -= 1;
+                    break :outer;
+                }
+                i.* -= 1;
+            }
+            return null;
+        }
+        if (cJSON_IsObject(j.*) == 1 or cJSON_IsArray(j.*) == 1) {
+            i.* += 1;
+            p[i.*] = j.*;
+            defer j.* = j.*.*.child;
+            return j.*;
+        }
+        defer j.* = j.*.*.next;
+        return j.*;
     }
 
     pub fn query(j: [*c]cJSON, path: []const u8) ?[*c]cJSON {
@@ -184,6 +188,43 @@ pub const CJSON = extern struct {
         }
         return null;
     }
+
+    pub const Iterator = struct {
+        const Iter = @This();
+        v: [*c]cJSON,
+
+        pub fn init(j: [*c]cJSON) Iter {
+            if (cJSON_IsObject(j) == 1 or cJSON_IsArray(j) == 1) {
+                return Iter{ .v = j.*.child };
+            }
+            return Iter{ .v = j };
+        }
+
+        pub fn next(self: *Iter) ?[*c]cJSON {
+            if (self.v == core.nullptr(cJSON)) {
+                return null;
+            }
+            defer self.v = self.v.*.next;
+            return self.v;
+        }
+    };
+
+    pub const RecursiveIterator = struct {
+        const Iter = @This();
+        v: [*c]cJSON,
+        p: [CJSON_DEPTH][*c]cJSON = undefined,
+        i: ngx_uint_t = 0,
+
+        pub fn init(j: [*c]cJSON) Iter {
+            var it = Iter{ .v = j };
+            it.p[0] = it.v;
+            return it;
+        }
+
+        pub fn next(self: *Iter) ?[*c]cJSON {
+            return iterate(&self.v, &self.p, &self.i);
+        }
+    };
 
     alloc: Allocator,
 
@@ -244,14 +285,21 @@ test "cjson" {
     try expectEqual(cJSON_IsObject(parsed), 1);
     try expectEqual(cJSON_GetArraySize(cJSON_GetObjectItem(parsed, "b")), 3);
 
+    var rt = CJSON.RecursiveIterator.init(parsed);
+    var sum: i32 = 0;
+    while (rt.next()) |_| {
+        sum += 1;
+    }
+    try expectEqual(sum, 9);
+
     try expectEqual(CJSON.query(parsed, "$.5"), null);
     try expectEqual(CJSON.query(parsed, "$.5.z"), null);
     try expectEqual(CJSON.query(parsed, "$.c.z"), null);
     try expectEqual(@as(i32, @intFromFloat(cJSON_GetNumberValue(CJSON.query(parsed, "$.b.2").?))), 3);
     try expectEqual(@as(i32, @intFromFloat(cJSON_GetNumberValue(CJSON.query(parsed, "$.c.y").?))), 42);
 
+    sum = 0;
     var it = CJSON.Iterator.init(CJSON.query(parsed, "$.b").?);
-    var sum: i32 = 0;
     while (it.next()) |j| {
         sum += @intFromFloat(cJSON_GetNumberValue(j));
     }
