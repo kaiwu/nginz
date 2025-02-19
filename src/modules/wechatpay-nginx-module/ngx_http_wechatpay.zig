@@ -353,19 +353,19 @@ fn verify_request(
     return lccf.*.ctx.*.rsa.*.verify_sha256(w_signature, ngx_str_t{ .data = data, .len = len }, pool);
 }
 
-fn send_header(r: [*c]ngx_http_request_t) WError!void {
+fn send_header(r: [*c]ngx_http_request_t) ngx_int_t {
     r.*.headers_out.status = http.NGX_HTTP_OK;
     http.ngx_http_clear_content_length(r);
     http.ngx_http_clear_accept_ranges(r);
 
-    if (http.ngx_http_send_header(r) != NGX_OK) {
-        return WError.HEADER_ERROR;
-    }
+    return http.ngx_http_send_header(r);
 }
 
-fn send_body(r: [*c]ngx_http_request_t, chain: [*c]ngx_chain_t) WError!ngx_int_t {
+fn send_body(r: [*c]ngx_http_request_t, chain: [*c]ngx_chain_t) ngx_int_t {
     if (!r.*.flags1.header_sent) {
-        try send_header(r);
+        if (NGX_OK != send_header(r)) {
+            return NGX_ERROR;
+        }
     }
 
     if (chain != core.nullptr(ngx_chain_t)) {
@@ -569,7 +569,9 @@ fn ngx_http_wechatpay_proxy_upstream_finalize_request(r: [*c]ngx_http_request_t,
             last.*.buf.*.flags.last_buf = true;
             last.*.buf.*.flags.last_in_chain = true;
         }
-        _ = send_body(r, rctx.*.res.*.next) catch NGX_ERROR;
+        if (NGX_OK != send_body(r, rctx.*.res.*.next)) {
+            ngx.log.ngz_log_error(ngx.log.NGX_LOG_WARN, r.*.connection.*.log, 0, "wechatpay response failed", .{});
+        }
     }
 }
 
@@ -745,8 +747,7 @@ fn execute_oaep_action(r: [*c]ngx_http_request_t, ctx: [*c]wechatpay_context) !n
     last.*.buf.*.flags.last_buf = true;
     last.*.buf.*.flags.last_in_chain = true;
 
-    const rc = try send_body(r, out.next);
-    return rc;
+    return send_body(r, out.next);
 }
 
 export fn ngx_http_wechatpay_oaep_body_handler(r: [*c]ngx_http_request_t) callconv(.C) void {
