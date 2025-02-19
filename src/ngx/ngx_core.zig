@@ -68,6 +68,7 @@ pub const NError = error{
     CONF_ERROR,
     FILE_ERROR,
     HASH_ERROR,
+    JSON_ERROR,
     TIMER_ERROR,
     REQUEST_ERROR,
 };

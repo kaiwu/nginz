@@ -5,6 +5,8 @@ const core = @import("ngx_core.zig");
 const string = @import("ngx_string.zig");
 const expectEqual = std.testing.expectEqual;
 
+const Pair = core.Pair;
+const ngx_uint_t = core.ngx_uint_t;
 const ngx_str_t = string.ngx_str_t;
 const ngx_string = string.ngx_string;
 
@@ -196,8 +198,9 @@ pub const CJSON = extern struct {
         };
     }
 
-    pub fn decode(self: *Self, str: ngx_str_t) [*c]cJSON {
-        return cJSON_ParseWithLength(str.data, str.len, &self.alloc);
+    pub fn decode(self: *Self, str: ngx_str_t) ![*c]cJSON {
+        const json = cJSON_ParseWithLength(str.data, str.len, &self.alloc);
+        return if (json == core.nullptr(cJSON)) core.NError.JSON_ERROR else json;
     }
 
     pub fn encode(self: *Self, j: [*c]cJSON) !ngx_str_t {
@@ -237,7 +240,7 @@ test "cjson" {
         \\}
     ;
     var cj = CJSON.init(pool);
-    const parsed = cj.decode(ngx_string(json));
+    const parsed = try cj.decode(ngx_string(json));
     try expectEqual(cJSON_IsObject(parsed), 1);
     try expectEqual(cJSON_GetArraySize(cJSON_GetObjectItem(parsed, "b")), 3);
 

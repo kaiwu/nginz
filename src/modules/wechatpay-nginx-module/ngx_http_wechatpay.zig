@@ -642,7 +642,7 @@ fn aes_decode(r: [*c]ngx_http_request_t, body: ngx_str_t, aes: [*c]NSSL_AES_256_
         return body;
     }
     var cj = CJSON.init(r.*.pool);
-    const json = cj.decode(body);
+    const json = try cj.decode(body);
     const resource = CJSON.query(json, "$.resource");
     const ciphertext = CJSON.query(json, "$.resource.ciphertext");
     const aad = CJSON.query(json, "$.resource.associated_data");
