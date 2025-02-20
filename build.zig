@@ -109,6 +109,8 @@ pub fn build(b: *std.Build) void {
 
     const cjsonlib = cjson.build_cjson(b, target, optimize);
     const quickjslib = quickjs.build_quickjs(b, target, optimize);
+    quickjslib.step.dependOn(patch_step);
+
     const njs_http_module = njs.build_njs(b, target, optimize, quickjslib) catch unreachable;
     nginz.addObject(njs_http_module);
 
