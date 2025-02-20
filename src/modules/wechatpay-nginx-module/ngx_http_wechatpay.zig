@@ -335,12 +335,15 @@ fn build_request(
     lccf: [*c]wechatpay_loc_conf,
     r: [*c]ngx_http_request_t,
 ) !ngx_str_t {
-    const content_length: usize = @intCast(r.*.headers_in.content_length_n);
+    var content_length: usize = 1024;
+    if (!r.*.flags1.discard_body and r.*.headers_in.content_length_n > 0) {
+        content_length += @intCast(r.*.headers_in.content_length_n);
+    }
     if (core.castPtr(
         u8,
         core.ngx_pmemalign(
             r.*.pool,
-            core.ngx_align(content_length + 1024, PAGE_SIZE),
+            core.ngx_align(content_length, PAGE_SIZE),
             core.NGX_ALIGNMENT,
         ),
     )) |data| {
@@ -815,10 +818,13 @@ fn wechatpay_check_access(r: [*c]ngx_http_request_t) !ngx_int_t {
         wechatpay_request_context,
         r.*.ctx[ngx_http_wechatpay_module.ctx_index],
     )) |rctx| {
-        const content_length: usize = @intCast(r.*.headers_in.content_length_n);
+        var content_length: usize = 1024;
+        if (!r.*.flags1.discard_body and r.*.headers_in.content_length_n > 0) {
+            content_length += @intCast(r.*.headers_in.content_length_n);
+        }
         if (core.castPtr(u8, core.ngx_pmemalign(
             r.*.pool,
-            core.ngx_align(content_length + 1024, PAGE_SIZE),
+            core.ngx_align(content_length, PAGE_SIZE),
             core.NGX_ALIGNMENT,
         ))) |data| {
             defer _ = core.ngx_pfree(r.*.pool, data);
