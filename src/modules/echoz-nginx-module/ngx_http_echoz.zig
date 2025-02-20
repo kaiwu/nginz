@@ -129,7 +129,7 @@ fn parse_uri(
     if (core.ngz_pcalloc_n(2, ngx_str_t, r.*.pool)) |s2| {
         s2[0] = ps.at(0).?.*;
         var flags: ngx_uint_t = 0;
-        if (http.ngx_http_parse_unsafe_uri(r, s2, s2 + 1, &flags) != core.NGX_OK) {
+        if (http.ngx_http_parse_unsafe_uri(r, s2, s2 + 1, &flags) != NGX_OK) {
             return ZError.COMMAND_ERROR;
         }
         if (s2[1].len == 0 and ps.size() > 2) { // there is a space
