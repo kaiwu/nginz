@@ -294,6 +294,7 @@ const ngx_log_init = ngx.ngx_log_init;
 const ngx_create_pool = ngx.ngx_create_pool;
 const ngx_destroy_pool = ngx.ngx_destroy_pool;
 test "cjson" {
+    try expectEqual(@sizeOf(cJSON), 64);
     const log = ngx_log_init(core.c_str(""), core.c_str(""));
     const pool = ngx_create_pool(1024, log);
     defer ngx_destroy_pool(pool);

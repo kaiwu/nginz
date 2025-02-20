@@ -65,8 +65,9 @@ pub const struct_cJSON = extern struct {
     prev: [*c]struct_cJSON = @import("std").mem.zeroes([*c]struct_cJSON),
     child: [*c]struct_cJSON = @import("std").mem.zeroes([*c]struct_cJSON),
     type: c_int = @import("std").mem.zeroes(c_int),
+    spare: c_int = @import("std").mem.zeroes(c_int),
     valuestring: [*c]u8 = @import("std").mem.zeroes([*c]u8),
-    valueint: c_int = @import("std").mem.zeroes(c_int),
+    valueint: i64 = @import("std").mem.zeroes(i64),
     valuedouble: f64 = @import("std").mem.zeroes(f64),
     string: [*c]u8 = @import("std").mem.zeroes([*c]u8),
 };

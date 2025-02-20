@@ -301,17 +301,17 @@ loop_end:
     item->valuedouble = number;
 
     /* use saturation in case of overflow */
-    if (number >= INT_MAX)
+    if (number >= (double)LONG_MAX)
     {
-        item->valueint = INT_MAX;
+        item->valueint = LONG_MAX;
     }
-    else if (number <= (double)INT_MIN)
+    else if (number <= (double)LONG_MIN)
     {
-        item->valueint = INT_MIN;
+        item->valueint = LONG_MIN;
     }
     else
     {
-        item->valueint = (int)number;
+        item->valueint = (long)number;
     }
 
     item->type = cJSON_Number;
@@ -323,17 +323,17 @@ loop_end:
 /* don't ask me, but the original cJSON_SetNumberValue returns an integer or double */
 CJSON_PUBLIC(double) cJSON_SetNumberHelper(cJSON *object, double number)
 {
-    if (number >= INT_MAX)
+    if (number >= (double)LONG_MAX)
     {
-        object->valueint = INT_MAX;
+        object->valueint = LONG_MAX;
     }
-    else if (number <= (double)INT_MIN)
+    else if (number <= (double)LONG_MIN)
     {
-        object->valueint = INT_MIN;
+        object->valueint = LONG_MIN;
     }
     else
     {
-        object->valueint = (int)number;
+        object->valueint = (long)number;
     }
 
     return object->valuedouble = number;
@@ -512,7 +512,7 @@ static cJSON_bool print_number(const cJSON * const item, printbuffer * const out
     }
 	else if(d == (double)item->valueint)
 	{
-		length = sprintf((char*)number_buffer, "%d", item->valueint);
+		length = sprintf((char*)number_buffer, "%ld", item->valueint);
 	}
     else
     {
@@ -2400,17 +2400,17 @@ CJSON_PUBLIC(cJSON *) cJSON_CreateNumber(double num, Allocator *alloc)
         item->valuedouble = num;
 
         /* use saturation in case of overflow */
-        if (num >= INT_MAX)
+        if (num >= (double)LONG_MAX)
         {
-            item->valueint = INT_MAX;
+            item->valueint = LONG_MAX;
         }
-        else if (num <= (double)INT_MIN)
+        else if (num <= (double)LONG_MIN)
         {
-            item->valueint = INT_MIN;
+            item->valueint = LONG_MIN;
         }
         else
         {
-            item->valueint = (int)num;
+            item->valueint = (long)num;
         }
     }
 
