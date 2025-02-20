@@ -639,27 +639,30 @@ fn aes_decode(r: [*c]ngx_http_request_t, body: ngx_str_t, aes: [*c]NSSL_AES_256_
     }
     var cj = CJSON.init(r.*.pool);
     const json = try cj.decode(body);
-    const resource = CJSON.query(json, "$.resource");
-    const ciphertext = CJSON.query(json, "$.resource.ciphertext");
-    const aad = CJSON.query(json, "$.resource.associated_data");
-    const iv = CJSON.query(json, "$.resource.nonce");
-    if (resource == null or ciphertext == null or aad == null or iv == null) {
-        return WError.BODY_ERROR;
-    }
-    const plaintxt = try aes.*.decrypt(
-        CJSON.stringValue(ciphertext.?).?,
-        CJSON.stringValue(iv.?).?,
-        CJSON.stringValue(aad.?).?,
-        r.*.pool,
-    );
-    var write: [*c]u8 = data;
-    write = ngx_sprintf(write, "plaintxt");
-    write.* = 0;
-    write = ngx_sprintf(write + 1, "%V", &plaintxt);
-    write.* = 0;
+    var it = CJSON.RecursiveIterator.init(json);
+    while (it.next()) |j0| {
+        if (CJSON.objValue(j0)) |j| {
+            const ciphertext = CJSON.query(j, "$.ciphertext");
+            const aad = CJSON.query(j, "$.associated_data");
+            const iv = CJSON.query(j, "$.nonce");
+            if (ciphertext != null and aad != null and iv != null) {
+                const plaintxt = try aes.*.decrypt(
+                    CJSON.stringValue(ciphertext.?).?,
+                    CJSON.stringValue(iv.?).?,
+                    CJSON.stringValue(aad.?).?,
+                    r.*.pool,
+                );
+                var write: [*c]u8 = data;
+                write = ngx_sprintf(write, "plaintxt");
+                write.* = 0;
+                write = ngx_sprintf(write + 1, "%V", &plaintxt);
+                write.* = 0;
 
-    if (cjson.cJSON_AddStringToObject(resource.?, data, data + 9, &cj.alloc) == core.nullptr(cjson.cJSON)) {
-        return WError.BODY_ERROR;
+                if (cjson.cJSON_AddStringToObject(j, data, data + 9, &cj.alloc) == core.nullptr(cjson.cJSON)) {
+                    return WError.BODY_ERROR;
+                }
+            }
+        }
     }
     return cj.encode(json);
 }

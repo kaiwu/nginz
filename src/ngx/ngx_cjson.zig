@@ -133,6 +133,20 @@ pub const CJSON = extern struct {
         return null;
     }
 
+    pub fn objValue(j: [*c]cJSON) ?[*c]cJSON {
+        if (cJSON_IsObject(j) == 1) {
+            return j;
+        }
+        return null;
+    }
+
+    pub fn arrValue(j: [*c]cJSON) ?[*c]cJSON {
+        if (cJSON_IsArray(j) == 1) {
+            return j;
+        }
+        return null;
+    }
+
     // p[] must be long/deep enough and p[0] == j.*
     pub fn iterate(j: [*c][*c]cJSON, p: [*c][*c]cJSON, i: *ngx_uint_t) ?[*c]cJSON {
         outer: while (j.* == core.nullptr(cJSON)) {
@@ -223,6 +237,17 @@ pub const CJSON = extern struct {
 
         pub fn next(self: *Iter) ?[*c]cJSON {
             return iterate(&self.v, &self.p, &self.i);
+        }
+
+        pub fn nextPair(self: *Iter) ?Pair([*c]cJSON, [*c]cJSON) {
+            if (next(self)) |n| {
+                if (cJSON_IsObject(n) == 1 or cJSON_IsArray(n) == 1) {
+                    const p = if (self.i > 0) self.p[self.i - 1] else self.p[0];
+                    return Pair([*c]cJSON, [*c]cJSON){ .t = n, .u = p };
+                }
+                return Pair([*c]cJSON, [*c]cJSON){ .t = n, .u = self.p[self.i] };
+            }
+            return null;
         }
     };
 
