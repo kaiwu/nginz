@@ -1076,6 +1076,7 @@ export fn ngx_http_wechatpay_output_body_filter(
     c: [*c]ngx_chain_t,
 ) callconv(.C) ngx_int_t {
     if (r.*.upstream != core.nullptr(http.ngx_http_upstream_t) and
+        r.*.upstream.*.finalize_request != null and
         r.*.upstream.*.finalize_request.? == ngx_http_wechatpay_proxy_upstream_finalize_request)
     {
         if (core.castPtr(
@@ -1099,6 +1100,7 @@ export fn ngx_http_wechatpay_header_filter(
     r: [*c]ngx_http_request_t,
 ) callconv(.C) ngx_int_t {
     if (r.*.upstream != core.nullptr(http.ngx_http_upstream_t) and
+        r.*.upstream.*.finalize_request != null and
         r.*.upstream.*.finalize_request.? == ngx_http_wechatpay_proxy_upstream_finalize_request)
     {
         if (core.castPtr(
