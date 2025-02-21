@@ -393,6 +393,39 @@ fn echoz_handle(r: [*c]ngx_http_request_t) !ngx_int_t {
     return NGX_OK;
 }
 
+fn echoz_header_filter(
+    r: [*c]ngx_http_request_t,
+    lccf: [*c]loc_conf,
+) !void {
+    var it = lccf.*.headers.iterator();
+    while (it.next()) |cmd| {
+        var total_length: ngx_uint_t = 0;
+        const parameters = try map(cmd.*.params, r, &total_length);
+        switch (cmd.*.type) {
+            .echoz_header => {
+                var headers = NList(ngx_table_elt_t).init0(&r.*.headers_out.headers);
+                const h = try headers.append();
+                h.*.hash = r.*.header_hash;
+                h.*.key = parameters.at(0).?.*;
+                h.*.value = parameters.at(2).?.*; // skip a space
+                h.*.lowcase_key = parameters.at(0).?.*.data;
+            },
+            .echoz_status => {
+                const status = parameters.at(0).?;
+                const status_line = parameters.at(2).?;
+                r.*.headers_out.status = try atoz(status);
+                const s2 = [2]ngx_str_t{ status.*, status_line.* };
+                r.*.headers_out.status_line = try ngx.string.concat_string_from_pool(
+                    s2[0..],
+                    " ",
+                    r.*.pool,
+                );
+            },
+            else => return ZError.HEADER_ERROR,
+        }
+    }
+}
+
 export fn ngx_http_echoz_header_filter(
     r: [*c]ngx_http_request_t,
 ) callconv(.C) ngx_int_t {
@@ -406,48 +439,8 @@ export fn ngx_http_echoz_header_filter(
             &ngx_http_echoz_filter_module,
         ) catch return NGX_ERROR;
 
-        if (ctx.*.header_set == 0 and
-            lccf.*.headers.inited())
-        {
-            var it = lccf.*.headers.iterator();
-            while (it.next()) |cmd| {
-                var total_length: ngx_uint_t = 0;
-                const parameters = map(cmd.*.params, r, &total_length) catch return NGX_ERROR;
-                switch (cmd.*.type) {
-                    .echoz_header => {
-                        var headers = NList(ngx_table_elt_t).init0(&r.*.headers_out.headers);
-                        const h = headers.append() catch return NGX_ERROR;
-                        h.*.hash = r.*.header_hash;
-                        h.*.key = parameters.at(0).?.*;
-                        h.*.value = parameters.at(2).?.*; // skip a space
-                        h.*.lowcase_key = parameters.at(0).?.*.data;
-                    },
-                    .echoz_status => {
-                        const status = parameters.at(0).?;
-                        const status_line = parameters.at(2).?;
-                        r.*.headers_out.status = atoz(status) catch return NGX_ERROR;
-                        const len = status.*.len + status_line.*.len + 1;
-                        if (core.castPtr(u8, core.ngx_pnalloc(r.*.pool, len))) |h| {
-                            core.ngz_memcpy(
-                                h,
-                                status.*.data,
-                                status.*.len,
-                            );
-                            h[status.*.len] = ' ';
-                            core.ngz_memcpy(
-                                h + status.*.len + 1,
-                                status_line.*.data,
-                                status_line.*.len,
-                            );
-                            r.*.headers_out.status_line = ngx_str_t{
-                                .data = h,
-                                .len = len,
-                            };
-                        }
-                    },
-                    else => return NGX_ERROR,
-                }
-            }
+        if (ctx.*.header_set == 0 and lccf.*.headers.inited()) {
+            echoz_header_filter(r, lccf) catch return NGX_ERROR;
             ctx.*.header_set = 1;
         }
     }
