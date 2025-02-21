@@ -24,6 +24,7 @@ const ngx_command_t = conf.ngx_command_t;
 const ngx_array_t = ngx.array.ngx_array_t;
 const ngx_module_t = ngx.module.ngx_module_t;
 const ngx_http_module_t = http.ngx_http_module_t;
+const ngx_table_elt_t = ngx.hash.ngx_table_elt_t;
 const ngx_http_request_t = http.ngx_http_request_t;
 
 const ngx_string = ngx.string.ngx_string;
@@ -364,9 +365,6 @@ fn echoz_handle(r: [*c]ngx_http_request_t) !ngx_int_t {
         loc_conf,
         conf.ngx_http_get_module_loc_conf(r, &ngx_http_echoz_module),
     )) |lccf| {
-        if (!lccf.*.content_handlers.inited()) {
-            return core.NGX_DECLINED;
-        }
         const ctx = try http.ngz_http_get_module_ctx(
             echoz_context,
             r,
@@ -417,7 +415,7 @@ export fn ngx_http_echoz_header_filter(
                 const parameters = map(cmd.*.params, r, &total_length) catch return NGX_ERROR;
                 switch (cmd.*.type) {
                     .echoz_header => {
-                        var headers = NList(ngx.hash.ngx_table_elt_t).init0(&r.*.headers_out.headers);
+                        var headers = NList(ngx_table_elt_t).init0(&r.*.headers_out.headers);
                         const h = headers.append() catch return NGX_ERROR;
                         h.*.hash = r.*.header_hash;
                         h.*.key = parameters.at(0).?.*;
@@ -494,9 +492,7 @@ fn echoz_filter(
             last.*.next = c;
         }
 
-        if (c != core.nullptr(ngx_chain_t) and
-            lccf.*.append_filters.inited())
-        {
+        if (lccf.*.append_filters.inited()) {
             var is_last = false;
             var last = c;
             var cl = last;
@@ -555,7 +551,10 @@ export fn ngx_http_echoz_request_body_variable(
     if (b0 or b1 or b2) {
         return NGX_OK;
     }
-    const body = buf.ngz_chain_content(r.*.request_body.*.bufs, r.*.pool) catch return NGX_ERROR;
+    const body = buf.ngz_chain_content(
+        r.*.request_body.*.bufs,
+        r.*.pool,
+    ) catch return NGX_ERROR;
     if (body.len > 0) {
         v.*.data = body.data;
         v.*.flags.len = @intCast(body.len);
