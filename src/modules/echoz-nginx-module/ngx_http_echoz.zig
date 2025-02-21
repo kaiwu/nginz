@@ -34,6 +34,8 @@ const NTimer = ngx.event.NTimer;
 const NSubrequest = http.NSubrequest;
 
 const echoz_command_type = enum(ngx_int_t) {
+    echoz_status,
+    echoz_header,
     echoz,
     echozn,
     echoz_duplicate,
@@ -45,7 +47,6 @@ const echoz_command_type = enum(ngx_int_t) {
     echoz_exec,
     echoz_before_body,
     echoz_after_body,
-    echoz_header,
 };
 
 const echoz_parameter = extern struct {
@@ -72,20 +73,20 @@ const ZError = error{
 };
 
 const loc_conf = extern struct {
+    headers: NArray(echoz_command),
     content_handlers: NArray(echoz_command),
     prepend_filters: NArray(echoz_command),
     append_filters: NArray(echoz_command),
-    headers: NArray(echoz_command),
 };
 
 const space_str: ngx_str_t = ngx_string(" ");
 const newline_str: ngx_str_t = ngx_string("\n");
 
 const echoz_context = extern struct {
-    ready: ngx_flag_t,
-    iterator: NArray(echoz_command).IteratorType,
     chain: NChain,
-    header_sent: ngx_flag_t = 0,
+    header_ready: ngx_flag_t,
+    content_ready: ngx_flag_t,
+    iterator: NArray(echoz_command).IteratorType,
 };
 
 fn postconfiguration(cf: [*c]ngx_conf_t) callconv(.C) ngx_int_t {
@@ -120,6 +121,22 @@ fn create_loc_conf(cf: [*c]ngx_conf_t) callconv(.C) ?*anyopaque {
         return p;
     }
     return null;
+}
+
+fn merge_loc_conf(
+    cf: [*c]ngx_conf_t,
+    parent: ?*anyopaque,
+    child: ?*anyopaque,
+) callconv(.C) [*c]u8 {
+    _ = parent;
+    if (core.castPtr(loc_conf, child)) |ch| {
+        if (ch.*.headers.inited() or ch.*.content_handlers.inited()) {
+            if (conf.ngx_http_conf_get_core_module_loc_conf(cf)) |cocf| {
+                cocf.*.handler = ngx_http_echoz_handler;
+            }
+        }
+    }
+    return conf.NGX_CONF_OK;
 }
 
 fn parse_uri(
@@ -178,27 +195,23 @@ fn atoz(s: [*c]ngx_str_t) ZError!ngx_uint_t {
 
 fn send_header(
     r: [*c]ngx_http_request_t,
-    ctx: [*c]echoz_context,
 ) ZError!void {
-    r.*.headers_out.status = http.NGX_HTTP_OK;
-    http.ngx_http_clear_content_length(r);
-    http.ngx_http_clear_accept_ranges(r);
+    if (!r.*.flags1.header_sent) {
+        r.*.headers_out.status = http.NGX_HTTP_OK;
+        http.ngx_http_clear_content_length(r);
+        http.ngx_http_clear_accept_ranges(r);
 
-    if (http.ngx_http_send_header(r) != NGX_OK) {
-        return ZError.HEADER_ERROR;
+        if (http.ngx_http_send_header(r) != NGX_OK) {
+            return ZError.HEADER_ERROR;
+        }
     }
-    ctx.*.header_sent = 1;
 }
 
 fn send_body(
     r: [*c]ngx_http_request_t,
-    ctx: [*c]echoz_context,
     chain: [*c]ngx_chain_t,
 ) ZError!void {
-    if (!r.*.flags1.header_sent and ctx.*.header_sent == 0) {
-        try send_header(r, ctx);
-    }
-
+    try send_header(r);
     if (chain != core.nullptr(ngx_chain_t)) {
         if (http.ngx_http_output_filter(r, chain) != NGX_OK) {
             return ZError.BODY_ERROR;
@@ -221,7 +234,7 @@ inline fn write_buf(
 }
 
 inline fn set_type(offset: ngx_int_t) echoz_command_type {
-    return @enumFromInt(@intFromEnum(echoz_command_type.echoz) + offset);
+    return @enumFromInt(@intFromEnum(echoz_command_type.echoz_status) + offset);
 }
 
 fn map(
@@ -338,6 +351,26 @@ fn echoz_exec_command(
             }
             return ZError.COMMAND_ERROR;
         },
+        .echoz_header => {
+            var headers = NList(ngx.hash.ngx_table_elt_t).init0(&r.*.headers_out.headers);
+            const h = headers.append() catch return ZError.COMMAND_ERROR;
+            h.*.hash = r.*.header_hash;
+            h.*.key = parameters.at(0).?.*;
+            h.*.value = parameters.at(2).?.*; // skip a space
+            h.*.lowcase_key = parameters.at(0).?.*.data;
+        },
+        .echoz_status => {
+            const status = parameters.at(0).?;
+            const status_line = parameters.at(2).?;
+            r.*.headers_out.status = try atoz(status);
+            const len = status.*.len + status_line.*.len + 1;
+            if (core.castPtr(u8, core.ngx_pnalloc(r.*.pool, len))) |h| {
+                core.ngz_memcpy(h, status.*.data, status.*.len);
+                h[status.*.len] = ' ';
+                core.ngz_memcpy(h + status.*.len + 1, status_line.*.data, status_line.*.len);
+                r.*.headers_out.status_line = ngx_str_t{ .data = h, .len = len };
+            }
+        },
         else => return ZError.COMMAND_ERROR,
     }
 }
@@ -347,32 +380,47 @@ fn echoz_handle(r: [*c]ngx_http_request_t) !ngx_int_t {
         loc_conf,
         conf.ngx_http_get_module_loc_conf(r, &ngx_http_echoz_module),
     )) |lccf| {
-        if (!lccf.*.content_handlers.inited() or
-            lccf.*.content_handlers.size() == 0)
+        if (!lccf.*.content_handlers.inited() and
+            !lccf.*.headers.inited())
         {
-            return ZError.DECLINE;
+            return core.NGX_DECLINED;
         }
-        const ctx = try http.ngz_http_get_module_ctx(echoz_context, r, &ngx_http_echoz_module);
-
-        if (ctx.*.ready == 0) {
-            ctx.*.iterator = lccf.*.content_handlers.iterator();
-            ctx.*.chain = NChain.init(r.*.pool);
-            ctx.*.header_sent = 0;
-            ctx.*.ready = 1;
-        }
-
+        const ctx = try http.ngz_http_get_module_ctx(
+            echoz_context,
+            r,
+            &ngx_http_echoz_module,
+        );
         var out = buf.ngx_chain_t{
             .buf = core.nullptr(ngx_buf_t),
             .next = core.nullptr(ngx_chain_t),
         };
-        while (ctx.*.iterator.next()) |cmd| {
-            try echoz_exec_command(cmd, ctx, r, &out);
-            if (out.next != core.nullptr(ngx_chain_t)) {
-                try send_body(r, ctx, out.next);
-                out.next = core.nullptr(ngx_chain_t);
+
+        if (lccf.*.headers.inited()) {
+            if (ctx.*.header_ready == 0) {
+                ctx.*.iterator = lccf.*.headers.iterator();
+                while (ctx.*.iterator.next()) |cmd| {
+                    try echoz_exec_command(cmd, ctx, r, &out);
+                }
+                ctx.*.header_ready = 1;
             }
         }
-        try send_body(r, ctx, out.next);
+
+        if (lccf.*.content_handlers.inited()) {
+            if (ctx.*.content_ready == 0) {
+                ctx.*.iterator = lccf.*.content_handlers.iterator();
+                ctx.*.chain = NChain.init(r.*.pool);
+                ctx.*.content_ready = 1;
+            }
+
+            while (ctx.*.iterator.next()) |cmd| {
+                try echoz_exec_command(cmd, ctx, r, &out);
+                if (out.next != core.nullptr(ngx_chain_t)) {
+                    try send_body(r, out.next);
+                    out.next = core.nullptr(ngx_chain_t);
+                }
+            }
+            try send_body(r, out.next);
+        }
     }
     return NGX_OK;
 }
@@ -380,27 +428,6 @@ fn echoz_handle(r: [*c]ngx_http_request_t) !ngx_int_t {
 export fn ngx_http_echoz_header_filter(
     r: [*c]ngx_http_request_t,
 ) callconv(.C) ngx_int_t {
-    if (core.castPtr(
-        loc_conf,
-        conf.ngx_http_get_module_loc_conf(r, &ngx_http_echoz_filter_module),
-    )) |lccf| {
-        if (lccf.*.headers.inited() and
-            lccf.*.headers.size() > 0)
-        {
-            var headers = NList(ngx.hash.ngx_table_elt_t).init0(&r.*.headers_out.headers);
-            var it = lccf.*.headers.iterator();
-            while (it.next()) |cmd| {
-                var total_length: ngx_uint_t = 0;
-                const parameters = map(cmd.*.params, r, &total_length) catch return NGX_ERROR;
-                const h = headers.append() catch return NGX_ERROR;
-                h.*.hash = r.*.header_hash;
-                h.*.key = parameters.at(0).?.*;
-                h.*.value = parameters.at(2).?.*; // skip a space
-                h.*.lowcase_key = parameters.at(0).?.*.data;
-            }
-        }
-    }
-
     if (ngx_http_echoz_next_header_filter) |filter| {
         return filter(r);
     }
@@ -420,24 +447,16 @@ fn echoz_filter(
         loc_conf,
         conf.ngx_http_get_module_loc_conf(r, &ngx_http_echoz_filter_module),
     )) |lccf| {
-        const ctx = try http.ngz_http_get_module_ctx(echoz_context, r, &ngx_http_echoz_filter_module);
-        const is_first = ctx.*.ready == 0;
-
-        if (ctx.*.ready == 0) {
-            ctx.*.chain = NChain.init(r.*.pool);
-            ctx.*.ready = 1;
-        }
-
-        if (is_first and
-            lccf.*.prepend_filters.inited() and
+        if (lccf.*.prepend_filters.inited() and
             lccf.*.prepend_filters.size() > 0)
         {
             var last: [*c]ngx_chain_t = &out;
             var it = lccf.*.prepend_filters.iterator();
+            var chain = NChain.init(r.*.pool);
             while (it.next()) |cmd| {
                 var total_length: ngx_uint_t = 0;
                 const parameters = try map(cmd.*.params, r, &total_length);
-                last = try ctx.*.chain.allocNStr(parameters, last);
+                last = try chain.allocNStr(parameters, last);
             }
             last.*.next = c;
         }
@@ -454,11 +473,12 @@ fn echoz_filter(
                 last.*.buf.*.flags.last_buf = false;
             }
 
+            var chain = NChain.init(r.*.pool);
             var it = lccf.*.append_filters.iterator();
             while (it.next()) |cmd| {
                 var total_length: ngx_uint_t = 0;
                 const parameters = try map(cmd.*.params, r, &total_length);
-                last = try ctx.*.chain.allocNStr(parameters, last);
+                last = try chain.allocNStr(parameters, last);
             }
             last.*.buf.*.flags.last_buf = true;
         }
@@ -559,17 +579,10 @@ fn ngx_conf_set_echoz(
 ) callconv(.C) [*c]u8 {
     if (core.castPtr(loc_conf, loc)) |lccf| {
         switch (cmd.*.offset) {
-            9 => return echoz_init_parameters(cf, cmd, &lccf.*.prepend_filters),
-            10 => return echoz_init_parameters(cf, cmd, &lccf.*.append_filters),
-            11 => return echoz_init_parameters(cf, cmd, &lccf.*.headers),
-            else => {
-                if (!lccf.*.content_handlers.inited()) {
-                    if (conf.ngx_http_conf_get_core_module_loc_conf(cf)) |cocf| {
-                        cocf.*.handler = ngx_http_echoz_handler;
-                    }
-                }
-                return echoz_init_parameters(cf, cmd, &lccf.*.content_handlers);
-            },
+            0, 1 => return echoz_init_parameters(cf, cmd, &lccf.*.headers),
+            11 => return echoz_init_parameters(cf, cmd, &lccf.*.prepend_filters),
+            12 => return echoz_init_parameters(cf, cmd, &lccf.*.append_filters),
+            else => return echoz_init_parameters(cf, cmd, &lccf.*.content_handlers),
         }
     }
     return conf.NGX_CONF_OK;
@@ -583,16 +596,32 @@ export const ngx_http_echoz_module_ctx = ngx_http_module_t{
     .create_srv_conf = null,
     .merge_srv_conf = null,
     .create_loc_conf = create_loc_conf,
-    .merge_loc_conf = null,
+    .merge_loc_conf = merge_loc_conf,
 };
 
 export const ngx_http_echoz_commands = [_]ngx_command_t{
+    ngx_command_t{
+        .name = ngx_string("echoz_status"),
+        .type = conf.NGX_HTTP_LOC_CONF | conf.NGX_CONF_TAKE2,
+        .set = ngx_conf_set_echoz,
+        .conf = conf.NGX_HTTP_LOC_CONF_OFFSET,
+        .offset = 0,
+        .post = null,
+    },
+    ngx_command_t{
+        .name = ngx_string("echoz_header"),
+        .type = conf.NGX_HTTP_LOC_CONF | conf.NGX_CONF_TAKE2,
+        .set = ngx_conf_set_echoz,
+        .conf = conf.NGX_HTTP_LOC_CONF_OFFSET,
+        .offset = 1,
+        .post = null,
+    },
     ngx_command_t{
         .name = ngx_string("echoz"),
         .type = conf.NGX_HTTP_LOC_CONF | conf.NGX_CONF_ANY,
         .set = ngx_conf_set_echoz,
         .conf = conf.NGX_HTTP_LOC_CONF_OFFSET,
-        .offset = 0,
+        .offset = 2,
         .post = null,
     },
     ngx_command_t{
@@ -600,7 +629,7 @@ export const ngx_http_echoz_commands = [_]ngx_command_t{
         .type = conf.NGX_HTTP_LOC_CONF | conf.NGX_CONF_ANY,
         .set = ngx_conf_set_echoz,
         .conf = conf.NGX_HTTP_LOC_CONF_OFFSET,
-        .offset = 1,
+        .offset = 3,
         .post = null,
     },
     ngx_command_t{
@@ -608,7 +637,7 @@ export const ngx_http_echoz_commands = [_]ngx_command_t{
         .type = conf.NGX_HTTP_LOC_CONF | conf.NGX_CONF_2MORE,
         .set = ngx_conf_set_echoz,
         .conf = conf.NGX_HTTP_LOC_CONF_OFFSET,
-        .offset = 2,
+        .offset = 4,
         .post = null,
     },
     ngx_command_t{
@@ -616,7 +645,7 @@ export const ngx_http_echoz_commands = [_]ngx_command_t{
         .type = conf.NGX_HTTP_LOC_CONF | conf.NGX_CONF_NOARGS,
         .set = ngx_conf_set_echoz,
         .conf = conf.NGX_HTTP_LOC_CONF_OFFSET,
-        .offset = 3,
+        .offset = 5,
         .post = null,
     },
     ngx_command_t{
@@ -624,7 +653,7 @@ export const ngx_http_echoz_commands = [_]ngx_command_t{
         .type = conf.NGX_HTTP_LOC_CONF | conf.NGX_CONF_TAKE1,
         .set = ngx_conf_set_echoz,
         .conf = conf.NGX_HTTP_LOC_CONF_OFFSET,
-        .offset = 4,
+        .offset = 6,
         .post = null,
     },
     ngx_command_t{
@@ -632,7 +661,7 @@ export const ngx_http_echoz_commands = [_]ngx_command_t{
         .type = conf.NGX_HTTP_LOC_CONF | conf.NGX_CONF_TAKE12,
         .set = ngx_conf_set_echoz,
         .conf = conf.NGX_HTTP_LOC_CONF_OFFSET,
-        .offset = 5,
+        .offset = 7,
         .post = null,
     },
     ngx_command_t{
@@ -640,7 +669,7 @@ export const ngx_http_echoz_commands = [_]ngx_command_t{
         .type = conf.NGX_HTTP_LOC_CONF | conf.NGX_CONF_NOARGS,
         .set = ngx_conf_set_echoz,
         .conf = conf.NGX_HTTP_LOC_CONF_OFFSET,
-        .offset = 6,
+        .offset = 8,
         .post = null,
     },
     ngx_command_t{
@@ -648,7 +677,7 @@ export const ngx_http_echoz_commands = [_]ngx_command_t{
         .type = conf.NGX_HTTP_LOC_CONF | conf.NGX_CONF_NOARGS,
         .set = ngx_conf_set_echoz,
         .conf = conf.NGX_HTTP_LOC_CONF_OFFSET,
-        .offset = 7,
+        .offset = 9,
         .post = null,
     },
     ngx_command_t{
@@ -656,7 +685,7 @@ export const ngx_http_echoz_commands = [_]ngx_command_t{
         .type = conf.NGX_HTTP_LOC_CONF | conf.NGX_CONF_TAKE12,
         .set = ngx_conf_set_echoz,
         .conf = conf.NGX_HTTP_LOC_CONF_OFFSET,
-        .offset = 8,
+        .offset = 10,
         .post = null,
     },
     conf.ngx_null_command,
@@ -684,7 +713,7 @@ export const ngx_http_echoz_filter_commands = [_]ngx_command_t{
         .type = conf.NGX_HTTP_LOC_CONF | conf.NGX_CONF_ANY,
         .set = ngx_conf_set_echoz,
         .conf = conf.NGX_HTTP_LOC_CONF_OFFSET,
-        .offset = 9,
+        .offset = 11,
         .post = null,
     },
     ngx_command_t{
@@ -692,15 +721,7 @@ export const ngx_http_echoz_filter_commands = [_]ngx_command_t{
         .type = conf.NGX_HTTP_LOC_CONF | conf.NGX_CONF_ANY,
         .set = ngx_conf_set_echoz,
         .conf = conf.NGX_HTTP_LOC_CONF_OFFSET,
-        .offset = 10,
-        .post = null,
-    },
-    ngx_command_t{
-        .name = ngx_string("echoz_header"),
-        .type = conf.NGX_HTTP_LOC_CONF | conf.NGX_CONF_TAKE2,
-        .set = ngx_conf_set_echoz,
-        .conf = conf.NGX_HTTP_LOC_CONF_OFFSET,
-        .offset = 11,
+        .offset = 12,
         .post = null,
     },
     conf.ngx_null_command,
