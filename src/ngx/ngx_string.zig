@@ -27,6 +27,33 @@ pub inline fn ngx_string_from_pool(p: [*c]u8, l: usize, pool: [*c]core.ngx_pool_
     return core.NError.OOM;
 }
 
+pub fn concat_string_from_pool(ss: []const ngx_str_t, by: []const u8, pool: [*c]core.ngx_pool_t) !ngx_str_t {
+    var len: usize = 0;
+    for (ss) |s| {
+        len += s.len;
+        len += by.len;
+    }
+    if (len == 0) {
+        return ngx_null_str;
+    }
+
+    len = len - by.len;
+    if (core.castPtr(u8, core.ngx_pnalloc(pool, len))) |p0| {
+        var pi: [*c]u8 = p0;
+        var i: usize = 0;
+        while (pi < p0 + len) : (i += 1) {
+            core.ngz_memcpy(pi, ss[i].data, ss[i].len);
+            pi += ss[i].len;
+            if (i + 1 < ss.len) {
+                core.ngz_memcpy(pi, @constCast(by.ptr), by.len);
+                pi += by.len;
+            }
+        }
+        return ngx_str_t{ .data = p0, .len = len };
+    }
+    return core.NError.OOM;
+}
+
 pub const ngx_null_str = ngx_str_t{ .len = 0, .data = core.nullptr(u8) };
 
 pub inline fn ngx_str_set(str: [*c]ngx_str_t, text: []const u8) void {
@@ -67,8 +94,25 @@ pub inline fn ngx_strlchr(p: [*c]u_char, last: [*c]u_char, c: u_char) [*c]u_char
     return core.nullptr(u_char);
 }
 
+const ngx_log_init = ngx.ngx_log_init;
+const ngx_create_pool = ngx.ngx_create_pool;
+const ngx_destroy_pool = ngx.ngx_destroy_pool;
 test "string" {
     try expectEqual(@sizeOf(ngx_str_t), 16);
+    const log = ngx_log_init(core.c_str(""), core.c_str(""));
+    const pool = ngx_create_pool(1024, log);
+    defer ngx_destroy_pool(pool);
+
+    const ss = [_]ngx_str_t{ ngx_string("abc"), ngx_string("123") };
+
+    const s0 = try concat_string_from_pool(ss[0..], " ", pool);
+    try expectEqual(eql(s0, ngx_string("abc 123")), true);
+
+    const s1 = try concat_string_from_pool(ss[0..], "", pool);
+    try expectEqual(eql(s1, ngx_string("abc123")), true);
+
+    const s2 = try concat_string_from_pool(ss[0..], ",", pool);
+    try expectEqual(eql(s2, ngx_string("abc,123")), true);
 }
 
 pub const ngx_strlow = ngx.ngx_strlow;
