@@ -89,6 +89,10 @@ const echoz_context = extern struct {
     iterator: NArray(echoz_command).IteratorType,
 };
 
+const echoz_filter_context = extern struct {
+    is_first: ngx_flag_t,
+};
+
 fn postconfiguration(cf: [*c]ngx_conf_t) callconv(.C) ngx_int_t {
     var vs = [_]http.ngx_http_variable_t{http.ngx_http_variable_t{
         .name = ngx.string.ngx_string("echoz_request_body"),
@@ -438,20 +442,29 @@ fn echoz_filter(
     r: [*c]ngx_http_request_t,
     c: [*c]ngx_chain_t,
 ) ![*c]ngx_chain_t {
-    var out = buf.ngx_chain_t{
-        .buf = core.nullptr(ngx_buf_t),
-        .next = c,
-    };
-
+    var out = ngx_chain_t{ .buf = core.nullptr(ngx_buf_t), .next = c };
     if (core.castPtr(
         loc_conf,
         conf.ngx_http_get_module_loc_conf(r, &ngx_http_echoz_filter_module),
     )) |lccf| {
-        if (lccf.*.prepend_filters.inited() and
+        const ctx = try http.ngz_http_get_module_ctx(
+            echoz_filter_context,
+            r,
+            &ngx_http_echoz_filter_module,
+        );
+
+        var is_first = false;
+        if (ctx.*.is_first == 0) {
+            is_first = true;
+            ctx.*.is_first = 1;
+        }
+
+        if (is_first and
+            lccf.*.prepend_filters.inited() and
             lccf.*.prepend_filters.size() > 0)
         {
-            var last: [*c]ngx_chain_t = &out;
             var it = lccf.*.prepend_filters.iterator();
+            var last: [*c]ngx_chain_t = &out;
             var chain = NChain.init(r.*.pool);
             while (it.next()) |cmd| {
                 var total_length: ngx_uint_t = 0;
@@ -461,26 +474,39 @@ fn echoz_filter(
             last.*.next = c;
         }
 
-        if (lccf.*.append_filters.inited() and
+        if (c != core.nullptr(ngx_chain_t) and
+            lccf.*.append_filters.inited() and
             lccf.*.append_filters.size() > 0)
         {
-            var last: [*c]ngx_chain_t = &out;
-            if (c != core.nullptr(ngx_chain_t) and
-                c.*.buf != core.nullptr(ngx_buf_t) and
-                c.*.buf.*.flags.last_buf)
-            {
-                last = buf.ngz_chain_last(c);
-                last.*.buf.*.flags.last_buf = false;
+            var is_last = false;
+            var last = c;
+            var cl = last;
+            while (last != core.nullptr(ngx_chain_t)) {
+                if (last.*.buf.*.flags.last_buf or
+                    last.*.buf.*.flags.last_in_chain)
+                {
+                    is_last = true;
+                    break;
+                }
+                cl = last;
+                last = last.*.next;
             }
 
-            var chain = NChain.init(r.*.pool);
-            var it = lccf.*.append_filters.iterator();
-            while (it.next()) |cmd| {
-                var total_length: ngx_uint_t = 0;
-                const parameters = try map(cmd.*.params, r, &total_length);
-                last = try chain.allocNStr(parameters, last);
+            if (is_last) {
+                if (last.*.buf.*.last > last.*.buf.*.pos) {
+                    last.*.buf.*.flags.last_buf = false;
+                } else {
+                    last = cl;
+                }
+                var chain = NChain.init(r.*.pool);
+                var it = lccf.*.append_filters.iterator();
+                while (it.next()) |cmd| {
+                    var total_length: ngx_uint_t = 0;
+                    const parameters = try map(cmd.*.params, r, &total_length);
+                    last = try chain.allocNStr(parameters, last);
+                }
+                last.*.buf.*.flags.last_buf = true;
             }
-            last.*.buf.*.flags.last_buf = true;
         }
     }
     return out.next;
