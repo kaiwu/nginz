@@ -400,24 +400,22 @@ fn echoz_header_filter(
     var it = lccf.*.headers.iterator();
     while (it.next()) |cmd| {
         var total_length: ngx_uint_t = 0;
-        const parameters = try map(cmd.*.params, r, &total_length);
+        var parameters = try map(cmd.*.params, r, &total_length);
+        const ps = parameters.slice();
         switch (cmd.*.type) {
             .echoz_header => {
                 var headers = NList(ngx_table_elt_t).init0(&r.*.headers_out.headers);
                 const h = try headers.append();
                 h.*.hash = r.*.header_hash;
-                h.*.key = parameters.at(0).?.*;
-                h.*.value = parameters.at(2).?.*; // skip a space
-                h.*.lowcase_key = parameters.at(0).?.*.data;
+                h.*.key = ps[0];
+                h.*.value = ps[2]; // skip a space
+                h.*.lowcase_key = ps[0].data;
             },
             .echoz_status => {
-                const status = parameters.at(0).?;
-                const status_line = parameters.at(2).?;
-                r.*.headers_out.status = try atoz(status);
-                const s2 = [2]ngx_str_t{ status.*, status_line.* };
+                r.*.headers_out.status = try atoz(&ps[0]);
                 r.*.headers_out.status_line = try ngx.string.concat_string_from_pool(
-                    s2[0..],
-                    " ",
+                    ps[0..],
+                    "",
                     r.*.pool,
                 );
             },
