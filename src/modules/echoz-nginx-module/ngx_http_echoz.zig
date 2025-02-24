@@ -90,7 +90,7 @@ const echoz_context = extern struct {
 };
 
 const echoz_filter_context = extern struct {
-    is_first: ngx_flag_t,
+    done_first: ngx_flag_t,
     header_set: ngx_flag_t,
 };
 
@@ -463,13 +463,7 @@ fn echoz_filter(
             &ngx_http_echoz_filter_module,
         );
 
-        var is_first = false;
-        if (ctx.*.is_first == 0) {
-            is_first = true;
-            ctx.*.is_first = 1;
-        }
-
-        if (is_first and
+        if (ctx.*.done_first == 0 and
             lccf.*.prepend_filters.inited())
         {
             var it = lccf.*.prepend_filters.iterator();
@@ -481,6 +475,7 @@ fn echoz_filter(
                 last = try chain.allocNStr(parameters, last);
             }
             last.*.next = c;
+            ctx.*.done_first = 1;
         }
 
         if (lccf.*.append_filters.inited()) {
