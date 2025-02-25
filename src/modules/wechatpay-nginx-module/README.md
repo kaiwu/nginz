@@ -2,53 +2,70 @@
 
 `wechatpay` is a nginx proxy module to the upstream [wechat pay][1] gateway. It provides **3** major functionalies
 
-1. A upstream proxy which signs the request as `wechatpay` requires, meanwhile it verifies the signature in the upstream response.
-2. In the nginx `access` phase, it verifies the signature from the request initiated by `wechatpay` gateway, such as `notification` request.
+1. A upstream proxy which signs the request as [wechat pay][1] gateway requires, meanwhile it verifies the signature in the upstream response.
+2. In the nginx `access` phase, it verifies the signature from the request initiated by [wechat pay][1] gateway, such as `notification` request.
    Optionally it decrypts the `AES-GCM-256` ciphertxt which might present in the request body on the fly.
-3. Provides content handlers which either encrypt or decrypt messages found in request body using **RSA** algorithm specified by `wechatpay` 
+3. Provides content handlers which either encrypt or decrypt base64 encoded ciphertxt found in a request body using **RSA** algorithm
+   specified by [wechat pay][1]
 
 
 ### Synopsis
 
 ```nginx
 
-    server {
-        listen 80;
-        resolver 223.5.5.5;
-
+    http {
+        #...
         wechatpay_apiclient_key_file prvkey.pem;
         wechatpay_public_key_file pubkey.pem;
         wechatpay_apiclient_serial 0000000000;
         wechatpay_serial FFFFFFFFFF;
         wechatpay_mch_id 1234567890;
 
-        location / {
-            wechatpay_proxy_pass https://api.mch.weixin.qq.com;
+        server {
+            listen 443;
+            #...
+
+            location /notify {
+                wechatpay_access aes_secret;
+                proxy_pass http://localhost/confirm;
+            }
         }
 
-        # might put this in another server block with SSL port
-        location /notify {
-            wechatpay_access aes_secret;
-            #proxy_pass to upstream;
-        }
+        server {
+            listen 80;
+            resolver 223.5.5.5;
 
-        location /encrypt {
-            wechatpay_oaep_encrypt on;
-        }
+            location / {
+                wechatpay_proxy_pass https://api.mch.weixin.qq.com;
+            }
 
-        location /decrypt {
-            wechatpay_oaep_decrypt on;
+            location /encrypt {
+                wechatpay_oaep_encrypt on;
+            }
+
+            location /decrypt {
+                wechatpay_oaep_decrypt on;
+            }
+
+            location /confirm {
+                allow 127.0.0.1;
+                deny all;
+                #...;
+            }
         }
+    }
 
 ```
 
 ### Deployment
 
 `ngx_http_wechatpay_module.o` provides **2** nginx modules, a content/access handler module and a 
-filter module, and they can be added in the `objs/ngx_modules.c` as following. Since `wechatpay` requires
-the request body as part of signature verification, the filter module holds both header and body until
-the signature is verified for downstream. A failed verification will be indicated from the response
-status line to the downstream.
+filter module, and they can be added in the `objs/ngx_modules.c` as following.
+
+> [!NOTE]
+> Since [wechat pay][1] requires the request body as part of signature verification, the filter module
+> holds both header and body until the signature is verified for downstream. A failed verification will
+> be indicated from the response status line to the downstream.
 
 ```c
 
@@ -96,7 +113,7 @@ status line to the downstream.
 
 #### wechatpay_proxy_pass
 
-|         |         |
+|                   |
 | ------- |  -----: |
 | syntax  |         |
 | default |         |
@@ -105,7 +122,7 @@ status line to the downstream.
 
 #### wechatpay_apiclient_key_file
 
-|         |         |
+|                   |
 | ------- |  -----: |
 | syntax  |         |
 | default |         |
@@ -114,7 +131,7 @@ status line to the downstream.
 
 #### wechatpay_apiclient_serial
 
-|         |         |
+|                   |
 | ------- |  -----: |
 | syntax  |         |
 | default |         |
@@ -123,7 +140,7 @@ status line to the downstream.
 
 #### wechatpay_public_key_file
 
-|         |         |
+|                   |
 | ------- |  -----: |
 | syntax  |         |
 | default |         |
@@ -132,7 +149,7 @@ status line to the downstream.
 
 #### wechatpay_serial
 
-|         |         |
+|                   |
 | ------- |  -----: |
 | syntax  |         |
 | default |         |
@@ -141,7 +158,7 @@ status line to the downstream.
 
 #### wechatpay_mch_id
 
-|         |         |
+|                   |
 | ------- |  -----: |
 | syntax  |         |
 | default |         |
@@ -150,7 +167,7 @@ status line to the downstream.
 
 #### wechatpay_oaep_encrypt
 
-|         |         |
+|                   |
 | ------- |  -----: |
 | syntax  |         |
 | default |         |
@@ -159,7 +176,7 @@ status line to the downstream.
 
 #### wechatpay_oaep_decrypt
 
-|         |         |
+|                   |
 | ------- |  -----: |
 | syntax  |         |
 | default |         |
@@ -168,7 +185,7 @@ status line to the downstream.
 
 #### wechatpay_access
 
-|         |         |
+|                   |
 | ------- |  -----: |
 | syntax  |         |
 | default |         |
@@ -178,4 +195,4 @@ status line to the downstream.
 
 
 
-[1]: https://pay.weixin.qq.com/ "wechatpay"
+[1]: https://pay.weixin.qq.com/ "wechat pay"
