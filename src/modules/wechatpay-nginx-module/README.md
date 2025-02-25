@@ -2,11 +2,13 @@
 
 `wechatpay` is a nginx proxy module to the upstream [wechat pay][1] gateway. It provides **3** major functionalies
 
-1. A upstream proxy which signs the request as [wechat pay][1] gateway requires, meanwhile it verifies the signature in the upstream response.
-2. In the nginx `access` phase, it verifies the signature from the request initiated by [wechat pay][1] gateway, such as `notification` request.
-   Optionally it decrypts the `AES-GCM-256` ciphertxt which might present in the request body on the fly.
-3. Provides content handlers which either encrypt or decrypt base64 encoded ciphertxt found in a request body using **RSA** algorithm
-   specified by [wechat pay][1]
+1. A upstream proxy which signs the request as [wechat pay][1] gateway requires,
+   meanwhile it verifies the signature in the upstream response.
+2. In the nginx `access` phase, it verifies the signature from the request initiated by [wechat pay][1] gateway,
+   such as `notification` request. Optionally it decrypts the `AES-GCM-256` ciphertxt which might present in the
+   request body on the fly.
+3. Provides content handlers which either encrypt or decrypt base64 encoded ciphertxt
+   found in a request body using **RSA** algorithm specified by [wechat pay][1]
 
 
 ### Synopsis
@@ -113,84 +115,66 @@ filter module, and they can be added in the `objs/ngx_modules.c` as following.
 
 #### wechatpay_proxy_pass
 
-|                   |
-| ------- |  -----: |
-| syntax  |         |
-| default |         |
-| context |         |
-| phase   |         |
+ syntax           
+ default          
+ context          
+ phase            
 
 #### wechatpay_apiclient_key_file
 
-|                   |
-| ------- |  -----: |
-| syntax  |         |
-| default |         |
-| context |         |
-| phase   |         |
+ syntax           
+ default          
+ context          
+ phase            
 
 #### wechatpay_apiclient_serial
 
-|                   |
-| ------- |  -----: |
-| syntax  |         |
-| default |         |
-| context |         |
-| phase   |         |
+ syntax           
+ default          
+ context          
+ phase            
 
 #### wechatpay_public_key_file
 
-|                   |
-| ------- |  -----: |
-| syntax  |         |
-| default |         |
-| context |         |
-| phase   |         |
+ syntax           
+ default          
+ context          
+ phase            
 
 #### wechatpay_serial
 
-|                   |
-| ------- |  -----: |
-| syntax  |         |
-| default |         |
-| context |         |
-| phase   |         |
+ syntax           
+ default          
+ context          
+ phase            
 
 #### wechatpay_mch_id
 
-|                   |
-| ------- |  -----: |
-| syntax  |         |
-| default |         |
-| context |         |
-| phase   |         |
+ syntax           
+ default          
+ context          
+ phase            
 
 #### wechatpay_oaep_encrypt
 
-|                   |
-| ------- |  -----: |
-| syntax  |         |
-| default |         |
-| context |         |
-| phase   |         |
+ syntax           
+ default          
+ context          
+ phase            
 
 #### wechatpay_oaep_decrypt
 
-|                   |
-| ------- |  -----: |
-| syntax  |         |
-| default |         |
-| context |         |
-| phase   |         |
+ syntax           
+ default          
+ context          
+ phase            
 
 #### wechatpay_access
 
-|                   |
-| ------- |  -----: |
-| syntax  |         |
-| default |         |
-| context |         |
-| phase   |         |
+ syntax           
+ default          
+ context          
+ phase            
 
 
 

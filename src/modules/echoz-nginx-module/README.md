@@ -66,12 +66,10 @@ filter module, and they can be added in the `objs/ngx_modules.c` as following.
 
 #### echoz
 
-|                   |
-| ------- |  -----: |
-| syntax  |         |
-| default |         |
-| context |         |
-| phase   |         |
+ syntax           
+ default          
+ context          
+ phase            
 
 ```nginx
 
@@ -79,12 +77,10 @@ filter module, and they can be added in the `objs/ngx_modules.c` as following.
 
 #### echozn
 
-|                   |
-| ------- |  -----: |
-| syntax  |         |
-| default |         |
-| context |         |
-| phase   |         |
+ syntax           
+ default          
+ context          
+ phase            
 
 ```nginx
 
@@ -92,12 +88,10 @@ filter module, and they can be added in the `objs/ngx_modules.c` as following.
 
 #### echoz_duplicate
 
-|                   |
-| ------- |  -----: |
-| syntax  |         |
-| default |         |
-| context |         |
-| phase   |         |
+ syntax           
+ default          
+ context          
+ phase            
 
 ```nginx
 
@@ -105,12 +99,10 @@ filter module, and they can be added in the `objs/ngx_modules.c` as following.
 
 #### echoz_flush
 
-|                   |
-| ------- |  -----: |
-| syntax  |         |
-| default |         |
-| context |         |
-| phase   |         |
+ syntax           
+ default          
+ context          
+ phase            
 
 ```nginx
 
@@ -118,12 +110,10 @@ filter module, and they can be added in the `objs/ngx_modules.c` as following.
 
 #### echoz_sleep
 
-|                   |
-| ------- |  -----: |
-| syntax  |         |
-| default |         |
-| context |         |
-| phase   |         |
+ syntax           
+ default          
+ context          
+ phase            
 
 ```nginx
 
@@ -131,12 +121,10 @@ filter module, and they can be added in the `objs/ngx_modules.c` as following.
 
 #### echoz_location_async
 
-|                   |
-| ------- |  -----: |
-| syntax  |         |
-| default |         |
-| context |         |
-| phase   |         |
+ syntax           
+ default          
+ context          
+ phase            
 
 ```nginx
 
@@ -144,12 +132,10 @@ filter module, and they can be added in the `objs/ngx_modules.c` as following.
 
 #### echoz_request_body
 
-|                   |
-| ------- |  -----: |
-| syntax  |         |
-| default |         |
-| context |         |
-| phase   |         |
+ syntax           
+ default          
+ context          
+ phase            
 
 ```nginx
 
@@ -157,12 +143,10 @@ filter module, and they can be added in the `objs/ngx_modules.c` as following.
 
 #### echoz_read_request_body
 
-|                   |
-| ------- |  -----: |
-| syntax  |         |
-| default |         |
-| context |         |
-| phase   |         |
+ syntax           
+ default          
+ context          
+ phase            
 
 ```nginx
 
@@ -170,12 +154,10 @@ filter module, and they can be added in the `objs/ngx_modules.c` as following.
 
 #### echoz_exec
 
-|                   |
-| ------- |  -----: |
-| syntax  |         |
-| default |         |
-| context |         |
-| phase   |         |
+ syntax           
+ default          
+ context          
+ phase            
 
 ```nginx
 
@@ -183,12 +165,10 @@ filter module, and they can be added in the `objs/ngx_modules.c` as following.
 
 #### echoz_before_body
 
-|                   |
-| ------- |  -----: |
-| syntax  |         |
-| default |         |
-| context |         |
-| phase   |         |
+ syntax           
+ default          
+ context          
+ phase            
 
 ```nginx
 
@@ -196,12 +176,10 @@ filter module, and they can be added in the `objs/ngx_modules.c` as following.
 
 #### echoz_after_body
 
-|                   |
-| ------- |  -----: |
-| syntax  |         |
-| default |         |
-| context |         |
-| phase   |         |
+ syntax           
+ default          
+ context          
+ phase            
 
 ```nginx
 
@@ -209,12 +187,10 @@ filter module, and they can be added in the `objs/ngx_modules.c` as following.
 
 #### echoz_status
 
-|                   |
-| ------- |  -----: |
-| syntax  |         |
-| default |         |
-| context |         |
-| phase   |         |
+ syntax           
+ default          
+ context          
+ phase            
 
 ```nginx
 
@@ -222,12 +198,10 @@ filter module, and they can be added in the `objs/ngx_modules.c` as following.
 
 #### echoz_header
 
-|                   |
-| ------- |  -----: |
-| syntax  |         |
-| default |         |
-| context |         |
-| phase   |         |
+ syntax           
+ default          
+ context          
+ phase            
 
 ```nginx
 
