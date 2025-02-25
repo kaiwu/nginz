@@ -4,12 +4,11 @@
 
 1. A upstream proxy which signs the request as [wechat pay][1] gateway requires,
    meanwhile it verifies the signature in the upstream response.
-2. In the nginx `access` phase, it verifies the signature from the request initiated by [wechat pay][1] gateway,
-   such as `notification` request. Optionally it decrypts the `AES-GCM-256` ciphertxt which might present in the
-   request body on the fly.
-3. Provides content handlers which either encrypt or decrypt base64 encoded ciphertxt
+2. Put in a nginx `access` phase by `wechatpay_access` directive, it verifies the signature
+   from the request initiated by [wechat pay][1] gateway, such as `notification` request.
+   Optionally it decrypts every `AES-GCM-256` ciphertxt which might present in the request body on the fly.
+3. Provides content handlers which either encrypt to or decrypt from the base64 encoded ciphertxt
    found in a request body using **RSA** algorithm specified by [wechat pay][1]
-
 
 ### Synopsis
 
@@ -61,8 +60,11 @@
 
 ### Deployment
 
-`ngx_http_wechatpay_module.o` provides **2** nginx modules, a content/access handler module and a 
-filter module, and they can be added in the `objs/ngx_modules.c` as following.
+Instead of providing standard nginx building routines, the project artifacts are module object files,
+with which one shall build into a target `nginx` binary.
+
+`ngx_http_wechatpay_module.o` provides **2** nginx modules, a content/access handler module and a filter module,
+they can be added in the `objs/ngx_modules.c` as following.
 
 > [!NOTE]
 > Since [wechat pay][1] requires the request body as part of signature verification, the filter module
@@ -115,68 +117,94 @@ filter module, and they can be added in the `objs/ngx_modules.c` as following.
 
 #### wechatpay_proxy_pass
 
- syntax           
- default          
- context          
- phase            
+*syntax: wechatpay_proxy_pass \[https://|http://\]wechatpay_gateway\[:port\]*          
+*default: no, default to http://wechatpay_gateway:80 without schema or port, in production it shall be https://api.mch.weixin.qq.com*          
+*context: location*          
+*phase: content*            
+
+The directive specifies the upstream wechatpay gateway. *note* apart from `ngx_http_proxy_module` whose *proxy_pass* directive usually
+requires an explicit `$request_uri`, *wechatpay_proxy_pass* does not need them as wechatpay gateway uses uri path and args to compute
+the signature and it makes little sense to modify them. The module uses the *method*, *uri path* and *uri args* of the original request
+for the upstream.
 
 #### wechatpay_apiclient_key_file
 
- syntax           
- default          
- context          
- phase            
+*syntax: wechatpay_apiclient_key_file path/to/prvkey.pem*           
+*default: no*          
+*context: http, server, location*          
+*phase: content*            
+
+The directive takes a file path parameter, it can be either an absolute path or one path relative to the nginx conf directory.
+The module aborts if the key file cannot be validated.
 
 #### wechatpay_apiclient_serial
 
- syntax           
- default          
- context          
- phase            
+*syntax: wechatpay_apiclient_serial serial_no*           
+*default: no*          
+*context: http, server, location*          
+*phase: content*            
+
+The directive specifies the apiclient serial to compute the signature.
 
 #### wechatpay_public_key_file
 
- syntax           
- default          
- context          
- phase            
+*syntax: wechatpay_public_key_file path/to/pubkey.pem*           
+*default: no*          
+*context: http, server, location*          
+*phase: content*            
+
+The directive takes a file path parameter, it can be either an absolute path or one path relative to the nginx conf directory.
+The module aborts if the key file cannot be validated. This file is the wechatpay platform public key file.
 
 #### wechatpay_serial
 
- syntax           
- default          
- context          
- phase            
+*syntax: wechatpay_serial serial_no*           
+*default: no*          
+*context: http, server, location*          
+*phase: content*            
+
+The directive specifies the wechatpay platform serial to verify the signature. It is also named as *Public Key ID*.
 
 #### wechatpay_mch_id
 
- syntax           
- default          
- context          
- phase            
+*syntax: wechatpay_mch_id id_string*           
+*default: no*          
+*context: http, server, location*          
+*phase: content*            
+
+The directive specifies the *mch_id* to compute the signature.
 
 #### wechatpay_oaep_encrypt
 
- syntax           
- default          
- context          
- phase            
+*syntax: wechatpay_oaep_encrypt on|off*           
+*default: off*          
+*context: location*          
+*phase: content*            
+
+When turns *on*, the location will encrypt the request body with public key provided by *wechatpay_public_key_file*
+using *RSA_PKCS1_OAEP_PADDING* and response the base64 encoded ciphertxt
 
 #### wechatpay_oaep_decrypt
 
- syntax           
- default          
- context          
- phase            
+*syntax: wechatpay_oaep_decrypt on|off*           
+*default: off*          
+*context: location*          
+*phase: content*            
+
+When turns *on*, the location will decrypt the base64 encoded request body with private key provided by *wechatpay_apiclient_key_file*
+using *RSA_PKCS1_OAEP_PADDING* and response decrypted plaintxt
 
 #### wechatpay_access
 
- syntax           
- default          
- context          
- phase            
+*syntax: wechatpay_access \[aes_secret\]*           
+*default: no*          
+*context: location*          
+*phase: access*            
 
+The directive applies the signature verification in *access* phase and rejects the request if the verification fails. When provisioned
+with an optional 32 bytes AES secret (aka API v3 AES secret in wechatpay term), it iterates and locates the AES encrypted message in the
+request body, decrypts and appends plaintxt for the location's content handler, only if the verification succeeds.
 
-
+*Note* since the verification requires request body, the module will read entire request body in the *access* phase already.
 
 [1]: https://pay.weixin.qq.com/ "wechat pay"

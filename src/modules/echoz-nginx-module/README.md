@@ -16,9 +16,11 @@ as much as it can.
 
 ### Deployment
 
-Instead of providing standard nginx building routines, the project artifacts are module object files, with which one shall
-build into a target `nginx` binary. `ngx_http_echoz_module.o` provides **2** nginx modules, a content handler module and a 
-filter module, and they can be added in the `objs/ngx_modules.c` as following.
+Instead of providing standard nginx building routines, the project artifacts are module object files,
+with which one shall build into a target `nginx` binary.
+
+`ngx_http_echoz_module.o` provides **2** nginx modules, a content handler module and a filter module,
+they can be added in the `objs/ngx_modules.c` as following.
 
 ```c
 
