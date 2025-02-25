@@ -2,9 +2,10 @@
 
 `echoz` is a simplified replica of [echo][1] module. It implements many of its directives in `Zig`. The main drive is
 to demo how to implement nginx content handler module as well as filter module, taking advantages of the language features.
-Meanwhile `echoz` does not have to deal with a long history of nginx releases and changes. It only addresses to the recent
-nginx releases and their exposed calibers, so that a learner might find the implementations cleaner. A full and much better
-documentation can be found at the original `echo` module. This doc also references the original work as much as it can.
+On the other hand, `echoz` does not intend to deal with a long history of nginx releases and changes. It only addresses to
+the recent nginx releases and their exposed calibers, so that a learner might find the implementations cleaner.
+A full and much better documentation can be found at the original `echo` module. This doc also references the original work
+as much as it can.
 
 ### Synopsis
 
@@ -64,13 +65,12 @@ filter module, and they can be added in the `objs/ngx_modules.c` as following.
 
 #### echoz
 
-**syntax:**
-
-**default:**
-
-**context:**
-
-**phase:**
+|         |         |
+| ------- |  -----: |
+| syntax  |         |
+| default |         |
+| context |         |
+| phase   |         |
 
 ```nginx
 
@@ -78,13 +78,12 @@ filter module, and they can be added in the `objs/ngx_modules.c` as following.
 
 #### echozn
 
-**syntax:**
-
-**default:**
-
-**context:**
-
-**phase:**
+|         |         |
+| ------- |  -----: |
+| syntax  |         |
+| default |         |
+| context |         |
+| phase   |         |
 
 ```nginx
 
@@ -92,13 +91,12 @@ filter module, and they can be added in the `objs/ngx_modules.c` as following.
 
 #### echoz_duplicate
 
-**syntax:**
-
-**default:**
-
-**context:**
-
-**phase:**
+|         |         |
+| ------- |  -----: |
+| syntax  |         |
+| default |         |
+| context |         |
+| phase   |         |
 
 ```nginx
 
@@ -106,13 +104,12 @@ filter module, and they can be added in the `objs/ngx_modules.c` as following.
 
 #### echoz_flush
 
-**syntax:**
-
-**default:**
-
-**context:**
-
-**phase:**
+|         |         |
+| ------- |  -----: |
+| syntax  |         |
+| default |         |
+| context |         |
+| phase   |         |
 
 ```nginx
 
@@ -120,13 +117,12 @@ filter module, and they can be added in the `objs/ngx_modules.c` as following.
 
 #### echoz_sleep
 
-**syntax:**
-
-**default:**
-
-**context:**
-
-**phase:**
+|         |         |
+| ------- |  -----: |
+| syntax  |         |
+| default |         |
+| context |         |
+| phase   |         |
 
 ```nginx
 
@@ -134,13 +130,12 @@ filter module, and they can be added in the `objs/ngx_modules.c` as following.
 
 #### echoz_location_async
 
-**syntax:**
-
-**default:**
-
-**context:**
-
-**phase:**
+|         |         |
+| ------- |  -----: |
+| syntax  |         |
+| default |         |
+| context |         |
+| phase   |         |
 
 ```nginx
 
@@ -148,13 +143,12 @@ filter module, and they can be added in the `objs/ngx_modules.c` as following.
 
 #### echoz_request_body
 
-**syntax:**
-
-**default:**
-
-**context:**
-
-**phase:**
+|         |         |
+| ------- |  -----: |
+| syntax  |         |
+| default |         |
+| context |         |
+| phase   |         |
 
 ```nginx
 
@@ -162,13 +156,12 @@ filter module, and they can be added in the `objs/ngx_modules.c` as following.
 
 #### echoz_read_request_body
 
-**syntax:**
-
-**default:**
-
-**context:**
-
-**phase:**
+|         |         |
+| ------- |  -----: |
+| syntax  |         |
+| default |         |
+| context |         |
+| phase   |         |
 
 ```nginx
 
@@ -176,13 +169,12 @@ filter module, and they can be added in the `objs/ngx_modules.c` as following.
 
 #### echoz_exec
 
-**syntax:**
-
-**default:**
-
-**context:**
-
-**phase:**
+|         |         |
+| ------- |  -----: |
+| syntax  |         |
+| default |         |
+| context |         |
+| phase   |         |
 
 ```nginx
 
@@ -190,13 +182,12 @@ filter module, and they can be added in the `objs/ngx_modules.c` as following.
 
 #### echoz_before_body
 
-**syntax:**
-
-**default:**
-
-**context:**
-
-**phase:**
+|         |         |
+| ------- |  -----: |
+| syntax  |         |
+| default |         |
+| context |         |
+| phase   |         |
 
 ```nginx
 
@@ -204,13 +195,12 @@ filter module, and they can be added in the `objs/ngx_modules.c` as following.
 
 #### echoz_after_body
 
-**syntax:**
-
-**default:**
-
-**context:**
-
-**phase:**
+|         |         |
+| ------- |  -----: |
+| syntax  |         |
+| default |         |
+| context |         |
+| phase   |         |
 
 ```nginx
 
@@ -218,13 +208,12 @@ filter module, and they can be added in the `objs/ngx_modules.c` as following.
 
 #### echoz_status
 
-**syntax:**
-
-**default:**
-
-**context:**
-
-**phase:**
+|         |         |
+| ------- |  -----: |
+| syntax  |         |
+| default |         |
+| context |         |
+| phase   |         |
 
 ```nginx
 
@@ -232,13 +221,12 @@ filter module, and they can be added in the `objs/ngx_modules.c` as following.
 
 #### echoz_header
 
-**syntax:**
-
-**default:**
-
-**context:**
-
-**phase:**
+|         |         |
+| ------- |  -----: |
+| syntax  |         |
+| default |         |
+| context |         |
+| phase   |         |
 
 ```nginx
 
