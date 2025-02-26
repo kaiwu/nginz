@@ -68,135 +68,27 @@ they can be added in the `objs/ngx_modules.c` as following.
 
 #### echoz
 
- syntax           
- default          
- context          
- phase            
-
-```nginx
-
-```
-
 #### echozn
-
- syntax           
- default          
- context          
- phase            
-
-```nginx
-
-```
 
 #### echoz_duplicate
 
- syntax           
- default          
- context          
- phase            
-
-```nginx
-
-```
-
 #### echoz_flush
-
- syntax           
- default          
- context          
- phase            
-
-```nginx
-
-```
 
 #### echoz_sleep
 
- syntax           
- default          
- context          
- phase            
-
-```nginx
-
-```
-
 #### echoz_location_async
-
- syntax           
- default          
- context          
- phase            
-
-```nginx
-
-```
 
 #### echoz_request_body
 
- syntax           
- default          
- context          
- phase            
-
-```nginx
-
-```
-
 #### echoz_read_request_body
-
- syntax           
- default          
- context          
- phase            
-
-```nginx
-
-```
 
 #### echoz_exec
 
- syntax           
- default          
- context          
- phase            
-
-```nginx
-
-```
-
 #### echoz_before_body
-
- syntax           
- default          
- context          
- phase            
-
-```nginx
-
-```
 
 #### echoz_after_body
 
- syntax           
- default          
- context          
- phase            
-
-```nginx
-
-```
-
 #### echoz_status
-
- syntax           
- default          
- context          
- phase            
-
-```nginx
-
-```
 
 #### echoz_header
 

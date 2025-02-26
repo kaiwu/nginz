@@ -25,6 +25,13 @@ specifically they are.
 > [!NOTE]
 > The SSL zig bindings are generated with `OpenSSL 3`.
 
+> [!CAUTION]
+> Many nginx structs have variable sizes, as they depend on the opt-in features at compile time.
+> Options such as `--with-compat`, `--with-http_ssl_module` could drastically affect many structs.
+> To ensure binary compatibility, one needs to adjust the zig bindings accordingly. The project
+> defaults to the configure options showed below. Some compile time flags could be added to cater
+> most common scenarios.
+
 To ease the development. A `nginz` binary is built as an artifact along with the module objects.
 It is a nginx wrapper, and by default built with
 
