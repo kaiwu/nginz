@@ -57,6 +57,8 @@ pub fn build_njs(
         njs.addIncludePath(b.path(p));
     }
     njs.linkLibC();
+    njs.linkSystemLibrary("z");
+    njs.linkSystemLibrary("ssl");
     njs.addCSourceFiles(.{
         .files = files.items[0..],
         .flags = &NJS_C_FLAGS,
