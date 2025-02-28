@@ -68,6 +68,7 @@ fn module_path(f: []const u8) PN {
 pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
+    const docker = b.option(bool, "docker", "configure with docker primitives") orelse false;
 
     const nginx = b.addModule("ngx", .{
         .root_source_file = b.path(NGINX),
@@ -75,7 +76,7 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
 
-    const patch_step = patch.patchStep(b);
+    const patch_step = patch.patchStep(b, docker);
     const nginz = exe.build_exe(b, target, optimize) catch unreachable;
     nginz.step.dependOn(patch_step);
 

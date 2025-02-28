@@ -6,11 +6,13 @@ const Error = error{
     PatchError,
 };
 
+var MAKEFILE: []const u8 = "project/nginz.makefile";
+
 fn patchOp(step: *Step, _: std.Progress.Node) anyerror!void {
     const b = step.owner;
     const result = try std.process.Child.run(.{
         .allocator = b.allocator,
-        .argv = &[_][]const u8{ "make", "-f", "project/nginz.makefile" },
+        .argv = &[_][]const u8{ "make", "-f", MAKEFILE },
     });
 
     defer {
@@ -28,8 +30,11 @@ fn patchOp(step: *Step, _: std.Progress.Node) anyerror!void {
     // std.debug.print("Patch applied successfully: {s}\n", .{result.stdout});
 }
 
-pub fn patchStep(b: *Build) *Step {
+pub fn patchStep(b: *Build, docker: bool) *Step {
     const patch = b.step("patch", "patch nginz");
+    if (docker) {
+        MAKEFILE = "project/nginz.docker.makefile";
+    }
     patch.makeFn = patchOp;
 
     return patch;
