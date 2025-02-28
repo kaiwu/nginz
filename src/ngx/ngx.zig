@@ -3102,6 +3102,10 @@ pub const struct_ngx_file_s = extern struct {
     offset: off_t = @import("std").mem.zeroes(off_t),
     sys_offset: off_t = @import("std").mem.zeroes(off_t),
     log: [*c]ngx_log_t = @import("std").mem.zeroes([*c]ngx_log_t),
+    thread_handler: ?*const fn ([*c]ngx_thread_task_t, [*c]ngx_file_t) callconv(.C) ngx_int_t = @import("std").mem.zeroes(?*const fn ([*c]ngx_thread_task_t, [*c]ngx_file_t) callconv(.C) ngx_int_t),
+    thread_ctx: ?*anyopaque = @import("std").mem.zeroes(?*anyopaque),
+    thread_task: [*c]ngx_thread_task_t = @import("std").mem.zeroes([*c]ngx_thread_task_t),
+    aio: ?*anyopaque = @import("std").mem.zeroes(?*anyopaque),
     flags: struct_ngx_file_flags_s = @import("std").mem.zeroes(struct_ngx_file_flags_s),
 };
 pub const ngx_file_t = struct_ngx_file_s;
@@ -3348,7 +3352,8 @@ const struct_ngx_connection_flags_s = packed struct {
     tcp_nopush: u2,
     need_last_buf: bool,
     need_flush_buf: bool,
-    padding: u5,
+    busy_count: u2,
+    padding: u3,
 };
 pub const struct_ngx_connection_s = extern struct {
     data: ?*anyopaque = @import("std").mem.zeroes(?*anyopaque),
@@ -3368,6 +3373,7 @@ pub const struct_ngx_connection_s = extern struct {
     socklen: socklen_t = @import("std").mem.zeroes(socklen_t),
     addr_text: ngx_str_t = @import("std").mem.zeroes(ngx_str_t),
     proxy_protocol: [*c]ngx_proxy_protocol_t = @import("std").mem.zeroes([*c]ngx_proxy_protocol_t),
+    quic: ?*anyopaque = @import("std").mem.zeroes(?*anyopaque),
     ssl: [*c]ngx_ssl_connection_t = @import("std").mem.zeroes([*c]ngx_ssl_connection_t),
     udp: [*c]ngx_udp_connection_t = @import("std").mem.zeroes([*c]ngx_udp_connection_t),
     local_sockaddr: [*c]struct_sockaddr = @import("std").mem.zeroes([*c]struct_sockaddr),
@@ -3378,6 +3384,7 @@ pub const struct_ngx_connection_s = extern struct {
     start_time: ngx_msec_t = @import("std").mem.zeroes(ngx_msec_t),
     requests: ngx_uint_t = @import("std").mem.zeroes(ngx_uint_t),
     flags: struct_ngx_connection_flags_s = @import("std").mem.zeroes(struct_ngx_connection_flags_s),
+    sendfile_task: [*c]ngx_thread_task_t = @import("std").mem.zeroes([*c]ngx_thread_task_t),
 };
 pub const ngx_connection_t = struct_ngx_connection_s;
 pub const ngx_module_t = struct_ngx_module_s;
@@ -3472,7 +3479,13 @@ pub const struct_ngx_module_s = extern struct {
 };
 pub const struct_ngx_event_aio_s = opaque {};
 pub const ngx_event_aio_t = struct_ngx_event_aio_s;
-pub const struct_ngx_thread_task_s = opaque {};
+pub const struct_ngx_thread_task_s = extern struct {
+    next: [*c]ngx_thread_task_t = @import("std").mem.zeroes([*c]ngx_thread_task_t),
+    id: ngx_uint_t = @import("std").mem.zeroes(ngx_uint_t),
+    ctx: ?*anyopaque = @import("std").mem.zeroes(?*anyopaque),
+    handler: ?*const fn (?*anyopaque, [*c]ngx_log_t) callconv(.C) void = @import("std").mem.zeroes(?*const fn (?*anyopaque, [*c]ngx_log_t) callconv(.C) void),
+    event: ngx_event_t = @import("std").mem.zeroes(ngx_event_t),
+};
 pub const ngx_thread_task_t = struct_ngx_thread_task_s;
 pub const struct_ngx_ssl_s = extern struct {
     ctx: ?*SSL_CTX = @import("std").mem.zeroes(?*SSL_CTX),
@@ -3780,6 +3793,9 @@ pub const struct_ngx_output_chain_ctx_s = extern struct {
     free: [*c]ngx_chain_t = @import("std").mem.zeroes([*c]ngx_chain_t),
     busy: [*c]ngx_chain_t = @import("std").mem.zeroes([*c]ngx_chain_t),
     flags: struct_ngx_output_chain_ctx_flags_s = @import("std").mem.zeroes(struct_ngx_output_chain_ctx_flags_s),
+    aio_handler: ngx_output_chain_aio_pt = @import("std").mem.zeroes(ngx_output_chain_aio_pt),
+    thread_handler: ?*const fn ([*c]ngx_thread_task_t, [*c]ngx_file_t) callconv(.C) ngx_int_t = @import("std").mem.zeroes(?*const fn ([*c]ngx_thread_task_t, [*c]ngx_file_t) callconv(.C) ngx_int_t),
+    thread_task: [*c]ngx_thread_task_t = @import("std").mem.zeroes([*c]ngx_thread_task_t),
     alignment: off_t = @import("std").mem.zeroes(off_t),
     pool: [*c]ngx_pool_t = @import("std").mem.zeroes([*c]ngx_pool_t),
     allocated: ngx_int_t = @import("std").mem.zeroes(ngx_int_t),
@@ -17190,6 +17206,7 @@ pub const struct_ngx_http_cache_s = extern struct {
     buf: [*c]ngx_buf_t = @import("std").mem.zeroes([*c]ngx_buf_t),
     file_cache: [*c]ngx_http_file_cache_t = @import("std").mem.zeroes([*c]ngx_http_file_cache_t),
     node: [*c]ngx_http_file_cache_node_t = @import("std").mem.zeroes([*c]ngx_http_file_cache_node_t),
+    thread_task: [*c]ngx_thread_task_t = @import("std").mem.zeroes([*c]ngx_thread_task_t),
     lock_timeout: ngx_msec_t = @import("std").mem.zeroes(ngx_msec_t),
     lock_age: ngx_msec_t = @import("std").mem.zeroes(ngx_msec_t),
     lock_time: ngx_msec_t = @import("std").mem.zeroes(ngx_msec_t),
@@ -17230,6 +17247,7 @@ pub const struct_ngx_peer_connection_s = extern struct {
     rcvbuf: c_int = @import("std").mem.zeroes(c_int),
     log: [*c]ngx_log_t = @import("std").mem.zeroes([*c]ngx_log_t),
     flags: struct_ngx_peer_connection_flags_s = @import("std").mem.zeroes(struct_ngx_peer_connection_flags_s),
+    spare: [2]u64 = @import("std").mem.zeroes([2]u64),
 };
 pub const ngx_peer_connection_t = struct_ngx_peer_connection_s;
 pub const ngx_event_pipe_input_filter_pt = ?*const fn ([*c]ngx_event_pipe_t, [*c]ngx_buf_t) callconv(.c) ngx_int_t;
@@ -17263,6 +17281,9 @@ pub const struct_ngx_event_pipe_s = extern struct {
     input_ctx: ?*anyopaque = @import("std").mem.zeroes(?*anyopaque),
     output_filter: ngx_event_pipe_output_filter_pt = @import("std").mem.zeroes(ngx_event_pipe_output_filter_pt),
     output_ctx: ?*anyopaque = @import("std").mem.zeroes(?*anyopaque),
+    thread_handler: ?*const fn ([*c]ngx_thread_task_t, [*c]ngx_file_t) callconv(.C) ngx_int_t = @import("std").mem.zeroes(?*const fn ([*c]ngx_thread_task_t, [*c]ngx_file_t) callconv(.C) ngx_int_t),
+    thread_ctx: ?*anyopaque = @import("std").mem.zeroes(?*anyopaque),
+    thread_task: [*c]ngx_thread_task_t = @import("std").mem.zeroes([*c]ngx_thread_task_t),
     flags: struct_ngx_event_pipe_flags_s = @import("std").mem.zeroes(struct_ngx_event_pipe_flags_s),
     allocated: ngx_int_t = @import("std").mem.zeroes(ngx_int_t),
     bufs: ngx_bufs_t = @import("std").mem.zeroes(ngx_bufs_t),
@@ -17674,6 +17695,13 @@ pub const ngx_http_headers_in_t = extern struct {
     authorization: [*c]ngx_table_elt_t = @import("std").mem.zeroes([*c]ngx_table_elt_t),
     keep_alive: [*c]ngx_table_elt_t = @import("std").mem.zeroes([*c]ngx_table_elt_t),
     x_forwarded_for: [*c]ngx_table_elt_t = @import("std").mem.zeroes([*c]ngx_table_elt_t),
+    x_real_ip: [*c]ngx_table_elt_t = @import("std").mem.zeroes([*c]ngx_table_elt_t),
+    accept: [*c]ngx_table_elt_t = @import("std").mem.zeroes([*c]ngx_table_elt_t),
+    accept_language: [*c]ngx_table_elt_t = @import("std").mem.zeroes([*c]ngx_table_elt_t),
+    depth: [*c]ngx_table_elt_t = @import("std").mem.zeroes([*c]ngx_table_elt_t),
+    destination: [*c]ngx_table_elt_t = @import("std").mem.zeroes([*c]ngx_table_elt_t),
+    overwrite: [*c]ngx_table_elt_t = @import("std").mem.zeroes([*c]ngx_table_elt_t),
+    date: [*c]ngx_table_elt_t = @import("std").mem.zeroes([*c]ngx_table_elt_t),
     cookie: [*c]ngx_table_elt_t = @import("std").mem.zeroes([*c]ngx_table_elt_t),
     user: ngx_str_t = @import("std").mem.zeroes(ngx_str_t),
     passwd: ngx_str_t = @import("std").mem.zeroes(ngx_str_t),
@@ -18079,6 +18107,7 @@ pub const ngx_http_upstream_server_t = extern struct {
     flags: ngx_http_upstream_server_flags_t = @import("std").mem.zeroes(ngx_http_upstream_server_flags_t),
     host: ngx_str_t = @import("std").mem.zeroes(ngx_str_t),
     service: ngx_str_t = @import("std").mem.zeroes(ngx_str_t),
+    spare: [2]u64 = @import("std").mem.zeroes([2]u64),
 };
 pub const ngx_http_upstream_local_t = extern struct {
     addr: [*c]ngx_addr_t = @import("std").mem.zeroes([*c]ngx_addr_t),
@@ -18158,6 +18187,7 @@ pub const ngx_http_upstream_conf_t = extern struct {
     ssl_certificate_cache: ?*anyopaque = @import("std").mem.zeroes(?*anyopaque),
     ssl_passwords: [*c]ngx_array_t = @import("std").mem.zeroes([*c]ngx_array_t),
     module: ngx_str_t = @import("std").mem.zeroes(ngx_str_t),
+    spare: [6]u64 = @import("std").mem.zeroes([6]u64),
 };
 pub const ngx_http_upstream_header_t = extern struct {
     name: ngx_str_t = @import("std").mem.zeroes(ngx_str_t),
@@ -18266,6 +18296,7 @@ pub const struct_ngx_http_upstream_rr_peer_s = extern struct {
     refs: ngx_uint_t = @import("std").mem.zeroes(ngx_uint_t),
     host: [*c]ngx_http_upstream_host_t = @import("std").mem.zeroes([*c]ngx_http_upstream_host_t),
     next: [*c]ngx_http_upstream_rr_peer_t = @import("std").mem.zeroes([*c]ngx_http_upstream_rr_peer_t),
+    spare: [15]u64 = @import("std").mem.zeroes([15]u64),
 };
 pub const ngx_http_upstream_rr_peer_t = struct_ngx_http_upstream_rr_peer_s;
 pub const ngx_http_upstream_rr_peers_t = struct_ngx_http_upstream_rr_peers_s;
@@ -18395,6 +18426,8 @@ pub const struct_ngx_http_core_loc_conf_s = extern struct {
     gzip_http_version: ngx_uint_t = @import("std").mem.zeroes(ngx_uint_t),
     gzip_proxied: ngx_uint_t = @import("std").mem.zeroes(ngx_uint_t),
     gzip_disable: [*c]ngx_array_t = @import("std").mem.zeroes([*c]ngx_array_t),
+    thread_pool: ?*anyopaque = @import("std").mem.zeroes(?*anyopaque),
+    thread_pool_value: [*c]ngx_http_complex_value_t = @import("std").mem.zeroes([*c]ngx_http_complex_value_t),
     disable_symlinks: ngx_uint_t = @import("std").mem.zeroes(ngx_uint_t),
     disable_symlinks_from: [*c]ngx_http_complex_value_t = @import("std").mem.zeroes([*c]ngx_http_complex_value_t),
     early_hints: [*c]ngx_array_t =  @import("std").mem.zeroes([*c]ngx_array_t),

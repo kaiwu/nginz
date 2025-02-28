@@ -19,7 +19,13 @@ all: ./submodules/nginx/objs/nginz.c
        --http-scgi-temp-path=/var/cache/nginx/scgi_temp \
        --user=nginx \
        --group=nginx \
-       --with-http_ssl_module --with-debug
+       --with-compat \
+       --with-file-aio \
+       --with-threads \
+       --with-http_ssl_module \
+       --with-http_v2_module \
+       --with-http_v3_module \
+       --with-debug
 	cd submodules/njs && ./configure --no-libxml2
 
 copy: ./submodules/nginx/src/core/nginx.c ./submodules/nginx/objs/ngx_modules.c

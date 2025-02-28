@@ -18,7 +18,8 @@ pub fn build_http(
 
     var files = ArrayList([]const u8).init(b.allocator);
     defer files.deinit();
-    _ = try common.list("./submodules/nginx/src/http", 0, &common.BUILD_BUFFER, &files);
+    const n = try common.list("./submodules/nginx/src/http", 0, &common.BUILD_BUFFER, &files);
+    _ = try common.list("./submodules/nginx/src/event/quic", n, &common.BUILD_BUFFER, &files);
 
     for (common.NGX_INCLUDE_PATH) |p| {
         http.addIncludePath(b.path(p));
