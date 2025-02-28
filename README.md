@@ -29,8 +29,9 @@ specifically they are.
 > Many nginx structs have variable sizes, as they depend on the opt-in features at compile time.
 > Options such as `--with-compat`, `--with-http_ssl_module` could drastically affect many structs.
 > To ensure binary compatibility, one needs to adjust the zig bindings accordingly. The project
-> defaults to the configure options showed below. Some compile time flags could be added to cater
-> most common scenarios.
+> defaults to the configure options showed below in `main` branch. The `docker` branch configures
+> as many features as the official nginx [docker][3] debian release. Note the structs differences
+> in the test asserts.
 
 To ease the development. A `nginz` binary is built as an artifact along with the module objects.
 It is a nginx wrapper, and by default built with
@@ -48,3 +49,4 @@ By all means, deploy the module objects with your own binary building toolchains
 
 [1]: https://github.com/openresty/echo-nginx-module "echo"
 [2]: https://github.com/agentzh "agentzh"
+[3]: https://github.com/nginxinc/docker-nginx/blob/master/stable/debian/Dockerfile "docker"
