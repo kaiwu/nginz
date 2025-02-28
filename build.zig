@@ -210,6 +210,7 @@ pub fn build(b: *std.Build) void {
     nginz.root_module.linkSystemLibrary("crypt", .{});
     nginz.root_module.linkSystemLibrary("crypto", .{});
     nginz.root_module.linkSystemLibrary("pcre2-8", .{});
+    nginz.root_module.linkSystemLibrary("pthread", .{});
     nginz.root_module.linkLibrary(corelib);
     nginz.root_module.linkLibrary(httplib);
     nginz.root_module.linkLibrary(moduleslib);
@@ -244,6 +245,7 @@ pub fn build(b: *std.Build) void {
         t.root_module.linkSystemLibrary("crypt", .{});
         t.root_module.linkSystemLibrary("crypto", .{});
         t.root_module.linkSystemLibrary("pcre2-8", .{});
+        t.root_module.linkSystemLibrary("pthread", .{});
         t.root_module.linkLibrary(corelib);
         t.root_module.linkLibrary(httplib);
         t.root_module.linkLibrary(cjsonlib);
