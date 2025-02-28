@@ -15,6 +15,7 @@ const ngx_str_t = string.ngx_str_t;
 pub const ngx_fd_t = ngx.ngx_fd_t;
 pub const ngx_file_t = ngx.ngx_file_t;
 pub const ngx_file_info_t = ngx.ngx_file_info_t;
+pub const ngx_temp_file_t = ngx.ngx_temp_file_t;
 
 const NGX_FILE_OPEN = ngx.NGX_FILE_OPEN;
 const NGX_FILE_RDWR = ngx.NGX_FILE_RDWR;
@@ -60,5 +61,6 @@ pub fn ngz_open_file(path: ngx_str_t, lg: [*c]ngx_log_t, pool: [*c]ngx_pool_t) !
 }
 
 test "file" {
-    try expectEqual(@sizeOf(ngx_file_t), 200);
+    try expectEqual(@sizeOf(ngx_file_t), 232);
+    try expectEqual(@sizeOf(ngx_temp_file_t), 280);
 }

@@ -9,6 +9,7 @@ const quickjs = @import("project//build_quickjs.zig");
 const http_modules = @import("project/build_modules.zig");
 
 const NGINX = "src/ngx/nginx.zig";
+const NGZ_MODULES = "src/ngz_modules.zig";
 
 var modules = [_][]const u8{
     "src/modules/echoz-nginx-module/ngx_http_echoz.zig",
@@ -85,7 +86,7 @@ pub fn build(b: *std.Build) void {
         .name = "ngz_modules",
         .target = target,
         .optimize = optimize,
-        .root_source_file = b.path("src/ngz_modules.zig"),
+        .root_source_file = b.path(NGZ_MODULES),
     });
     ngz_modules.linkLibC();
     nginz.addObject(ngz_modules);
@@ -132,6 +133,7 @@ pub fn build(b: *std.Build) void {
     nginz.linkSystemLibrary("ssl");
     nginz.linkSystemLibrary("crypto");
     nginz.linkSystemLibrary("pcre2-8");
+    nginz.linkSystemLibrary("pthread");
     nginz.linkLibrary(corelib);
     nginz.linkLibrary(httplib);
     nginz.linkLibrary(moduleslib);
@@ -158,6 +160,7 @@ pub fn build(b: *std.Build) void {
         t.linkSystemLibrary("ssl");
         t.linkSystemLibrary("crypto");
         t.linkSystemLibrary("pcre2-8");
+        t.linkSystemLibrary("pthread");
         t.linkLibrary(corelib);
         t.linkLibrary(httplib);
         t.linkLibrary(cjsonlib);

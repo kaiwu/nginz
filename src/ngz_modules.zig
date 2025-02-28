@@ -6,14 +6,19 @@ extern var ngx_errlog_module: ngx_module_t;
 extern var ngx_conf_module: ngx_module_t;
 extern var ngx_openssl_module: ngx_module_t;
 extern var ngx_openssl_cache_module: ngx_module_t;
+extern var ngx_quic_module: ngx_module_t;
+extern var ngx_quic_bpf_module: ngx_module_t;
 extern var ngx_regex_module: ngx_module_t;
 extern var ngx_events_module: ngx_module_t;
 extern var ngx_event_core_module: ngx_module_t;
 extern var ngx_epoll_module: ngx_module_t;
+extern var ngx_thread_pool_module: ngx_module_t;
 extern var ngx_http_module: ngx_module_t;
 extern var ngx_http_core_module: ngx_module_t;
 extern var ngx_http_log_module: ngx_module_t;
 extern var ngx_http_upstream_module: ngx_module_t;
+extern var ngx_http_v2_module: ngx_module_t;
+extern var ngx_http_v3_module: ngx_module_t;
 extern var ngx_http_static_module: ngx_module_t;
 extern var ngx_http_autoindex_module: ngx_module_t;
 extern var ngx_http_index_module: ngx_module_t;
@@ -33,6 +38,7 @@ extern var ngx_http_proxy_module: ngx_module_t;
 extern var ngx_http_fastcgi_module: ngx_module_t;
 extern var ngx_http_uwsgi_module: ngx_module_t;
 extern var ngx_http_scgi_module: ngx_module_t;
+extern var ngx_http_grpc_module: ngx_module_t;
 extern var ngx_http_memcached_module: ngx_module_t;
 extern var ngx_http_empty_gif_module: ngx_module_t;
 extern var ngx_http_browser_module: ngx_module_t;
@@ -45,6 +51,8 @@ extern var ngx_http_upstream_zone_module: ngx_module_t;
 extern var ngx_http_write_filter_module: ngx_module_t;
 extern var ngx_http_header_filter_module: ngx_module_t;
 extern var ngx_http_chunked_filter_module: ngx_module_t;
+extern var ngx_http_v2_filter_module: ngx_module_t;
+extern var ngx_http_v3_filter_module: ngx_module_t;
 extern var ngx_http_range_header_filter_module: ngx_module_t;
 extern var ngx_http_gzip_filter_module: ngx_module_t;
 extern var ngx_http_postpone_filter_module: ngx_module_t;
@@ -68,14 +76,19 @@ export const ngx_modules = [_][*c]ngx_module_t{
     &ngx_conf_module,
     &ngx_openssl_module,
     &ngx_openssl_cache_module,
+    &ngx_quic_module,
+    &ngx_quic_bpf_module,
     &ngx_regex_module,
     &ngx_events_module,
     &ngx_event_core_module,
     &ngx_epoll_module,
+    &ngx_thread_pool_module,
     &ngx_http_module,
     &ngx_http_core_module,
     &ngx_http_log_module,
     &ngx_http_upstream_module,
+    &ngx_http_v2_module,
+    &ngx_http_v3_module,
     &ngx_http_static_module,
     &ngx_http_autoindex_module,
     &ngx_http_index_module,
@@ -95,6 +108,7 @@ export const ngx_modules = [_][*c]ngx_module_t{
     &ngx_http_fastcgi_module,
     &ngx_http_uwsgi_module,
     &ngx_http_scgi_module,
+    &ngx_http_grpc_module,
     &ngx_http_memcached_module,
     &ngx_http_empty_gif_module,
     &ngx_http_js_module,
@@ -110,6 +124,8 @@ export const ngx_modules = [_][*c]ngx_module_t{
     &ngx_http_write_filter_module,
     &ngx_http_header_filter_module,
     &ngx_http_chunked_filter_module,
+    &ngx_http_v2_filter_module,
+    &ngx_http_v3_filter_module,
     &ngx_http_range_header_filter_module,
     &ngx_http_gzip_filter_module,
     &ngx_http_postpone_filter_module,
@@ -131,14 +147,19 @@ export const ngx_module_names = [_][*c]const u8{
     "ngx_conf_module",
     "ngx_openssl_module",
     "ngx_openssl_cache_module",
+    "ngx_quic_module",
+    "ngx_quic_bpf_module",
     "ngx_regex_module",
     "ngx_events_module",
     "ngx_event_core_module",
     "ngx_epoll_module",
+    "ngx_thread_pool_module",
     "ngx_http_module",
     "ngx_http_core_module",
     "ngx_http_log_module",
     "ngx_http_upstream_module",
+    "ngx_http_v2_module",
+    "ngx_http_v3_module",
     "ngx_http_static_module",
     "ngx_http_autoindex_module",
     "ngx_http_index_module",
@@ -158,6 +179,7 @@ export const ngx_module_names = [_][*c]const u8{
     "ngx_http_fastcgi_module",
     "ngx_http_uwsgi_module",
     "ngx_http_scgi_module",
+    "ngx_http_grpc_module",
     "ngx_http_memcached_module",
     "ngx_http_empty_gif_module",
     "ngx_http_js_module",
@@ -173,6 +195,8 @@ export const ngx_module_names = [_][*c]const u8{
     "ngx_http_write_filter_module",
     "ngx_http_header_filter_module",
     "ngx_http_chunked_filter_module",
+    "ngx_http_v2_filter_module",
+    "ngx_http_v3_filter_module",
     "ngx_http_range_header_filter_module",
     "ngx_http_gzip_filter_module",
     "ngx_http_postpone_filter_module",
