@@ -6,6 +6,7 @@ const ssl = ngx.ssl;
 const core = ngx.core;
 const conf = ngx.conf;
 const http = ngx.http;
+const file = ngx.file;
 const cjson = ngx.cjson;
 const CJSON = cjson.CJSON;
 
@@ -298,7 +299,7 @@ fn read_body(r: [*c]ngx_http_request_t) ngx_str_t {
     const res: ngx_str_t = ngx.string.ngx_null_str;
     const b0 = r.*.request_body == core.nullptr(http.ngx_http_request_body_t);
     const b1 = r.*.request_body.*.bufs == core.nullptr(buf.ngx_chain_t);
-    const b2 = r.*.request_body.*.temp_file != core.nullptr(core.ngx_temp_file_t); //TODO
+    const b2 = r.*.request_body.*.temp_file != core.nullptr(file.ngx_temp_file_t); //TODO
     if (b0 or b1 or b2) {
         return res;
     }

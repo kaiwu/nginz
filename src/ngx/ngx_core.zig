@@ -38,7 +38,6 @@ pub const ngx_url_t = ngx.ngx_url_t;
 pub const ngx_event_t = ngx.ngx_event_t;
 pub const ngx_resolver_t = ngx.ngx_resolver_t;
 pub const ngx_slab_pool_t = ngx.ngx_slab_pool_t;
-pub const ngx_temp_file_t = ngx.ngx_temp_file_t;
 pub const ngx_listening_t = ngx.ngx_listening_t;
 pub const ngx_event_pipe_t = ngx.ngx_event_pipe_t;
 pub const ngx_connection_t = ngx.ngx_connection_t;
@@ -172,7 +171,6 @@ test "core" {
     try expectEqual(@sizeOf(ngx_output_chain_ctx_t), 104);
     try expectEqual(@sizeOf(ngx_listening_t), 296);
     try expectEqual(@sizeOf(ngx_connection_t), 232);
-    try expectEqual(@sizeOf(ngx_temp_file_t), 248);
     try expectEqual(@sizeOf(ngx_ext_rename_file_t), 40);
     try expectEqual(@sizeOf(ngx_url_t), 224);
     try expectEqual(@sizeOf(ngx_open_file_info_t), 104);

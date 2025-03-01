@@ -61,6 +61,7 @@ extern var ngx_http_echoz_module: ngx_module_t;
 extern var ngx_http_echoz_filter_module: ngx_module_t;
 extern var ngx_http_wechatpay_module: ngx_module_t;
 extern var ngx_http_wechatpay_filter_module: ngx_module_t;
+extern var ngx_http_pgrest_module: ngx_module_t;
 
 export const ngx_modules = [_][*c]ngx_module_t{
     &ngx_core_module,
@@ -100,6 +101,7 @@ export const ngx_modules = [_][*c]ngx_module_t{
     &ngx_http_js_module,
     &ngx_http_echoz_module,
     &ngx_http_wechatpay_module,
+    &ngx_http_pgrest_module,
     &ngx_http_browser_module,
     &ngx_http_upstream_hash_module,
     &ngx_http_upstream_ip_hash_module,
@@ -163,6 +165,7 @@ export const ngx_module_names = [_][*c]const u8{
     "ngx_http_js_module",
     "ngx_http_echoz_module",
     "ngx_http_wechatpay_module",
+    "ngx_http_pgrest_module",
     "ngx_http_browser_module",
     "ngx_http_upstream_hash_module",
     "ngx_http_upstream_ip_hash_module",

@@ -5,6 +5,7 @@ const buf = ngx.buf;
 const core = ngx.core;
 const conf = ngx.conf;
 const http = ngx.http;
+const file = ngx.file;
 
 const NGX_OK = core.NGX_OK;
 const NGX_ERROR = core.NGX_ERROR;
@@ -532,7 +533,7 @@ export fn ngx_http_echoz_request_body_variable(
     _ = data;
     const b0 = r.*.request_body == core.nullptr(http.ngx_http_request_body_t);
     const b1 = r.*.request_body.*.bufs == core.nullptr(buf.ngx_chain_t);
-    const b2 = r.*.request_body.*.temp_file != core.nullptr(core.ngx_temp_file_t);
+    const b2 = r.*.request_body.*.temp_file != core.nullptr(file.ngx_temp_file_t);
     v.*.flags.not_found = true;
     if (b0 or b1 or b2) {
         return NGX_OK;
