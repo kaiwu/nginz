@@ -3,7 +3,7 @@
 nginz is a `nginx` module writer, which allows one to write nginx modules in `zig`. so far it 
 is based on official nginx release 1.27.4 and zig 0.13. nginz is tested with linux only.
 
-A typical scenario is following: 
+A typical workflow is following: 
 
 ```
 $ git submodule init

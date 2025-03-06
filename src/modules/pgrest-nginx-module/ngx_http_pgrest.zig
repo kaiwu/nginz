@@ -45,6 +45,23 @@ export const ngx_http_pgrest_module_ctx = ngx_http_module_t{
 };
 
 export const ngx_http_pgrest_commands = [_]ngx_command_t{
+    ngx_command_t{
+        .name = ngx_string("pgrest_server"),
+        .type = conf.NGX_HTTP_UPS_CONF | conf.NGX_CONF_1MORE,
+        .set = conf.ngx_conf_set_flag_slot,
+        .conf = conf.NGX_HTTP_SRV_CONF_OFFSET,
+        .offset = 0,
+        .post = null,
+    },
+    ngx_command_t{
+        .name = ngx_string("pgrest_keepalive"),
+        .type = conf.NGX_HTTP_UPS_CONF | conf.NGX_CONF_1MORE,
+        .set = conf.ngx_conf_set_flag_slot,
+        .conf = conf.NGX_HTTP_SRV_CONF_OFFSET,
+        .offset = 0,
+        .post = null,
+    },
+
     conf.ngx_null_command,
 };
 

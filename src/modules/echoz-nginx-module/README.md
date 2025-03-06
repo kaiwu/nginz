@@ -92,10 +92,10 @@ they can be added in the `objs/ngx_modules.c` as following.
 
 #### echoz_header
 
- syntax           
- default          
- context          
- phase            
+*syntax:*           
+*default:*          
+*context:*          
+*phase:*            
 
 ```nginx
 
