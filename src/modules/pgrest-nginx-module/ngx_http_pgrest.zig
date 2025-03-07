@@ -48,7 +48,7 @@ export const ngx_http_pgrest_commands = [_]ngx_command_t{
     ngx_command_t{
         .name = ngx_string("pgrest_server"),
         .type = conf.NGX_HTTP_UPS_CONF | conf.NGX_CONF_1MORE,
-        .set = conf.ngx_conf_set_flag_slot,
+        .set = conf.ngx_conf_set_str_slot,
         .conf = conf.NGX_HTTP_SRV_CONF_OFFSET,
         .offset = 0,
         .post = null,
@@ -56,7 +56,7 @@ export const ngx_http_pgrest_commands = [_]ngx_command_t{
     ngx_command_t{
         .name = ngx_string("pgrest_keepalive"),
         .type = conf.NGX_HTTP_UPS_CONF | conf.NGX_CONF_1MORE,
-        .set = conf.ngx_conf_set_flag_slot,
+        .set = conf.ngx_conf_set_num_slot,
         .conf = conf.NGX_HTTP_SRV_CONF_OFFSET,
         .offset = 0,
         .post = null,
