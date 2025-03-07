@@ -7,6 +7,7 @@ const NJS_C_FLAGS = [_][]const u8{
     "-Werror",
     "-Wextra",
     "-Wno-unused-parameter",
+    "-Wno-cast-function-type-mismatch",
     "-Wwrite-strings",
     "-Wmissing-prototypes",
     "-fexcess-precision=standard",
@@ -57,8 +58,6 @@ pub fn build_njs(
         njs.addIncludePath(b.path(p));
     }
     njs.linkLibC();
-    njs.linkSystemLibrary("z");
-    njs.linkSystemLibrary("ssl");
     njs.addCSourceFiles(.{
         .files = files.items[0..],
         .flags = &NJS_C_FLAGS,

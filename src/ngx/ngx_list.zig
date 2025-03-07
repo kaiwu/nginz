@@ -172,7 +172,7 @@ pub fn NSList(comptime T: type) type {
         }
 
         // next = &head;
-        pub fn next(n: *[*c]Self) ?[*c]T {
+        pub fn nextT(n: *[*c]Self) ?[*c]T {
             if (n.* == core.nullptr(Self)) {
                 return null;
             }

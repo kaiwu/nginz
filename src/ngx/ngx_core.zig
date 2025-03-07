@@ -230,6 +230,7 @@ pub fn NAllocator(comptime PAGE_SIZE: ngx_uint_t) type {
             return .{
                 .ptr = self.fba.?,
                 .vtable = &.{
+                    .remap = remap,
                     .alloc = alloc,
                     .resize = resize,
                     .free = free,
@@ -237,19 +238,24 @@ pub fn NAllocator(comptime PAGE_SIZE: ngx_uint_t) type {
             };
         }
 
-        fn alloc(ctx: *anyopaque, len: usize, ptr_align: u8, ret_addr: usize) ?[*]u8 {
+        fn alloc(ctx: *anyopaque, len: usize, ptr_align: std.mem.Alignment, ret_addr: usize) ?[*]u8 {
             var fba: *std.heap.FixedBufferAllocator = @ptrCast(@alignCast(ctx));
             return fba.allocator().rawAlloc(len, ptr_align, ret_addr);
         }
 
-        fn resize(ctx: *anyopaque, buf: []u8, buf_align: u8, new_len: usize, ret_addr: usize) bool {
+        fn resize(ctx: *anyopaque, buf: []u8, buf_align: std.mem.Alignment, new_len: usize, ret_addr: usize) bool {
             var fba: *std.heap.FixedBufferAllocator = @ptrCast(@alignCast(ctx));
             return fba.allocator().rawResize(buf, buf_align, new_len, ret_addr);
         }
 
-        fn free(ctx: *anyopaque, buf: []u8, buf_align: u8, ret_addr: usize) void {
+        fn free(ctx: *anyopaque, buf: []u8, buf_align: std.mem.Alignment, ret_addr: usize) void {
             var fba: *std.heap.FixedBufferAllocator = @ptrCast(@alignCast(ctx));
             return fba.allocator().rawFree(buf, buf_align, ret_addr);
+        }
+
+        fn remap(ctx: *anyopaque, buf: []u8, buf_align: std.mem.Alignment, new_len: usize, ret_addr: usize) ?[*]u8 {
+            var fba: *std.heap.FixedBufferAllocator = @ptrCast(@alignCast(ctx));
+            return fba.allocator().rawRemap(buf, buf_align, new_len, ret_addr);
         }
     };
 }

@@ -10,6 +10,7 @@ pub const QUICKJS_C_FLAGS = [_][]const u8{
     "-Wextra",
     "-Wno-sign-compare",
     "-Wno-missing-field-initializers",
+    "-Wno-cast-function-type-mismatch",
     "-Wundef",
     "-Wuninitialized",
     "-Wunused",
@@ -42,8 +43,6 @@ pub fn build_quickjs(
     });
 
     quickjs.linkLibC();
-    quickjs.linkSystemLibrary("m");
-    quickjs.linkSystemLibrary("dl");
     quickjs.addCSourceFiles(.{
         .files = &files,
         .flags = &QUICKJS_C_FLAGS,

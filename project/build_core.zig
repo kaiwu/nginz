@@ -70,7 +70,6 @@ pub fn build_core(
         core.addIncludePath(b.path(p));
     }
     core.linkLibC();
-    core.linkSystemLibrary("crypt");
     core.addCSourceFiles(.{
         .files = files.items[0..],
         .flags = &common.C_FLAGS,

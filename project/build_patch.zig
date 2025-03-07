@@ -8,7 +8,7 @@ const Error = error{
 
 var MAKEFILE: []const u8 = "project/nginz.makefile";
 
-fn patchOp(step: *Step, _: std.Progress.Node) anyerror!void {
+fn patchOp(step: *Step, _: Build.Step.MakeOptions) anyerror!void {
     const b = step.owner;
     const result = try std.process.Child.run(.{
         .allocator = b.allocator,
