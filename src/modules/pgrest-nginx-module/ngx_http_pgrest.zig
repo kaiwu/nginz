@@ -33,6 +33,18 @@ const NList = ngx.list.NList;
 const NChain = ngx.buf.NChain;
 const NArray = ngx.array.NArray;
 
+const ngx_pgrest_upstream_srv_t = extern struct {
+    host: ngx_str_t,
+    port: core.in_port_t,
+    dbname: ngx_str_t,
+    user: ngx_str_t,
+    password: ngx_str_t,
+};
+
+const ngx_pgrest_srv_conf_t = extern struct {
+    servers: NArray(ngx_pgrest_upstream_srv_t),
+};
+
 export const ngx_http_pgrest_module_ctx = ngx_http_module_t{
     .preconfiguration = null,
     .postconfiguration = null,

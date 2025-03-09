@@ -22,6 +22,7 @@ pub const NGX_ABORT = ngx.NGX_ABORT;
 pub const uintptr_t = usize;
 pub const off_t = ngx.off_t;
 pub const u_char = ngx.u_char;
+pub const in_port_t = ngx.in_port_t;
 pub const ngx_dir_t = ngx.ngx_dir_t;
 pub const ngx_process_t = ngx.ngx_process_t;
 
