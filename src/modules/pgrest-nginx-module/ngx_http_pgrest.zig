@@ -10,6 +10,7 @@ const file = ngx.file;
 const NGX_OK = core.NGX_OK;
 const NGX_ERROR = core.NGX_ERROR;
 const NGX_DECLINED = core.NGX_DECLINED;
+const NGX_CONF_ERROR = conf.NGX_CONF_ERROR;
 
 const ngx_str_t = core.ngx_str_t;
 const ngx_int_t = core.ngx_int_t;
@@ -33,6 +34,8 @@ const NList = ngx.list.NList;
 const NChain = ngx.buf.NChain;
 const NArray = ngx.array.NArray;
 
+extern var ngx_http_upstream_module: ngx_module_t;
+
 const ngx_pgrest_upstream_srv_t = extern struct {
     host: ngx_str_t,
     port: core.in_port_t,
@@ -45,14 +48,54 @@ const ngx_pgrest_srv_conf_t = extern struct {
     servers: NArray(ngx_pgrest_upstream_srv_t),
 };
 
+const ngx_pgrest_loc_conf_t = extern struct {};
+
+fn pgrest_create_srv_conf(cf: [*c]ngx_conf_t) callconv(.C) ?*anyopaque {
+    if (core.ngz_pcalloc_c(ngx_pgrest_srv_conf_t, cf.*.pool)) |srv| {
+        return srv;
+    }
+    return null;
+}
+
+fn pgrest_create_loc_conf(cf: [*c]ngx_conf_t) callconv(.C) ?*anyopaque {
+    if (core.ngz_pcalloc_c(ngx_pgrest_loc_conf_t, cf.*.pool)) |loc| {
+        return loc;
+    }
+    return null;
+}
+
+fn ngx_conf_set_server(
+    cf: [*c]ngx_conf_t,
+    cmd: [*c]ngx_command_t,
+    loc: ?*anyopaque,
+) callconv(.C) [*c]u8 {
+    _ = cmd;
+    if (core.castPtr(ngx_pgrest_srv_conf_t, loc)) |srv| {
+        if (srv.*.servers.ready == 0) {
+            srv.*.servers = NArray(ngx_pgrest_upstream_srv_t).init(cf.*.pool, 4) catch return NGX_CONF_ERROR;
+            if (core.castPtr(
+                http.ngx_http_upstream_srv_conf_t,
+                conf.ngx_http_conf_get_module_srv_conf(cf, &ngx_http_upstream_module),
+            )) |uscf| {
+                uscf.*.servers = srv.*.servers.pa;
+            }
+
+            // var pgs = srv.*.servers.append() catch return NGX_CONF_ERROR;
+            var u: core.ngx_url_t = std.mem.zeroes(core.ngx_url_t);
+            u.default_port = 5432;
+        }
+    }
+    return NGX_CONF_ERROR;
+}
+
 export const ngx_http_pgrest_module_ctx = ngx_http_module_t{
     .preconfiguration = null,
     .postconfiguration = null,
     .create_main_conf = null,
     .init_main_conf = null,
-    .create_srv_conf = null,
+    .create_srv_conf = pgrest_create_srv_conf,
     .merge_srv_conf = null,
-    .create_loc_conf = null,
+    .create_loc_conf = pgrest_create_loc_conf,
     .merge_loc_conf = null,
 };
 
@@ -60,7 +103,7 @@ export const ngx_http_pgrest_commands = [_]ngx_command_t{
     ngx_command_t{
         .name = ngx_string("pgrest_server"),
         .type = conf.NGX_HTTP_UPS_CONF | conf.NGX_CONF_1MORE,
-        .set = conf.ngx_conf_set_str_slot,
+        .set = ngx_conf_set_server,
         .conf = conf.NGX_HTTP_SRV_CONF_OFFSET,
         .offset = 0,
         .post = null,

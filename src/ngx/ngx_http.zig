@@ -51,6 +51,7 @@ pub const ngx_http_post_subrequest_pt = ngx.ngx_http_post_subrequest_pt;
 pub const ngx_http_upstream_resolved_t = ngx.ngx_http_upstream_resolved_t;
 pub const ngx_http_script_regex_code_t = ngx.ngx_http_script_regex_code_t;
 pub const ngx_http_upstream_rr_peers_t = ngx.ngx_http_upstream_rr_peers_t;
+pub const ngx_http_upstream_srv_conf_t = ngx.ngx_http_upstream_srv_conf_t;
 pub const ngx_http_upstream_main_conf_t = ngx.ngx_http_upstream_main_conf_t;
 pub const ngx_http_output_body_filter_pt = ngx.ngx_http_output_body_filter_pt;
 pub const ngx_http_upstream_headers_in_t = ngx.ngx_http_upstream_headers_in_t;
