@@ -132,6 +132,7 @@ pub fn build(b: *std.Build) void {
 
     nginz.linkLibC();
     nginz.linkSystemLibrary("z");
+    nginz.linkSystemLibrary("pq");
     nginz.linkSystemLibrary("ssl");
     nginz.linkSystemLibrary("crypt");
     nginz.linkSystemLibrary("crypto");

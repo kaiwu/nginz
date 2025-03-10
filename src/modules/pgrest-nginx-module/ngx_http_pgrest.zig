@@ -1,6 +1,7 @@
 const std = @import("std");
 const ngx = @import("ngx");
 
+const pq = ngx.pq;
 const buf = ngx.buf;
 const core = ngx.core;
 const conf = ngx.conf;
@@ -10,6 +11,8 @@ const file = ngx.file;
 const NGX_OK = core.NGX_OK;
 const NGX_ERROR = core.NGX_ERROR;
 const NGX_DECLINED = core.NGX_DECLINED;
+
+const NGX_CONF_OK = conf.NGX_CONF_OK;
 const NGX_CONF_ERROR = conf.NGX_CONF_ERROR;
 
 const ngx_str_t = core.ngx_str_t;
@@ -37,11 +40,7 @@ const NArray = ngx.array.NArray;
 extern var ngx_http_upstream_module: ngx_module_t;
 
 const ngx_pgrest_upstream_srv_t = extern struct {
-    host: ngx_str_t,
-    port: core.in_port_t,
-    dbname: ngx_str_t,
-    user: ngx_str_t,
-    password: ngx_str_t,
+    conn: ngx_str_t,
 };
 
 const ngx_pgrest_srv_conf_t = extern struct {
@@ -72,15 +71,26 @@ fn ngx_conf_set_server(
     _ = cmd;
     if (core.castPtr(ngx_pgrest_srv_conf_t, loc)) |srv| {
         if (srv.*.servers.ready == 0) {
-            srv.*.servers = NArray(ngx_pgrest_upstream_srv_t).init(cf.*.pool, 4) catch return NGX_CONF_ERROR;
+            srv.*.servers = NArray(ngx_pgrest_upstream_srv_t).init(
+                cf.*.pool,
+                4,
+            ) catch return NGX_CONF_ERROR;
             if (core.castPtr(
                 http.ngx_http_upstream_srv_conf_t,
                 conf.ngx_http_conf_get_module_srv_conf(cf, &ngx_http_upstream_module),
             )) |uscf| {
                 uscf.*.servers = srv.*.servers.pa;
             }
-
-            // var pgs = srv.*.servers.append() catch return NGX_CONF_ERROR;
+        }
+        var i: ngx_uint_t = 1;
+        if (ngx.array.ngx_array_next(ngx_str_t, cf.*.args, &i)) |arg| {
+            const pgs = srv.*.servers.append() catch return NGX_CONF_ERROR;
+            pgs.*.conn = arg.*;
+            const err: [*c]u8 = core.nullptr(u8);
+            if (!pq.is_valid_pq_conn(pgs.*.conn, err)) {
+                return err;
+            }
+            return NGX_CONF_OK;
         }
     }
     return NGX_CONF_ERROR;
@@ -100,7 +110,7 @@ export const ngx_http_pgrest_module_ctx = ngx_http_module_t{
 export const ngx_http_pgrest_commands = [_]ngx_command_t{
     ngx_command_t{
         .name = ngx_string("pgrest_server"),
-        .type = conf.NGX_HTTP_UPS_CONF | conf.NGX_CONF_1MORE,
+        .type = conf.NGX_HTTP_UPS_CONF | conf.NGX_CONF_TAKE1,
         .set = ngx_conf_set_server,
         .conf = conf.NGX_HTTP_SRV_CONF_OFFSET,
         .offset = 0,

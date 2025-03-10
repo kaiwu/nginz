@@ -1,5 +1,6 @@
 pub const Deque = @import("deque.zig").Deque;
 
+pub const pq = @import("ngx_pq.zig");
 pub const log = @import("ngx_log.zig");
 pub const buf = @import("ngx_buf.zig");
 pub const ssl = @import("ngx_ssl.zig");
