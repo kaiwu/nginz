@@ -17,6 +17,7 @@ var modules = [_][]const u8{
 };
 
 var tests = [_][]const u8{
+    "src/ngx/ngx_pq.zig",
     "src/ngx/ngx_buf.zig",
     "src/ngx/ngx_ssl.zig",
     "src/ngx/ngx_log.zig",
@@ -158,6 +159,7 @@ pub fn build(b: *std.Build) void {
 
         t.linkLibC();
         t.linkSystemLibrary("z");
+        t.linkSystemLibrary("pq");
         t.linkSystemLibrary("ssl");
         t.linkSystemLibrary("crypt");
         t.linkSystemLibrary("crypto");

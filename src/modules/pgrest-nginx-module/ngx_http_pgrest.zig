@@ -81,8 +81,6 @@ fn ngx_conf_set_server(
             }
 
             // var pgs = srv.*.servers.append() catch return NGX_CONF_ERROR;
-            var u: core.ngx_url_t = std.mem.zeroes(core.ngx_url_t);
-            u.default_port = 5432;
         }
     }
     return NGX_CONF_ERROR;

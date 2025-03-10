@@ -107,8 +107,13 @@ pub inline fn slicify(comptime T: type, p: [*c]T, len: usize) []T {
     return p[0..len];
 }
 
-pub inline fn make_slice(p: [*c]u8, len: usize) []u8 {
-    return slicify(u8, p, len);
+pub inline fn make_slice(comptime T: type, p: [*c]T, comptime validFn: fn ([*c]T) bool) []T {
+    var len: usize = 0;
+    var p0: [*c]T = p;
+    while (validFn(p0)) : (len += 1) {
+        p0 += 1;
+    }
+    return slicify(T, p, len);
 }
 
 pub inline fn nonNullPtr(comptime T: type, p: [*c]T) ?[*c]T {

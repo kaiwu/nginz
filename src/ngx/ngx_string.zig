@@ -16,7 +16,7 @@ pub inline fn ngx_string_from_ptr(p0: [*c]u8, p1: [*c]u8) ngx_str_t {
 }
 
 pub inline fn make_slice(s: ngx_str_t) []u8 {
-    return core.make_slice(s.data, s.len);
+    return core.slicify(u8, s.data, s.len);
 }
 
 pub inline fn ngx_string_from_pool(p: [*c]u8, l: usize, pool: [*c]core.ngx_pool_t) !ngx_str_t {
