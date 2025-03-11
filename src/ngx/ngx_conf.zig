@@ -118,7 +118,7 @@ pub inline fn ngx_http_get_module_srv_conf(r: [*c]ngx_http_request_t, m: *ngx_mo
     return r.*.srv_conf[m.ctx_index];
 }
 
-// loc{}
+// location{}
 pub inline fn ngx_http_get_module_loc_conf(r: [*c]ngx_http_request_t, m: *ngx_module_t) ?*anyopaque {
     return r.*.loc_conf[m.ctx_index];
 }
@@ -131,7 +131,7 @@ pub inline fn ngx_http_conf_get_module_main_conf(cf: [*c]ngx_conf_t, m: *ngx_mod
     return null;
 }
 
-// http{}
+// server{}
 pub inline fn ngx_http_conf_get_module_srv_conf(cf: [*c]ngx_conf_t, m: *ngx_module_t) ?*anyopaque {
     if (core.castPtr(ngx_http_conf_ctx_t, cf.*.ctx)) |p| {
         return p.*.srv_conf[m.ctx_index];
@@ -139,12 +139,16 @@ pub inline fn ngx_http_conf_get_module_srv_conf(cf: [*c]ngx_conf_t, m: *ngx_modu
     return null;
 }
 
-// http{}
+// location{}
 pub inline fn ngx_http_conf_get_module_loc_conf(cf: [*c]ngx_conf_t, m: *ngx_module_t) ?*anyopaque {
     if (core.castPtr(ngx_http_conf_ctx_t, cf.*.ctx)) |p| {
         return p.*.loc_conf[m.ctx_index];
     }
     return null;
+}
+
+pub inline fn ngx_http_conf_upstream_srv_conf(uscf: [*c]http.ngx_http_upstream_srv_conf_t, m: *ngx_module_t) ?*anyopaque {
+    return uscf.*.srv_conf[m.ctx_index];
 }
 
 pub inline fn ngx_http_conf_get_core_module_loc_conf(cf: [*c]ngx_conf_t) ?[*c]ngx.ngx_http_core_loc_conf_t {

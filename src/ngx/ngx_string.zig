@@ -27,6 +27,27 @@ pub inline fn ngx_string_from_pool(p: [*c]u8, l: usize, pool: [*c]core.ngx_pool_
     return core.NError.OOM;
 }
 
+pub fn ngx_cstring_from_pool(ss: []ngx_str_t, pool: [*c]core.ngx_pool_t) ![][*c]u8 {
+    var len: usize = 0;
+    for (ss) |s| {
+        len += s.len;
+    }
+    len += ss.len;
+    std.debug.assert(len > 0);
+    if (core.castPtr(u8, core.ngx_pnalloc(pool, len))) |p0| {
+        if (core.ngz_pcalloc_n(ss.len, [*c]u8, pool)) |ps| {
+            for (ss, 0..) |s, i| {
+                ps[i] = p0;
+                core.ngz_memcpy(p0, s.data, s.len);
+                p0[s.len] = 0;
+                p0 += s.len + 1;
+            }
+            return core.slicify([*c]u8, ps, ss.len);
+        }
+    }
+    return core.NError.OOM;
+}
+
 pub fn concat_string_from_pool(ss: []const ngx_str_t, by: []const u8, pool: [*c]core.ngx_pool_t) !ngx_str_t {
     var len: usize = 0;
     for (ss) |s| {
