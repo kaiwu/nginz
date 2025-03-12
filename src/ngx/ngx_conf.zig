@@ -70,6 +70,9 @@ const ngx_array_t = array.ngx_array_t;
 const ngx_module_t = module.ngx_module_t;
 const ngx_http_request_t = http.ngx_http_request_t;
 
+extern var ngx_http_core_module: ngx_module_t;
+extern var ngx_http_upstream_module: ngx_module_t;
+
 pub const ngx_null_command = ngx_command_t{
     .name = string.ngx_null_str,
     .type = 0,
@@ -149,24 +152,6 @@ pub inline fn ngx_http_conf_get_module_loc_conf(cf: [*c]ngx_conf_t, m: *ngx_modu
 
 pub inline fn ngx_http_conf_upstream_srv_conf(uscf: [*c]http.ngx_http_upstream_srv_conf_t, m: *ngx_module_t) ?*anyopaque {
     return uscf.*.srv_conf[m.ctx_index];
-}
-
-pub inline fn ngx_http_conf_get_core_module_loc_conf(cf: [*c]ngx_conf_t) ?[*c]ngx.ngx_http_core_loc_conf_t {
-    if (core.castPtr(ngx_http_conf_ctx_t, cf.*.ctx)) |p| {
-        if (core.castPtr(ngx.ngx_http_core_loc_conf_t, p.*.loc_conf[0])) |clcf| {
-            return clcf;
-        }
-    }
-    return null;
-}
-
-pub inline fn ngx_http_conf_get_core_module_main_conf(cf: [*c]ngx_conf_t) ?[*c]ngx.ngx_http_core_main_conf_t {
-    if (core.castPtr(ngx_http_conf_ctx_t, cf.*.ctx)) |p| {
-        if (core.castPtr(ngx.ngx_http_core_main_conf_t, p.*.main_conf[0])) |cmcf| {
-            return cmcf;
-        }
-    }
-    return null;
 }
 
 pub inline fn ngz_http_conf_variables_parse(

@@ -35,6 +35,8 @@ const NArray = ngx.array.NArray;
 const NTimer = ngx.event.NTimer;
 const NSubrequest = http.NSubrequest;
 
+extern var ngx_http_core_module: ngx_module_t;
+
 const echoz_command_type = enum(ngx_int_t) {
     echoz,
     echozn,
@@ -137,8 +139,11 @@ fn merge_loc_conf(
     _ = parent;
     if (core.castPtr(loc_conf, child)) |ch| {
         if (ch.*.content_handlers.inited()) {
-            if (conf.ngx_http_conf_get_core_module_loc_conf(cf)) |cocf| {
-                cocf.*.handler = ngx_http_echoz_handler;
+            if (core.castPtr(
+                http.ngx_http_core_loc_conf_t,
+                conf.ngx_http_conf_get_module_loc_conf(cf, &ngx_http_core_module),
+            )) |clcf| {
+                clcf.*.handler = ngx_http_echoz_handler;
             }
         }
     }

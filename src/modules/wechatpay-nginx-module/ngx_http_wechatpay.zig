@@ -244,15 +244,18 @@ fn wechatpay_merge_loc_conf(
             ) != NGX_OK) {
                 return NGX_CONF_ERROR;
             }
-            if (conf.ngx_http_conf_get_core_module_loc_conf(cf)) |cocf| {
+            if (core.castPtr(
+                http.ngx_http_core_loc_conf_t,
+                conf.ngx_http_conf_get_module_loc_conf(cf, &ngx_http_core_module),
+            )) |clcf| {
                 if (ch.*.proxy.len > 0) {
-                    cocf.*.handler = ngx_http_wechatpay_proxy_handler;
+                    clcf.*.handler = ngx_http_wechatpay_proxy_handler;
                     return config_check(cf, ch);
                 }
                 if (ch.*.oaep_decrypt != conf.NGX_CONF_UNSET or
                     ch.*.oaep_encrypt != conf.NGX_CONF_UNSET)
                 {
-                    cocf.*.handler = ngx_http_wechatpay_oaep_handler;
+                    clcf.*.handler = ngx_http_wechatpay_oaep_handler;
                     return config_check(cf, ch);
                 }
             }

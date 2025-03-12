@@ -75,22 +75,18 @@ fn ngx_conf_set_server(
                 cf.*.pool,
                 4,
             ) catch return NGX_CONF_ERROR;
-            if (core.castPtr(
-                http.ngx_http_upstream_srv_conf_t,
-                conf.ngx_http_conf_get_module_srv_conf(cf, &ngx_http_upstream_module),
-            )) |uscf| {
-                uscf.*.servers = srv.*.servers.pa;
-            }
         }
         var i: ngx_uint_t = 1;
         if (ngx.array.ngx_array_next(ngx_str_t, cf.*.args, &i)) |arg| {
             const pgs = srv.*.servers.append() catch return NGX_CONF_ERROR;
             pgs.*.conn = arg.*;
             const err: [*c]u8 = core.nullptr(u8);
-            if (!pq.is_valid_pq_conn(pgs.*.conn, err)) {
+            if (pq.is_valid_pq_conn(pgs.*.conn, err)) {
+                return NGX_CONF_OK;
+            }
+            if (err != core.nullptr(u8)) {
                 return err;
             }
-            return NGX_CONF_OK;
         }
     }
     return NGX_CONF_ERROR;
