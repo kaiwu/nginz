@@ -47,7 +47,7 @@ const PQconninfoParse = pq.PQconninfoParse;
 
 pub fn is_valid_pq_conn(con: ngx_str_t, err: [*c]u8) bool {
     var str: [256]u8 = std.mem.zeroes([256]u8);
-    @memcpy(str[0..con.len], core.slicify(u8, con.data, con.len));
+    core.ngz_memcpy(&str, con.data, con.len);
     const info = PQconninfoParse(&str, @constCast(&err));
     if (info != core.nullptr(PQconninfoOption) and
         err == core.nullptr(u8))
