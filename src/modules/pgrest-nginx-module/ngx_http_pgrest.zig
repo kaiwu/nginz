@@ -170,9 +170,26 @@ fn ngx_pgrest_upstream_init_peer(
 ///
 /// libpq returns fd by PQsocket
 /// a ngx_connection_t pgxc is given by ngx_get_connection(fd, pc->log)
+/// pc->connection is set to this paricular connection too.
 /// pgxc->read and pgxc->write get registed in the nginx event model
+/// by ngx_add_event
+///
 /// libpq might go wrong, registing nginx connection model might go wrong
 /// in case something is wrong, manages the corresponding cleanups.
+///
+/// when everything is good, and NGX_AGAIN is returned
+/// ngx_http_upstream_init
+///     -> ngx_http_upstream_init_request
+///         -> ngx_http_upstream_connect
+/// does following
+///
+/// ngx_add_timer(c->write, u->connect_timeout);
+/// and return, without sending to upstream any data.
+///
+/// right after this, the upstream handlers are replaced with
+///    u->write_event_handler = ngx_pgrest_wev_handler;
+///    u->read_event_handler = ngx_pgrest_rev_handler;
+/// the upstream process is completely taken over by libpq
 fn ngx_pgrest_upstream_get_peer(
     pc: [*c]core.ngx_peer_connection_t,
     data: ?*anyopaque,
