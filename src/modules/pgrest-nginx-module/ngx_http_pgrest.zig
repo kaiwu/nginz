@@ -108,6 +108,17 @@ fn ngx_pgrest_rev_handler(
     _ = u;
 }
 
+/// callback for uscf->peer.init_upstream
+/// every upstream block has an uscf
+/// the callback get called in ngx_http_upstream_init_main_conf
+/// the callback is assigned in pgrest_server directive setting
+///
+/// each upstream block has *N* servers, and each server can have *M* peers
+/// it appears to init every peer in every server directive
+/// the init provisions all connection specifics, sockaddr, dbname etc
+/// the init also setups peer selection algorithm
+/// all peers together form a connection pool to the database
+/// all peers should be interchangable to execute queries
 fn ngx_pgrest_upstream_init(
     cf: [*c]ngx_conf_t,
     uscf: [*c]http.ngx_http_upstream_srv_conf_t,
@@ -117,6 +128,21 @@ fn ngx_pgrest_upstream_init(
     return NGX_OK;
 }
 
+/// callback for uscf->peer.init
+/// the callback get called by the end of ngx_http_upstream_init
+/// the callback get called before ngx_http_upstream_connect
+/// the callback is assigned in ngx_pgrest_upstream_init
+/// the callback should return NGX_OK for upstream to proceed
+///
+/// it prepares the selected peer for the specific request
+/// it inits the r->upstream.peer which is a ngx_peer_connection_t
+/// which has
+/// ngx_event_get_peer_pt            get;
+/// ngx_event_free_peer_pt           free;
+/// void *                           data;
+/// the *data* field will be given to get/free callbacks
+/// these callbacks controls the upstream connection process
+/// so that the upstream is taken by libpq but appears to be connecting
 fn ngx_pgrest_upstream_init_peer(
     r: [*c]ngx_http_request_t,
     uscf: [*c]http.ngx_http_upstream_srv_conf_t,
@@ -126,6 +152,27 @@ fn ngx_pgrest_upstream_init_peer(
     return NGX_OK;
 }
 
+/// the callback is assigned in ngx_pgrest_upstream_init_peer
+/// the callback is called in ngx_event_connect_peer
+/// which is at the start of ngx_http_upstream_connect
+/// it should always return NGX_AGAIN when everything is good
+/// so that there is no actual socket connection to be made to the peer
+///
+/// libpq literally kicks in from here and execute PQconnectStart
+/// the nonblocking way of connecting to the database. But...
+///
+/// before another db connection is made, it checks if an existing
+/// connection to the db can be reused in the pool, otherwise
+/// new connection is made and managed by the pool and handles
+/// accordingly if no connection can be made with the pool policy
+///
+/// state is saved in pc->data field
+///
+/// libpq returns fd by PQsocket
+/// a ngx_connection_t pgxc is given by ngx_get_connection(fd, pc->log)
+/// pgxc->read and pgxc->write get registed in the nginx event model
+/// libpq might go wrong, registing nginx connection model might go wrong
+/// in case something is wrong, manages the corresponding cleanups.
 fn ngx_pgrest_upstream_get_peer(
     pc: [*c]core.ngx_peer_connection_t,
     data: ?*anyopaque,
