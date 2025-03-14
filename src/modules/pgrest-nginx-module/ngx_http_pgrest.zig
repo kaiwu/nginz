@@ -92,6 +92,7 @@ fn ngx_conf_set_server(
     return NGX_CONF_ERROR;
 }
 
+/// polling libpq state
 fn ngx_pgrest_wev_handler(
     r: ngx_http_request_t,
     u: http.ngx_http_upstream_t,
@@ -100,6 +101,7 @@ fn ngx_pgrest_wev_handler(
     _ = u;
 }
 
+/// polling libpq state
 fn ngx_pgrest_rev_handler(
     r: ngx_http_request_t,
     u: http.ngx_http_upstream_t,
@@ -209,6 +211,8 @@ fn ngx_pgrest_upstream_free_peer(
     _ = state;
 }
 
+/// r->upstream->request_bufs = NULL
+/// use libpq instead of raw packet
 fn ngx_pgrest_upstream_create_request(
     r: [*c]ngx_http_request_t,
 ) callconv(.C) ngx_int_t {
@@ -216,6 +220,7 @@ fn ngx_pgrest_upstream_create_request(
     return NGX_OK;
 }
 
+/// empty callback
 fn ngx_pgrest_upstream_finalize_request(
     r: [*c]ngx_http_request_t,
     rc: ngx_int_t,
@@ -224,6 +229,7 @@ fn ngx_pgrest_upstream_finalize_request(
     _ = rc;
 }
 
+/// empty callback
 fn ngx_pgrest_upstream_process_header(
     r: [*c]ngx_http_request_t,
 ) callconv(.C) ngx_int_t {
@@ -231,6 +237,7 @@ fn ngx_pgrest_upstream_process_header(
     return NGX_OK;
 }
 
+/// empty callback
 fn ngx_pgrest_upstream_input_filter_init(
     ctx: ?*anyopaque,
 ) callconv(.C) ngx_int_t {
@@ -238,6 +245,7 @@ fn ngx_pgrest_upstream_input_filter_init(
     return NGX_OK;
 }
 
+/// empty callback
 fn ngx_pgrest_upstream_input_filter(
     ctx: ?*anyopaque,
     bytes: usize,
