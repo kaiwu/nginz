@@ -201,6 +201,13 @@ fn ngx_pgrest_upstream_get_peer(
     return NGX_OK;
 }
 
+/// the callback is assigned in ngx_postgres_upstream_init_peer
+/// the callback is called in ngx_http_upstream_finalize_request
+/// it is to cleanup the libpq connection when the specific request
+/// gets finalized
+///
+/// *NOTE* ngx_http_upstream_finalize_request is declared static and
+/// servers as internal cleanup function
 fn ngx_pgrest_upstream_free_peer(
     pc: [*c]core.ngx_peer_connection_t,
     data: ?*anyopaque,
