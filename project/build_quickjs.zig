@@ -23,7 +23,6 @@ pub const QUICKJS_C_FLAGS = [_][]const u8{
 
 const files = [_][]const u8{
     "submodules/quickjs/cutils.c",
-    "submodules/quickjs/libbf.c",
     "submodules/quickjs/libregexp.c",
     "submodules/quickjs/libunicode.c",
     "submodules/quickjs/quickjs.c",
