@@ -57,6 +57,8 @@ pub fn build_njs(
     for (NJS_INCLUDE_PATH) |p| {
         njs.addIncludePath(b.path(p));
     }
+    const libxml2 = std.Build.LazyPath{ .cwd_relative = "/usr/include/libxml2" };
+    njs.addSystemIncludePath(libxml2);
     njs.linkLibC();
     njs.addCSourceFiles(.{
         .files = files.items[0..],
