@@ -1,5 +1,6 @@
 const std = @import("std");
 const common = @import("build_common.zig");
+const libxml2 = std.Build.LazyPath{ .cwd_relative = "/usr/include/libxml2" };
 
 pub fn build_modules(
     b: *std.Build,
@@ -20,6 +21,7 @@ pub fn build_modules(
     for (common.NGX_INCLUDE_PATH) |p| {
         modules.addIncludePath(b.path(p));
     }
+    modules.addSystemIncludePath(libxml2);
     modules.linkLibC();
     modules.addCSourceFiles(.{
         .files = files.items[0..],
@@ -51,6 +53,7 @@ pub fn build_test_modules(
     for (common.NGX_INCLUDE_PATH) |p| {
         modules.addIncludePath(b.path(p));
     }
+    modules.addSystemIncludePath(libxml2);
     modules.linkLibC();
     modules.addCSourceFiles(.{
         .files = files.items[0..],

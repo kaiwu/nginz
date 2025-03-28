@@ -18,6 +18,8 @@ specifically they are.
   * -lz
   * -lcrypt
   * -lcrypto
+  * -lexslt
+  * -lxslt
   * -lpcre
   * -lssl
   * -lgd
@@ -36,9 +38,9 @@ specifically they are.
 To ease the development. A `nginz` binary is built as an artifact along with the module objects.
 It is a nginx wrapper, and by default built with
 
-`./auto/configure --with-http_ssl_module --with-debug` 
+`./auto/configure --with-http_ssl_module --with-http_xslt_module --with-debug`
 
-nginz also has built-in `ngx_http_js_module` with quickjs engine, excluding all the `xml/xslt` related features.
+nginz also has built-in `ngx_http_js_module` with quickjs engine.
 
 A module `echoz` is provided as an example, it is a tribute to @[agentzh][2] and his [echo][1] module. `echoz`
 so far is a simplified version of `echo` and it misses some of the directives.

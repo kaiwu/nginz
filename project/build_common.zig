@@ -33,7 +33,6 @@ const EXCLUDES = [_][]const u8{
     "njs_regex.c",
     "njs_lvlhsh.c",
     "njs_addr2line.c",
-    "njs_xml_module.c",
     "ngx_thread_pool.c",
     "ngx_http_dav_module.c",
     "ngx_http_grpc_module.c",
@@ -41,7 +40,6 @@ const EXCLUDES = [_][]const u8{
     "ngx_http_realip_module.c",
     "ngx_http_stub_status_module.c",
     "ngx_http_degradation_module.c",
-    "ngx_http_xslt_filter_module.c",
 };
 
 pub fn append(files: *std.ArrayList([]const u8), src: []const []const u8) !void {
