@@ -1,7 +1,7 @@
 ## Nginz
 
 nginz is a `nginx` module writer, which allows one to write nginx modules in `zig`. so far it 
-is based on official nginx release 1.27.4 and zig 0.14. nginz is tested with linux only.
+is based on official nginx release 1.27.5 and zig 0.14. nginz is tested with linux only.
 
 A typical workflow is following: 
 
