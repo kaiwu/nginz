@@ -34,6 +34,7 @@ const EXCLUDES = [_][]const u8{
     "njs_lvlhsh.c",
     "njs_addr2line.c",
     "ngx_thread_pool.c",
+    "njs_lexer_keyword.c",
     "ngx_http_dav_module.c",
     "ngx_http_grpc_module.c",
     "ngx_http_geoip_module.c",
