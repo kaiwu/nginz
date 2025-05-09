@@ -19,6 +19,7 @@ const NJS_INCLUDE_PATH = [_][]const u8{
     "submodules/njs/src",
     "submodules/njs/build",
     "submodules/njs/external",
+    //"submodules/nginx/src/stream",
 };
 
 const modules_files = .{
@@ -27,11 +28,14 @@ const modules_files = .{
 };
 
 const http_module_files = .{
-    "submodules/njs/nginx/ngx_http_js_module.c",
     "submodules/njs/nginx/ngx_js.c",
+    "submodules/njs/nginx/ngx_js_http.c",
     "submodules/njs/nginx/ngx_js_fetch.c",
     "submodules/njs/nginx/ngx_js_regex.c",
+    "submodules/njs/nginx/ngx_qjs_fetch.c",
+    "submodules/njs/nginx/ngx_http_js_module.c",
     "submodules/njs/nginx/ngx_js_shared_dict.c",
+    //"submodules/njs/nginx/ngx_stream_js_module.c",
 };
 
 pub fn build_njs(
