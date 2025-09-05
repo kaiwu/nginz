@@ -130,7 +130,7 @@ pub fn NRBTree(
             return @max(depth(n.*.left, s, d + 1), depth(n.*.right, s, d + 1));
         }
 
-        fn insertFn(parent: [*c]Node, n: [*c]Node, sentinel: [*c]Node) callconv(.C) void {
+        fn insertFn(parent: [*c]Node, n: [*c]Node, sentinel: [*c]Node) callconv(.c) void {
             var pp: *[*c]Node = @constCast(&parent);
             var p: [*c]Node = parent;
             while (pp.* != sentinel) {

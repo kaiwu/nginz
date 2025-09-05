@@ -49,14 +49,14 @@ const ngx_pgrest_srv_conf_t = extern struct {
 
 const ngx_pgrest_loc_conf_t = extern struct {};
 
-fn pgrest_create_srv_conf(cf: [*c]ngx_conf_t) callconv(.C) ?*anyopaque {
+fn pgrest_create_srv_conf(cf: [*c]ngx_conf_t) callconv(.c) ?*anyopaque {
     if (core.ngz_pcalloc_c(ngx_pgrest_srv_conf_t, cf.*.pool)) |srv| {
         return srv;
     }
     return null;
 }
 
-fn pgrest_create_loc_conf(cf: [*c]ngx_conf_t) callconv(.C) ?*anyopaque {
+fn pgrest_create_loc_conf(cf: [*c]ngx_conf_t) callconv(.c) ?*anyopaque {
     if (core.ngz_pcalloc_c(ngx_pgrest_loc_conf_t, cf.*.pool)) |loc| {
         return loc;
     }
@@ -67,7 +67,7 @@ fn ngx_conf_set_server(
     cf: [*c]ngx_conf_t,
     cmd: [*c]ngx_command_t,
     loc: ?*anyopaque,
-) callconv(.C) [*c]u8 {
+) callconv(.c) [*c]u8 {
     _ = cmd;
     if (core.castPtr(ngx_pgrest_srv_conf_t, loc)) |srv| {
         if (srv.*.servers.ready == 0) {
@@ -96,7 +96,7 @@ fn ngx_conf_set_server(
 fn ngx_pgrest_wev_handler(
     r: ngx_http_request_t,
     u: http.ngx_http_upstream_t,
-) callconv(.C) void {
+) callconv(.c) void {
     _ = r;
     _ = u;
 }
@@ -105,7 +105,7 @@ fn ngx_pgrest_wev_handler(
 fn ngx_pgrest_rev_handler(
     r: ngx_http_request_t,
     u: http.ngx_http_upstream_t,
-) callconv(.C) void {
+) callconv(.c) void {
     _ = r;
     _ = u;
 }
@@ -124,7 +124,7 @@ fn ngx_pgrest_rev_handler(
 fn ngx_pgrest_upstream_init(
     cf: [*c]ngx_conf_t,
     uscf: [*c]http.ngx_http_upstream_srv_conf_t,
-) callconv(.C) ngx_int_t {
+) callconv(.c) ngx_int_t {
     _ = cf;
     _ = uscf;
     return NGX_OK;
@@ -148,7 +148,7 @@ fn ngx_pgrest_upstream_init(
 fn ngx_pgrest_upstream_init_peer(
     r: [*c]ngx_http_request_t,
     uscf: [*c]http.ngx_http_upstream_srv_conf_t,
-) callconv(.C) ngx_int_t {
+) callconv(.c) ngx_int_t {
     _ = r;
     _ = uscf;
     return NGX_OK;
@@ -195,7 +195,7 @@ fn ngx_pgrest_upstream_init_peer(
 fn ngx_pgrest_upstream_get_peer(
     pc: [*c]core.ngx_peer_connection_t,
     data: ?*anyopaque,
-) callconv(.C) ngx_int_t {
+) callconv(.c) ngx_int_t {
     _ = pc;
     _ = data;
     return NGX_OK;
@@ -212,7 +212,7 @@ fn ngx_pgrest_upstream_free_peer(
     pc: [*c]core.ngx_peer_connection_t,
     data: ?*anyopaque,
     state: ngx_uint_t,
-) callconv(.C) void {
+) callconv(.c) void {
     _ = pc;
     _ = data;
     _ = state;
@@ -222,7 +222,7 @@ fn ngx_pgrest_upstream_free_peer(
 /// use libpq instead of raw packet
 fn ngx_pgrest_upstream_create_request(
     r: [*c]ngx_http_request_t,
-) callconv(.C) ngx_int_t {
+) callconv(.c) ngx_int_t {
     _ = r;
     return NGX_OK;
 }
@@ -231,7 +231,7 @@ fn ngx_pgrest_upstream_create_request(
 fn ngx_pgrest_upstream_finalize_request(
     r: [*c]ngx_http_request_t,
     rc: ngx_int_t,
-) callconv(.C) void {
+) callconv(.c) void {
     _ = r;
     _ = rc;
 }
@@ -239,7 +239,7 @@ fn ngx_pgrest_upstream_finalize_request(
 /// empty callback
 fn ngx_pgrest_upstream_process_header(
     r: [*c]ngx_http_request_t,
-) callconv(.C) ngx_int_t {
+) callconv(.c) ngx_int_t {
     _ = r;
     return NGX_OK;
 }
@@ -247,7 +247,7 @@ fn ngx_pgrest_upstream_process_header(
 /// empty callback
 fn ngx_pgrest_upstream_input_filter_init(
     ctx: ?*anyopaque,
-) callconv(.C) ngx_int_t {
+) callconv(.c) ngx_int_t {
     _ = ctx;
     return NGX_OK;
 }
@@ -256,7 +256,7 @@ fn ngx_pgrest_upstream_input_filter_init(
 fn ngx_pgrest_upstream_input_filter(
     ctx: ?*anyopaque,
     bytes: usize,
-) callconv(.C) ngx_int_t {
+) callconv(.c) ngx_int_t {
     _ = ctx;
     _ = bytes;
     return NGX_OK;

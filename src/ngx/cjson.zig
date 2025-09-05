@@ -73,15 +73,15 @@ pub const struct_cJSON = extern struct {
 };
 pub const cJSON = struct_cJSON;
 pub const struct_cJSON_Hooks = extern struct {
-    malloc_fn: ?*const fn (usize) callconv(.C) ?*anyopaque = @import("std").mem.zeroes(?*const fn (usize) callconv(.C) ?*anyopaque),
-    free_fn: ?*const fn (?*anyopaque) callconv(.C) void = @import("std").mem.zeroes(?*const fn (?*anyopaque) callconv(.C) void),
+    malloc_fn: ?*const fn (usize) callconv(.c) ?*anyopaque = @import("std").mem.zeroes(?*const fn (usize) callconv(.c) ?*anyopaque),
+    free_fn: ?*const fn (?*anyopaque) callconv(.c) void = @import("std").mem.zeroes(?*const fn (?*anyopaque) callconv(.c) void),
 };
 pub const cJSON_Hooks = struct_cJSON_Hooks;
 pub const cJSON_bool = c_int;
 pub const struct_internal_hooks = extern struct {
-    allocate: ?*const fn (usize, ?*anyopaque) callconv(.C) ?*anyopaque = @import("std").mem.zeroes(?*const fn (usize, ?*anyopaque) callconv(.C) ?*anyopaque),
-    deallocate: ?*const fn (?*anyopaque) callconv(.C) void = @import("std").mem.zeroes(?*const fn (?*anyopaque) callconv(.C) void),
-    reallocate: ?*const fn (?*anyopaque, usize) callconv(.C) ?*anyopaque = @import("std").mem.zeroes(?*const fn (?*anyopaque, usize) callconv(.C) ?*anyopaque),
+    allocate: ?*const fn (usize, ?*anyopaque) callconv(.c) ?*anyopaque = @import("std").mem.zeroes(?*const fn (usize, ?*anyopaque) callconv(.c) ?*anyopaque),
+    deallocate: ?*const fn (?*anyopaque) callconv(.c) void = @import("std").mem.zeroes(?*const fn (?*anyopaque) callconv(.c) void),
+    reallocate: ?*const fn (?*anyopaque, usize) callconv(.c) ?*anyopaque = @import("std").mem.zeroes(?*const fn (?*anyopaque, usize) callconv(.c) ?*anyopaque),
     ctx: ?*anyopaque = @import("std").mem.zeroes(?*anyopaque),
 };
 pub const internal_hooks = struct_internal_hooks;

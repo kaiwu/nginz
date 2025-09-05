@@ -45,9 +45,9 @@ pub fn NHash(comptime K: type, comptime V: type, comptime M: ngx_uint_t) type {
     const Ctx = extern struct {
         name: [*c]u8,
         type: ngx_hash_type,
-        key: *const fn ([*c]u8, usize) callconv(.C) ngx_uint_t,
-        data: *const fn (k: [*c]K) callconv(.C) [*c]u8,
-        len: *const fn (k: [*c]K) callconv(.C) usize,
+        key: *const fn ([*c]u8, usize) callconv(.c) ngx_uint_t,
+        data: *const fn (k: [*c]K) callconv(.c) [*c]u8,
+        len: *const fn (k: [*c]K) callconv(.c) usize,
         pool: [*c]ngx_pool_t,
         temp_pool: [*c]ngx_pool_t,
     };
@@ -120,11 +120,11 @@ pub fn NHash(comptime K: type, comptime V: type, comptime M: ngx_uint_t) type {
     };
 }
 
-pub fn ngx_str_data(k: [*c]ngx_str_t) callconv(.C) [*c]u8 {
+pub fn ngx_str_data(k: [*c]ngx_str_t) callconv(.c) [*c]u8 {
     return k.*.data;
 }
 
-pub fn ngx_str_len(k: [*c]ngx_str_t) callconv(.C) usize {
+pub fn ngx_str_len(k: [*c]ngx_str_t) callconv(.c) usize {
     return k.*.len;
 }
 

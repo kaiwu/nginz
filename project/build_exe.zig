@@ -7,9 +7,11 @@ pub fn build_exe(
 ) !*std.Build.Step.Compile {
     const nginz = b.addExecutable(.{
         .name = "nginz",
-        .target = target,
-        .optimize = optimize,
-        .root_source_file = b.path("src/nginz.zig"),
+        .root_module = b.createModule(.{
+            .target = target,
+            .optimize = optimize,
+            .root_source_file = b.path("src/nginz.zig"),
+        }),
     });
 
     return nginz;

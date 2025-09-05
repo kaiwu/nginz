@@ -1,6 +1,7 @@
 const std = @import("std");
 const fs = std.fs;
 const OOM = std.mem.Allocator.Error.OutOfMemory;
+const ArrayList = std.array_list.Managed;
 
 pub var BUILD_BUFFER: [4096 * 10]u8 = undefined;
 pub const C_FLAGS = [_][]const u8{
@@ -43,13 +44,13 @@ const EXCLUDES = [_][]const u8{
     "ngx_http_degradation_module.c",
 };
 
-pub fn append(files: *std.ArrayList([]const u8), src: []const []const u8) !void {
+pub fn append(files: *ArrayList([]const u8), src: []const []const u8) !void {
     for (src) |f| {
         try files.append(f);
     }
 }
 
-pub fn list(d: []const u8, ii: usize, mem: []u8, files: *std.ArrayList([]const u8)) !usize {
+pub fn list(d: []const u8, ii: usize, mem: []u8, files: *ArrayList([]const u8)) !usize {
     var dir = fs.cwd().openDir(d, .{ .iterate = true }) catch {
         return ii;
     };

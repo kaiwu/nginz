@@ -84,11 +84,13 @@ pub fn build(b: *std.Build) void {
     nginz.step.dependOn(patch_step);
 
     const ngz_modules = b.addObject(.{
-        .pic = true,
         .name = "ngz_modules",
-        .target = target,
-        .optimize = optimize,
-        .root_source_file = b.path("src/ngz_modules.zig"),
+        .root_module = b.createModule(.{
+            .pic = true,
+            .target = target,
+            .optimize = optimize,
+            .root_source_file = b.path("src/ngz_modules.zig"),
+        }),
     });
     ngz_modules.linkLibC();
     nginz.addObject(ngz_modules);
@@ -96,11 +98,13 @@ pub fn build(b: *std.Build) void {
     for (modules) |m| {
         const pn = module_path(m);
         const o = b.addObject(.{
-            .pic = true,
             .name = pn.n,
-            .root_source_file = b.path(m),
-            .target = target,
-            .optimize = optimize,
+            .root_module = b.createModule(.{
+                .pic = true,
+                .root_source_file = b.path(m),
+                .target = target,
+                .optimize = optimize,
+            }),
         });
         o.addIncludePath(b.path(pn.p));
         o.root_module.addImport("ngx", nginx);
@@ -155,9 +159,11 @@ pub fn build(b: *std.Build) void {
 
     for (tests) |case| {
         const t = b.addTest(.{
-            .root_source_file = b.path(case),
-            .target = target,
-            .optimize = optimize,
+            .root_module = b.createModule(.{
+                .root_source_file = b.path(case),
+                .target = target,
+                .optimize = optimize,
+            }),
         });
 
         t.linkLibC();

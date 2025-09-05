@@ -45,7 +45,7 @@ pub const NTimer = struct {
         timer: ngx_event_t,
     };
 
-    fn timer_handler(ev: [*c]ngx_event_t) callconv(.C) void {
+    fn timer_handler(ev: [*c]ngx_event_t) callconv(.c) void {
         if (core.castPtr(TimerUnit, ev.*.data)) |self| {
             const r = self.*.request;
             if (r.*.connection.*.flags.destroyed) {
@@ -77,7 +77,7 @@ pub const NTimer = struct {
         }
     }
 
-    fn timer_cleanup(data: ?*anyopaque) callconv(.C) void {
+    fn timer_cleanup(data: ?*anyopaque) callconv(.c) void {
         if (core.castPtr(TimerUnit, data)) |self| {
             if (self.*.timer.flags.timer_set) {
                 ngx_event_del_timer(&self.*.timer);

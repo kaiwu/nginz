@@ -40,11 +40,13 @@ pub fn build_cjson(
     target: std.Build.ResolvedTarget,
     optimize: std.builtin.OptimizeMode,
 ) *std.Build.Step.Compile {
-    const cjson = b.addStaticLibrary(.{
-        .pic = true,
+    const cjson = b.addLibrary(.{
         .name = "cjson",
-        .target = target,
-        .optimize = optimize,
+        .root_module = b.createModule(.{
+            .pic = true,
+            .target = target,
+            .optimize = optimize,
+        }),
     });
 
     cjson.linkLibC();

@@ -1,6 +1,6 @@
 const std = @import("std");
 
-extern fn main_nginx(argn: c_int, args: [*c][*c]const u8) callconv(.C) void;
+extern fn main_nginx(argn: c_int, args: [*c][*c]const u8) callconv(.c) void;
 
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
@@ -11,7 +11,7 @@ pub fn main() !void {
     var args = try std.process.argsWithAllocator(allocator);
     defer args.deinit();
 
-    var args_array = std.ArrayList([*c]const u8).init(allocator);
+    var args_array = std.array_list.Managed([*c]const u8).init(allocator);
     defer args_array.deinit();
 
     while (args.next()) |a| {

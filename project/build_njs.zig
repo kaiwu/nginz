@@ -1,5 +1,6 @@
 const std = @import("std");
 const common = @import("build_common.zig");
+const ArrayList = std.array_list.Managed;
 
 const NJS_C_FLAGS = [_][]const u8{
     "-fvisibility=hidden",
@@ -44,14 +45,16 @@ pub fn build_njs(
     optimize: std.builtin.OptimizeMode,
     quickjs: *std.Build.Step.Compile,
 ) !*std.Build.Step.Compile {
-    const njs = b.addStaticLibrary(.{
-        .pic = true,
+    const njs = b.addLibrary(.{
         .name = "njs",
-        .target = target,
-        .optimize = optimize,
+        .root_module = b.createModule(.{
+            .pic = true,
+            .target = target,
+            .optimize = optimize,
+        }),
     });
 
-    var files = std.ArrayList([]const u8).init(b.allocator);
+    var files = ArrayList([]const u8).init(b.allocator);
     defer files.deinit();
     const n = try common.list("./submodules/njs/src", 0, &common.BUILD_BUFFER, &files);
     _ = try common.list("./submodules/njs/external", n, &common.BUILD_BUFFER, &files);
@@ -75,10 +78,12 @@ pub fn build_njs(
     // b.installArtifact(njs);
 
     const http_njs = b.addObject(.{
-        .pic = true,
         .name = "ngx_http_js_module",
-        .target = target,
-        .optimize = optimize,
+        .root_module = b.createModule(.{
+            .pic = true,
+            .target = target,
+            .optimize = optimize,
+        }),
     });
 
     http_njs.linkLibC();

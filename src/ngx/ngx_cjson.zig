@@ -89,14 +89,14 @@ const cJSON_SetValuestring = cjson.cJSON_SetValuestring;
 const cJSON_malloc = cjson.cJSON_malloc;
 const cJSON_free = cjson.cJSON_free;
 
-fn cjson_palloc(size: usize, ctx: ?*anyopaque) callconv(.C) ?*anyopaque {
+fn cjson_palloc(size: usize, ctx: ?*anyopaque) callconv(.c) ?*anyopaque {
     if (core.castPtr(core.ngx_pool_t, ctx)) |p| {
         return core.ngx_pcalloc(p, size);
     }
     return null;
 }
 
-fn cjson_pfree(p: ?*anyopaque) callconv(.C) void {
+fn cjson_pfree(p: ?*anyopaque) callconv(.c) void {
     _ = p;
 }
 

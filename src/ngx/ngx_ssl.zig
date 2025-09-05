@@ -110,7 +110,7 @@ inline fn is_zero_or_more(r: c_int) bool {
 }
 
 pub var SSL_LOG: ?*anyopaque = null;
-fn ssl_log(msg: [*c]const u8, len: usize, logger: ?*anyopaque) callconv(.C) c_int {
+fn ssl_log(msg: [*c]const u8, len: usize, logger: ?*anyopaque) callconv(.c) c_int {
     if (core.castPtr(log.ngx_log_t, logger)) |l| {
         var str = ngx_str_t{ .len = len, .data = @constCast(msg) };
         log.ngz_log_error(log.NGX_LOG_WARN, l, 0, "%V", .{&str});

@@ -93,7 +93,7 @@ pub inline fn ngx_conf_merge_str_value(cf: [*c]ngx_str_t, pr: [*c]ngx_str_t, de:
     }
 }
 
-pub fn ngx_conf_set_file_slot(cf: [*c]ngx_conf_t, cmd: [*c]ngx_command_t, conf: ?*anyopaque) callconv(.C) [*c]u8 {
+pub fn ngx_conf_set_file_slot(cf: [*c]ngx_conf_t, cmd: [*c]ngx_command_t, conf: ?*anyopaque) callconv(.c) [*c]u8 {
     if (core.castPtr(u8, conf)) |p| {
         if (core.castPtr(ngx_str_t, @ptrCast(p + cmd.*.offset))) |f| {
             if (f.*.data != core.nullptr(u8)) {

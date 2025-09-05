@@ -35,11 +35,13 @@ pub fn build_quickjs(
     target: std.Build.ResolvedTarget,
     optimize: std.builtin.OptimizeMode,
 ) *std.Build.Step.Compile {
-    const quickjs = b.addStaticLibrary(.{
-        .pic = true,
+    const quickjs = b.addLibrary(.{
         .name = "quickjs",
-        .target = target,
-        .optimize = optimize,
+        .root_module = b.createModule(.{
+            .pic = true,
+            .target = target,
+            .optimize = optimize,
+        }),
     });
 
     quickjs.linkLibC();

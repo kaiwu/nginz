@@ -1,5 +1,6 @@
 const std = @import("std");
 const common = @import("build_common.zig");
+const ArrayList = std.array_list.Managed;
 
 const lib_files = .{
     "submodules/nginx/objs/nginz.c",
@@ -51,14 +52,16 @@ pub fn build_core(
     target: std.Build.ResolvedTarget,
     optimize: std.builtin.OptimizeMode,
 ) !*std.Build.Step.Compile {
-    const core = b.addStaticLibrary(.{
-        .pic = true,
+    const core = b.addLibrary(.{
         .name = "ngx_core",
-        .target = target,
-        .optimize = optimize,
+        .root_module = b.createModule(.{
+            .pic = true,
+            .target = target,
+            .optimize = optimize,
+        }),
     });
 
-    var files = std.ArrayList([]const u8).init(b.allocator);
+    var files = ArrayList([]const u8).init(b.allocator);
     defer files.deinit();
     _ = try common.list("./submodules/nginx/src/core", 0, &common.BUILD_BUFFER, &files);
 

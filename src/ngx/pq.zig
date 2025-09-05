@@ -153,10 +153,10 @@ pub const FILE = struct__IO_FILE;
 pub const struct__IO_codecvt = opaque {};
 pub const struct__IO_wide_data = opaque {};
 pub const _IO_lock_t = anyopaque;
-pub const cookie_read_function_t = fn (?*anyopaque, [*c]u8, usize) callconv(.C) __ssize_t;
-pub const cookie_write_function_t = fn (?*anyopaque, [*c]const u8, usize) callconv(.C) __ssize_t;
-pub const cookie_seek_function_t = fn (?*anyopaque, [*c]__off64_t, c_int) callconv(.C) c_int;
-pub const cookie_close_function_t = fn (?*anyopaque) callconv(.C) c_int;
+pub const cookie_read_function_t = fn (?*anyopaque, [*c]u8, usize) callconv(.c) __ssize_t;
+pub const cookie_write_function_t = fn (?*anyopaque, [*c]const u8, usize) callconv(.c) __ssize_t;
+pub const cookie_seek_function_t = fn (?*anyopaque, [*c]__off64_t, c_int) callconv(.c) c_int;
+pub const cookie_close_function_t = fn (?*anyopaque) callconv(.c) c_int;
 pub const struct__IO_cookie_io_functions_t = extern struct {
     read: ?*const cookie_read_function_t = @import("std").mem.zeroes(?*const cookie_read_function_t),
     write: ?*const cookie_write_function_t = @import("std").mem.zeroes(?*const cookie_write_function_t),
@@ -348,8 +348,8 @@ pub const struct_pgNotify = extern struct {
 };
 pub const PGnotify = struct_pgNotify;
 pub const pg_usec_time_t = pg_int64;
-pub const PQnoticeReceiver = ?*const fn (?*anyopaque, ?*const PGresult) callconv(.C) void;
-pub const PQnoticeProcessor = ?*const fn (?*anyopaque, [*c]const u8) callconv(.C) void;
+pub const PQnoticeReceiver = ?*const fn (?*anyopaque, ?*const PGresult) callconv(.c) void;
+pub const PQnoticeProcessor = ?*const fn (?*anyopaque, [*c]const u8) callconv(.c) void;
 pub const pqbool = u8;
 pub const struct__PQprintOpt = extern struct {
     header: pqbool = @import("std").mem.zeroes(pqbool),
@@ -457,7 +457,7 @@ pub extern fn PQsetErrorVerbosity(conn: ?*PGconn, verbosity: PGVerbosity) PGVerb
 pub extern fn PQsetErrorContextVisibility(conn: ?*PGconn, show_context: PGContextVisibility) PGContextVisibility;
 pub extern fn PQsetNoticeReceiver(conn: ?*PGconn, proc: PQnoticeReceiver, arg: ?*anyopaque) PQnoticeReceiver;
 pub extern fn PQsetNoticeProcessor(conn: ?*PGconn, proc: PQnoticeProcessor, arg: ?*anyopaque) PQnoticeProcessor;
-pub const pgthreadlock_t = ?*const fn (c_int) callconv(.C) void;
+pub const pgthreadlock_t = ?*const fn (c_int) callconv(.c) void;
 pub extern fn PQregisterThreadLock(newhandler: pgthreadlock_t) pgthreadlock_t;
 pub extern fn PQtrace(conn: ?*PGconn, debug_port: ?*FILE) void;
 pub extern fn PQuntrace(conn: ?*PGconn) void;
@@ -580,8 +580,8 @@ pub const PGpromptOAuthDevice = struct__PGpromptOAuthDevice;
 pub const struct__PGoauthBearerRequest = extern struct {
     openid_configuration: [*c]const u8 = @import("std").mem.zeroes([*c]const u8),
     scope: [*c]const u8 = @import("std").mem.zeroes([*c]const u8),
-    @"async": ?*const fn (?*PGconn, [*c]struct__PGoauthBearerRequest, [*c]c_int) callconv(.C) PostgresPollingStatusType = @import("std").mem.zeroes(?*const fn (?*PGconn, [*c]struct__PGoauthBearerRequest, [*c]c_int) callconv(.C) PostgresPollingStatusType),
-    cleanup: ?*const fn (?*PGconn, [*c]struct__PGoauthBearerRequest) callconv(.C) void = @import("std").mem.zeroes(?*const fn (?*PGconn, [*c]struct__PGoauthBearerRequest) callconv(.C) void),
+    @"async": ?*const fn (?*PGconn, [*c]struct__PGoauthBearerRequest, [*c]c_int) callconv(.c) PostgresPollingStatusType = @import("std").mem.zeroes(?*const fn (?*PGconn, [*c]struct__PGoauthBearerRequest, [*c]c_int) callconv(.c) PostgresPollingStatusType),
+    cleanup: ?*const fn (?*PGconn, [*c]struct__PGoauthBearerRequest) callconv(.c) void = @import("std").mem.zeroes(?*const fn (?*PGconn, [*c]struct__PGoauthBearerRequest) callconv(.c) void),
     token: [*c]u8 = @import("std").mem.zeroes([*c]u8),
     user: ?*anyopaque = @import("std").mem.zeroes(?*anyopaque),
 };
@@ -589,14 +589,14 @@ pub const PGoauthBearerRequest = struct__PGoauthBearerRequest;
 pub extern fn PQencryptPassword(passwd: [*c]const u8, user: [*c]const u8) [*c]u8;
 pub extern fn PQencryptPasswordConn(conn: ?*PGconn, passwd: [*c]const u8, user: [*c]const u8, algorithm: [*c]const u8) [*c]u8;
 pub extern fn PQchangePassword(conn: ?*PGconn, user: [*c]const u8, passwd: [*c]const u8) ?*PGresult;
-pub const PQauthDataHook_type = ?*const fn (PGauthData, ?*PGconn, ?*anyopaque) callconv(.C) c_int;
+pub const PQauthDataHook_type = ?*const fn (PGauthData, ?*PGconn, ?*anyopaque) callconv(.c) c_int;
 pub extern fn PQsetAuthDataHook(hook: PQauthDataHook_type) void;
 pub extern fn PQgetAuthDataHook() PQauthDataHook_type;
 pub extern fn PQdefaultAuthDataHook(@"type": PGauthData, conn: ?*PGconn, data: ?*anyopaque) c_int;
 pub extern fn pg_char_to_encoding(name: [*c]const u8) c_int;
 pub extern fn pg_encoding_to_char(encoding: c_int) [*c]const u8;
 pub extern fn pg_valid_server_encoding_id(encoding: c_int) c_int;
-pub const PQsslKeyPassHook_OpenSSL_type = ?*const fn ([*c]u8, c_int, ?*PGconn) callconv(.C) c_int;
+pub const PQsslKeyPassHook_OpenSSL_type = ?*const fn ([*c]u8, c_int, ?*PGconn) callconv(.c) c_int;
 pub extern fn PQgetSSLKeyPassHook_OpenSSL() PQsslKeyPassHook_OpenSSL_type;
 pub extern fn PQsetSSLKeyPassHook_OpenSSL(hook: PQsslKeyPassHook_OpenSSL_type) void;
 pub extern fn PQdefaultSSLKeyPassHook_OpenSSL(buf: [*c]u8, size: c_int, conn: ?*PGconn) c_int;

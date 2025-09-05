@@ -97,7 +97,7 @@ const echoz_filter_context = extern struct {
     header_set: ngx_flag_t,
 };
 
-fn postconfiguration(cf: [*c]ngx_conf_t) callconv(.C) ngx_int_t {
+fn postconfiguration(cf: [*c]ngx_conf_t) callconv(.c) ngx_int_t {
     var vs = [_]http.ngx_http_variable_t{http.ngx_http_variable_t{
         .name = ngx.string.ngx_string("echoz_request_body"),
         .set_handler = null,
@@ -114,7 +114,7 @@ fn postconfiguration(cf: [*c]ngx_conf_t) callconv(.C) ngx_int_t {
     return NGX_OK;
 }
 
-fn postconfiguration_filter(cf: [*c]ngx_conf_t) callconv(.C) ngx_int_t {
+fn postconfiguration_filter(cf: [*c]ngx_conf_t) callconv(.c) ngx_int_t {
     _ = cf;
     ngx_http_echoz_next_header_filter = http.ngx_http_top_header_filter;
     http.ngx_http_top_header_filter = ngx_http_echoz_header_filter;
@@ -124,7 +124,7 @@ fn postconfiguration_filter(cf: [*c]ngx_conf_t) callconv(.C) ngx_int_t {
     return NGX_OK;
 }
 
-fn create_loc_conf(cf: [*c]ngx_conf_t) callconv(.C) ?*anyopaque {
+fn create_loc_conf(cf: [*c]ngx_conf_t) callconv(.c) ?*anyopaque {
     if (core.ngz_pcalloc_c(loc_conf, cf.*.pool)) |p| {
         return p;
     }
@@ -135,7 +135,7 @@ fn merge_loc_conf(
     cf: [*c]ngx_conf_t,
     parent: ?*anyopaque,
     child: ?*anyopaque,
-) callconv(.C) [*c]u8 {
+) callconv(.c) [*c]u8 {
     _ = parent;
     if (core.castPtr(loc_conf, child)) |ch| {
         if (ch.*.content_handlers.inited()) {
@@ -432,7 +432,7 @@ fn echoz_header_filter(
 
 export fn ngx_http_echoz_header_filter(
     r: [*c]ngx_http_request_t,
-) callconv(.C) ngx_int_t {
+) callconv(.c) ngx_int_t {
     if (core.castPtr(
         loc_conf,
         conf.ngx_http_get_module_loc_conf(r, &ngx_http_echoz_filter_module),
@@ -522,7 +522,7 @@ fn echoz_filter(
 export fn ngx_http_echoz_output_body_filter(
     r: [*c]ngx_http_request_t,
     c: [*c]ngx_chain_t,
-) callconv(.C) ngx_int_t {
+) callconv(.c) ngx_int_t {
     const cl = echoz_filter(r, c) catch c;
     if (ngx_http_echoz_next_output_body_filter) |filter| {
         return filter(r, cl);
@@ -534,7 +534,7 @@ export fn ngx_http_echoz_request_body_variable(
     r: [*c]ngx_http_request_t,
     v: [*c]http.ngx_http_variable_value_t,
     data: core.uintptr_t,
-) callconv(.C) ngx_int_t {
+) callconv(.c) ngx_int_t {
     _ = data;
     const b0 = r.*.request_body == core.nullptr(http.ngx_http_request_body_t);
     const b1 = r.*.request_body.*.bufs == core.nullptr(buf.ngx_chain_t);
@@ -559,13 +559,13 @@ export fn ngx_http_echoz_request_body_variable(
 
 export fn ngx_http_echoz_client_body_handler(
     r: [*c]ngx_http_request_t,
-) callconv(.C) void {
+) callconv(.c) void {
     http.ngx_http_finalize_request(r, ngx_http_echoz_handler(r));
 }
 
 export fn ngx_http_echoz_handler(
     r: [*c]ngx_http_request_t,
-) callconv(.C) ngx_int_t {
+) callconv(.c) ngx_int_t {
     if (echoz_handle(r)) |rc| {
         return rc;
     } else |e| {
@@ -612,7 +612,7 @@ fn ngx_conf_set_echoz(
     cf: [*c]ngx_conf_t,
     cmd: [*c]ngx_command_t,
     loc: ?*anyopaque,
-) callconv(.C) [*c]u8 {
+) callconv(.c) [*c]u8 {
     if (core.castPtr(loc_conf, loc)) |lccf| {
         switch (cmd.*.offset) {
             11, 12 => return echoz_init_parameters(cf, cmd, &lccf.*.headers),
