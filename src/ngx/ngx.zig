@@ -17517,6 +17517,7 @@ pub const struct_ngx_http_request_s = extern struct {
     v3_parse: ?*ngx_http_v3_parse_t = @import("std").mem.zeroes(?*ngx_http_v3_parse_t),
     log_handler: ngx_http_log_handler_pt = @import("std").mem.zeroes(ngx_http_log_handler_pt),
     cleanup: [*c]ngx_http_cleanup_t = @import("std").mem.zeroes([*c]ngx_http_cleanup_t),
+    port: in_port_t = @import("std").mem.zeroes(in_port_t),
     flags0: struct_ngx_http_request_flag0_s = @import("std").mem.zeroes(struct_ngx_http_request_flag0_s),
     flags1: struct_ngx_http_request_flag1_s = @import("std").mem.zeroes(struct_ngx_http_request_flag1_s),
     state: ngx_uint_t = @import("std").mem.zeroes(ngx_uint_t),
@@ -18493,7 +18494,8 @@ pub const ngx_http_core_main_conf_t = extern struct {
 const ngx_http_core_srv_conf_flags_t = packed struct {
     listen: bool,
     captures: bool,
-    padding: u30,
+    allow_connect: bool,
+    padding: u29,
 };
 pub const ngx_http_core_srv_conf_t = extern struct {
     server_names: ngx_array_t = @import("std").mem.zeroes(ngx_array_t),
