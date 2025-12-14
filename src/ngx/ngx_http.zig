@@ -289,7 +289,7 @@ test "http" {
     try expectEqual(@sizeOf(ngx_http_upstream_server_t), 120);
     try expectEqual(@sizeOf(ngx_http_upstream_conf_t), 536);
     try expectEqual(@sizeOf(ngx_http_upstream_headers_in_t), 312);
-    try expectEqual(@sizeOf(ngx_http_upstream_t), 1032);
+    try expectEqual(@sizeOf(ngx_http_upstream_t), 1048);
     try expectEqual(@sizeOf(ngx_http_upstream_rr_peer_t), 200);
     try expectEqual(@sizeOf(ngx_http_upstream_rr_peers_t), 96);
 

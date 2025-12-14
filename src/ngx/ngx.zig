@@ -17355,6 +17355,7 @@ pub const struct_ngx_http_upstream_s = extern struct {
     schema: ngx_str_t = @import("std").mem.zeroes(ngx_str_t),
     uri: ngx_str_t = @import("std").mem.zeroes(ngx_str_t),
     ssl_name: ngx_str_t = @import("std").mem.zeroes(ngx_str_t),
+    ssl_alpn_protocol: ngx_str_t = @import("std").mem.zeroes(ngx_str_t),
     cleanup: [*c]ngx_http_cleanup_pt = @import("std").mem.zeroes([*c]ngx_http_cleanup_pt),
     flags: struct_ngx_http_upstream_flags_s = @import("std").mem.zeroes(struct_ngx_http_upstream_flags_s),
 };

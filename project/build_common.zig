@@ -40,6 +40,7 @@ const EXCLUDES = [_][]const u8{
     "ngx_http_grpc_module.c",
     "ngx_http_geoip_module.c",
     "ngx_http_realip_module.c",
+    "ngx_http_proxy_v2_module.c",
     "ngx_http_stub_status_module.c",
     "ngx_http_degradation_module.c",
 };
