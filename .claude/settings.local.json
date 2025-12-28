@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git describe:*)",
+      "Bash(wc:*)",
+      "Bash(zig build:*)"
+    ]
+  }
+}

@@ -45,6 +45,52 @@ const PQconndefaults = pq.PQconndefaults;
 const PQconninfoFree = pq.PQconninfoFree;
 const PQconninfoParse = pq.PQconninfoParse;
 
+// Re-export raw libpq types and functions for module use
+pub const PGconn = pq.PGconn;
+pub const PGresult = pq.PGresult;
+pub const ConnStatusType = pq.ConnStatusType;
+pub const ExecStatusType = pq.ExecStatusType;
+pub const CONNECTION_OK = pq.CONNECTION_OK;
+pub const CONNECTION_BAD = pq.CONNECTION_BAD;
+pub const PGRES_COMMAND_OK = pq.PGRES_COMMAND_OK;
+pub const PGRES_TUPLES_OK = pq.PGRES_TUPLES_OK;
+pub const PGRES_FATAL_ERROR = pq.PGRES_FATAL_ERROR;
+
+pub const pgConnectdb = pq.PQconnectdb;
+pub const pgFinish = pq.PQfinish;
+pub const pgStatus = pq.PQstatus;
+pub const pgExec = pq.PQexec;
+pub const pgResultStatus = pq.PQresultStatus;
+pub const pgNtuples = pq.PQntuples;
+pub const pgNfields = pq.PQnfields;
+pub const pgFname = pq.PQfname;
+pub const pgGetvalue = pq.PQgetvalue;
+pub const pgGetisnull = pq.PQgetisnull;
+pub const pgGetlength = pq.PQgetlength;
+pub const pgClear = pq.PQclear;
+pub const pgErrorMessage = pq.PQerrorMessage;
+pub const pgResultErrorMessage = pq.PQresultErrorMessage;
+
+// Non-blocking connection functions
+pub const pgConnectStart = pq.PQconnectStart;
+pub const pgConnectPoll = pq.PQconnectPoll;
+pub const pgSetnonblocking = pq.PQsetnonblocking;
+pub const pgSocket = pq.PQsocket;
+pub const pgFlush = pq.PQflush;
+
+// Non-blocking query functions
+pub const pgSendQuery = pq.PQsendQuery;
+pub const pgConsumeInput = pq.PQconsumeInput;
+pub const pgIsBusy = pq.PQisBusy;
+pub const pgGetResult = pq.PQgetResult;
+
+// Polling status
+pub const PostgresPollingStatusType = pq.PostgresPollingStatusType;
+pub const PGRES_POLLING_FAILED = pq.PGRES_POLLING_FAILED;
+pub const PGRES_POLLING_READING = pq.PGRES_POLLING_READING;
+pub const PGRES_POLLING_WRITING = pq.PGRES_POLLING_WRITING;
+pub const PGRES_POLLING_OK = pq.PGRES_POLLING_OK;
+
 pub fn is_valid_pq_conn(con: ngx_str_t, err: [*c]u8) bool {
     var str: [256]u8 = std.mem.zeroes([256]u8);
     core.ngz_memcpy(&str, con.data, con.len);
