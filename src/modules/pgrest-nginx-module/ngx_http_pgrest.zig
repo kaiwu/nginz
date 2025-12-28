@@ -99,7 +99,7 @@ const ngx_pgrest_loc_conf_t = extern struct {
 const POOL_MAX_CONNECTIONS = 16;
 
 /// Connection state in the pool
-const PgConnState = enum {
+const PgConnState = enum(c_int) {
     free, // Available for use
     connecting, // Non-blocking connect in progress
     idle, // Connected and idle, ready for queries
@@ -108,7 +108,7 @@ const PgConnState = enum {
 };
 
 /// Query execution state
-const PgQueryState = enum {
+const PgQueryState = enum(c_int) {
     none, // No query
     sending, // Sending query to server
     waiting, // Waiting for result
@@ -118,7 +118,7 @@ const PgQueryState = enum {
 };
 
 /// A single connection in the pool
-const PgPoolConn = struct {
+const PgPoolConn = extern struct {
     conn: ?*PGconn, // libpq connection handle
     state: PgConnState, // Current connection state
     fd: c_int, // Socket file descriptor for event registration
@@ -185,7 +185,7 @@ const PgConnPool = struct {
 };
 
 /// Per-request context for PostgreSQL operations
-const PgRequestCtx = struct {
+const PgRequestCtx = extern struct {
     pool_conn: ?*PgPoolConn, // Assigned connection from pool
     query_state: PgQueryState, // Current query execution state
     query: [MAX_QUERY_SIZE]u8, // Query buffer
@@ -1299,8 +1299,8 @@ fn ngx_http_pgrest_handler(r: [*c]ngx_http_request_t) callconv(.c) ngx_int_t {
         @memcpy(b.*.last[0..err_suffix.len], err_suffix);
         b.*.last += err_suffix.len;
 
-        b.*.flags0.last_buf = 1;
-        b.*.flags0.last_in_chain = 1;
+        b.*.flags.last_buf = true;
+        b.*.flags.last_in_chain = true;
 
         var out: ngx_chain_t = std.mem.zeroes(ngx_chain_t);
         out.buf = b;
@@ -1337,8 +1337,8 @@ fn ngx_http_pgrest_handler(r: [*c]ngx_http_request_t) callconv(.c) ngx_int_t {
     @memcpy(b.*.last[0..json_len], json_data);
     b.*.last += json_len;
 
-    b.*.flags0.last_buf = 1;
-    b.*.flags0.last_in_chain = 1;
+    b.*.flags.last_buf = true;
+    b.*.flags.last_in_chain = true;
 
     // Build output chain
     var out: ngx_chain_t = std.mem.zeroes(ngx_chain_t);
@@ -1475,7 +1475,7 @@ fn ngx_http_pgrest_upstream_handler(r: [*c]ngx_http_request_t) callconv(.c) ngx_
     u.*.peer.data = ctx;
 
     // Increase reference count
-    r.*.main.*.count += 1;
+    r.*.main.*.flags0.count += 1;
 
     // Start the upstream process
     http.ngx_http_upstream_init(r);
@@ -1627,8 +1627,8 @@ fn finalize_pg_response(ctx: *PgRequestCtx) void {
 
     @memcpy(b.*.last[0..json_len], json_buf[0..json_len]);
     b.*.last += json_len;
-    b.*.flags0.last_buf = 1;
-    b.*.flags0.last_in_chain = 1;
+    b.*.flags.last_buf = true;
+    b.*.flags.last_in_chain = true;
 
     var out: ngx_chain_t = std.mem.zeroes(ngx_chain_t);
     out.buf = b;
@@ -1848,7 +1848,7 @@ fn ngx_pgrest_upstream_get_peer(
     }
 
     // Get an nginx connection wrapper for the socket
-    const ngx_conn = ngx.ngx_get_connection(fd, pc.*.log);
+    const ngx_conn = http.ngx_get_connection(fd, pc.*.log);
     if (ngx_conn == core.nullptr(core.ngx_connection_t)) {
         pgFinish(conn);
         return NGX_ERROR;
@@ -1870,7 +1870,7 @@ fn ngx_pgrest_upstream_get_peer(
     // Register read event for connection polling
     if (ngx_conn.*.read != core.nullptr(core.ngx_event_t)) {
         ngx_conn.*.read.*.handler = ngx_pgrest_conn_read_handler;
-        if (ngx.ngx_handle_read_event(ngx_conn.*.read, 0) != NGX_OK) {
+        if (http.ngx_handle_read_event(ngx_conn.*.read, 0) != NGX_OK) {
             cleanup_pool_conn(pool_conn);
             return NGX_ERROR;
         }
@@ -1879,7 +1879,7 @@ fn ngx_pgrest_upstream_get_peer(
     // Register write event for connection polling
     if (ngx_conn.*.write != core.nullptr(core.ngx_event_t)) {
         ngx_conn.*.write.*.handler = ngx_pgrest_conn_write_handler;
-        if (ngx.ngx_handle_write_event(ngx_conn.*.write, 0) != NGX_OK) {
+        if (http.ngx_handle_write_event(ngx_conn.*.write, 0) != NGX_OK) {
             cleanup_pool_conn(pool_conn);
             return NGX_ERROR;
         }
@@ -1989,7 +1989,7 @@ fn ngx_pgrest_upstream_input_filter_init(
 /// empty callback
 fn ngx_pgrest_upstream_input_filter(
     ctx: ?*anyopaque,
-    bytes: usize,
+    bytes: isize,
 ) callconv(.c) ngx_int_t {
     _ = ctx;
     _ = bytes;
