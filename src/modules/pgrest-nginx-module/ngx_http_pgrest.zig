@@ -1152,6 +1152,643 @@ fn parse_single_filter(param: []const u8) ?Filter {
     };
 }
 
+/// ============================================================================
+/// HTTP Header Parsing
+/// ============================================================================
+/// Supported response formats
+const ResponseFormat = enum {
+    json, // application/json (default)
+    csv, // text/csv
+    plain_text, // text/plain (for scalar functions)
+    xml, // text/xml (for XML functions)
+    binary, // application/octet-stream (for bytea)
+};
+
+/// Parse Accept header to determine response format from request
+/// For now, defaults to JSON since headers list navigation is complex in C structs
+/// TODO: Implement full header traversal when needed
+fn parse_accept_header_from_request(r: [*c]ngx_http_request_t) ResponseFormat {
+    _ = r; // Currently unused - defaults to JSON
+    // Default to JSON - Accept header support can be enhanced later
+    // when full HTTP header parsing infrastructure is added
+    return .json;
+}
+
+/// Extract a header value from HTTP request headers
+/// Searches through all headers for a case-insensitive match
+/// Returns the header value if found, otherwise returns null
+fn extract_header_value(r: [*c]ngx_http_request_t, header_name: []const u8) ?[]const u8 {
+    if (r == null) return null;
+
+    // Search in the headers list for the requested header
+    const headers_list = &r.*.headers_in.headers;
+
+    // Get a pointer to the list part structure
+    var part = &headers_list.*.part;
+
+    var search_limit: usize = 100; // Prevent infinite loops
+    while (search_limit > 0) : (search_limit -= 1) {
+        const elts = core.castPtr(ngx_table_elt_t, part.*.elts) orelse {
+            // Move to next part if no elements
+            if (part.*.next) |next_part| {
+                part = next_part;
+                continue;
+            } else {
+                break;
+            }
+        };
+
+        var i: usize = 0;
+        while (i < part.*.nelts) : (i += 1) {
+            const elt = elts[i];
+            if (elt.key.len > 0 and elt.key.data != core.nullptr(u8)) {
+                const key = core.slicify(u8, elt.key.data, elt.key.len);
+
+                // Check if this matches the requested header (case-insensitive)
+                if (std.mem.eql(u8, key, header_name) or
+                    std.ascii.eqlIgnoreCase(key, header_name))
+                {
+                    if (elt.value.len > 0 and elt.value.data != core.nullptr(u8)) {
+                        return core.slicify(u8, elt.value.data, elt.value.len);
+                    }
+                }
+            }
+        }
+        // Move to next part
+        if (part.*.next) |next_part| {
+            part = next_part;
+        } else {
+            break;
+        }
+    }
+
+    return null;
+}
+
+/// Extract schema name from Accept-Profile or Content-Profile header
+/// Returns the schema name if found, otherwise returns null
+fn extract_schema_name(r: [*c]ngx_http_request_t, method: ngx_uint_t) ?[]const u8 {
+    // For GET/HEAD/DELETE requests, use Accept-Profile
+    if (method == http.NGX_HTTP_GET or method == http.NGX_HTTP_HEAD or method == http.NGX_HTTP_DELETE) {
+        if (extract_header_value(r, "accept-profile")) |schema| {
+            return schema;
+        }
+    }
+    // For POST/PATCH/PUT requests, use Content-Profile
+    else if (method == http.NGX_HTTP_POST or method == http.NGX_HTTP_PATCH or method == http.NGX_HTTP_PUT) {
+        if (extract_header_value(r, "content-profile")) |schema| {
+            return schema;
+        }
+    }
+    return null;
+}
+
+/// Build a schema-qualified table name
+/// If schema is provided, returns "schema.table", otherwise just "table"
+fn build_qualified_table_name(
+    buffer: []u8,
+    schema: ?[]const u8,
+    table: []const u8,
+) usize {
+    var pos: usize = 0;
+    if (schema) |s| {
+        if (s.len > 0) {
+            @memcpy(buffer[pos..][0..s.len], s);
+            pos += s.len;
+            buffer[pos] = '.';
+            pos += 1;
+        }
+    }
+    @memcpy(buffer[pos..][0..table.len], table);
+    pos += table.len;
+    return pos;
+}
+
+/// Check if Prefer header contains "params=single-object"
+/// Used for RPC functions that expect a single JSON object parameter
+fn prefer_single_object_param(r: [*c]ngx_http_request_t) bool {
+    if (extract_header_value(r, "prefer")) |prefer_val| {
+        return std.mem.containsAtLeast(u8, prefer_val, 1, "params=single-object");
+    }
+    return false;
+}
+
+/// ============================================================================
+/// Smart Response Formatting
+/// ============================================================================
+/// Detect the result format based on query results
+/// Returns:
+///   0 = scalar/single value (e.g., count result)
+///   1 = single row object
+///   2 = multiple rows (array)
+fn detect_result_format(result: ?*PGresult, ntuples: i32, nfields: i32) u8 {
+    if (result == null) return 0;
+
+    // Single field with multiple rows = array of scalars
+    if (nfields == 1 and ntuples > 1) return 0;
+
+    // Single field with one row = scalar
+    if (nfields == 1 and ntuples == 1) return 0;
+
+    // Single row = object
+    if (ntuples == 1) return 1;
+
+    // Multiple rows = array
+    if (ntuples > 1) return 2;
+
+    // No rows
+    return 2;
+}
+
+/// Format result as scalar value (for functions returning single value)
+fn format_result_as_scalar(
+    result: ?*PGresult,
+    json_buf: []u8,
+) usize {
+    if (result == null or pgNtuples(result) == 0) {
+        const null_str = "null";
+        @memcpy(json_buf[0..null_str.len], null_str);
+        return null_str.len;
+    }
+
+    const value = pgGetvalue(result, 0, 0);
+    if (value == null) {
+        const null_str = "null";
+        @memcpy(json_buf[0..null_str.len], null_str);
+        return null_str.len;
+    }
+
+    // Check if value is numeric or string
+    var is_number = true;
+    var i: usize = 0;
+    while (value[i] != 0) {
+        const c = value[i];
+        if ((c < '0' or c > '9') and c != '.' and c != '-' and c != '+' and c != 'e' and c != 'E') {
+            is_number = false;
+            break;
+        }
+        i += 1;
+    }
+
+    if (is_number) {
+        // Output as number (no quotes)
+        while (value[i] != 0) {
+            i += 1;
+        }
+        @memcpy(json_buf[0..i], value[0..i]);
+        return i;
+    } else {
+        // Output as quoted string
+        var pos: usize = 0;
+        json_buf[pos] = '"';
+        pos += 1;
+        i = 0;
+        while (value[i] != 0) {
+            const c = value[i];
+            if (c == '"' or c == '\\') {
+                json_buf[pos] = '\\';
+                pos += 1;
+            }
+            json_buf[pos] = c;
+            pos += 1;
+            i += 1;
+        }
+        json_buf[pos] = '"';
+        pos += 1;
+        return pos;
+    }
+}
+
+/// Format PostgreSQL result as CSV
+fn format_result_as_csv(
+    result: ?*PGresult,
+    ntuples: i32,
+    nfields: i32,
+    csv_buf: []u8,
+) usize {
+    if (result == null) return 0;
+
+    var pos: usize = 0;
+
+    // Write header row with column names
+    var col: i32 = 0;
+    while (col < nfields) : (col += 1) {
+        if (col > 0) {
+            csv_buf[pos] = ',';
+            pos += 1;
+        }
+
+        const fname = pgFname(result, col);
+        if (fname != null) {
+            // Quote field if it contains comma or quote
+            var i: usize = 0;
+            var needs_quote = false;
+            while (fname[i] != 0) : (i += 1) {
+                if (fname[i] == ',' or fname[i] == '"' or fname[i] == '\n') {
+                    needs_quote = true;
+                    break;
+                }
+            }
+
+            if (needs_quote) {
+                csv_buf[pos] = '"';
+                pos += 1;
+            }
+
+            i = 0;
+            while (fname[i] != 0) {
+                if (fname[i] == '"') {
+                    csv_buf[pos] = '"';
+                    pos += 1;
+                }
+                csv_buf[pos] = fname[i];
+                pos += 1;
+                i += 1;
+            }
+
+            if (needs_quote) {
+                csv_buf[pos] = '"';
+                pos += 1;
+            }
+        }
+    }
+    csv_buf[pos] = '\n';
+    pos += 1;
+
+    // Write data rows
+    var row: i32 = 0;
+    while (row < ntuples) : (row += 1) {
+        col = 0;
+        while (col < nfields) : (col += 1) {
+            if (col > 0) {
+                csv_buf[pos] = ',';
+                pos += 1;
+            }
+
+            if (pgGetisnull(result, row, col) != 0) {
+                // Empty field for NULL
+            } else {
+                const value = pgGetvalue(result, row, col);
+                if (value != null) {
+                    // Quote field if it contains comma or quote
+                    var i: usize = 0;
+                    var needs_quote = false;
+                    while (value[i] != 0) : (i += 1) {
+                        if (value[i] == ',' or value[i] == '"' or value[i] == '\n') {
+                            needs_quote = true;
+                            break;
+                        }
+                    }
+
+                    if (needs_quote) {
+                        csv_buf[pos] = '"';
+                        pos += 1;
+                    }
+
+                    i = 0;
+                    while (value[i] != 0) {
+                        if (value[i] == '"') {
+                            csv_buf[pos] = '"';
+                            pos += 1;
+                        }
+                        csv_buf[pos] = value[i];
+                        pos += 1;
+                        i += 1;
+                    }
+
+                    if (needs_quote) {
+                        csv_buf[pos] = '"';
+                        pos += 1;
+                    }
+                }
+            }
+        }
+        csv_buf[pos] = '\n';
+        pos += 1;
+    }
+
+    return pos;
+}
+
+/// Format result as single object (for queries returning one row)
+fn format_result_as_object(
+    result: ?*PGresult,
+    nfields: i32,
+    json_buf: []u8,
+) usize {
+    if (result == null or pgNtuples(result) == 0) {
+        const empty_obj = "{}";
+        @memcpy(json_buf[0..empty_obj.len], empty_obj);
+        return empty_obj.len;
+    }
+
+    var pos: usize = 0;
+    json_buf[pos] = '{';
+    pos += 1;
+
+    var col: i32 = 0;
+    while (col < nfields) : (col += 1) {
+        if (col > 0) {
+            json_buf[pos] = ',';
+            pos += 1;
+        }
+
+        const fname = pgFname(result, col);
+        if (fname != null) {
+            json_buf[pos] = '"';
+            pos += 1;
+
+            var i: usize = 0;
+            while (fname[i] != 0) {
+                json_buf[pos] = fname[i];
+                pos += 1;
+                i += 1;
+            }
+
+            json_buf[pos] = '"';
+            pos += 1;
+            json_buf[pos] = ':';
+            pos += 1;
+        }
+
+        if (pgGetisnull(result, 0, col) != 0) {
+            const null_str = "null";
+            @memcpy(json_buf[pos..][0..null_str.len], null_str);
+            pos += null_str.len;
+        } else {
+            const value = pgGetvalue(result, 0, col);
+            if (value != null) {
+                json_buf[pos] = '"';
+                pos += 1;
+
+                var i: usize = 0;
+                while (value[i] != 0) {
+                    const c = value[i];
+                    if (c == '"' or c == '\\') {
+                        json_buf[pos] = '\\';
+                        pos += 1;
+                    }
+                    json_buf[pos] = c;
+                    pos += 1;
+                    i += 1;
+                }
+
+                json_buf[pos] = '"';
+                pos += 1;
+            } else {
+                const null_str = "null";
+                @memcpy(json_buf[pos..][0..null_str.len], null_str);
+                pos += null_str.len;
+            }
+        }
+    }
+
+    json_buf[pos] = '}';
+    pos += 1;
+
+    return pos;
+}
+
+/// ============================================================================
+/// RPC (Remote Procedure Call) - Stored Procedure Support
+/// ============================================================================
+/// Maximum number of RPC parameters
+const MAX_RPC_PARAMS = 16;
+
+/// RPC parameter for function call
+const RpcParam = struct {
+    name: []const u8,
+    value: []const u8,
+};
+
+/// Parsed RPC call information
+const RpcCall = struct {
+    function_name: []const u8,
+    params: [MAX_RPC_PARAMS]RpcParam,
+    param_count: usize,
+    prefer_single_object: bool = false, // Wrap parameters in single JSON object
+};
+
+/// Detect if URI path points to RPC endpoint (/rpc/function_name)
+/// Returns true if path starts with /rpc/
+fn is_rpc_endpoint(uri: ngx_str_t) bool {
+    if (uri.len < 5 or uri.data == core.nullptr(u8)) {
+        return false;
+    }
+    const path = core.slicify(u8, uri.data, uri.len);
+    if (path.len >= 5 and std.mem.eql(u8, path[0..4], "/rpc")) {
+        // Check that next char is either / or end of string
+        if (path.len == 4) return true;
+        if (path.len > 4 and path[4] == '/') return true;
+    }
+    return false;
+}
+
+/// Extract RPC function name from URI path
+/// URI format: /rpc/function_name
+/// Returns the function name after /rpc/
+fn extract_rpc_function_name(uri: ngx_str_t) ?[]const u8 {
+    if (uri.len == 0 or uri.data == core.nullptr(u8)) {
+        return null;
+    }
+
+    const path = core.slicify(u8, uri.data, uri.len);
+
+    // Find /rpc/ prefix
+    if (path.len < 5 or !std.mem.eql(u8, path[0..4], "/rpc")) {
+        return null;
+    }
+
+    // Skip /rpc/
+    const start: usize = 5;
+    if (start >= path.len) {
+        return null;
+    }
+
+    // Find end of function name (next slash or end of string)
+    var end: usize = start;
+    while (end < path.len and path[end] != '/') {
+        end += 1;
+    }
+
+    if (end == start) {
+        return null;
+    }
+
+    return path[start..end];
+}
+
+/// Parse JSON POST body as RPC function arguments
+/// Format: { "param1": "value1", "param2": "value2" }
+fn parse_rpc_json_body(
+    pool: [*c]core.ngx_pool_t,
+    body: []const u8,
+    rpc_call: *RpcCall,
+) void {
+    if (body.len == 0) return;
+
+    // Initialize cJSON with pool allocator
+    var json_parser = cjson.CJSON.init(pool);
+
+    // Copy body to null-terminated buffer
+    var body_buf: [4096]u8 = undefined;
+    if (body.len >= body_buf.len) return;
+    @memcpy(body_buf[0..body.len], body);
+    body_buf[body.len] = 0;
+
+    const body_str = ngx_str_t{ .data = &body_buf, .len = body.len };
+
+    // Parse JSON
+    const json = json_parser.decode(body_str) catch return;
+    if (json == core.nullptr(cjson.cJSON)) return;
+
+    // Iterate over object fields
+    var it = cjson.CJSON.Iterator.init(json);
+    var count: usize = 0;
+
+    while (it.next()) |item| {
+        if (count >= MAX_RPC_PARAMS) break;
+
+        // Get field name
+        if (item.*.string != core.nullptr(u8)) {
+            var name_len: usize = 0;
+            while (item.*.string[name_len] != 0 and name_len < 256) : (name_len += 1) {}
+            rpc_call.params[count].name = item.*.string[0..name_len];
+
+            // Get field value
+            if (cjson.cJSON_IsNull(item) == 1) {
+                rpc_call.params[count].value = "NULL";
+            } else if (cjson.cJSON_IsNumber(item) == 1) {
+                // For numbers, we'll use the string representation from cJSON
+                if (cjson.cJSON_GetStringValue(item)) |str| {
+                    var str_len: usize = 0;
+                    while (str[str_len] != 0 and str_len < 1024) : (str_len += 1) {}
+                    rpc_call.params[count].value = str[0..str_len];
+                } else {
+                    rpc_call.params[count].value = "0";
+                }
+            } else if (cjson.cJSON_IsString(item) == 1) {
+                if (cjson.cJSON_GetStringValue(item)) |str| {
+                    var str_len: usize = 0;
+                    while (str[str_len] != 0 and str_len < 1024) : (str_len += 1) {}
+                    rpc_call.params[count].value = str[0..str_len];
+                } else {
+                    rpc_call.params[count].value = "";
+                }
+            } else if (cjson.cJSON_IsBool(item) == 1) {
+                rpc_call.params[count].value = if (cjson.cJSON_IsTrue(item) == 1) "true" else "false";
+            } else {
+                continue; // Skip unsupported types (arrays, objects)
+            }
+
+            count += 1;
+        }
+    }
+
+    rpc_call.param_count = count;
+}
+
+/// Parse query string parameters as RPC function arguments
+/// Format: ?param1=value1&param2=value2
+fn parse_rpc_params(args: ngx_str_t, rpc_call: *RpcCall) void {
+    if (args.len == 0 or args.data == core.nullptr(u8)) {
+        return;
+    }
+
+    const query = core.slicify(u8, args.data, args.len);
+    var count: usize = 0;
+    var pos: usize = 0;
+
+    while (pos < query.len and count < MAX_RPC_PARAMS) {
+        // Find end of this parameter (& or end of string)
+        var param_end = pos;
+        while (param_end < query.len and query[param_end] != '&') {
+            param_end += 1;
+        }
+
+        const param = query[pos..param_end];
+
+        // Parse param_name=value
+        var eq_pos: usize = 0;
+        while (eq_pos < param.len and param[eq_pos] != '=') {
+            eq_pos += 1;
+        }
+
+        if (eq_pos > 0 and eq_pos < param.len - 1) {
+            rpc_call.params[count].name = param[0..eq_pos];
+            rpc_call.params[count].value = param[eq_pos + 1 ..];
+            count += 1;
+        }
+
+        pos = param_end + 1; // Skip the '&'
+    }
+
+    rpc_call.param_count = count;
+}
+
+/// Build SQL function call from RPC parameters
+/// Format: SELECT function_name(param1 => value1, param2 => value2)
+fn build_rpc_call_query(
+    query_buf: []u8,
+    function_name: []const u8,
+    rpc_params: *const RpcCall,
+) usize {
+    var pos: usize = 0;
+
+    const select_str = "SELECT ";
+    @memcpy(query_buf[pos..][0..select_str.len], select_str);
+    pos += select_str.len;
+
+    // Function name
+    @memcpy(query_buf[pos..][0..function_name.len], function_name);
+    pos += function_name.len;
+
+    // Opening paren
+    query_buf[pos] = '(';
+    pos += 1;
+
+    // Parameters as named arguments (PostgreSQL syntax)
+    var i: usize = 0;
+    while (i < rpc_params.param_count) : (i += 1) {
+        if (i > 0) {
+            query_buf[pos] = ',';
+            pos += 1;
+            query_buf[pos] = ' ';
+            pos += 1;
+        }
+
+        const param = rpc_params.params[i];
+
+        // Parameter name
+        @memcpy(query_buf[pos..][0..param.name.len], param.name);
+        pos += param.name.len;
+
+        // =>
+        query_buf[pos] = ' ';
+        pos += 1;
+        query_buf[pos] = '=';
+        pos += 1;
+        query_buf[pos] = '>';
+        pos += 1;
+        query_buf[pos] = ' ';
+        pos += 1;
+
+        // Parameter value (quoted as string)
+        query_buf[pos] = '\'';
+        pos += 1;
+        @memcpy(query_buf[pos..][0..param.value.len], param.value);
+        pos += param.value.len;
+        query_buf[pos] = '\'';
+        pos += 1;
+    }
+
+    // Closing paren
+    query_buf[pos] = ')';
+    pos += 1;
+
+    return pos;
+}
+
 /// Extract table name from URI path
 /// URI format: /prefix/tablename or /tablename
 /// Returns the first path segment after any leading slash
@@ -1185,6 +1822,176 @@ fn extract_table_name(uri: ngx_str_t) ?[]const u8 {
     return path[start..end];
 }
 
+/// Handle RPC (stored procedure) call in blocking mode
+fn handle_rpc_call(r: [*c]ngx_http_request_t, conninfo: []const u8) ngx_int_t {
+    // Extract function name from URI
+    const function_name = extract_rpc_function_name(r.*.uri) orelse {
+        r.*.headers_out.status = http.NGX_HTTP_BAD_REQUEST;
+        r.*.headers_out.content_length_n = 0;
+        _ = http.ngx_http_send_header(r);
+        return http.ngx_http_send_special(r, http.NGX_HTTP_LAST);
+    };
+
+    // Parse RPC parameters from query string or POST body
+    var rpc_call: RpcCall = undefined;
+    rpc_call.param_count = 0;
+    rpc_call.function_name = function_name;
+    rpc_call.prefer_single_object = prefer_single_object_param(r);
+
+    // Try to parse POST body first (if present)
+    if (r.*.request_body != null and r.*.request_body.*.bufs != null) {
+        const body_chain = r.*.request_body.*.bufs;
+        if (body_chain.*.buf != null) {
+            const body_buf = body_chain.*.buf;
+            const body_len = @intFromPtr(body_buf.*.last) - @intFromPtr(body_buf.*.pos);
+            if (body_len > 0 and body_buf.*.pos != core.nullptr(u8)) {
+                const body_data = body_buf.*.pos[0..body_len];
+                parse_rpc_json_body(r.*.pool, body_data, &rpc_call);
+            }
+        }
+    }
+
+    // If no body parameters, parse query string
+    if (rpc_call.param_count == 0) {
+        parse_rpc_params(r.*.args, &rpc_call);
+    }
+
+    // Build RPC query
+    var query_buf: [MAX_QUERY_SIZE]u8 = undefined;
+    const query_len = build_rpc_call_query(&query_buf, function_name, &rpc_call);
+    const query = query_buf[0..query_len];
+
+    // Execute RPC against PostgreSQL
+    const pg_result = execute_pg_query(conninfo, query);
+    defer if (pg_result.result != null) pgClear(pg_result.result);
+
+    // Build JSON response based on query result
+    if (!pg_result.success) {
+        // Return error response
+        const err_prefix = "{\"error\": \"RPC call failed\", \"function\": \"";
+        const err_suffix = "\"}";
+        const err_len = err_prefix.len + function_name.len + err_suffix.len;
+
+        const b = buf.ngx_create_temp_buf(r.*.pool, err_len) orelse {
+            return http.NGX_HTTP_INTERNAL_SERVER_ERROR;
+        };
+
+        @memcpy(b.*.last[0..err_prefix.len], err_prefix);
+        b.*.last += err_prefix.len;
+        @memcpy(b.*.last[0..function_name.len], function_name);
+        b.*.last += function_name.len;
+        @memcpy(b.*.last[0..err_suffix.len], err_suffix);
+        b.*.last += err_suffix.len;
+
+        b.*.flags.last_buf = true;
+        b.*.flags.last_in_chain = true;
+
+        var out: ngx_chain_t = std.mem.zeroes(ngx_chain_t);
+        out.buf = b;
+        out.next = null;
+
+        r.*.headers_out.status = http.NGX_HTTP_INTERNAL_SERVER_ERROR;
+        r.*.headers_out.content_length_n = @intCast(err_len);
+
+        const header_rc = http.ngx_http_send_header(r);
+        if (header_rc == NGX_ERROR or header_rc > http.NGX_HTTP_SPECIAL_RESPONSE) {
+            return header_rc;
+        }
+        return http.ngx_http_output_filter(r, &out);
+    }
+
+    // Parse Accept header to determine response format
+    const response_format = parse_accept_header_from_request(r);
+
+    // Format query results according to requested format
+    var response_buf: [MAX_JSON_SIZE]u8 = undefined;
+    var response_len: usize = 0;
+    var content_type: [*:0]const u8 = "application/json";
+
+    switch (response_format) {
+        .json => {
+            response_len = format_result_as_json(
+                pg_result.result,
+                pg_result.ntuples,
+                pg_result.nfields,
+                &response_buf,
+            );
+            content_type = "application/json";
+        },
+        .csv => {
+            response_len = format_result_as_csv(
+                pg_result.result,
+                pg_result.ntuples,
+                pg_result.nfields,
+                &response_buf,
+            );
+            content_type = "text/csv; charset=utf-8";
+        },
+        .plain_text => {
+            // For plain text, only return first field as text
+            if (pg_result.ntuples > 0 and pg_result.nfields > 0) {
+                response_len = format_result_as_scalar(pg_result.result, &response_buf);
+            }
+            content_type = "text/plain; charset=utf-8";
+        },
+        .xml => {
+            content_type = "text/xml; charset=utf-8";
+            // XML would require special handling - for now return as JSON
+            response_len = format_result_as_json(
+                pg_result.result,
+                pg_result.ntuples,
+                pg_result.nfields,
+                &response_buf,
+            );
+        },
+        .binary => {
+            content_type = "application/octet-stream";
+            // Binary would require special handling - for now return as JSON
+            response_len = format_result_as_json(
+                pg_result.result,
+                pg_result.ntuples,
+                pg_result.nfields,
+                &response_buf,
+            );
+        },
+    }
+
+    const response_data = response_buf[0..response_len];
+
+    // Allocate buffer
+    const b = buf.ngx_create_temp_buf(r.*.pool, response_len) orelse {
+        return http.NGX_HTTP_INTERNAL_SERVER_ERROR;
+    };
+
+    // Copy response
+    @memcpy(b.*.last[0..response_len], response_data);
+    b.*.last += response_len;
+
+    b.*.flags.last_buf = true;
+    b.*.flags.last_in_chain = true;
+
+    // Build output chain
+    var out: ngx_chain_t = std.mem.zeroes(ngx_chain_t);
+    out.buf = b;
+    out.next = null;
+
+    // Set content length and status
+    r.*.headers_out.status = http.NGX_HTTP_OK;
+    const len = std.mem.len(content_type);
+    r.*.headers_out.content_type = ngx_str_t{ .data = @constCast(content_type), .len = len };
+    r.*.headers_out.content_type_len = len;
+    r.*.headers_out.content_length_n = @intCast(response_len);
+
+    // Send headers
+    const header_rc = http.ngx_http_send_header(r);
+    if (header_rc == NGX_ERROR or header_rc > http.NGX_HTTP_SPECIAL_RESPONSE) {
+        return header_rc;
+    }
+
+    // Send body
+    return http.ngx_http_output_filter(r, &out);
+}
+
 /// Content handler for pgrest_pass locations
 fn ngx_http_pgrest_handler(r: [*c]ngx_http_request_t) callconv(.c) ngx_int_t {
     // Set response content type to JSON
@@ -1211,6 +2018,11 @@ fn ngx_http_pgrest_handler(r: [*c]ngx_http_request_t) callconv(.c) ngx_int_t {
         return http.ngx_http_send_special(r, http.NGX_HTTP_LAST);
     }
 
+    // Check if this is an RPC (stored procedure) call
+    if (is_rpc_endpoint(r.*.uri)) {
+        return handle_rpc_call(r, conninfo);
+    }
+
     // Extract table name from URI
     const table_name = extract_table_name(r.*.uri) orelse {
         // No table specified - return error
@@ -1219,6 +2031,18 @@ fn ngx_http_pgrest_handler(r: [*c]ngx_http_request_t) callconv(.c) ngx_int_t {
         _ = http.ngx_http_send_header(r);
         return http.ngx_http_send_special(r, http.NGX_HTTP_LAST);
     };
+
+    // Extract schema name from Profile header if present
+    const schema_name = extract_schema_name(r, r.*.method);
+
+    // Build qualified table name (schema.table or just table)
+    var qualified_table_buf: [512]u8 = undefined;
+    const qualified_table_len = build_qualified_table_name(
+        qualified_table_buf[0..],
+        schema_name,
+        table_name,
+    );
+    const qualified_table = qualified_table_buf[0..qualified_table_len];
 
     // Map HTTP method to SQL operation
     const sql_op = SqlOp.fromMethod(r.*.method) orelse {
@@ -1268,7 +2092,7 @@ fn ngx_http_pgrest_handler(r: [*c]ngx_http_request_t) callconv(.c) ngx_int_t {
     const query_len = build_sql_query(
         &query_buf,
         sql_op,
-        table_name,
+        qualified_table,
         filters[0..filter_count],
         json_fields[0..json_field_count],
         select_cols[0..select_count],
@@ -1359,6 +2183,78 @@ fn ngx_http_pgrest_handler(r: [*c]ngx_http_request_t) callconv(.c) ngx_int_t {
     return http.ngx_http_output_filter(r, &out);
 }
 
+/// Handle RPC (stored procedure) call in non-blocking mode with connection pooling
+fn handle_rpc_call_upstream(r: [*c]ngx_http_request_t) ngx_int_t {
+    // Extract function name from URI
+    const function_name = extract_rpc_function_name(r.*.uri) orelse {
+        return http.NGX_HTTP_BAD_REQUEST;
+    };
+
+    // Allocate request context
+    const ctx = core.ngz_pcalloc_c(PgRequestCtx, r.*.pool) orelse {
+        return http.NGX_HTTP_INTERNAL_SERVER_ERROR;
+    };
+
+    // Parse RPC parameters from query string or POST body
+    var rpc_call: RpcCall = undefined;
+    rpc_call.param_count = 0;
+    rpc_call.function_name = function_name;
+
+    // Try to parse POST body first (if present)
+    if (r.*.request_body != null and r.*.request_body.*.bufs != null) {
+        const body_chain = r.*.request_body.*.bufs;
+        if (body_chain.*.buf != null) {
+            const body_buf = body_chain.*.buf;
+            const body_len = @intFromPtr(body_buf.*.last) - @intFromPtr(body_buf.*.pos);
+            if (body_len > 0 and body_buf.*.pos != core.nullptr(u8)) {
+                const body_data = body_buf.*.pos[0..body_len];
+                parse_rpc_json_body(r.*.pool, body_data, &rpc_call);
+            }
+        }
+    }
+
+    // If no body parameters, parse query string
+    if (rpc_call.param_count == 0) {
+        parse_rpc_params(r.*.args, &rpc_call);
+    }
+
+    // Build RPC query into the context
+    ctx.*.query_len = build_rpc_call_query(&ctx.*.query, function_name, &rpc_call);
+    ctx.*.query[ctx.*.query_len] = 0; // null terminate
+
+    ctx.*.pool_conn = null;
+    ctx.*.query_state = .none;
+    ctx.*.result = null;
+    ctx.*.request = r;
+
+    // Create upstream
+    if (http.ngx_http_upstream_create(r) != NGX_OK) {
+        return http.NGX_HTTP_INTERNAL_SERVER_ERROR;
+    }
+
+    const u = r.*.upstream orelse return http.NGX_HTTP_INTERNAL_SERVER_ERROR;
+
+    // Configure upstream callbacks
+    u.*.create_request = ngx_pgrest_upstream_create_request;
+    u.*.process_header = ngx_pgrest_upstream_process_header;
+    u.*.finalize_request = ngx_pgrest_upstream_finalize_request;
+    u.*.input_filter_init = ngx_pgrest_upstream_input_filter_init;
+    u.*.input_filter = ngx_pgrest_upstream_input_filter;
+
+    // Set up peer callbacks
+    u.*.peer.get = ngx_pgrest_upstream_get_peer;
+    u.*.peer.free = ngx_pgrest_upstream_free_peer;
+    u.*.peer.data = ctx;
+
+    // Increase reference count
+    r.*.main.*.flags0.count += 1;
+
+    // Start the upstream process
+    http.ngx_http_upstream_init(r);
+
+    return NGX_AGAIN;
+}
+
 /// Non-blocking content handler that uses upstream mechanism with connection pooling
 fn ngx_http_pgrest_upstream_handler(r: [*c]ngx_http_request_t) callconv(.c) ngx_int_t {
     // Set response content type to JSON
@@ -1387,6 +2283,11 @@ fn ngx_http_pgrest_upstream_handler(r: [*c]ngx_http_request_t) callconv(.c) ngx_
             g_conn_pool.conninfo_len = conninfo.len;
             g_conn_pool.initialized = true;
         }
+    }
+
+    // Check if this is an RPC (stored procedure) call
+    if (is_rpc_endpoint(r.*.uri)) {
+        return handle_rpc_call_upstream(r);
     }
 
     // Extract table name from URI
