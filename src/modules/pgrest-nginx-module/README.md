@@ -92,6 +92,37 @@ curl -X POST "http://localhost/rpc/create_order" \
   -d '{"user_id": 5, "amount": 100.50, "status": "pending"}'
 ```
 
+### Array Parameters
+
+pgrest supports JSON arrays as function parameters. Arrays are automatically converted to PostgreSQL `ARRAY[...]` syntax:
+
+```bash
+# Array of numbers
+curl -X POST "http://localhost/rpc/process_numbers" \
+  -H "Content-Type: application/json" \
+  -d '{"ids": [1, 2, 3, 4, 5]}'
+# Calls: process_numbers(ids => ARRAY[1,2,3,4,5])
+
+# Array of strings
+curl -X POST "http://localhost/rpc/add_users" \
+  -H "Content-Type: application/json" \
+  -d '{"names": ["Alice", "Bob", "Charlie"]}'
+# Calls: add_users(names => ARRAY['Alice','Bob','Charlie'])
+
+# Mixed with other parameters
+curl -X POST "http://localhost/rpc/create_items" \
+  -H "Content-Type: application/json" \
+  -d '{"user_id": 42, "tags": ["important", "urgent"], "status": "active"}'
+# Calls: create_items(user_id => 42, tags => ARRAY['important','urgent'], status => 'active')
+```
+
+**Function signature example:**
+```sql
+CREATE FUNCTION process_numbers(ids integer[]) RETURNS TABLE(id integer, squared integer) AS $$
+  SELECT unnest(ids) as id, unnest(ids) * unnest(ids) as squared;
+$$ LANGUAGE SQL;
+```
+
 ### Parameter Passing Methods
 
 #### Method 1: Query String Parameters (GET)
@@ -711,6 +742,7 @@ Error responses:
 - ✅ **Prefer: params=single-object** - Single JSON object parameter wrapping for RPC functions
 - ✅ **Singular object responses** - Accept: application/vnd.pgrst.object+json for single-row object format
 - ✅ **Stripped nulls** - Accept: application/vnd.pgrst.array+json;nulls=stripped to omit null fields
+- ✅ **Array parameters** - JSON arrays automatically converted to PostgreSQL ARRAY[] syntax in RPC calls
 
 ## Planned Features (High Priority)
 

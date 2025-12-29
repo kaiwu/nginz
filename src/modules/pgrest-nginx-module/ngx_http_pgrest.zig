@@ -1879,8 +1879,61 @@ fn parse_rpc_json_body(
                 }
             } else if (cjson.cJSON_IsBool(item) == 1) {
                 rpc_call.params[count].value = if (cjson.cJSON_IsTrue(item) == 1) "true" else "false";
+            } else if (cjson.cJSON_IsArray(item) == 1) {
+                // Support for array parameters - store as ARRAY constructor syntax
+                // Convert array elements into ARRAY[...] format
+                var arr_pos: usize = 0;
+                var arr_buf: [2048]u8 = undefined;
+
+                // Start with ARRAY[
+                const arr_prefix = "ARRAY[";
+                @memcpy(arr_buf[arr_pos..][0..arr_prefix.len], arr_prefix);
+                arr_pos += arr_prefix.len;
+
+                // Iterate array elements
+                var arr_item = item.*.child;
+                var arr_index: i32 = 0;
+                while (arr_item != null and arr_pos < arr_buf.len - 10) {
+                    if (arr_index > 0) {
+                        arr_buf[arr_pos] = ',';
+                        arr_pos += 1;
+                    }
+
+                    if (cjson.cJSON_IsNumber(arr_item) == 1) {
+                        if (cjson.cJSON_GetStringValue(arr_item)) |str| {
+                            var s_len: usize = 0;
+                            while (str[s_len] != 0 and s_len < 64) : (s_len += 1) {}
+                            if (arr_pos + s_len < arr_buf.len) {
+                                @memcpy(arr_buf[arr_pos..][0..s_len], str[0..s_len]);
+                                arr_pos += s_len;
+                            }
+                        }
+                    } else if (cjson.cJSON_IsString(arr_item) == 1) {
+                        arr_buf[arr_pos] = '\'';
+                        arr_pos += 1;
+                        if (cjson.cJSON_GetStringValue(arr_item)) |str| {
+                            var s_len: usize = 0;
+                            while (str[s_len] != 0 and s_len < 256) : (s_len += 1) {}
+                            if (arr_pos + s_len < arr_buf.len) {
+                                @memcpy(arr_buf[arr_pos..][0..s_len], str[0..s_len]);
+                                arr_pos += s_len;
+                            }
+                        }
+                        arr_buf[arr_pos] = '\'';
+                        arr_pos += 1;
+                    }
+
+                    arr_item = arr_item.*.next;
+                    arr_index += 1;
+                }
+
+                // Close with ]
+                arr_buf[arr_pos] = ']';
+                arr_pos += 1;
+
+                rpc_call.params[count].value = arr_buf[0..arr_pos];
             } else {
-                continue; // Skip unsupported types (arrays, objects)
+                continue; // Skip unsupported types (nested objects)
             }
 
             count += 1;
@@ -1928,8 +1981,23 @@ fn parse_rpc_params(args: ngx_str_t, rpc_call: *RpcCall) void {
     rpc_call.param_count = count;
 }
 
+/// Check if a parameter value is a JSON array
+/// JSON arrays start with '[' and end with ']'
+fn is_json_array(value: []const u8) bool {
+    return value.len >= 2 and value[0] == '[' and value[value.len - 1] == ']';
+}
+
+/// Check if a parameter value is JSON (array or object)
+fn is_json_value(value: []const u8) bool {
+    if (value.len < 2) return false;
+    const first = value[0];
+    const last = value[value.len - 1];
+    return (first == '[' and last == ']') or (first == '{' and last == '}');
+}
+
 /// Build SQL function call from RPC parameters
 /// Format: SELECT function_name(param1 => value1, param2 => value2)
+/// Handles JSON arrays without quotes, regular strings with quotes
 fn build_rpc_call_query(
     query_buf: []u8,
     function_name: []const u8,
@@ -1975,13 +2043,35 @@ fn build_rpc_call_query(
         query_buf[pos] = ' ';
         pos += 1;
 
-        // Parameter value (quoted as string)
-        query_buf[pos] = '\'';
-        pos += 1;
-        @memcpy(query_buf[pos..][0..param.value.len], param.value);
-        pos += param.value.len;
-        query_buf[pos] = '\'';
-        pos += 1;
+        // Parameter value handling
+        // JSON arrays/objects are passed without quotes
+        // Regular strings and other values are quoted
+        if (is_json_value(param.value)) {
+            // JSON array or object - pass as is without quotes
+            @memcpy(query_buf[pos..][0..param.value.len], param.value);
+            pos += param.value.len;
+        } else if (std.mem.eql(u8, param.value, "NULL")) {
+            // NULL values - pass without quotes
+            const null_str = "NULL";
+            @memcpy(query_buf[pos..][0..null_str.len], null_str);
+            pos += null_str.len;
+        } else if (std.mem.eql(u8, param.value, "true") or std.mem.eql(u8, param.value, "false")) {
+            // Boolean values - pass without quotes
+            @memcpy(query_buf[pos..][0..param.value.len], param.value);
+            pos += param.value.len;
+        } else if (is_numeric(param.value)) {
+            // Numeric values - pass without quotes
+            @memcpy(query_buf[pos..][0..param.value.len], param.value);
+            pos += param.value.len;
+        } else {
+            // String values - quote them
+            query_buf[pos] = '\'';
+            pos += 1;
+            @memcpy(query_buf[pos..][0..param.value.len], param.value);
+            pos += param.value.len;
+            query_buf[pos] = '\'';
+            pos += 1;
+        }
     }
 
     // Closing paren
@@ -1989,6 +2079,36 @@ fn build_rpc_call_query(
     pos += 1;
 
     return pos;
+}
+
+/// Check if a string represents a number
+fn is_numeric(value: []const u8) bool {
+    if (value.len == 0) return false;
+
+    var i: usize = 0;
+    // Allow leading minus sign
+    if (value[0] == '-') {
+        i = 1;
+    }
+
+    if (i >= value.len) return false;
+
+    // Must have at least one digit
+    var has_digit = false;
+    var has_dot = false;
+
+    while (i < value.len) : (i += 1) {
+        const c = value[i];
+        if (c >= '0' and c <= '9') {
+            has_digit = true;
+        } else if (c == '.' and !has_dot) {
+            has_dot = true;
+        } else {
+            return false;
+        }
+    }
+
+    return has_digit;
 }
 
 /// Extract table name from URI path
