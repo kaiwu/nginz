@@ -293,6 +293,147 @@ fn parse_json_body(
 }
 
 /// Format PostgreSQL result as JSON array
+/// Parse Accept header to check for singular object format
+/// Returns true if Accept header contains "application/vnd.pgrst.object+json"
+fn should_format_as_singular_object(r: [*c]ngx_http_request_t) bool {
+    if (extract_header_value(r, "accept")) |accept_val| {
+        return std.mem.containsAtLeast(u8, accept_val, 1, "application/vnd.pgrst.object+json");
+    }
+    return false;
+}
+
+/// Parse Accept header to check for stripped nulls format
+/// Returns true if Accept header contains "nulls=stripped"
+fn should_strip_nulls(r: [*c]ngx_http_request_t) bool {
+    if (extract_header_value(r, "accept")) |accept_val| {
+        return std.mem.containsAtLeast(u8, accept_val, 1, "nulls=stripped");
+    }
+    return false;
+}
+
+/// Format a single row as a JSON object
+/// Used when singular object format is requested
+/// If strip_nulls is true, skips null values
+fn format_row_as_json_object_impl(
+    result: ?*PGresult,
+    row: i32,
+    nfields: i32,
+    json_buf: []u8,
+    strip_nulls: bool,
+) usize {
+    if (result == null) return 0;
+
+    var pos: usize = 0;
+
+    // Start object
+    json_buf[pos] = '{';
+    pos += 1;
+
+    var col: i32 = 0;
+    var first_field: bool = true;
+    while (col < nfields) : (col += 1) {
+        // Check if value is null and we're stripping nulls
+        const is_null = pgGetisnull(result, row, col) != 0;
+        if (strip_nulls and is_null) {
+            // Skip null fields when stripping nulls
+            continue;
+        }
+
+        if (!first_field) {
+            json_buf[pos] = ',';
+            pos += 1;
+        }
+        first_field = false;
+
+        // Get column name
+        const fname = pgFname(result, col);
+        if (fname != null) {
+            // "column_name":
+            json_buf[pos] = '"';
+            pos += 1;
+
+            var i: usize = 0;
+            while (fname[i] != 0 and pos < json_buf.len - 10) : (i += 1) {
+                json_buf[pos] = fname[i];
+                pos += 1;
+            }
+
+            json_buf[pos] = '"';
+            pos += 1;
+            json_buf[pos] = ':';
+            pos += 1;
+        }
+
+        // Check if value is null
+        if (is_null) {
+            const null_str = "null";
+            @memcpy(json_buf[pos..][0..null_str.len], null_str);
+            pos += null_str.len;
+        } else {
+            // Get value
+            const value = pgGetvalue(result, row, col);
+            if (value != null) {
+                // Quote string values
+                json_buf[pos] = '"';
+                pos += 1;
+
+                var i: usize = 0;
+                while (value[i] != 0 and pos < json_buf.len - 10) : (i += 1) {
+                    const c = value[i];
+                    // Escape special JSON characters
+                    if (c == '"' or c == '\\') {
+                        json_buf[pos] = '\\';
+                        pos += 1;
+                    }
+                    if (c == '\n') {
+                        json_buf[pos] = '\\';
+                        pos += 1;
+                        json_buf[pos] = 'n';
+                        pos += 1;
+                    } else if (c == '\r') {
+                        json_buf[pos] = '\\';
+                        pos += 1;
+                        json_buf[pos] = 'r';
+                        pos += 1;
+                    } else if (c == '\t') {
+                        json_buf[pos] = '\\';
+                        pos += 1;
+                        json_buf[pos] = 't';
+                        pos += 1;
+                    } else {
+                        json_buf[pos] = c;
+                        pos += 1;
+                    }
+                }
+
+                json_buf[pos] = '"';
+                pos += 1;
+            } else {
+                const null_str = "null";
+                @memcpy(json_buf[pos..][0..null_str.len], null_str);
+                pos += null_str.len;
+            }
+        }
+    }
+
+    // End object
+    json_buf[pos] = '}';
+    pos += 1;
+
+    return pos;
+}
+
+/// Format a single row as a JSON object
+/// Used when singular object format is requested
+fn format_row_as_json_object(
+    result: ?*PGresult,
+    row: i32,
+    nfields: i32,
+    json_buf: []u8,
+) usize {
+    return format_row_as_json_object_impl(result, row, nfields, json_buf, false);
+}
+
 /// Returns the length of JSON written to buffer
 fn format_result_as_json(
     result: ?*PGresult,
@@ -405,6 +546,67 @@ fn format_result_as_json(
     pos += 1;
 
     return pos;
+}
+
+/// Format query results as JSON array with optional null stripping
+fn format_result_as_json_with_options(
+    result: ?*PGresult,
+    ntuples: i32,
+    nfields: i32,
+    json_buf: []u8,
+    strip_nulls: bool,
+) usize {
+    var pos: usize = 0;
+
+    // Start array
+    json_buf[pos] = '[';
+    pos += 1;
+
+    var row: i32 = 0;
+    while (row < ntuples) : (row += 1) {
+        if (row > 0) {
+            json_buf[pos] = ',';
+            pos += 1;
+        }
+
+        // Use the implementation with null stripping option
+        const row_len = format_row_as_json_object_impl(result, row, nfields, json_buf[pos..], strip_nulls);
+        pos += row_len;
+    }
+
+    // End array
+    json_buf[pos] = ']';
+    pos += 1;
+
+    return pos;
+}
+
+/// Format query results as JSON, respecting singular object preference and null stripping
+/// If Accept header contains "application/vnd.pgrst.object+json" and there's exactly one row,
+/// returns that row as a single object instead of an array
+fn format_result_as_json_smart(
+    r: [*c]ngx_http_request_t,
+    result: ?*PGresult,
+    ntuples: i32,
+    nfields: i32,
+    json_buf: []u8,
+) usize {
+    const strip_nulls = should_strip_nulls(r);
+
+    // Check if singular object format is requested
+    if (should_format_as_singular_object(r)) {
+        // For singular object format, return first row if it exists
+        if (ntuples >= 1) {
+            return format_row_as_json_object_impl(result, 0, nfields, json_buf, strip_nulls);
+        }
+        // If no rows, return empty object
+        json_buf[0] = '{';
+        json_buf[1] = '}';
+        return 2;
+    }
+
+    // Default: return array format (with optional null stripping)
+    return format_result_as_json_with_options(result, ntuples, nfields, json_buf, strip_nulls);
 }
 
 /// Execute a SQL query against PostgreSQL (blocking)
@@ -1910,7 +2112,8 @@ fn handle_rpc_call(r: [*c]ngx_http_request_t, conninfo: []const u8) ngx_int_t {
 
     switch (response_format) {
         .json => {
-            response_len = format_result_as_json(
+            response_len = format_result_as_json_smart(
+                r,
                 pg_result.result,
                 pg_result.ntuples,
                 pg_result.nfields,
@@ -1937,7 +2140,8 @@ fn handle_rpc_call(r: [*c]ngx_http_request_t, conninfo: []const u8) ngx_int_t {
         .xml => {
             content_type = "text/xml; charset=utf-8";
             // XML would require special handling - for now return as JSON
-            response_len = format_result_as_json(
+            response_len = format_result_as_json_smart(
+                r,
                 pg_result.result,
                 pg_result.ntuples,
                 pg_result.nfields,
@@ -1947,7 +2151,8 @@ fn handle_rpc_call(r: [*c]ngx_http_request_t, conninfo: []const u8) ngx_int_t {
         .binary => {
             content_type = "application/octet-stream";
             // Binary would require special handling - for now return as JSON
-            response_len = format_result_as_json(
+            response_len = format_result_as_json_smart(
+                r,
                 pg_result.result,
                 pg_result.ntuples,
                 pg_result.nfields,
@@ -2140,9 +2345,10 @@ fn ngx_http_pgrest_handler(r: [*c]ngx_http_request_t) callconv(.c) ngx_int_t {
         return http.ngx_http_output_filter(r, &out);
     }
 
-    // Format query results as JSON array
+    // Format query results as JSON array (or single object if requested)
     var json_buf: [MAX_JSON_SIZE]u8 = undefined;
-    const json_len = format_result_as_json(
+    const json_len = format_result_as_json_smart(
+        r,
         pg_result.result,
         pg_result.ntuples,
         pg_result.nfields,

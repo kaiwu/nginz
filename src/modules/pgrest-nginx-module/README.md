@@ -518,6 +518,69 @@ Returns raw binary data for bytea columns.
 - XML wraps results in `<root>` with `<row>` elements for each record
 - Unsupported formats fall back to JSON
 
+### Response Format Options
+
+#### Singular Object vs Array
+
+pgrest can return results as either an array (default) or a single object. For endpoints that guarantee a single row, you can request object format:
+
+```bash
+# Default: returns array
+curl "http://localhost/api/users?id=eq.1"
+# Response: [{"id": 1, "name": "John"}]
+
+# Request single object format
+curl "http://localhost/api/users?id=eq.1" \
+  -H "Accept: application/vnd.pgrst.object+json"
+# Response: {"id": 1, "name": "John"}
+
+# Works with RPC too
+curl -X POST "http://localhost/rpc/get_user_by_id" \
+  -H "Content-Type: application/json" \
+  -H "Accept: application/vnd.pgrst.object+json" \
+  -d '{"id": 1}'
+# Response: {"id": 1, "name": "John", "email": "john@example.com"}
+```
+
+#### Stripped Nulls
+
+Remove null-valued fields from JSON responses to reduce payload size:
+
+```bash
+# Normal response includes null fields
+curl "http://localhost/api/users"
+# Response: [
+#   {"id": 1, "name": "John", "bio": null, "avatar": null},
+#   {"id": 2, "name": "Jane", "bio": "Developer", "avatar": null}
+# ]
+
+# Request stripped nulls
+curl "http://localhost/api/users" \
+  -H "Accept: application/vnd.pgrst.array+json;nulls=stripped"
+# Response: [
+#   {"id": 1, "name": "John"},
+#   {"id": 2, "name": "Jane", "bio": "Developer"}
+# ]
+```
+
+**Combining options:**
+```bash
+# Single object with stripped nulls
+curl "http://localhost/api/users?id=eq.1" \
+  -H "Accept: application/vnd.pgrst.object+json;nulls=stripped"
+# Response: {"id": 1, "name": "John"}
+
+# Works with all formats
+curl "http://localhost/api/users" \
+  -H "Accept: text/csv;nulls=stripped"
+# Returns CSV with null values omitted from fields
+```
+
+Benefits of stripped nulls:
+- Reduces response payload size, especially for sparse data
+- Simplifies client-side JSON parsing
+- Useful for APIs with many optional fields
+
 ## Filter Operators
 
 | Operator | SQL Equivalent | Example |
@@ -646,11 +709,12 @@ Error responses:
 - ✅ **Accept-Profile header** - Schema selection for GET/HEAD/DELETE requests
 - ✅ **Content-Profile header** - Schema selection for POST/PATCH/PUT requests
 - ✅ **Prefer: params=single-object** - Single JSON object parameter wrapping for RPC functions
+- ✅ **Singular object responses** - Accept: application/vnd.pgrst.object+json for single-row object format
+- ✅ **Stripped nulls** - Accept: application/vnd.pgrst.array+json;nulls=stripped to omit null fields
 
 ## Planned Features (High Priority)
 
-- **Response format control** - Singular vs plural objects (Accept: application/vnd.pgrst.object+json)
-- **Stripped nulls** - Accept: application/vnd.pgrst.array+json;nulls=stripped
+- **Array parameters in POST** - JSON arrays converted to PostgreSQL arrays
 
 ## Planned Features (Medium Priority)
 
