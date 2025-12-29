@@ -610,7 +610,8 @@ fn format_result_as_json_smart(
 }
 
 /// Execute a SQL query against PostgreSQL (blocking)
-fn execute_pg_query(conninfo: []const u8, query: []const u8) PgQueryResult {
+/// Optional JWT token for setting request.jwt claim in PostgreSQL
+fn execute_pg_query_with_jwt(conninfo: []const u8, query: []const u8, jwt_token: ?[]const u8) PgQueryResult {
     // Need null-terminated strings for libpq
     var conn_buf: [512]u8 = undefined;
     var query_buf: [MAX_QUERY_SIZE + 1]u8 = undefined;
@@ -656,6 +657,11 @@ fn execute_pg_query(conninfo: []const u8, query: []const u8) PgQueryResult {
         };
     }
 
+    // Set JWT claim in PostgreSQL if provided
+    if (jwt_token) |token| {
+        _ = set_postgresql_jwt_claim(conn, token);
+    }
+
     // Execute query
     const result = pgExec(conn, &query_buf);
     const status = pgResultStatus(result);
@@ -687,6 +693,11 @@ fn execute_pg_query(conninfo: []const u8, query: []const u8) PgQueryResult {
         .result = result,
         .error_msg = null,
     };
+}
+
+/// Execute a SQL query against PostgreSQL (blocking)
+fn execute_pg_query(conninfo: []const u8, query: []const u8) PgQueryResult {
+    return execute_pg_query_with_jwt(conninfo, query, null);
 }
 
 fn pgrest_create_srv_conf(cf: [*c]ngx_conf_t) callconv(.c) ?*anyopaque {
@@ -1476,6 +1487,85 @@ fn prefer_single_object_param(r: [*c]ngx_http_request_t) bool {
 }
 
 /// ============================================================================
+/// JWT Authentication
+/// ============================================================================
+/// Extract JWT token from Authorization header
+/// Expects: "Authorization: Bearer <token>"
+fn extract_jwt_token(r: [*c]ngx_http_request_t) ?[]const u8 {
+    if (extract_header_value(r, "authorization")) |auth_header| {
+        // Check if it starts with "Bearer "
+        const bearer_prefix = "Bearer ";
+        if (auth_header.len > bearer_prefix.len and std.mem.eql(u8, auth_header[0..bearer_prefix.len], bearer_prefix)) {
+            return auth_header[bearer_prefix.len..];
+        }
+    }
+    return null;
+}
+
+/// Set PostgreSQL session claims by executing SET request.jwt TO <token>
+/// This allows PostgreSQL functions to access JWT data via current_setting('request.jwt')
+fn set_postgresql_jwt_claim(conn: ?*PGconn, jwt_token: []const u8) bool {
+    if (conn == null or jwt_token.len == 0) return true; // Skip if no JWT
+
+    // Build SQL: SET request.jwt TO '<token>'
+    // Escape single quotes in token (though JWT should be safe)
+    var query_buf: [8192]u8 = undefined;
+    var pos: usize = 0;
+
+    const set_prefix = "SET request.jwt TO '";
+    @memcpy(query_buf[pos..][0..set_prefix.len], set_prefix);
+    pos += set_prefix.len;
+
+    // Copy token, escaping single quotes
+    var i: usize = 0;
+    while (i < jwt_token.len and pos < query_buf.len - 10) : (i += 1) {
+        const c = jwt_token[i];
+        if (c == '\'') {
+            // Escape single quote
+            query_buf[pos] = '\'';
+            pos += 1;
+            query_buf[pos] = '\'';
+            pos += 1;
+        } else {
+            query_buf[pos] = c;
+            pos += 1;
+        }
+    }
+
+    const set_suffix = "'";
+    if (pos + set_suffix.len >= query_buf.len) return false;
+    @memcpy(query_buf[pos..][0..set_suffix.len], set_suffix);
+    pos += set_suffix.len;
+
+    query_buf[pos] = 0; // null terminate
+
+    // Execute the SET command
+    const result = pgExec(conn, &query_buf);
+    if (result == null) return false;
+
+    const status = pgResultStatus(result);
+    pgClear(result);
+
+    // PGRES_COMMAND_OK = 1 for successful SET
+    return status == PGRES_COMMAND_OK;
+}
+
+/// Set PostgreSQL session role from JWT 'role' claim
+/// This allows PostgreSQL to enforce row-level security based on JWT role
+/// Executes: SET ROLE '<role>'
+fn set_postgresql_role_from_jwt(conn: ?*PGconn, jwt_token: []const u8) bool {
+    if (conn == null or jwt_token.len == 0) return true; // Skip if no JWT
+
+    // For now, we would need to decode the JWT to extract the 'role' claim
+    // This is a simplified version - in production you'd parse the JWT payload
+    // For demonstration, we just set a default role claim if JWT exists
+    // The actual role would come from decoding the JWT payload (middle part between dots)
+
+    // This is a placeholder - full implementation would decode JWT
+    return true;
+}
+
+/// ============================================================================
 /// Smart Response Formatting
 /// ============================================================================
 /// Detect the result format based on query results
@@ -2183,8 +2273,11 @@ fn handle_rpc_call(r: [*c]ngx_http_request_t, conninfo: []const u8) ngx_int_t {
     const query_len = build_rpc_call_query(&query_buf, function_name, &rpc_call);
     const query = query_buf[0..query_len];
 
-    // Execute RPC against PostgreSQL
-    const pg_result = execute_pg_query(conninfo, query);
+    // Extract JWT token for PostgreSQL
+    const jwt_token = extract_jwt_token(r);
+
+    // Execute RPC against PostgreSQL (with JWT if provided)
+    const pg_result = execute_pg_query_with_jwt(conninfo, query, jwt_token);
     defer if (pg_result.result != null) pgClear(pg_result.result);
 
     // Build JSON response based on query result
@@ -2426,8 +2519,11 @@ fn ngx_http_pgrest_handler(r: [*c]ngx_http_request_t) callconv(.c) ngx_int_t {
     );
     const query = query_buf[0..query_len];
 
-    // Execute query against PostgreSQL
-    const pg_result = execute_pg_query(conninfo, query);
+    // Extract JWT token for PostgreSQL
+    const jwt_token = extract_jwt_token(r);
+
+    // Execute query against PostgreSQL (with JWT if provided)
+    const pg_result = execute_pg_query_with_jwt(conninfo, query, jwt_token);
     defer if (pg_result.result != null) pgClear(pg_result.result);
 
     // Build JSON response based on query result

@@ -54,6 +54,145 @@ With `pgrest_pooling` enabled:
 - Up to 16 pooled connections (configurable)
 - Automatic connection state management
 
+## JWT Authentication (NEW!)
+
+pgrest supports JWT authentication that integrates directly with PostgreSQL. The JWT token is passed to PostgreSQL via the `request.jwt` claim, allowing your database functions to enforce authorization and access control.
+
+### How It Works
+
+1. Client sends a request with `Authorization: Bearer <JWT_TOKEN>` header
+2. nginz extracts the JWT token from the Authorization header
+3. nginz executes `SET request.jwt TO '<token>'` in PostgreSQL before running the query
+4. PostgreSQL functions can access the JWT via `current_setting('request.jwt')`
+5. Your functions can validate and use JWT claims for authorization
+
+### Configuration
+
+No special configuration needed! Just send JWT tokens in the `Authorization` header using the standard Bearer scheme.
+
+### Usage Examples
+
+#### Basic JWT Usage in Functions
+
+```sql
+-- Function that accesses JWT claims
+CREATE OR REPLACE FUNCTION get_user_profile() 
+RETURNS TABLE(id integer, name text, email text) AS $$
+  DECLARE
+    jwt_token text;
+    user_id integer;
+  BEGIN
+    -- Get the JWT token passed from nginz
+    jwt_token := current_setting('request.jwt', true);
+    
+    IF jwt_token IS NULL THEN
+      RAISE EXCEPTION 'Unauthorized: No JWT provided';
+    END IF;
+    
+    -- In production, you would decode the JWT and extract claims
+    -- For this example, we just use it to verify presence
+    RETURN QUERY
+      SELECT u.id, u.name, u.email
+      FROM users u
+      WHERE u.id = 1;  -- In production, extract user_id from JWT
+  END;
+$$ LANGUAGE plpgsql;
+```
+
+#### Client-Side Request
+
+```bash
+# Include JWT in Authorization header
+curl -X GET "http://localhost/rpc/get_user_profile" \
+  -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNTE2MjM5MDIyfQ.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c"
+```
+
+### Row-Level Security (RLS)
+
+Combine JWT authentication with PostgreSQL Row-Level Security for powerful access control:
+
+```sql
+-- Create a table with RLS
+CREATE TABLE documents (
+  id serial PRIMARY KEY,
+  owner_id integer NOT NULL,
+  title text,
+  content text
+);
+
+-- Enable RLS
+ALTER TABLE documents ENABLE ROW LEVEL SECURITY;
+
+-- Create a policy that uses JWT claims
+CREATE POLICY user_documents ON documents
+  USING (owner_id = CAST((current_setting('request.jwt', true) -> 'user_id')::text AS integer));
+
+-- Create a function
+CREATE OR REPLACE FUNCTION get_my_documents()
+RETURNS TABLE(id integer, title text, content text) AS $$
+  SELECT id, title, content FROM documents;
+$$ LANGUAGE SQL;
+```
+
+#### Client Request (with JWT)
+
+```bash
+# PostgreSQL RLS will automatically filter results based on JWT claims
+curl -X GET "http://localhost/rpc/get_my_documents" \
+  -H "Authorization: Bearer <JWT_WITH_USER_ID_CLAIM>"
+
+# Response will only include documents where owner_id matches the JWT claim
+```
+
+### JWT Token Structure
+
+The JWT token is passed as-is to PostgreSQL. Your functions receive the entire token string via `current_setting('request.jwt')`. 
+
+To use JWT claims, you'll need to:
+1. Decode the JWT in your PostgreSQL function using an extension like `pgcrypto` or `pgjwt`
+2. OR use a trusted JWT validation in your application before passing to nginz
+3. OR validate the JWT signature in a PostgreSQL function
+
+### Example: Decoding JWT in PostgreSQL
+
+```sql
+-- Using the pgjwt extension (if installed)
+CREATE OR REPLACE FUNCTION get_user_from_jwt()
+RETURNS TABLE(user_id integer, role text, email text) AS $$
+  SELECT 
+    (jwt_claims ->> 'sub')::integer,
+    jwt_claims ->> 'role',
+    jwt_claims ->> 'email'
+  FROM (
+    SELECT jwt_decode(current_setting('request.jwt'), 'secret-key') as jwt_claims
+  ) decoded;
+$$ LANGUAGE SQL;
+```
+
+### Security Best Practices
+
+1. **Always use HTTPS** - JWT tokens must be transmitted securely
+2. **Validate JWT signature** - Validate the JWT signature in your PostgreSQL functions
+3. **Set short expiration times** - Use JWT `exp` claim with reasonable TTL
+4. **Use environment variables** - Store JWT secret keys in environment variables, not in code
+5. **Combine with RLS** - Use PostgreSQL Row-Level Security for data access control
+6. **Rate limiting** - Implement rate limiting at the nginx level to prevent abuse
+
+### Comparison with PostgREST
+
+**PostgREST:**
+- Supports JWT validation with signature verification
+- Can set PostgreSQL role from JWT `role` claim
+- Supports JWT audience and issuer validation
+
+**nginz pgrest (this implementation):**
+- Passes raw JWT token to PostgreSQL via `request.jwt` claim
+- Allows custom JWT validation in PostgreSQL functions
+- More flexible - your functions control validation logic
+- Simpler integration - no external JWT library needed
+
+Both approaches allow PostgreSQL functions to access JWT data for authorization decisions.
+
 ## RPC (Remote Procedure Call) - Stored Procedures
 
 Call PostgreSQL stored functions and procedures via HTTP endpoints. Perfect for complex operations involving multiple tables or business logic.
@@ -743,6 +882,7 @@ Error responses:
 - ✅ **Singular object responses** - Accept: application/vnd.pgrst.object+json for single-row object format
 - ✅ **Stripped nulls** - Accept: application/vnd.pgrst.array+json;nulls=stripped to omit null fields
 - ✅ **Array parameters** - JSON arrays automatically converted to PostgreSQL ARRAY[] syntax in RPC calls
+- ✅ **JWT Authentication** - Authorization header support with JWT passed to PostgreSQL via request.jwt claim
 
 ## Planned Features (High Priority)
 
