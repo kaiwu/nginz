@@ -21,7 +21,7 @@ const ngx_http_request_t = http.ngx_http_request_t;
 const ngx_string = ngx.string.ngx_string;
 
 // ID format
-const requestid_format = enum {
+const requestid_format = enum(c_int) {
     uuid4, // UUID v4 (random)
     uuid7, // UUID v7 (time-ordered)
     ulid, // ULID

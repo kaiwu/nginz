@@ -23,7 +23,7 @@ const ngx_http_request_t = http.ngx_http_request_t;
 const ngx_string = ngx.string.ngx_string;
 
 // Rate limiting algorithms
-const ratelimit_algorithm = enum {
+const ratelimit_algorithm = enum(c_int) {
     leaky_bucket,
     token_bucket,
     sliding_window,

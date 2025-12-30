@@ -22,7 +22,7 @@ const ngx_http_request_t = http.ngx_http_request_t;
 const ngx_string = ngx.string.ngx_string;
 
 // JWT algorithm types
-const jwt_algorithm = enum {
+const jwt_algorithm = enum(c_int) {
     HS256,
     HS384,
     HS512,

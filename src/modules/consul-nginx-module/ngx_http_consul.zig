@@ -21,7 +21,7 @@ const ngx_http_module_t = http.ngx_http_module_t;
 const ngx_string = ngx.string.ngx_string;
 
 // Service discovery backend
-const discovery_backend = enum {
+const discovery_backend = enum(c_int) {
     consul,
     etcd,
     dns_srv,

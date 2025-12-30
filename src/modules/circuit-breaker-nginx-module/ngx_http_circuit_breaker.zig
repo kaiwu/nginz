@@ -23,7 +23,7 @@ const ngx_http_request_t = http.ngx_http_request_t;
 const ngx_string = ngx.string.ngx_string;
 
 // Circuit breaker states
-const circuit_state = enum {
+const circuit_state = enum(c_int) {
     closed, // Normal operation, requests pass through
     open, // Circuit tripped, requests fail fast
     half_open, // Testing if service recovered

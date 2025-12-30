@@ -22,7 +22,7 @@ const ngx_http_request_t = http.ngx_http_request_t;
 const ngx_string = ngx.string.ngx_string;
 
 // ACME challenge types
-const acme_challenge_type = enum {
+const acme_challenge_type = enum(c_int) {
     http_01, // HTTP-01 challenge
     dns_01, // DNS-01 challenge
     tls_alpn_01, // TLS-ALPN-01 challenge

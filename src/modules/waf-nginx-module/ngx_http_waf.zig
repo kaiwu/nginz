@@ -22,7 +22,7 @@ const ngx_http_request_t = http.ngx_http_request_t;
 const ngx_string = ngx.string.ngx_string;
 
 // WAF rule categories
-const waf_rule_type = enum {
+const waf_rule_type = enum(c_int) {
     sqli, // SQL injection
     xss, // Cross-site scripting
     rce, // Remote code execution
@@ -31,7 +31,7 @@ const waf_rule_type = enum {
     custom, // Custom regex rules
 };
 
-const waf_action = enum {
+const waf_action = enum(c_int) {
     pass,
     block,
     log,

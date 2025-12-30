@@ -21,7 +21,7 @@ const ngx_http_module_t = http.ngx_http_module_t;
 const ngx_string = ngx.string.ngx_string;
 
 // Health check state
-const health_state = enum {
+const health_state = enum(c_int) {
     unknown,
     healthy,
     unhealthy,

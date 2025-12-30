@@ -22,7 +22,7 @@ const ngx_http_request_t = http.ngx_http_request_t;
 const ngx_string = ngx.string.ngx_string;
 
 // Routing strategy
-const canary_strategy = enum {
+const canary_strategy = enum(c_int) {
     percentage, // Random percentage-based
     header, // Header value match
     cookie, // Cookie value match

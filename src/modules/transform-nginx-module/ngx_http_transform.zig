@@ -22,7 +22,7 @@ const ngx_http_request_t = http.ngx_http_request_t;
 const ngx_string = ngx.string.ngx_string;
 
 // Transform type
-const transform_type = enum {
+const transform_type = enum(c_int) {
     json_to_json, // jq-like transformation
     xml_to_json,
     json_to_xml,
