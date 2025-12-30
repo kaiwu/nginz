@@ -14,6 +14,7 @@ var modules = [_][]const u8{
     "src/modules/echoz-nginx-module/ngx_http_echoz.zig",
     "src/modules/wechatpay-nginx-module/ngx_http_wechatpay.zig",
     "src/modules/pgrest-nginx-module/ngx_http_pgrest.zig",
+    "src/modules/hello-nginx-module/ngx_http_hello.zig",
 };
 
 var tests = [_][]const u8{
@@ -38,6 +39,7 @@ var tests = [_][]const u8{
     "src/modules/echoz-nginx-module/ngx_http_echoz.zig",
     "src/modules/wechatpay-nginx-module/ngx_http_wechatpay.zig",
     "src/modules/pgrest-nginx-module/ngx_http_pgrest.zig",
+    "src/modules/hello-nginx-module/ngx_http_hello.zig",
 };
 
 const PN = struct {
