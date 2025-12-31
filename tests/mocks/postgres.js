@@ -148,6 +148,8 @@ export class PostgresMock {
       if (query.match(pattern)) {
         const result = handler(query);
         this.sendQueryResult(socket, result.columns, result.rows);
+        // Send ReadyForQuery after custom handler
+        socket.write(Buffer.from([0x5a, 0, 0, 0, 5, 0x49]));
         return;
       }
     }

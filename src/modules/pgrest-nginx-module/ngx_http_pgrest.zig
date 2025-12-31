@@ -2203,7 +2203,11 @@ fn is_numeric(value: []const u8) bool {
 
 /// Extract table name from URI path
 /// URI format: /prefix/tablename or /tablename
-/// Returns the first path segment after any leading slash
+/// Returns the last non-empty path segment (the table name)
+/// Examples:
+///   /api/users -> users
+///   /users -> users
+///   /api/v1/products -> products
 fn extract_table_name(uri: ngx_str_t) ?[]const u8 {
     if (uri.len == 0 or uri.data == core.nullptr(u8)) {
         return null;
@@ -2211,23 +2215,25 @@ fn extract_table_name(uri: ngx_str_t) ?[]const u8 {
 
     const path = core.slicify(u8, uri.data, uri.len);
 
-    // Skip leading slash
-    var start: usize = 0;
-    if (path.len > 0 and path[0] == '/') {
-        start = 1;
+    // Find the last non-empty path segment
+    var end: usize = path.len;
+
+    // Skip trailing slashes
+    while (end > 0 and path[end - 1] == '/') {
+        end -= 1;
     }
 
-    if (start >= path.len) {
+    if (end == 0) {
         return null;
     }
 
-    // Find end of table name (next slash or end of string)
-    var end: usize = start;
-    while (end < path.len and path[end] != '/') {
-        end += 1;
+    // Find the start of the last segment (after the last slash)
+    var start: usize = end;
+    while (start > 0 and path[start - 1] != '/') {
+        start -= 1;
     }
 
-    if (end == start) {
+    if (start == end) {
         return null;
     }
 
