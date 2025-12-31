@@ -1,0 +1,288 @@
+/**
+ * Mock Redis server using RESP (Redis Serialization Protocol)
+ * Supports basic commands: PING, GET, SET, DEL, EXISTS, INCR, EXPIRE, TTL
+ */
+
+export class RedisMock {
+  constructor(port = 6379) {
+    this.port = port;
+    this.server = null;
+    this.store = new Map();
+    this.ttls = new Map();
+  }
+
+  start() {
+    this.server = Bun.listen({
+      hostname: "127.0.0.1",
+      port: this.port,
+      socket: {
+        data: (socket, data) => this.handleData(socket, data),
+        open: (socket) => {},
+        close: (socket) => {},
+        error: (socket, error) => console.error("Redis mock error:", error),
+      },
+    });
+    return this;
+  }
+
+  stop() {
+    if (this.server) {
+      this.server.stop();
+      this.server = null;
+    }
+    this.store.clear();
+    this.ttls.clear();
+  }
+
+  handleData(socket, data) {
+    const input = data.toString();
+    const lines = input.split("\r\n").filter((l) => l.length > 0);
+
+    try {
+      const response = this.parseAndExecute(lines);
+      socket.write(response);
+    } catch (err) {
+      socket.write(`-ERR ${err.message}\r\n`);
+    }
+  }
+
+  parseAndExecute(lines) {
+    if (lines.length === 0) return "+OK\r\n";
+
+    // Parse RESP array format: *<count>\r\n$<len>\r\n<data>\r\n...
+    let idx = 0;
+    const args = [];
+
+    if (lines[0].startsWith("*")) {
+      const count = parseInt(lines[0].slice(1));
+      idx = 1;
+      for (let i = 0; i < count && idx < lines.length; i++) {
+        if (lines[idx].startsWith("$")) {
+          idx++;
+          if (idx < lines.length) {
+            args.push(lines[idx]);
+            idx++;
+          }
+        }
+      }
+    } else {
+      // Inline command format
+      args.push(...lines[0].split(" "));
+    }
+
+    if (args.length === 0) return "+OK\r\n";
+
+    const cmd = args[0].toUpperCase();
+
+    switch (cmd) {
+      case "PING":
+        return args[1] ? `$${args[1].length}\r\n${args[1]}\r\n` : "+PONG\r\n";
+
+      case "ECHO":
+        if (args[1]) {
+          return `$${args[1].length}\r\n${args[1]}\r\n`;
+        }
+        return "-ERR wrong number of arguments for 'echo' command\r\n";
+
+      case "GET": {
+        const key = args[1];
+        if (!key) return "-ERR wrong number of arguments for 'get' command\r\n";
+        this.checkExpired(key);
+        const val = this.store.get(key);
+        if (val === undefined) return "$-1\r\n"; // null bulk string
+        return `$${val.length}\r\n${val}\r\n`;
+      }
+
+      case "SET": {
+        const key = args[1];
+        const val = args[2];
+        if (!key || val === undefined)
+          return "-ERR wrong number of arguments for 'set' command\r\n";
+        this.store.set(key, val);
+
+        // Handle EX/PX options
+        for (let i = 3; i < args.length; i++) {
+          const opt = args[i].toUpperCase();
+          if (opt === "EX" && args[i + 1]) {
+            const seconds = parseInt(args[i + 1]);
+            this.ttls.set(key, Date.now() + seconds * 1000);
+          } else if (opt === "PX" && args[i + 1]) {
+            const ms = parseInt(args[i + 1]);
+            this.ttls.set(key, Date.now() + ms);
+          }
+        }
+        return "+OK\r\n";
+      }
+
+      case "DEL": {
+        let count = 0;
+        for (let i = 1; i < args.length; i++) {
+          if (this.store.has(args[i])) {
+            this.store.delete(args[i]);
+            this.ttls.delete(args[i]);
+            count++;
+          }
+        }
+        return `:${count}\r\n`;
+      }
+
+      case "EXISTS": {
+        let count = 0;
+        for (let i = 1; i < args.length; i++) {
+          this.checkExpired(args[i]);
+          if (this.store.has(args[i])) count++;
+        }
+        return `:${count}\r\n`;
+      }
+
+      case "INCR": {
+        const key = args[1];
+        if (!key)
+          return "-ERR wrong number of arguments for 'incr' command\r\n";
+        this.checkExpired(key);
+        let val = this.store.get(key);
+        if (val === undefined) val = "0";
+        const num = parseInt(val);
+        if (isNaN(num))
+          return "-ERR value is not an integer or out of range\r\n";
+        const newVal = (num + 1).toString();
+        this.store.set(key, newVal);
+        return `:${num + 1}\r\n`;
+      }
+
+      case "DECR": {
+        const key = args[1];
+        if (!key)
+          return "-ERR wrong number of arguments for 'decr' command\r\n";
+        this.checkExpired(key);
+        let val = this.store.get(key);
+        if (val === undefined) val = "0";
+        const num = parseInt(val);
+        if (isNaN(num))
+          return "-ERR value is not an integer or out of range\r\n";
+        const newVal = (num - 1).toString();
+        this.store.set(key, newVal);
+        return `:${num - 1}\r\n`;
+      }
+
+      case "EXPIRE": {
+        const key = args[1];
+        const seconds = parseInt(args[2]);
+        if (!key || isNaN(seconds))
+          return "-ERR wrong number of arguments for 'expire' command\r\n";
+        if (!this.store.has(key)) return ":0\r\n";
+        this.ttls.set(key, Date.now() + seconds * 1000);
+        return ":1\r\n";
+      }
+
+      case "TTL": {
+        const key = args[1];
+        if (!key)
+          return "-ERR wrong number of arguments for 'ttl' command\r\n";
+        if (!this.store.has(key)) return ":-2\r\n"; // key doesn't exist
+        const expiry = this.ttls.get(key);
+        if (!expiry) return ":-1\r\n"; // no TTL
+        const remaining = Math.ceil((expiry - Date.now()) / 1000);
+        if (remaining <= 0) {
+          this.store.delete(key);
+          this.ttls.delete(key);
+          return ":-2\r\n";
+        }
+        return `:${remaining}\r\n`;
+      }
+
+      case "MGET": {
+        const keys = args.slice(1);
+        if (keys.length === 0)
+          return "-ERR wrong number of arguments for 'mget' command\r\n";
+        let response = `*${keys.length}\r\n`;
+        for (const key of keys) {
+          this.checkExpired(key);
+          const val = this.store.get(key);
+          if (val === undefined) {
+            response += "$-1\r\n";
+          } else {
+            response += `$${val.length}\r\n${val}\r\n`;
+          }
+        }
+        return response;
+      }
+
+      case "MSET": {
+        if (args.length < 3 || (args.length - 1) % 2 !== 0)
+          return "-ERR wrong number of arguments for 'mset' command\r\n";
+        for (let i = 1; i < args.length; i += 2) {
+          this.store.set(args[i], args[i + 1]);
+        }
+        return "+OK\r\n";
+      }
+
+      case "KEYS": {
+        const pattern = args[1] || "*";
+        const keys = [...this.store.keys()].filter((k) => {
+          this.checkExpired(k);
+          return this.store.has(k) && this.matchPattern(pattern, k);
+        });
+        let response = `*${keys.length}\r\n`;
+        for (const key of keys) {
+          response += `$${key.length}\r\n${key}\r\n`;
+        }
+        return response;
+      }
+
+      case "FLUSHDB":
+      case "FLUSHALL":
+        this.store.clear();
+        this.ttls.clear();
+        return "+OK\r\n";
+
+      case "INFO":
+        const info = "# Server\r\nredis_version:mock\r\n";
+        return `$${info.length}\r\n${info}\r\n`;
+
+      case "COMMAND":
+        return "*0\r\n";
+
+      case "QUIT":
+        return "+OK\r\n";
+
+      default:
+        return `-ERR unknown command '${cmd}'\r\n`;
+    }
+  }
+
+  checkExpired(key) {
+    const expiry = this.ttls.get(key);
+    if (expiry && Date.now() > expiry) {
+      this.store.delete(key);
+      this.ttls.delete(key);
+    }
+  }
+
+  matchPattern(pattern, str) {
+    if (pattern === "*") return true;
+    // Simple glob matching
+    const regex = new RegExp(
+      "^" + pattern.replace(/\*/g, ".*").replace(/\?/g, ".") + "$"
+    );
+    return regex.test(str);
+  }
+
+  // Helper methods for testing
+  setValue(key, value) {
+    this.store.set(key, value);
+  }
+
+  getValue(key) {
+    return this.store.get(key);
+  }
+
+  clear() {
+    this.store.clear();
+    this.ttls.clear();
+  }
+}
+
+export function createRedisMock(port = 6379) {
+  return new RedisMock(port).start();
+}
