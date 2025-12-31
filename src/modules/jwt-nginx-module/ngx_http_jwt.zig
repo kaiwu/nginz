@@ -82,7 +82,8 @@ fn ngx_conf_set_jwt_secret(
 ) callconv(.c) [*c]u8 {
     _ = cmd;
     if (core.castPtr(jwt_loc_conf, loc)) |lccf| {
-        if (ngx.array.ngx_array_next(ngx_str_t, cf.*.args, &@as(ngx_uint_t, 1))) |arg| {
+        var index: ngx_uint_t = 1;
+        if (ngx.array.ngx_array_next(ngx_str_t, cf.*.args, &index)) |arg| {
             lccf.*.secret = arg.*;
         }
     }

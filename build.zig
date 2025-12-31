@@ -11,10 +11,35 @@ const http_modules = @import("project/build_modules.zig");
 const NGINX = "src/ngx/nginx.zig";
 
 var modules = [_][]const u8{
+    // Core modules
+    "src/modules/hello-nginx-module/ngx_http_hello.zig",
     "src/modules/echoz-nginx-module/ngx_http_echoz.zig",
     "src/modules/wechatpay-nginx-module/ngx_http_wechatpay.zig",
+
+    // Data Storage & Upstream Modules
     "src/modules/pgrest-nginx-module/ngx_http_pgrest.zig",
-    "src/modules/hello-nginx-module/ngx_http_hello.zig",
+    "src/modules/redis-nginx-module/ngx_http_redis.zig",
+    "src/modules/consul-nginx-module/ngx_http_consul.zig",
+
+    // Security & Auth Modules
+    "src/modules/jwt-nginx-module/ngx_http_jwt.zig",
+    "src/modules/oidc-nginx-module/ngx_http_oidc.zig",
+    "src/modules/waf-nginx-module/ngx_http_waf.zig",
+    "src/modules/acme-nginx-module/ngx_http_acme.zig",
+    "src/modules/jsonschema-nginx-module/ngx_http_jsonschema.zig",
+
+    // Traffic Management Modules
+    "src/modules/healthcheck-nginx-module/ngx_http_healthcheck.zig",
+    "src/modules/canary-nginx-module/ngx_http_canary.zig",
+    "src/modules/ratelimit-nginx-module/ngx_http_ratelimit.zig",
+    "src/modules/requestid-nginx-module/ngx_http_requestid.zig",
+    "src/modules/circuit-breaker-nginx-module/ngx_http_circuit_breaker.zig",
+
+    // Advanced Processing Modules
+    "src/modules/graphql-nginx-module/ngx_http_graphql.zig",
+    "src/modules/transform-nginx-module/ngx_http_transform.zig",
+    "src/modules/cache-tags-nginx-module/ngx_http_cache_tags.zig",
+    "src/modules/prometheus-nginx-module/ngx_http_prometheus.zig",
 };
 
 var tests = [_][]const u8{
@@ -36,10 +61,27 @@ var tests = [_][]const u8{
     "src/ngx/ngx_rbtree.zig",
     "src/ngx/ngx_string.zig",
 
+    // Add all module test files
+    "src/modules/hello-nginx-module/ngx_http_hello.zig",
     "src/modules/echoz-nginx-module/ngx_http_echoz.zig",
     "src/modules/wechatpay-nginx-module/ngx_http_wechatpay.zig",
     "src/modules/pgrest-nginx-module/ngx_http_pgrest.zig",
-    "src/modules/hello-nginx-module/ngx_http_hello.zig",
+    "src/modules/redis-nginx-module/ngx_http_redis.zig",
+    "src/modules/consul-nginx-module/ngx_http_consul.zig",
+    "src/modules/jwt-nginx-module/ngx_http_jwt.zig",
+    "src/modules/oidc-nginx-module/ngx_http_oidc.zig",
+    "src/modules/waf-nginx-module/ngx_http_waf.zig",
+    "src/modules/acme-nginx-module/ngx_http_acme.zig",
+    "src/modules/jsonschema-nginx-module/ngx_http_jsonschema.zig",
+    "src/modules/healthcheck-nginx-module/ngx_http_healthcheck.zig",
+    "src/modules/canary-nginx-module/ngx_http_canary.zig",
+    "src/modules/ratelimit-nginx-module/ngx_http_ratelimit.zig",
+    "src/modules/requestid-nginx-module/ngx_http_requestid.zig",
+    "src/modules/circuit-breaker-nginx-module/ngx_http_circuit_breaker.zig",
+    "src/modules/graphql-nginx-module/ngx_http_graphql.zig",
+    "src/modules/transform-nginx-module/ngx_http_transform.zig",
+    "src/modules/cache-tags-nginx-module/ngx_http_cache_tags.zig",
+    "src/modules/prometheus-nginx-module/ngx_http_prometheus.zig",
 };
 
 const PN = struct {
