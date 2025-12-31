@@ -88,6 +88,7 @@ const newline_str: ngx_str_t = ngx_string("\n");
 
 const echoz_context = extern struct {
     chain: NChain,
+    header_sent: ngx_flag_t,
     content_ready: ngx_flag_t,
     iterator: NArray(echoz_command).IteratorType,
 };
@@ -206,8 +207,9 @@ fn atoz(s: [*c]ngx_str_t) ZError!ngx_uint_t {
 
 fn send_header(
     r: [*c]ngx_http_request_t,
+    ctx: [*c]echoz_context,
 ) ZError!void {
-    if (!r.*.flags1.header_sent) {
+    if (ctx.*.header_sent == 0) {
         r.*.headers_out.status = http.NGX_HTTP_OK;
         http.ngx_http_clear_content_length(r);
         http.ngx_http_clear_accept_ranges(r);
@@ -215,14 +217,16 @@ fn send_header(
         if (http.ngx_http_send_header(r) != NGX_OK) {
             return ZError.HEADER_ERROR;
         }
+        ctx.*.header_sent = 1;
     }
 }
 
 fn send_body(
     r: [*c]ngx_http_request_t,
+    ctx: [*c]echoz_context,
     chain: [*c]ngx_chain_t,
 ) ZError!void {
-    try send_header(r);
+    try send_header(r, ctx);
     if (chain != core.nullptr(ngx_chain_t)) {
         if (http.ngx_http_output_filter(r, chain) != NGX_OK) {
             return ZError.BODY_ERROR;
@@ -384,17 +388,18 @@ fn echoz_handle(r: [*c]ngx_http_request_t) !ngx_int_t {
         if (ctx.*.content_ready == 0) {
             ctx.*.iterator = lccf.*.content_handlers.iterator();
             ctx.*.chain = NChain.init(r.*.pool);
+            ctx.*.header_sent = 0;
             ctx.*.content_ready = 1;
         }
 
         while (ctx.*.iterator.next()) |cmd| {
             try echoz_exec_command(cmd, ctx, r, &out);
             if (out.next != core.nullptr(ngx_chain_t)) {
-                try send_body(r, out.next);
+                try send_body(r, ctx, out.next);
                 out.next = core.nullptr(ngx_chain_t);
             }
         }
-        try send_body(r, out.next);
+        try send_body(r, ctx, out.next);
     }
     return NGX_OK;
 }
