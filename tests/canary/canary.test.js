@@ -29,13 +29,12 @@ describe("canary module", () => {
     );
 
     // Configure responses to identify which upstream handled the request
-    stableUpstream.get("/", { body: { version: "stable", v: "1.0.0" } });
-    stableUpstream.get("/api/*", (req, url) => ({
+    // Use catch-all pattern to handle all paths
+    stableUpstream.get("/*", (req, url) => ({
       body: { version: "stable", path: url.pathname },
     }));
 
-    canaryUpstream.get("/", { body: { version: "canary", v: "1.1.0-beta" } });
-    canaryUpstream.get("/api/*", (req, url) => ({
+    canaryUpstream.get("/*", (req, url) => ({
       body: { version: "canary", path: url.pathname },
     }));
 
@@ -48,59 +47,130 @@ describe("canary module", () => {
     cleanupRuntime(MODULE);
   });
 
-  test("placeholder - module not implemented", async () => {
-    const res = await fetch(`${TEST_URL}/`);
-    expect(res.status).toBe(200);
-    const body = await res.text();
-    expect(body).toContain("canary");
+  describe("percentage-based routing", () => {
+    test("routes traffic to both stable and canary", async () => {
+      const versions = { stable: 0, canary: 0 };
+
+      // Make 100 requests to get a statistical distribution
+      for (let i = 0; i < 100; i++) {
+        const res = await fetch(`${TEST_URL}/api/test`);
+        const body = await res.json();
+        versions[body.version]++;
+      }
+
+      // With 10% canary, expect roughly 90 stable, 10 canary
+      // Allow some variance due to randomness
+      expect(versions.stable).toBeGreaterThan(70);
+      expect(versions.canary).toBeGreaterThan(2);
+      expect(versions.canary).toBeLessThan(30);
+    });
+
+    test("maintains statistical distribution over many requests", async () => {
+      const versions = { stable: 0, canary: 0 };
+
+      for (let i = 0; i < 200; i++) {
+        const res = await fetch(`${TEST_URL}/api/test`);
+        const body = await res.json();
+        versions[body.version]++;
+      }
+
+      // Canary percentage should be roughly 10% (allow 3-25% range)
+      const canaryPct = (versions.canary / 200) * 100;
+      expect(canaryPct).toBeGreaterThan(3);
+      expect(canaryPct).toBeLessThan(25);
+    });
   });
 
-  // Tests to enable when canary module is implemented:
-  //
-  // test("routes majority of traffic to stable", async () => {
-  //   const versions = { stable: 0, canary: 0 };
-  //
-  //   for (let i = 0; i < 100; i++) {
-  //     const res = await fetch(`${TEST_URL}/api/test`);
-  //     const body = await res.json();
-  //     versions[body.version]++;
-  //   }
-  //
-  //   // With 10% canary, expect roughly 90 stable, 10 canary
-  //   expect(versions.stable).toBeGreaterThan(80);
-  //   expect(versions.canary).toBeGreaterThan(5);
-  //   expect(versions.canary).toBeLessThan(20);
-  // });
-  //
-  // test("routes canary header traffic to canary", async () => {
-  //   const res = await fetch(`${TEST_URL}/api/test`, {
-  //     headers: { "X-Canary": "true" },
-  //   });
-  //   const body = await res.json();
-  //   expect(body.version).toBe("canary");
-  // });
-  //
-  // test("routes canary cookie traffic to canary", async () => {
-  //   const res = await fetch(`${TEST_URL}/api/test`, {
-  //     headers: { Cookie: "canary=1" },
-  //   });
-  //   const body = await res.json();
-  //   expect(body.version).toBe("canary");
-  // });
-  //
-  // test("sticky sessions maintain routing", async () => {
-  //   // First request gets assigned to a version
-  //   const res1 = await fetch(`${TEST_URL}/api/test`);
-  //   const body1 = await res1.json();
-  //   const sessionCookie = res1.headers.get("set-cookie");
-  //
-  //   // Subsequent requests with cookie should go to same version
-  //   for (let i = 0; i < 5; i++) {
-  //     const res = await fetch(`${TEST_URL}/api/test`, {
-  //       headers: { Cookie: sessionCookie },
-  //     });
-  //     const body = await res.json();
-  //     expect(body.version).toBe(body1.version);
-  //   }
-  // });
+  describe("header-based routing", () => {
+    test("routes to canary when X-Canary header is true", async () => {
+      const res = await fetch(`${TEST_URL}/api-header/test`, {
+        headers: { "X-Canary": "true" },
+      });
+      const body = await res.json();
+      expect(body.version).toBe("canary");
+    });
+
+    test("routes to stable when X-Canary header is absent", async () => {
+      const res = await fetch(`${TEST_URL}/api-header/test`);
+      const body = await res.json();
+      expect(body.version).toBe("stable");
+    });
+
+    test("routes to stable when X-Canary header has wrong value", async () => {
+      const res = await fetch(`${TEST_URL}/api-header/test`, {
+        headers: { "X-Canary": "false" },
+      });
+      const body = await res.json();
+      expect(body.version).toBe("stable");
+    });
+
+    test("header matching is case-insensitive", async () => {
+      const res = await fetch(`${TEST_URL}/api-header/test`, {
+        headers: { "x-canary": "TRUE" },
+      });
+      const body = await res.json();
+      expect(body.version).toBe("canary");
+    });
+  });
+
+  describe("combined header + percentage", () => {
+    test("header takes priority over percentage", async () => {
+      // With header, should always go to canary
+      for (let i = 0; i < 10; i++) {
+        const res = await fetch(`${TEST_URL}/api-combined/test`, {
+          headers: { "X-Canary": "true" },
+        });
+        const body = await res.json();
+        expect(body.version).toBe("canary");
+      }
+    });
+
+    test("falls back to percentage when header absent", async () => {
+      const versions = { stable: 0, canary: 0 };
+
+      for (let i = 0; i < 100; i++) {
+        const res = await fetch(`${TEST_URL}/api-combined/test`);
+        const body = await res.json();
+        versions[body.version]++;
+      }
+
+      // Should see both versions (percentage fallback working)
+      expect(versions.stable).toBeGreaterThan(70);
+      expect(versions.canary).toBeGreaterThan(2);
+    });
+  });
+
+  describe("disabled location", () => {
+    test("always routes to stable when canary not enabled", async () => {
+      for (let i = 0; i < 20; i++) {
+        const res = await fetch(`${TEST_URL}/api-disabled/test`);
+        const body = await res.json();
+        expect(body.version).toBe("stable");
+      }
+    });
+  });
+
+  describe("$ngz_canary variable", () => {
+    test("variable returns 0 or 1", async () => {
+      const res = await fetch(`${TEST_URL}/debug`);
+      const body = await res.text();
+      expect(body).toMatch(/^canary=[01]\n$/);
+    });
+
+    test("variable distribution matches percentage", async () => {
+      let canaryCount = 0;
+
+      for (let i = 0; i < 100; i++) {
+        const res = await fetch(`${TEST_URL}/debug`);
+        const body = await res.text();
+        if (body === "canary=1\n") {
+          canaryCount++;
+        }
+      }
+
+      // 50% canary, expect roughly 40-60%
+      expect(canaryCount).toBeGreaterThan(30);
+      expect(canaryCount).toBeLessThan(70);
+    });
+  });
 });

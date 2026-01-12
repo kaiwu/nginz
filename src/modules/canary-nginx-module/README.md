@@ -4,101 +4,131 @@ Traffic splitting for canary deployments and A/B testing.
 
 ### Status
 
-**Not Implemented** - Skeleton only
+**Implemented** - Core functionality complete
 
-### Planned Features
+### Features
 
-- **Percentage-Based**: Route N% of traffic to canary upstream
-- **Header Routing**: Route based on specific header values
-- **Cookie Routing**: Route based on cookie values (sticky sessions)
-- **Weighted Upstreams**: Weighted distribution across multiple upstreams
-- **Gradual Rollout**: Automatically increase canary percentage
-- **Metrics Export**: Track traffic split for monitoring
+- **Percentage-Based Routing**: Route N% of traffic to canary upstream
+- **Header-Based Routing**: Route based on specific header values (e.g., X-Canary: true)
+- **Priority System**: Header match takes priority over percentage
+- **Variable Export**: `$ngz_canary` variable for use in configs and logs
 
-### Planned Directives
+### Directives
 
 #### canary
 
-*syntax:* `canary on|off;`  
-*default:* `canary off;`  
+*syntax:* `canary;`
+*default:* disabled
 *context:* `location`
 
-Enable canary routing.
+Enable canary routing for this location.
 
 #### canary_percentage
 
-*syntax:* `canary_percentage <0-100>;`  
+*syntax:* `canary_percentage <0-100>;`
+*default:* `0`
 *context:* `location`
 
-Percentage of traffic to route to canary upstream.
+Percentage of traffic to route to canary. Uses cryptographically secure random number generation.
 
 #### canary_header
 
-*syntax:* `canary_header <name> <value>;`  
+*syntax:* `canary_header <name> <value>;`
+*default:* none
 *context:* `location`
 
-Route to canary when header matches value.
+Route to canary when request header matches value (case-insensitive). This takes priority over percentage-based routing.
 
-#### canary_cookie
+### Variables
 
-*syntax:* `canary_cookie <name> <value>;`  
-*context:* `location`
+#### $ngz_canary
 
-Route to canary when cookie matches value.
+Returns `"1"` if the request should be routed to canary, `"0"` otherwise.
 
-#### canary_upstream
+Use with nginx `map` directive for clean upstream selection.
 
-*syntax:* `canary_upstream <upstream_name>;`  
-*context:* `location`
-
-Upstream to use for canary traffic.
-
-### Planned Usage
+### Usage
 
 ```nginx
-upstream stable {
-    server 10.0.0.1:8080;
-    server 10.0.0.2:8080;
-}
-
-upstream canary {
-    server 10.0.1.1:8080;
-}
-
-server {
-    # Percentage-based canary
-    location /api {
-        canary on;
-        canary_percentage 10;  # 10% to canary
-        canary_upstream canary;
-        
-        proxy_pass http://stable;
+http {
+    # Define upstreams
+    upstream stable {
+        server 10.0.0.1:8080;
+        server 10.0.0.2:8080;
     }
-    
-    # Header-based routing (for testers)
-    location /api/v2 {
-        canary on;
-        canary_header X-Canary true;
-        canary_upstream canary;
-        
-        proxy_pass http://stable;
+
+    upstream canary {
+        server 10.0.1.1:8080;
     }
-    
-    # Cookie-based sticky routing
-    location /app {
-        canary on;
-        canary_cookie beta_user 1;
-        canary_upstream canary;
-        
-        proxy_pass http://stable;
+
+    # Map canary decision to backend
+    map $ngz_canary $backend {
+        "1"     canary;
+        default stable;
+    }
+
+    server {
+        # Percentage-based canary (10% to canary)
+        location /api {
+            canary;
+            canary_percentage 10;
+            proxy_pass http://$backend;
+        }
+
+        # Header-based routing (for testers/developers)
+        location /api/v2 {
+            canary;
+            canary_header X-Canary true;
+            proxy_pass http://$backend;
+        }
+
+        # Combined: header override + percentage fallback
+        location /app {
+            canary;
+            canary_percentage 5;
+            canary_header X-Beta-Tester yes;
+            proxy_pass http://$backend;
+        }
     }
 }
 ```
 
-### Variables
+### How It Works
 
-- `$canary_routed` - "1" if request routed to canary, "0" otherwise
-- `$canary_upstream` - Name of upstream used
+1. **Request arrives** at a location with `canary` enabled
+2. **Header check** (if configured): If the specified header matches, route to canary
+3. **Percentage check** (if configured): Generate random number, route to canary if below threshold
+4. **Variable set**: `$ngz_canary` is set to "1" (canary) or "0" (stable)
+5. **Upstream selection**: Use `map` directive to select upstream based on variable
+
+### Use Cases
+
+**Gradual Rollout**
+```nginx
+canary;
+canary_percentage 5;   # Start with 5%
+# Later increase to 10%, 25%, 50%, 100%
+```
+
+**Developer Testing**
+```nginx
+canary;
+canary_header X-Canary true;
+# Developers add header to test new version
+```
+
+**A/B Testing**
+```nginx
+canary;
+canary_percentage 50;  # 50/50 split
+# Track metrics per version
+```
+
+### Future Enhancements
+
+- **Cookie-Based Routing**: Route based on cookie values (sticky sessions)
+- **Weighted Upstreams**: Weighted distribution across multiple upstreams
+- **Metrics Export**: Track traffic split for monitoring
 
 ### References
 

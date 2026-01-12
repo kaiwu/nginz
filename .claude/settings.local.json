@@ -4,7 +4,10 @@
       "Bash(git describe:*)",
       "Bash(wc:*)",
       "Bash(zig build:*)",
-      "Bash(bun test:*)"
+      "Bash(bun test:*)",
+      "Bash(for mod in prometheus canary circuit-breaker ratelimit healthcheck)",
+      "Bash(do echo '=== $mod ===' f=src/modules/$mod-nginx-module if [ -d $f ])",
+      "Bash(then wc -l $f/*.zig)"
     ]
   }
 }
