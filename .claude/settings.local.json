@@ -7,7 +7,8 @@
       "Bash(bun test:*)",
       "Bash(for mod in prometheus canary circuit-breaker ratelimit healthcheck)",
       "Bash(do echo '=== $mod ===' f=src/modules/$mod-nginx-module if [ -d $f ])",
-      "Bash(then wc -l $f/*.zig)"
+      "Bash(then wc -l $f/*.zig)",
+      "Bash(for mod in jwt healthcheck ratelimit redis circuit-breaker waf acme oidc graphql jsonschema transform consul cache-tags)"
     ]
   }
 }

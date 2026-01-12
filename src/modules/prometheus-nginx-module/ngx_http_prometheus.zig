@@ -293,6 +293,7 @@ export var ngx_http_prometheus_module = ngx.module.make_module(
 
 // Tests
 const expectEqual = std.testing.expectEqual;
+const expectEqualStrings = std.testing.expectEqualStrings;
 
 test "prometheus module" {
     try expectEqual(ngx_http_prometheus_module.version, 1027004);
@@ -300,7 +301,7 @@ test "prometheus module" {
 
 test "formatU64" {
     var buf: [20]u8 = undefined;
-    try expectEqual(formatU64(&buf, 0), "0");
-    try expectEqual(formatU64(&buf, 123), "123");
-    try expectEqual(formatU64(&buf, 9999999), "9999999");
+    try expectEqualStrings("0", formatU64(&buf, 0));
+    try expectEqualStrings("123", formatU64(&buf, 123));
+    try expectEqualStrings("9999999", formatU64(&buf, 9999999));
 }
