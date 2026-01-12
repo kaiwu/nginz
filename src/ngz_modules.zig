@@ -79,6 +79,8 @@ extern var ngx_http_headers_filter_module: ngx_module_t;
 extern var ngx_http_copy_filter_module: ngx_module_t;
 extern var ngx_http_range_body_filter_module: ngx_module_t;
 extern var ngx_http_not_modified_filter_module: ngx_module_t;
+extern var ngx_http_echoz_filter_module: ngx_module_t;
+extern var ngx_http_wechatpay_filter_module: ngx_module_t;
 
 // NJS Modules
 extern var ngx_http_js_module: ngx_module_t;
@@ -102,7 +104,7 @@ extern var ngx_http_jsonschema_module: ngx_module_t;
 extern var ngx_http_healthcheck_module: ngx_module_t;
 extern var ngx_http_canary_module: ngx_module_t;
 extern var ngx_http_ratelimit_module: ngx_module_t;
-extern var ngx_http_requestid_module: ngx_module_t;
+extern var ngx_http_requestid_filter_module: ngx_module_t;
 extern var ngx_http_circuit_breaker_module: ngx_module_t;
 
 // Advanced Processing Modules
@@ -198,7 +200,6 @@ export const ngx_modules = [_][*c]ngx_module_t{
     &ngx_http_healthcheck_module,
     &ngx_http_canary_module,
     // &ngx_http_ratelimit_module,
-    &ngx_http_requestid_module,
     &ngx_http_circuit_breaker_module,
 
     // Advanced Processing
@@ -218,6 +219,11 @@ export const ngx_modules = [_][*c]ngx_module_t{
     &ngx_http_charset_filter_module,
     &ngx_http_xslt_filter_module,
     &ngx_http_userid_filter_module,
+
+    &ngx_http_echoz_filter_module,
+    &ngx_http_wechatpay_filter_module,
+    &ngx_http_requestid_filter_module,
+
     &ngx_http_headers_filter_module,
 
     // More Filter Modules
@@ -287,7 +293,6 @@ export const ngx_module_names = [_][*c]const u8{
     "ngx_http_healthcheck_module",
     "ngx_http_canary_module",
     // "ngx_http_ratelimit_module",
-    "ngx_http_requestid_module",
     "ngx_http_circuit_breaker_module",
     "ngx_http_graphql_module",
     "ngx_http_transform_module",
@@ -303,6 +308,11 @@ export const ngx_module_names = [_][*c]const u8{
     "ngx_http_charset_filter_module",
     "ngx_http_xslt_filter_module",
     "ngx_http_userid_filter_module",
+
+    "ngx_http_echoz_filter_module",
+    "ngx_http_wechatpay_filter_module",
+    "ngx_http_requestid_filter_module",
+
     "ngx_http_headers_filter_module",
     "ngx_http_copy_filter_module",
     "ngx_http_range_body_filter_module",
