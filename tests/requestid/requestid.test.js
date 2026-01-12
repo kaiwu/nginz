@@ -100,6 +100,39 @@ describe("requestid module", () => {
     });
   });
 
+  describe("$ngz_request_id variable", () => {
+    test("variable contains the request ID", async () => {
+      const res = await fetch(`${TEST_URL}/variable-test`);
+      expect(res.status).toBe(200);
+
+      const body = await res.text();
+      const requestId = res.headers.get("X-Request-ID");
+
+      // Body should contain "id:<request-id>"
+      expect(body).toBe(`id:${requestId}\n`);
+    });
+
+    test("variable matches UUID4 format", async () => {
+      const res = await fetch(`${TEST_URL}/variable-test`);
+      const body = await res.text();
+
+      // Extract ID from body "id:<uuid>\n"
+      const idFromBody = body.slice(3, -1);
+      expect(idFromBody).toMatch(UUID4_PATTERN);
+    });
+
+    test("variable propagates incoming header", async () => {
+      const incomingId = "propagated-via-variable-123";
+      const res = await fetch(`${TEST_URL}/variable-test`, {
+        headers: { "X-Request-ID": incomingId },
+      });
+      expect(res.status).toBe(200);
+
+      const body = await res.text();
+      expect(body).toBe(`id:${incomingId}\n`);
+    });
+  });
+
   describe("UUID4 format validation", () => {
     test("version nibble is 4", async () => {
       const res = await fetch(`${TEST_URL}/return-test`);

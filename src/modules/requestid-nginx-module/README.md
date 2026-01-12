@@ -4,97 +4,123 @@ Generate and propagate unique request IDs for distributed tracing.
 
 ### Status
 
-**Not Implemented** - Skeleton only
+**Implemented** - Core functionality complete
 
-### Planned Features
+### Features
 
-- **ID Generation**: UUID v4, UUID v7, ULID, Snowflake, custom formats
-- **ID Propagation**: Accept incoming ID or generate new one
-- **Header Support**: Configurable header name (X-Request-ID, X-Correlation-ID)
-- **Response Header**: Optionally add ID to response headers
-- **Logging Integration**: Available as nginx variable for logging
-- **Upstream Propagation**: Automatically forward to backend
+- **UUID4 Generation**: Cryptographically random UUID v4 identifiers
+- **ID Propagation**: Accept incoming X-Request-ID header or generate new one
+- **Custom Header Name**: Configurable header name (default: X-Request-ID)
+- **Response Header**: Add ID to response headers (enabled by default)
+- **Case-Insensitive Matching**: Incoming headers matched case-insensitively
 
-### Planned Directives
+### Directives
 
 #### request_id
 
-*syntax:* `request_id on|off;`  
-*default:* `request_id off;`  
+*syntax:* `request_id;`
+*default:* disabled
 *context:* `location`
 
-Enable request ID generation/propagation.
+Enable request ID generation/propagation for this location. When enabled, the module will:
+1. Check for an incoming request ID header
+2. If found, propagate it to the response
+3. If not found, generate a new UUID4
 
 #### request_id_header
 
-*syntax:* `request_id_header <name>;`  
-*default:* `request_id_header X-Request-ID;`  
+*syntax:* `request_id_header <name>;`
+*default:* `X-Request-ID`
 *context:* `location`
 
-Header name to use for request ID.
-
-#### request_id_format
-
-*syntax:* `request_id_format uuid4|uuid7|ulid|snowflake;`  
-*default:* `request_id_format uuid4;`  
-*context:* `location`
-
-Format for generated request IDs.
+Header name to use for request ID (both incoming and outgoing).
 
 #### request_id_response
 
-*syntax:* `request_id_response on|off;`  
-*default:* `request_id_response on;`  
+*syntax:* `request_id_response on|off;`
+*default:* `on`
 *context:* `location`
 
-Add request ID to response headers.
+Whether to add the request ID to response headers.
 
-### Planned Usage
+### Variables
+
+#### $ngz_request_id
+
+The request ID for the current request. Returns either:
+- The incoming `X-Request-ID` header value (if provided by client)
+- A newly generated UUID4 (if no incoming header)
+
+Use this variable for logging or upstream propagation.
+
+### Usage
 
 ```nginx
 http {
     # Log format with request ID
-    log_format traced '$remote_addr - $request_id - $request';
-    
+    log_format traced '$remote_addr - $ngz_request_id - $status "$request"';
+
     server {
         access_log /var/log/nginx/access.log traced;
-        
+
+        # Basic usage - generates UUID4 and adds X-Request-ID to response
         location /api {
-            request_id on;
-            request_id_header X-Request-ID;
-            request_id_format uuid4;
-            request_id_response on;
-            
-            # Forward to backend
-            proxy_set_header X-Request-ID $request_id;
+            request_id;
             proxy_pass http://backend;
+        }
+
+        # Forward request ID to upstream
+        location /backend {
+            request_id;
+            proxy_set_header X-Request-ID $ngz_request_id;
+            proxy_pass http://backend;
+        }
+
+        # Custom header name
+        location /traced {
+            request_id;
+            request_id_header X-Correlation-ID;
+            proxy_pass http://backend;
+        }
+
+        # Disable response header (internal tracking only)
+        location /internal {
+            request_id;
+            request_id_response off;
+            proxy_pass http://backend;
+        }
+
+        # Return request ID in response body
+        location /debug {
+            request_id;
+            return 200 "Your request ID: $ngz_request_id\n";
         }
     }
 }
 ```
 
-### Variables
+### How It Works
 
-- `$request_id` - The request ID (generated or from incoming header)
+1. **Incoming Request**: If the client sends an `X-Request-ID` header, the module preserves and propagates it
+2. **No Incoming ID**: The module generates a new UUID4 (e.g., `550e8400-e29b-41d4-a716-446655440000`)
+3. **Response**: The ID is added to response headers (unless `request_id_response off`)
 
-### Example IDs
+This enables end-to-end request tracing across your infrastructure. The same ID can be logged by nginx and forwarded to upstream services.
 
-```
-# UUID v4
-550e8400-e29b-41d4-a716-446655440000
+### UUID4 Format
 
-# UUID v7
-0188a6d3-7c00-7000-8000-000000000000
+Generated IDs follow RFC 4122 UUID version 4:
+- 36 characters: `xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx`
+- Version nibble (position 14): always `4`
+- Variant nibble (position 19): `8`, `9`, `a`, or `b`
+- Uses cryptographically secure random bytes (Zig's `std.crypto.random`)
 
-# ULID
-01ARZ3NDEKTSV4RRFFQ69G5FAV
+### Future Enhancements
 
-# Snowflake
-1234567890123456789
-```
+- **Additional Formats**: UUID v7, ULID, Snowflake, custom formats
+- **Validation**: Validate incoming ID format to prevent log injection
 
 ### References
 
 - [OpenTelemetry Trace Context](https://www.w3.org/TR/trace-context/)
 - [RFC 4122 - UUID](https://tools.ietf.org/html/rfc4122)
-- [ULID Spec](https://github.com/ulid/spec)

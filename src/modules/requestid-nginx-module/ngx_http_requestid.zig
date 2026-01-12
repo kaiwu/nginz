@@ -293,22 +293,25 @@ fn merge_loc_conf(
 }
 
 fn postconfiguration(cf: [*c]ngx_conf_t) callconv(.c) ngx_int_t {
+    // Register $ngz_request_id variable
+    var vs = [_]http.ngx_http_variable_t{http.ngx_http_variable_t{
+        .name = ngx_string("ngz_request_id"),
+        .set_handler = null,
+        .get_handler = ngx_http_requestid_variable,
+        .data = 0,
+        .flags = http.NGX_HTTP_VAR_NOCACHEABLE,
+        .index = 0,
+    }};
+    for (&vs) |*v| {
+        if (http.ngx_http_add_variable(cf, &v.name, v.flags)) |x| {
+            x.*.get_handler = v.get_handler;
+            x.*.data = v.data;
+        }
+    }
+
     // Install header filter
-    // Note: We don't register $request_id variable because nginx has a built-in one.
-    // Our module's value is propagating incoming X-Request-ID headers and adding them to responses.
-    ngx.log.ngz_log_error(ngx.log.NGX_LOG_NOTICE, cf.*.log, 0, "requestid: postconfiguration top_header_filter=%p our_filter=%p", .{
-        @intFromPtr(http.ngx_http_top_header_filter),
-        @intFromPtr(&ngx_http_requestid_header_filter),
-    });
     ngx_http_requestid_next_header_filter = http.ngx_http_top_header_filter;
     http.ngx_http_top_header_filter = ngx_http_requestid_header_filter;
-    ngx.log.ngz_log_error(
-        ngx.log.NGX_LOG_NOTICE,
-        cf.*.log,
-        0,
-        "requestid: after install top_header_filter=%p",
-        .{@intFromPtr(http.ngx_http_top_header_filter)},
-    );
 
     return NGX_OK;
 }
