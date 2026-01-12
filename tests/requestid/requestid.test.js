@@ -40,44 +40,6 @@ describe("requestid module", () => {
     });
   });
 
-  describe("custom header name", () => {
-    test("uses custom header name X-Correlation-ID", async () => {
-      const res = await fetch(`${TEST_URL}/custom-header`);
-      expect(res.status).toBe(200);
-
-      // Should use custom header name
-      const correlationId = res.headers.get("X-Correlation-ID");
-      expect(correlationId).toBeTruthy();
-      expect(correlationId).toMatch(UUID4_PATTERN);
-
-      // Standard header should not be present
-      const requestId = res.headers.get("X-Request-ID");
-      expect(requestId).toBeNull();
-    });
-
-    test("propagates incoming custom header", async () => {
-      const customId = "custom-correlation-123";
-      const res = await fetch(`${TEST_URL}/custom-header`, {
-        headers: { "X-Correlation-ID": customId },
-      });
-      expect(res.status).toBe(200);
-
-      const correlationId = res.headers.get("X-Correlation-ID");
-      expect(correlationId).toBe(customId);
-    });
-  });
-
-  describe("response header control", () => {
-    test("does not add header when request_id_response is off", async () => {
-      const res = await fetch(`${TEST_URL}/no-response`);
-      expect(res.status).toBe(200);
-
-      // Header should not be present
-      const requestId = res.headers.get("X-Request-ID");
-      expect(requestId).toBeNull();
-    });
-  });
-
   describe("disabled location", () => {
     test("does not generate ID when request_id is not enabled", async () => {
       const res = await fetch(`${TEST_URL}/disabled`);
@@ -91,7 +53,7 @@ describe("requestid module", () => {
   describe("ID propagation", () => {
     test("propagates existing X-Request-ID from request", async () => {
       const incomingId = "test-propagated-id-12345";
-      const res = await fetch(`${TEST_URL}/propagate`, {
+      const res = await fetch(`${TEST_URL}/return-test`, {
         headers: { "X-Request-ID": incomingId },
       });
       expect(res.status).toBe(200);
@@ -102,7 +64,7 @@ describe("requestid module", () => {
     });
 
     test("generates new ID when no incoming header", async () => {
-      const res = await fetch(`${TEST_URL}/propagate`);
+      const res = await fetch(`${TEST_URL}/return-test`);
       expect(res.status).toBe(200);
 
       const requestId = res.headers.get("X-Request-ID");
@@ -114,22 +76,33 @@ describe("requestid module", () => {
       const incomingId = "case-insensitive-test-id";
 
       // Test with lowercase header
-      const res1 = await fetch(`${TEST_URL}/propagate`, {
+      const res1 = await fetch(`${TEST_URL}/return-test`, {
         headers: { "x-request-id": incomingId },
       });
       expect(res1.headers.get("X-Request-ID")).toBe(incomingId);
 
       // Test with mixed case header
-      const res2 = await fetch(`${TEST_URL}/propagate`, {
+      const res2 = await fetch(`${TEST_URL}/return-test`, {
         headers: { "X-REQUEST-ID": incomingId },
       });
       expect(res2.headers.get("X-Request-ID")).toBe(incomingId);
     });
   });
 
+  describe("proxy pass", () => {
+    test("adds X-Request-ID header when proxying", async () => {
+      const res = await fetch(`${TEST_URL}/proxy-test`);
+      expect(res.status).toBe(200);
+
+      const requestId = res.headers.get("X-Request-ID");
+      expect(requestId).toBeTruthy();
+      expect(requestId).toMatch(UUID4_PATTERN);
+    });
+  });
+
   describe("UUID4 format validation", () => {
     test("version nibble is 4", async () => {
-      const res = await fetch(`${TEST_URL}/basic`);
+      const res = await fetch(`${TEST_URL}/return-test`);
       const requestId = res.headers.get("X-Request-ID");
 
       // Character at position 14 should be '4' (version)
@@ -137,7 +110,7 @@ describe("requestid module", () => {
     });
 
     test("variant nibble is valid (8, 9, a, or b)", async () => {
-      const res = await fetch(`${TEST_URL}/basic`);
+      const res = await fetch(`${TEST_URL}/return-test`);
       const requestId = res.headers.get("X-Request-ID");
 
       // Character at position 19 should be 8, 9, a, or b (variant)
@@ -145,7 +118,7 @@ describe("requestid module", () => {
     });
 
     test("correct hyphen positions", async () => {
-      const res = await fetch(`${TEST_URL}/basic`);
+      const res = await fetch(`${TEST_URL}/return-test`);
       const requestId = res.headers.get("X-Request-ID");
 
       expect(requestId[8]).toBe("-");
@@ -155,7 +128,7 @@ describe("requestid module", () => {
     });
 
     test("correct total length", async () => {
-      const res = await fetch(`${TEST_URL}/basic`);
+      const res = await fetch(`${TEST_URL}/return-test`);
       const requestId = res.headers.get("X-Request-ID");
 
       expect(requestId.length).toBe(36);

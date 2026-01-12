@@ -3,7 +3,8 @@
     "allow": [
       "Bash(git describe:*)",
       "Bash(wc:*)",
-      "Bash(zig build:*)"
+      "Bash(zig build:*)",
+      "Bash(bun test:*)"
     ]
   }
 }
