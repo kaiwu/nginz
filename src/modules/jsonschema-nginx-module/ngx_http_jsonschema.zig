@@ -313,8 +313,8 @@ fn ngx_http_jsonschema_body_handler(r: [*c]ngx_http_request_t) callconv(.c) void
     }
 
     // Validation passed - continue to content phase
-    r.*.write_event_handler = ngx.ngx_http_core_run_phases;
-    ngx.ngx_http_core_run_phases(r);
+    r.*.write_event_handler = http.ngx_http_core_run_phases;
+    http.ngx_http_core_run_phases(r);
 }
 
 // Access phase handler

@@ -199,6 +199,7 @@ pub const ngx_http_output_filter = ngx.ngx_http_output_filter;
 pub const ngx_http_upstream_init = ngx.ngx_http_upstream_init;
 pub const ngx_http_named_location = ngx.ngx_http_named_location;
 pub const ngx_http_upstream_create = ngx.ngx_http_upstream_create;
+pub const ngx_http_core_run_phases = ngx.ngx_http_core_run_phases;
 pub const ngx_http_finalize_request = ngx.ngx_http_finalize_request;
 pub const ngx_http_parse_unsafe_uri = ngx.ngx_http_parse_unsafe_uri;
 pub const ngx_http_internal_redirect = ngx.ngx_http_internal_redirect;
