@@ -199,7 +199,7 @@ export const ngx_modules = [_][*c]ngx_module_t{
     // Traffic Management
     &ngx_http_healthcheck_module,
     &ngx_http_canary_module,
-    // &ngx_http_ratelimit_module,
+    &ngx_http_ratelimit_module,
     &ngx_http_circuit_breaker_module,
 
     // Advanced Processing
@@ -292,7 +292,7 @@ export const ngx_module_names = [_][*c]const u8{
     "ngx_http_jsonschema_module",
     "ngx_http_healthcheck_module",
     "ngx_http_canary_module",
-    // "ngx_http_ratelimit_module",
+    "ngx_http_ratelimit_module",
     "ngx_http_circuit_breaker_module",
     "ngx_http_graphql_module",
     "ngx_http_transform_module",

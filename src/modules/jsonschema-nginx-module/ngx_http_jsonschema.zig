@@ -1,38 +1,365 @@
 const std = @import("std");
 const ngx = @import("ngx");
 
+const buf = ngx.buf;
 const core = ngx.core;
 const conf = ngx.conf;
 const http = ngx.http;
+const cjson = ngx.cjson;
+const CJSON = cjson.CJSON;
 
 const NGX_OK = core.NGX_OK;
 const NGX_ERROR = core.NGX_ERROR;
 const NGX_DECLINED = core.NGX_DECLINED;
+const NGX_DONE = core.NGX_DONE;
 
 const ngx_str_t = core.ngx_str_t;
 const ngx_int_t = core.ngx_int_t;
 const ngx_uint_t = core.ngx_uint_t;
 const ngx_flag_t = core.ngx_flag_t;
+const ngx_pool_t = core.ngx_pool_t;
 const ngx_conf_t = conf.ngx_conf_t;
+const ngx_buf_t = buf.ngx_buf_t;
+const ngx_chain_t = buf.ngx_chain_t;
 const ngx_command_t = conf.ngx_command_t;
 const ngx_module_t = ngx.module.ngx_module_t;
 const ngx_http_module_t = http.ngx_http_module_t;
 const ngx_http_request_t = http.ngx_http_request_t;
 
 const ngx_string = ngx.string.ngx_string;
+const NArray = ngx.array.NArray;
+
+extern var ngx_http_core_module: ngx_module_t;
 
 const jsonschema_loc_conf = extern struct {
     enabled: ngx_flag_t,
-    request_schema: ngx_str_t,
-    response_schema: ngx_str_t,
-    error_format: ngx_uint_t, // 0=simple, 1=detailed
-    // TODO: schema cache, compiled schemas
+    schema: ngx_str_t, // inline schema JSON string
 };
+
+// Request context for tracking validation state
+const jsonschema_ctx = extern struct {
+    done: ngx_flag_t,
+    waiting_body: ngx_flag_t,
+};
+
+// Validation result
+const ValidationResult = struct {
+    valid: bool,
+    error_path: []const u8,
+    error_message: []const u8,
+};
+
+// Validate JSON value against schema
+fn validateValue(
+    value: [*c]cjson.cJSON,
+    schema: [*c]cjson.cJSON,
+    path: []const u8,
+) ValidationResult {
+    if (value == core.nullptr(cjson.cJSON) or schema == core.nullptr(cjson.cJSON)) {
+        return ValidationResult{ .valid = true, .error_path = "", .error_message = "" };
+    }
+
+    // Check type constraint
+    const type_node = cjson.cJSON_GetObjectItem(schema, "type");
+    if (type_node != core.nullptr(cjson.cJSON)) {
+        if (CJSON.stringValue(type_node)) |type_str| {
+            const type_slice = core.slicify(u8, type_str.data, type_str.len);
+
+            if (std.mem.eql(u8, type_slice, "string")) {
+                if (cjson.cJSON_IsString(value) != 1) {
+                    return ValidationResult{ .valid = false, .error_path = path, .error_message = "must be a string" };
+                }
+            } else if (std.mem.eql(u8, type_slice, "number") or std.mem.eql(u8, type_slice, "integer")) {
+                if (cjson.cJSON_IsNumber(value) != 1) {
+                    return ValidationResult{ .valid = false, .error_path = path, .error_message = "must be a number" };
+                }
+            } else if (std.mem.eql(u8, type_slice, "boolean")) {
+                if (cjson.cJSON_IsBool(value) != 1) {
+                    return ValidationResult{ .valid = false, .error_path = path, .error_message = "must be a boolean" };
+                }
+            } else if (std.mem.eql(u8, type_slice, "object")) {
+                if (cjson.cJSON_IsObject(value) != 1) {
+                    return ValidationResult{ .valid = false, .error_path = path, .error_message = "must be an object" };
+                }
+            } else if (std.mem.eql(u8, type_slice, "array")) {
+                if (cjson.cJSON_IsArray(value) != 1) {
+                    return ValidationResult{ .valid = false, .error_path = path, .error_message = "must be an array" };
+                }
+            } else if (std.mem.eql(u8, type_slice, "null")) {
+                if (cjson.cJSON_IsNull(value) != 1) {
+                    return ValidationResult{ .valid = false, .error_path = path, .error_message = "must be null" };
+                }
+            }
+        }
+    }
+
+    // Check required fields for objects
+    if (cjson.cJSON_IsObject(value) == 1) {
+        const required_node = cjson.cJSON_GetObjectItem(schema, "required");
+        if (required_node != core.nullptr(cjson.cJSON) and cjson.cJSON_IsArray(required_node) == 1) {
+            var it = CJSON.Iterator.init(required_node);
+            while (it.next()) |req| {
+                if (CJSON.stringValue(req)) |field_name| {
+                    var key_buf: [256]u8 = std.mem.zeroes([256]u8);
+                    const key_len = @min(field_name.len, 255);
+                    @memcpy(key_buf[0..key_len], core.slicify(u8, field_name.data, key_len));
+
+                    const field_value = cjson.cJSON_GetObjectItem(value, &key_buf);
+                    if (field_value == core.nullptr(cjson.cJSON)) {
+                        return ValidationResult{ .valid = false, .error_path = path, .error_message = "missing required field" };
+                    }
+                }
+            }
+        }
+
+        // Validate properties
+        const props_node = cjson.cJSON_GetObjectItem(schema, "properties");
+        if (props_node != core.nullptr(cjson.cJSON) and cjson.cJSON_IsObject(props_node) == 1) {
+            var prop_it = CJSON.Iterator.init(props_node);
+            while (prop_it.next()) |prop_schema| {
+                if (prop_schema.*.string != core.nullptr(u8)) {
+                    const prop_value = cjson.cJSON_GetObjectItem(value, prop_schema.*.string);
+                    if (prop_value != core.nullptr(cjson.cJSON)) {
+                        const result = validateValue(prop_value, prop_schema, path);
+                        if (!result.valid) {
+                            return result;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Check minLength for strings
+    if (cjson.cJSON_IsString(value) == 1) {
+        const min_len_node = cjson.cJSON_GetObjectItem(schema, "minLength");
+        if (min_len_node != core.nullptr(cjson.cJSON)) {
+            if (CJSON.intValue(min_len_node)) |min_len| {
+                if (CJSON.stringValue(value)) |str_val| {
+                    if (str_val.len < @as(usize, @intCast(min_len))) {
+                        return ValidationResult{ .valid = false, .error_path = path, .error_message = "string too short" };
+                    }
+                }
+            }
+        }
+
+        const max_len_node = cjson.cJSON_GetObjectItem(schema, "maxLength");
+        if (max_len_node != core.nullptr(cjson.cJSON)) {
+            if (CJSON.intValue(max_len_node)) |max_len| {
+                if (CJSON.stringValue(value)) |str_val| {
+                    if (str_val.len > @as(usize, @intCast(max_len))) {
+                        return ValidationResult{ .valid = false, .error_path = path, .error_message = "string too long" };
+                    }
+                }
+            }
+        }
+    }
+
+    // Check minimum/maximum for numbers
+    if (cjson.cJSON_IsNumber(value) == 1) {
+        const min_node = cjson.cJSON_GetObjectItem(schema, "minimum");
+        if (min_node != core.nullptr(cjson.cJSON)) {
+            if (CJSON.floatValue(min_node)) |min_val| {
+                if (CJSON.floatValue(value)) |val| {
+                    if (val < min_val) {
+                        return ValidationResult{ .valid = false, .error_path = path, .error_message = "number below minimum" };
+                    }
+                }
+            }
+        }
+
+        const max_node = cjson.cJSON_GetObjectItem(schema, "maximum");
+        if (max_node != core.nullptr(cjson.cJSON)) {
+            if (CJSON.floatValue(max_node)) |max_val| {
+                if (CJSON.floatValue(value)) |val| {
+                    if (val > max_val) {
+                        return ValidationResult{ .valid = false, .error_path = path, .error_message = "number above maximum" };
+                    }
+                }
+            }
+        }
+    }
+
+    return ValidationResult{ .valid = true, .error_path = "", .error_message = "" };
+}
+
+// Send error response
+fn sendErrorResponse(r: [*c]ngx_http_request_t, message: []const u8) ngx_int_t {
+    // Set content type
+    const content_type = ngx_string("application/json");
+    r.*.headers_out.content_type = content_type;
+    r.*.headers_out.content_type_len = content_type.len;
+    r.*.headers_out.status = 400;
+
+    // Build error response
+    const error_template = "{\"error\":\"validation_failed\",\"message\":\"";
+    const error_suffix = "\"}";
+    const response_len = error_template.len + message.len + error_suffix.len;
+
+    const buf_mem = core.ngx_pnalloc(r.*.pool, response_len) orelse return NGX_ERROR;
+    const buf_ptr = core.castPtr(u8, buf_mem) orelse return NGX_ERROR;
+    const response_buf = core.slicify(u8, buf_ptr, response_len);
+
+    @memcpy(response_buf[0..error_template.len], error_template);
+    @memcpy(response_buf[error_template.len..][0..message.len], message);
+    @memcpy(response_buf[error_template.len + message.len ..][0..error_suffix.len], error_suffix);
+
+    r.*.headers_out.content_length_n = @intCast(response_len);
+
+    const header_rc = http.ngx_http_send_header(r);
+    if (header_rc == NGX_ERROR or header_rc > NGX_OK) {
+        return header_rc;
+    }
+
+    // Create output buffer
+    const b = core.castPtr(ngx_buf_t, core.ngx_pcalloc(r.*.pool, @sizeOf(ngx_buf_t))) orelse return NGX_ERROR;
+
+    b.*.pos = buf_ptr;
+    b.*.last = buf_ptr + response_len;
+    b.*.flags.memory = true;
+    b.*.flags.last_buf = true;
+    b.*.flags.last_in_chain = true;
+
+    var out: ngx_chain_t = undefined;
+    out.buf = b;
+    out.next = null;
+
+    return http.ngx_http_output_filter(r, &out);
+}
+
+// Read request body and validate
+fn ngx_http_jsonschema_body_handler(r: [*c]ngx_http_request_t) callconv(.c) void {
+    const lccf = core.castPtr(
+        jsonschema_loc_conf,
+        conf.ngx_http_get_module_loc_conf(r, &ngx_http_jsonschema_module),
+    ) orelse {
+        http.ngx_http_finalize_request(r, NGX_ERROR);
+        return;
+    };
+
+    // Check if request body exists
+    if (r.*.request_body == null or r.*.request_body.*.bufs == null) {
+        http.ngx_http_finalize_request(r, NGX_DECLINED);
+        return;
+    }
+
+    // Collect request body into a single buffer
+    var body_len: usize = 0;
+    var chain = r.*.request_body.*.bufs;
+    while (chain != null) : (chain = chain.*.next) {
+        if (chain.*.buf != null) {
+            const b = chain.*.buf;
+            if (b.*.flags.in_file) {
+                // File-backed buffer not supported yet
+                http.ngx_http_finalize_request(r, NGX_DECLINED);
+                return;
+            }
+            body_len += @intFromPtr(b.*.last) - @intFromPtr(b.*.pos);
+        }
+    }
+
+    if (body_len == 0) {
+        http.ngx_http_finalize_request(r, NGX_DECLINED);
+        return;
+    }
+
+    // Allocate body buffer
+    const body_buf = core.ngx_pnalloc(r.*.pool, body_len) orelse {
+        http.ngx_http_finalize_request(r, NGX_ERROR);
+        return;
+    };
+    const body_ptr = core.castPtr(u8, body_buf) orelse {
+        http.ngx_http_finalize_request(r, NGX_ERROR);
+        return;
+    };
+
+    // Copy body data
+    var offset: usize = 0;
+    chain = r.*.request_body.*.bufs;
+    while (chain != null) : (chain = chain.*.next) {
+        if (chain.*.buf != null) {
+            const b = chain.*.buf;
+            const chunk_len = @intFromPtr(b.*.last) - @intFromPtr(b.*.pos);
+            if (chunk_len > 0) {
+                @memcpy(body_ptr[offset..][0..chunk_len], core.slicify(u8, b.*.pos, chunk_len));
+                offset += chunk_len;
+            }
+        }
+    }
+
+    const body = ngx_str_t{ .len = body_len, .data = body_ptr };
+
+    // Parse request body as JSON
+    var cj = CJSON.init(r.*.pool);
+    const json_value = cj.decode(body) catch {
+        _ = sendErrorResponse(r, "invalid JSON");
+        http.ngx_http_finalize_request(r, NGX_DONE);
+        return;
+    };
+
+    // Parse schema
+    const schema = cj.decode(lccf.*.schema) catch {
+        // Schema parse error - let request through
+        http.ngx_http_finalize_request(r, NGX_DECLINED);
+        return;
+    };
+
+    // Validate
+    const result = validateValue(json_value, schema, "$");
+    if (!result.valid) {
+        _ = sendErrorResponse(r, result.error_message);
+        http.ngx_http_finalize_request(r, NGX_DONE);
+        return;
+    }
+
+    // Validation passed - continue to content phase
+    r.*.write_event_handler = ngx.ngx_http_core_run_phases;
+    ngx.ngx_http_core_run_phases(r);
+}
+
+// Access phase handler
+fn ngx_http_jsonschema_access_handler(r: [*c]ngx_http_request_t) callconv(.c) ngx_int_t {
+    const lccf = core.castPtr(
+        jsonschema_loc_conf,
+        conf.ngx_http_get_module_loc_conf(r, &ngx_http_jsonschema_module),
+    ) orelse return NGX_DECLINED;
+
+    if (lccf.*.enabled != 1) {
+        return NGX_DECLINED;
+    }
+
+    // Only validate POST/PUT/PATCH requests with body
+    if (r.*.method != http.NGX_HTTP_POST and
+        r.*.method != http.NGX_HTTP_PUT and
+        r.*.method != http.NGX_HTTP_PATCH)
+    {
+        return NGX_DECLINED;
+    }
+
+    // Check content-type is JSON
+    if (r.*.headers_in.content_type != null) {
+        const ct = r.*.headers_in.content_type.*.value;
+        const ct_slice = core.slicify(u8, ct.data, ct.len);
+        if (std.mem.indexOf(u8, ct_slice, "application/json") == null) {
+            return NGX_DECLINED;
+        }
+    } else {
+        return NGX_DECLINED;
+    }
+
+    // Read request body
+    const rc = http.ngx_http_read_client_request_body(r, ngx_http_jsonschema_body_handler);
+    if (rc >= http.NGX_HTTP_SPECIAL_RESPONSE) {
+        return rc;
+    }
+
+    return NGX_DONE;
+}
 
 fn create_loc_conf(cf: [*c]ngx_conf_t) callconv(.c) ?*anyopaque {
     if (core.ngz_pcalloc_c(jsonschema_loc_conf, cf.*.pool)) |p| {
-        p.*.enabled = 0;
-        p.*.error_format = 1;
+        p.*.enabled = conf.NGX_CONF_UNSET;
+        p.*.schema = ngx_str_t{ .len = 0, .data = core.nullptr(u8) };
         return p;
     }
     return null;
@@ -44,9 +371,17 @@ fn merge_loc_conf(
     child: ?*anyopaque,
 ) callconv(.c) [*c]u8 {
     _ = cf;
-    _ = parent;
-    _ = child;
-    // TODO: Implement merge logic
+    const prev = core.castPtr(jsonschema_loc_conf, parent) orelse return conf.NGX_CONF_OK;
+    const c = core.castPtr(jsonschema_loc_conf, child) orelse return conf.NGX_CONF_OK;
+
+    if (c.*.enabled == conf.NGX_CONF_UNSET) {
+        c.*.enabled = if (prev.*.enabled == conf.NGX_CONF_UNSET) 0 else prev.*.enabled;
+    }
+
+    if (c.*.schema.len == 0 and prev.*.schema.len > 0) {
+        c.*.schema = prev.*.schema;
+    }
+
     return conf.NGX_CONF_OK;
 }
 
@@ -63,21 +398,34 @@ fn ngx_conf_set_jsonschema(
     return conf.NGX_CONF_OK;
 }
 
-export fn ngx_http_jsonschema_handler(
-    r: [*c]ngx_http_request_t,
-) callconv(.c) ngx_int_t {
-    _ = r;
-    // TODO: Implement JSON Schema validation
-    // 1. Read request body
-    // 2. Parse JSON
-    // 3. Validate against schema
-    // 4. Return 400 with errors or proceed
-    return NGX_DECLINED;
+fn ngx_conf_set_jsonschema_schema(
+    cf: [*c]ngx_conf_t,
+    cmd: [*c]ngx_command_t,
+    loc: ?*anyopaque,
+) callconv(.c) [*c]u8 {
+    _ = cmd;
+    if (core.castPtr(jsonschema_loc_conf, loc)) |lccf| {
+        var i: ngx_uint_t = 1;
+        if (ngx.array.ngx_array_next(ngx_str_t, cf.*.args, &i)) |arg| {
+            lccf.*.schema = arg.*;
+        }
+    }
+    return conf.NGX_CONF_OK;
 }
 
 fn postconfiguration(cf: [*c]ngx_conf_t) callconv(.c) ngx_int_t {
-    _ = cf;
-    // TODO: Register access phase handler and response filter
+    // Register access phase handler
+    const cmcf = core.castPtr(
+        http.ngx_http_core_main_conf_t,
+        conf.ngx_http_conf_get_module_main_conf(cf, &ngx_http_core_module),
+    ) orelse return NGX_ERROR;
+
+    var handlers = NArray(http.ngx_http_handler_pt).init0(
+        &cmcf.*.phases[http.NGX_HTTP_ACCESS_PHASE].handlers,
+    );
+    const h = handlers.append() catch return NGX_ERROR;
+    h.* = ngx_http_jsonschema_access_handler;
+
     return NGX_OK;
 }
 
@@ -95,24 +443,16 @@ export const ngx_http_jsonschema_module_ctx = ngx_http_module_t{
 export const ngx_http_jsonschema_commands = [_]ngx_command_t{
     ngx_command_t{
         .name = ngx_string("jsonschema"),
-        .type = conf.NGX_HTTP_LOC_CONF | conf.NGX_CONF_FLAG,
+        .type = conf.NGX_HTTP_LOC_CONF | conf.NGX_CONF_NOARGS,
         .set = ngx_conf_set_jsonschema,
         .conf = conf.NGX_HTTP_LOC_CONF_OFFSET,
         .offset = 0,
         .post = null,
     },
     ngx_command_t{
-        .name = ngx_string("jsonschema_request"),
+        .name = ngx_string("jsonschema_schema"),
         .type = conf.NGX_HTTP_LOC_CONF | conf.NGX_CONF_TAKE1,
-        .set = conf.ngx_conf_set_str_slot,
-        .conf = conf.NGX_HTTP_LOC_CONF_OFFSET,
-        .offset = 0,
-        .post = null,
-    },
-    ngx_command_t{
-        .name = ngx_string("jsonschema_response"),
-        .type = conf.NGX_HTTP_LOC_CONF | conf.NGX_CONF_TAKE1,
-        .set = conf.ngx_conf_set_str_slot,
+        .set = ngx_conf_set_jsonschema_schema,
         .conf = conf.NGX_HTTP_LOC_CONF_OFFSET,
         .offset = 0,
         .post = null,
@@ -124,3 +464,10 @@ export var ngx_http_jsonschema_module = ngx.module.make_module(
     @constCast(&ngx_http_jsonschema_commands),
     @constCast(&ngx_http_jsonschema_module_ctx),
 );
+
+// Tests
+const expectEqual = std.testing.expectEqual;
+
+test "jsonschema module" {
+    try expectEqual(ngx_http_jsonschema_module.version, 1027004);
+}
