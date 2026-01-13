@@ -63,6 +63,11 @@ pub const ngx_time = ngx.ngx_time;
 pub const ngx_random = ngx.ngx_random;
 pub const ngx_timeofday = ngx.ngx_timeofday;
 
+pub const ngx_log_init = ngx.ngx_log_init;
+pub const ngx_time_init = ngx.ngx_time_init;
+pub const ngx_create_pool = ngx.ngx_create_pool;
+pub const ngx_destroy_pool = ngx.ngx_destroy_pool;
+
 pub const NError = error{
     OOM,
     SSL_ERROR,
@@ -267,10 +272,6 @@ pub fn NAllocator(comptime PAGE_SIZE: ngx_uint_t) type {
     };
 }
 
-const ngx_log_init = ngx.ngx_log_init;
-const ngx_time_init = ngx.ngx_time_init;
-const ngx_create_pool = ngx.ngx_create_pool;
-const ngx_destroy_pool = ngx.ngx_destroy_pool;
 test "allocator" {
     const log = ngx_log_init(c_str(""), c_str(""));
     ngx_time_init();

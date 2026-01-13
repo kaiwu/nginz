@@ -100,6 +100,14 @@ Access nginx APIs through the ngx namespace:
 - `echoz-nginx-module` - content module, header filter module
 - `wechatpay-nginx-module` - upstream, access module, header filter module, json encode/decode
 
+### ATTENTIONS
+
+- `ngx/ngx.zig` - NEVER use it directly, it is a huge nginx c bindings file which is imported as `ngx` in other wrappers, export and use the needed ones like `ngx_http.zig` or `ngx_core.zig` etc.
+- `ngx/nginx.zig` - NEVER modify this file, neither delete nor add anything. It is imported as `ngx` in nginx module implementations, which is confusing as it reuses the same name
+- `ngx/cjson.zig` - NEVER use it directly, it is the cjson c bindings file, use its wrapper `ngx.cjson`
+- `ngx/pq.zig` - NEVER use it directly, likewise it is the libpq c bindings file, use its wrapper `ngx.pq` 
+- `cleanupRuntime(MODULE);` Comment this line of the `...test.js` file to keep the runtime folder and its nginx logs from being removed
+
 ### Testing
 
 Integration tests use Bun and run against a live nginx instance:
@@ -109,7 +117,6 @@ bun test tests/jsonschema/
 
 Test nginx.conf files should use `error_log logs/error.log debug;` for debugging.
 
-Comment `cleanupRuntime(MODULE);` for the `test.js` file to keep the runtime folder and its nginx logs from being removed
 
 ### Debugging
 

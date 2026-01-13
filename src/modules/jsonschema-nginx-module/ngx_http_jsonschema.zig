@@ -4,6 +4,7 @@ const ngx = @import("ngx");
 const buf = ngx.buf;
 const core = ngx.core;
 const conf = ngx.conf;
+const log = ngx.log;
 const http = ngx.http;
 const cjson = ngx.cjson;
 const CJSON = cjson.CJSON;
@@ -49,12 +50,20 @@ const ValidationResult = struct {
     error_message: []const u8,
 };
 
+// Maximum recursion depth to prevent stack overflow
+const MAX_VALIDATION_DEPTH = 100;
+
 // Validate JSON value against schema
 fn validateValue(
     value: [*c]cjson.cJSON,
     schema: [*c]cjson.cJSON,
     path: []const u8,
+    depth: usize,
 ) ValidationResult {
+    // Prevent infinite recursion
+    if (depth > MAX_VALIDATION_DEPTH) {
+        return ValidationResult{ .valid = false, .error_path = path, .error_message = "schema too deep" };
+    }
     if (value == core.nullptr(cjson.cJSON) or schema == core.nullptr(cjson.cJSON)) {
         return ValidationResult{ .valid = true, .error_path = "", .error_message = "" };
     }
@@ -120,7 +129,7 @@ fn validateValue(
                 if (prop_schema.*.string != core.nullptr(u8)) {
                     const prop_value = cjson.cJSON_GetObjectItem(value, prop_schema.*.string);
                     if (prop_value != core.nullptr(cjson.cJSON)) {
-                        const result = validateValue(prop_value, prop_schema, path);
+                        const result = validateValue(prop_value, prop_schema, path, depth + 1);
                         if (!result.valid) {
                             return result;
                         }
@@ -305,7 +314,7 @@ export fn ngx_http_jsonschema_body_handler(r: [*c]ngx_http_request_t) callconv(.
     };
 
     // Validate
-    const result = validateValue(json_value, schema, "$");
+    const result = validateValue(json_value, schema, "$", 0);
     if (!result.valid) {
         _ = sendErrorResponse(r, result.error_message);
         http.ngx_http_finalize_request(r, NGX_DONE);
@@ -467,7 +476,156 @@ export var ngx_http_jsonschema_module = ngx.module.make_module(
 
 // Tests
 const expectEqual = std.testing.expectEqual;
+const expect = std.testing.expect;
+
+// Re-export test helper functions from ngx (like ngx_cjson does)
+const ngx_log_init = ngx.core.ngx_log_init;
+const ngx_create_pool = ngx.core.ngx_create_pool;
+const ngx_destroy_pool = ngx.core.ngx_destroy_pool;
 
 test "jsonschema module" {
     try expectEqual(ngx_http_jsonschema_module.version, 1027004);
+}
+
+// Helper to create a test pool for JSON operations
+fn createTestPool() [*c]core.ngx_pool_t {
+    const leg = ngx_log_init(core.c_str(""), core.c_str(""));
+    return ngx_create_pool(4096, leg);
+}
+
+// Test basic JSON schema validation with CJSON
+test "validateValue - string type validation" {
+    const pool = createTestPool();
+    defer ngx_destroy_pool(pool);
+
+    var cj = CJSON.init(pool);
+
+    // Create a schema for string type
+    const schema_json_str = "{\"type\": \"string\"}";
+    const schema = try cj.decode(ngx_string(schema_json_str));
+
+    // Create a valid string value
+    const valid_json_str = "\"Hello World\"";
+    const valid_value = try cj.decode(ngx_string(valid_json_str));
+
+    const result = validateValue(valid_value, schema, "$", 0);
+    try expect(result.valid == true);
+}
+
+// Test CJSON query and iteration
+test "cjson usage - basic parse and query" {
+    const pool = createTestPool();
+    defer ngx_destroy_pool(pool);
+
+    var cj = CJSON.init(pool);
+
+    const json_str = "{\"name\": \"John\", \"age\": 30, \"active\": true}";
+    const parsed = try cj.decode(ngx_string(json_str));
+
+    // Query string field
+    if (CJSON.query(parsed, "$.name")) |name_node| {
+        if (CJSON.stringValue(name_node)) |name_str| {
+            try expect(name_str.len == 4);
+            try expect(std.mem.eql(u8, core.slicify(u8, name_str.data, name_str.len), "John"));
+        }
+    }
+
+    // Query number field
+    if (CJSON.query(parsed, "$.age")) |age_node| {
+        if (CJSON.intValue(age_node)) |age_val| {
+            try expect(age_val == 30);
+        }
+    }
+
+    // Query boolean field
+    if (CJSON.query(parsed, "$.active")) |active_node| {
+        if (CJSON.boolValue(active_node)) |active_val| {
+            try expect(active_val == true);
+        }
+    }
+}
+
+// Test CJSON array iteration
+test "cjson usage - array iteration" {
+    const pool = createTestPool();
+    defer ngx_destroy_pool(pool);
+
+    var cj = CJSON.init(pool);
+
+    const json_str = "[1, 2, 3, 4, 5]";
+    const parsed = try cj.decode(ngx_string(json_str));
+
+    var it = CJSON.Iterator.init(parsed);
+    var sum: i64 = 0;
+    while (it.next()) |item| {
+        if (CJSON.intValue(item)) |val| {
+            sum += val;
+        }
+    }
+    try expect(sum == 15);
+}
+
+// Test CJSON object iteration
+test "cjson usage - object iteration" {
+    const pool = createTestPool();
+    defer ngx_destroy_pool(pool);
+
+    var cj = CJSON.init(pool);
+
+    const json_str = "{\"a\": 1, \"b\": 2, \"c\": 3}";
+    const parsed = try cj.decode(ngx_string(json_str));
+
+    var it = CJSON.Iterator.init(parsed);
+    var count: usize = 0;
+    while (it.next()) |_| {
+        count += 1;
+    }
+    try expect(count == 3);
+}
+
+// Test CJSON recursive iteration
+test "cjson usage - recursive iteration" {
+    const pool = createTestPool();
+    defer ngx_destroy_pool(pool);
+
+    var cj = CJSON.init(pool);
+
+    const json_str = "{\"a\": {\"x\": 100}, \"b\": [1, 2, 3], \"c\": {\"x\": 1, \"y\": 42}}";
+    const parsed = try cj.decode(ngx_string(json_str));
+
+    var rt = CJSON.RecursiveIterator.init(parsed);
+    var node_count: i32 = 0;
+    while (rt.next()) |_| {
+        node_count += 1;
+    }
+    try expect(node_count == 10);
+}
+
+// Test CJSON encode and decode
+test "cjson usage - encode and decode" {
+    const pool = createTestPool();
+    defer ngx_destroy_pool(pool);
+
+    var cj = CJSON.init(pool);
+
+    // Create JSON object
+    const obj = cjson.cJSON_CreateObject(&cj.alloc);
+    _ = cjson.cJSON_AddStringToObject(obj, "name", "John", &cj.alloc);
+    _ = cjson.cJSON_AddNumberToObject(obj, "age", 30, &cj.alloc);
+
+    // Encode
+    const encoded = try cj.encode(obj);
+    try expect(encoded.len > 0);
+
+    // Decode back
+    const decoded = try cj.decode(encoded);
+    const name = CJSON.query(decoded, "$.name").?;
+    if (CJSON.stringValue(name)) |name_str| {
+        try expect(std.mem.eql(u8, core.slicify(u8, name_str.data, name_str.len), "John"));
+    }
+
+    const age = CJSON.query(decoded, "$.age").?;
+    if (CJSON.intValue(age)) |age_val| {
+        try expect(age_val == 30);
+    }
 }
