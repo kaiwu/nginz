@@ -228,7 +228,7 @@ fn sendErrorResponse(r: [*c]ngx_http_request_t, message: []const u8) ngx_int_t {
 }
 
 // Read request body and validate
-fn ngx_http_jsonschema_body_handler(r: [*c]ngx_http_request_t) callconv(.c) void {
+export fn ngx_http_jsonschema_body_handler(r: [*c]ngx_http_request_t) callconv(.c) void {
     const lccf = core.castPtr(
         jsonschema_loc_conf,
         conf.ngx_http_get_module_loc_conf(r, &ngx_http_jsonschema_module),
@@ -318,7 +318,7 @@ fn ngx_http_jsonschema_body_handler(r: [*c]ngx_http_request_t) callconv(.c) void
 }
 
 // Access phase handler
-fn ngx_http_jsonschema_access_handler(r: [*c]ngx_http_request_t) callconv(.c) ngx_int_t {
+export fn ngx_http_jsonschema_access_handler(r: [*c]ngx_http_request_t) callconv(.c) ngx_int_t {
     const lccf = core.castPtr(
         jsonschema_loc_conf,
         conf.ngx_http_get_module_loc_conf(r, &ngx_http_jsonschema_module),

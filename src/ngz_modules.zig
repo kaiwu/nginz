@@ -147,6 +147,13 @@ export const ngx_modules = [_][*c]ngx_module_t{
     &ngx_http_limit_conn_module,
     &ngx_http_limit_req_module,
 
+    // Access phase modules (custom)
+    &ngx_http_wechatpay_module,
+    &ngx_http_jsonschema_module,
+    &ngx_http_ratelimit_module,
+    &ngx_http_waf_module,
+    &ngx_http_circuit_breaker_module,
+
     // Routing & filtering
     &ngx_http_geo_module,
     &ngx_http_map_module,
@@ -181,7 +188,6 @@ export const ngx_modules = [_][*c]ngx_module_t{
 
     // NJS Extended Modules
     &ngx_http_echoz_module,
-    &ngx_http_wechatpay_module,
 
     // Custom Upstream Processing Modules
     &ngx_http_pgrest_module,
@@ -192,15 +198,11 @@ export const ngx_modules = [_][*c]ngx_module_t{
     // Security & Auth
     &ngx_http_jwt_module,
     &ngx_http_oidc_module,
-    &ngx_http_waf_module,
     &ngx_http_acme_module,
-    &ngx_http_jsonschema_module,
 
     // Traffic Management
     &ngx_http_healthcheck_module,
     &ngx_http_canary_module,
-    &ngx_http_ratelimit_module,
-    &ngx_http_circuit_breaker_module,
 
     // Advanced Processing
     &ngx_http_graphql_module,
@@ -259,6 +261,11 @@ export const ngx_module_names = [_][*c]const u8{
     "ngx_http_access_module",
     "ngx_http_limit_conn_module",
     "ngx_http_limit_req_module",
+    "ngx_http_wechatpay_module",
+    "ngx_http_jsonschema_module",
+    "ngx_http_ratelimit_module",
+    "ngx_http_waf_module",
+    "ngx_http_circuit_breaker_module",
     "ngx_http_geo_module",
     "ngx_http_map_module",
     "ngx_http_split_clients_module",
@@ -280,20 +287,15 @@ export const ngx_module_names = [_][*c]const u8{
     "ngx_http_upstream_zone_module",
     "ngx_http_js_module",
     "ngx_http_echoz_module",
-    "ngx_http_wechatpay_module",
     "ngx_http_pgrest_module",
     "ngx_http_redis_module",
     "ngx_http_consul_module",
     "ngx_http_hello_module",
     "ngx_http_jwt_module",
     "ngx_http_oidc_module",
-    "ngx_http_waf_module",
     "ngx_http_acme_module",
-    "ngx_http_jsonschema_module",
     "ngx_http_healthcheck_module",
     "ngx_http_canary_module",
-    "ngx_http_ratelimit_module",
-    "ngx_http_circuit_breaker_module",
     "ngx_http_graphql_module",
     "ngx_http_transform_module",
     "ngx_http_cache_tags_module",

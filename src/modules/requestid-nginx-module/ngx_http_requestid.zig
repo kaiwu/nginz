@@ -176,14 +176,6 @@ fn ngx_http_requestid_variable(
 var ngx_http_requestid_next_header_filter: http.ngx_http_output_header_filter_pt = null;
 
 export fn ngx_http_requestid_header_filter(r: [*c]ngx_http_request_t) callconv(.c) ngx_int_t {
-    ngx.log.ngz_log_error(
-        ngx.log.NGX_LOG_NOTICE,
-        r.*.connection.*.log,
-        0,
-        "requestid: header filter called",
-        .{},
-    );
-
     // Get location config
     const lccf = core.castPtr(
         requestid_loc_conf,
@@ -201,14 +193,6 @@ export fn ngx_http_requestid_header_filter(r: [*c]ngx_http_request_t) callconv(.
         }
         return NGX_OK;
     };
-
-    ngx.log.ngz_log_error(
-        ngx.log.NGX_LOG_NOTICE,
-        r.*.connection.*.log,
-        0,
-        "requestid: enabled=%d add_to_response=%d",
-        .{ lccf.*.enabled, lccf.*.add_to_response },
-    );
 
     // Check if enabled and should add to response
     if (lccf.*.enabled == 1 and lccf.*.add_to_response == 1) {
