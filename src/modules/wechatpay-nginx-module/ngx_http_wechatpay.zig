@@ -81,6 +81,7 @@ const wechatpay_request_context = extern struct {
     lccf: [*c]wechatpay_loc_conf,
     sig_verify: signature_verification_status,
     status: http.ngx_http_status_t,
+    done_access: ngx_flag_t,
 };
 
 const wechatpay_loc_conf = extern struct {
@@ -866,7 +867,8 @@ fn wechatpay_check_access(r: [*c]ngx_http_request_t) !ngx_int_t {
                 last.*.buf.*.flags.last_in_chain = true;
                 r.*.request_body.*.bufs = last;
             }
-            return NGX_OK;
+            rctx.*.done_access = 1;
+            return NGX_DECLINED;
         }
     }
     return http.NGX_HTTP_FORBIDDEN;
@@ -875,8 +877,9 @@ fn wechatpay_check_access(r: [*c]ngx_http_request_t) !ngx_int_t {
 export fn ngx_http_wechatpay_access_body_handler(
     r: [*c]ngx_http_request_t,
 ) callconv(.c) void {
-    if (wechatpay_check_access(r)) |rc| {
-        http.ngx_http_finalize_request(r, rc);
+    if (wechatpay_check_access(r)) |_| {
+        r.*.write_event_handler = http.ngx_http_core_run_phases;
+        http.ngx_http_core_run_phases(r);
     } else |e| {
         const rc = switch (e) {
             WError.SIGNATURE_ERROR => http.NGX_HTTP_UNAUTHORIZED,
@@ -902,8 +905,12 @@ export fn ngx_http_wechatpay_access_handler(
             r,
             &ngx_http_wechatpay_module,
         ) catch return http.NGX_HTTP_FORBIDDEN;
+        if (rctx.*.done_access == 1) {
+            return NGX_DECLINED;
+        }
         if (rctx.*.lccf == core.nullptr(wechatpay_loc_conf)) {
             rctx.*.lccf = lccf;
+            rctx.*.done_access = 0;
         }
         const rc = http.ngx_http_read_client_request_body(r, ngx_http_wechatpay_access_body_handler);
         return if (rc == NGX_AGAIN) core.NGX_DONE else rc;

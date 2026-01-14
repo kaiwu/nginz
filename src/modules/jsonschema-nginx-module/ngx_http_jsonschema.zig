@@ -35,12 +35,14 @@ extern var ngx_http_core_module: ngx_module_t;
 const jsonschema_loc_conf = extern struct {
     enabled: ngx_flag_t,
     schema: ngx_str_t, // inline schema JSON string
+    schema_json: [*c]cjson.cJSON,
 };
 
 // Request context for tracking validation state
 const jsonschema_ctx = extern struct {
     done: ngx_flag_t,
     waiting_body: ngx_flag_t,
+    lccf: [*c]jsonschema_loc_conf,
 };
 
 // Validation result
@@ -238,17 +240,17 @@ fn sendErrorResponse(r: [*c]ngx_http_request_t, message: []const u8) ngx_int_t {
 
 // Read request body and validate
 export fn ngx_http_jsonschema_body_handler(r: [*c]ngx_http_request_t) callconv(.c) void {
-    const lccf = core.castPtr(
-        jsonschema_loc_conf,
-        conf.ngx_http_get_module_loc_conf(r, &ngx_http_jsonschema_module),
-    ) orelse {
+    const rctx = core.castPtr(jsonschema_ctx, r.*.ctx[ngx_http_jsonschema_module.ctx_index]) orelse {
         http.ngx_http_finalize_request(r, NGX_ERROR);
         return;
     };
+    rctx.*.waiting_body = 0;
 
     // Check if request body exists
     if (r.*.request_body == null or r.*.request_body.*.bufs == null) {
-        http.ngx_http_finalize_request(r, NGX_DECLINED);
+        rctx.*.done = 1;
+        r.*.write_event_handler = http.ngx_http_core_run_phases;
+        http.ngx_http_core_run_phases(r);
         return;
     }
 
@@ -258,17 +260,14 @@ export fn ngx_http_jsonschema_body_handler(r: [*c]ngx_http_request_t) callconv(.
     while (chain != null) : (chain = chain.*.next) {
         if (chain.*.buf != null) {
             const b = chain.*.buf;
-            if (b.*.flags.in_file) {
-                // File-backed buffer not supported yet
-                http.ngx_http_finalize_request(r, NGX_DECLINED);
-                return;
-            }
             body_len += @intFromPtr(b.*.last) - @intFromPtr(b.*.pos);
         }
     }
 
     if (body_len == 0) {
-        http.ngx_http_finalize_request(r, NGX_DECLINED);
+        rctx.*.done = 1;
+        r.*.write_event_handler = http.ngx_http_core_run_phases;
+        http.ngx_http_core_run_phases(r);
         return;
     }
 
@@ -302,26 +301,21 @@ export fn ngx_http_jsonschema_body_handler(r: [*c]ngx_http_request_t) callconv(.
     var cj = CJSON.init(r.*.pool);
     const json_value = cj.decode(body) catch {
         _ = sendErrorResponse(r, "invalid JSON");
-        http.ngx_http_finalize_request(r, NGX_DONE);
-        return;
-    };
-
-    // Parse schema
-    const schema = cj.decode(lccf.*.schema) catch {
-        // Schema parse error - let request through
-        http.ngx_http_finalize_request(r, NGX_DECLINED);
+        http.ngx_http_finalize_request(r, http.NGX_HTTP_FORBIDDEN);
         return;
     };
 
     // Validate
-    const result = validateValue(json_value, schema, "$", 0);
+    const result = validateValue(json_value, rctx.*.lccf.*.schema_json, "$", 0);
     if (!result.valid) {
         _ = sendErrorResponse(r, result.error_message);
-        http.ngx_http_finalize_request(r, NGX_DONE);
+        http.ngx_http_finalize_request(r, http.NGX_HTTP_FORBIDDEN);
         return;
     }
 
     // Validation passed - continue to content phase
+    rctx.*.done = 1;
+    //    http.ngx_http_finalize_request(r, NGX_DECLINED);
     r.*.write_event_handler = http.ngx_http_core_run_phases;
     http.ngx_http_core_run_phases(r);
 }
@@ -356,6 +350,16 @@ export fn ngx_http_jsonschema_access_handler(r: [*c]ngx_http_request_t) callconv
         return NGX_DECLINED;
     }
 
+    const rctx = http.ngz_http_get_module_ctx(
+        jsonschema_ctx,
+        r,
+        &ngx_http_jsonschema_module,
+    ) catch return http.NGX_HTTP_FORBIDDEN;
+    if (rctx.*.done == 1) {
+        return NGX_DECLINED;
+    }
+    rctx.*.waiting_body = 1;
+    rctx.*.lccf = lccf;
     // Read request body
     const rc = http.ngx_http_read_client_request_body(r, ngx_http_jsonschema_body_handler);
     if (rc >= http.NGX_HTTP_SPECIAL_RESPONSE) {
@@ -394,29 +398,21 @@ fn merge_loc_conf(
     return conf.NGX_CONF_OK;
 }
 
-fn ngx_conf_set_jsonschema(
+fn ngx_conf_set_schema(
     cf: [*c]ngx_conf_t,
     cmd: [*c]ngx_command_t,
     loc: ?*anyopaque,
 ) callconv(.c) [*c]u8 {
-    _ = cf;
     _ = cmd;
     if (core.castPtr(jsonschema_loc_conf, loc)) |lccf| {
         lccf.*.enabled = 1;
-    }
-    return conf.NGX_CONF_OK;
-}
-
-fn ngx_conf_set_jsonschema_schema(
-    cf: [*c]ngx_conf_t,
-    cmd: [*c]ngx_command_t,
-    loc: ?*anyopaque,
-) callconv(.c) [*c]u8 {
-    _ = cmd;
-    if (core.castPtr(jsonschema_loc_conf, loc)) |lccf| {
         var i: ngx_uint_t = 1;
         if (ngx.array.ngx_array_next(ngx_str_t, cf.*.args, &i)) |arg| {
             lccf.*.schema = arg.*;
+            var cj = CJSON.init(cf.*.pool);
+            lccf.*.schema_json = cj.decode(lccf.*.schema) catch {
+                return conf.NGX_CONF_ERROR;
+            };
         }
     }
     return conf.NGX_CONF_OK;
@@ -452,16 +448,8 @@ export const ngx_http_jsonschema_module_ctx = ngx_http_module_t{
 export const ngx_http_jsonschema_commands = [_]ngx_command_t{
     ngx_command_t{
         .name = ngx_string("jsonschema"),
-        .type = conf.NGX_HTTP_LOC_CONF | conf.NGX_CONF_NOARGS,
-        .set = ngx_conf_set_jsonschema,
-        .conf = conf.NGX_HTTP_LOC_CONF_OFFSET,
-        .offset = 0,
-        .post = null,
-    },
-    ngx_command_t{
-        .name = ngx_string("jsonschema_schema"),
         .type = conf.NGX_HTTP_LOC_CONF | conf.NGX_CONF_TAKE1,
-        .set = ngx_conf_set_jsonschema_schema,
+        .set = ngx_conf_set_schema,
         .conf = conf.NGX_HTTP_LOC_CONF_OFFSET,
         .offset = 0,
         .post = null,
@@ -628,4 +616,169 @@ test "cjson usage - encode and decode" {
     if (CJSON.intValue(age)) |age_val| {
         try expect(age_val == 30);
     }
+}
+
+// Test nested object validation
+test "validateValue - nested object validation" {
+    const pool = createTestPool();
+    defer ngx_destroy_pool(pool);
+
+    var cj = CJSON.init(pool);
+
+    const schema_json_str = "{\"type\": \"object\", \"properties\": {\"user\": {\"type\": \"object\", \"properties\": {\"name\": {\"type\": \"string\"}, \"age\": {\"type\": \"number\"}}}}}";
+    const schema = try cj.decode(ngx_string(schema_json_str));
+
+    // Valid nested object
+    const valid_json_str = "{\"user\": {\"name\": \"John\", \"age\": 30}}";
+    const valid_value = try cj.decode(ngx_string(valid_json_str));
+    const valid_result = validateValue(valid_value, schema, "$", 0);
+    try expect(valid_result.valid == true);
+
+    // Invalid: wrong type in nested field
+    const invalid_json_str = "{\"user\": {\"name\": \"John\", \"age\": \"thirty\"}}";
+    const invalid_value = try cj.decode(ngx_string(invalid_json_str));
+    const invalid_result = validateValue(invalid_value, schema, "$", 0);
+    try expect(invalid_result.valid == false);
+    try expect(std.mem.eql(u8, invalid_result.error_message, "must be a number"));
+}
+
+// Test required fields validation
+test "validateValue - required fields validation" {
+    const pool = createTestPool();
+    defer ngx_destroy_pool(pool);
+
+    var cj = CJSON.init(pool);
+
+    const schema_json_str = "{\"type\": \"object\", \"required\": [\"name\", \"email\"]}";
+    const schema = try cj.decode(ngx_string(schema_json_str));
+
+    // Valid: all required fields present
+    const valid_json_str = "{\"name\": \"John\", \"email\": \"john@example.com\"}";
+    const valid_value = try cj.decode(ngx_string(valid_json_str));
+    const valid_result = validateValue(valid_value, schema, "$", 0);
+    try expect(valid_result.valid == true);
+
+    // Invalid: missing required field
+    const invalid_json_str = "{\"name\": \"John\"}";
+    const invalid_value = try cj.decode(ngx_string(invalid_json_str));
+    const invalid_result = validateValue(invalid_value, schema, "$", 0);
+    try expect(invalid_result.valid == false);
+    try expect(std.mem.eql(u8, invalid_result.error_message, "missing required field"));
+}
+
+// Test minLength validation
+test "validateValue - minLength validation" {
+    const pool = createTestPool();
+    defer ngx_destroy_pool(pool);
+
+    var cj = CJSON.init(pool);
+
+    const schema_json_str = "{\"type\": \"string\", \"minLength\": 5}";
+    const schema = try cj.decode(ngx_string(schema_json_str));
+
+    // Valid: string >= 5 chars
+    const valid_json_str = "\"Hello\"";
+    const valid_value = try cj.decode(ngx_string(valid_json_str));
+    const valid_result = validateValue(valid_value, schema, "$", 0);
+    try expect(valid_result.valid == true);
+
+    // Invalid: string < 5 chars
+    const invalid_json_str = "\"Hi\"";
+    const invalid_value = try cj.decode(ngx_string(invalid_json_str));
+    const invalid_result = validateValue(invalid_value, schema, "$", 0);
+    try expect(invalid_result.valid == false);
+    try expect(std.mem.eql(u8, invalid_result.error_message, "string too short"));
+}
+
+// Test maxLength validation
+test "validateValue - maxLength validation" {
+    const pool = createTestPool();
+    defer ngx_destroy_pool(pool);
+
+    var cj = CJSON.init(pool);
+
+    const schema_json_str = "{\"type\": \"string\", \"maxLength\": 10}";
+    const schema = try cj.decode(ngx_string(schema_json_str));
+
+    // Valid: string <= 10 chars
+    const valid_json_str = "\"Hello\"";
+    const valid_value = try cj.decode(ngx_string(valid_json_str));
+    const valid_result = validateValue(valid_value, schema, "$", 0);
+    try expect(valid_result.valid == true);
+
+    // Invalid: string > 10 chars
+    const invalid_json_str = "\"This is too long\"";
+    const invalid_value = try cj.decode(ngx_string(invalid_json_str));
+    const invalid_result = validateValue(invalid_value, schema, "$", 0);
+    try expect(invalid_result.valid == false);
+    try expect(std.mem.eql(u8, invalid_result.error_message, "string too long"));
+}
+
+// Test minimum validation
+test "validateValue - minimum validation" {
+    const pool = createTestPool();
+    defer ngx_destroy_pool(pool);
+
+    var cj = CJSON.init(pool);
+
+    const schema_json_str = "{\"type\": \"number\", \"minimum\": 18}";
+    const schema = try cj.decode(ngx_string(schema_json_str));
+
+    // Valid: number >= 18
+    const valid_json_str = "25";
+    const valid_value = try cj.decode(ngx_string(valid_json_str));
+    const valid_result = validateValue(valid_value, schema, "$", 0);
+    try expect(valid_result.valid == true);
+
+    // Invalid: number < 18
+    const invalid_json_str = "15";
+    const invalid_value = try cj.decode(ngx_string(invalid_json_str));
+    const invalid_result = validateValue(invalid_value, schema, "$", 0);
+    try expect(invalid_result.valid == false);
+    try expect(std.mem.eql(u8, invalid_result.error_message, "number below minimum"));
+}
+
+// Test maximum validation
+test "validateValue - maximum validation" {
+    const pool = createTestPool();
+    defer ngx_destroy_pool(pool);
+
+    var cj = CJSON.init(pool);
+
+    const schema_json_str = "{\"type\": \"number\", \"maximum\": 100}";
+    const schema = try cj.decode(ngx_string(schema_json_str));
+
+    // Valid: number <= 100
+    const valid_json_str = "50";
+    const valid_value = try cj.decode(ngx_string(valid_json_str));
+    const valid_result = validateValue(valid_value, schema, "$", 0);
+    try expect(valid_result.valid == true);
+
+    // Invalid: number > 100
+    const invalid_json_str = "150";
+    const invalid_value = try cj.decode(ngx_string(invalid_json_str));
+    const invalid_result = validateValue(invalid_value, schema, "$", 0);
+    try expect(invalid_result.valid == false);
+    try expect(std.mem.eql(u8, invalid_result.error_message, "number above maximum"));
+}
+
+// Test null pointer safety
+test "validateValue - null pointer safety" {
+    const pool = createTestPool();
+    defer ngx_destroy_pool(pool);
+
+    var cj = CJSON.init(pool);
+
+    const schema_json_str = "{\"type\": \"string\"}";
+    const schema = try cj.decode(ngx_string(schema_json_str));
+
+    // Test with null value (should pass gracefully)
+    const result = validateValue(core.nullptr(cjson.cJSON), schema, "$", 0);
+    try expect(result.valid == true);
+
+    // Test with null schema (should pass gracefully)
+    const valid_json_str = "\"test\"";
+    const valid_value = try cj.decode(ngx_string(valid_json_str));
+    const result2 = validateValue(valid_value, core.nullptr(cjson.cJSON), "$", 0);
+    try expect(result2.valid == true);
 }

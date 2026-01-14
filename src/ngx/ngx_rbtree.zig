@@ -379,17 +379,17 @@ test "rbtree" {
         tree.delete(r0);
     }
 
-    var bfs = try tree.bfs(pool);
-    while (bfs.next()) |n| {
-        const r0 = RBTree.data(n);
-        std.debug.print("{c} ", .{r0.*.c});
-    }
+    // var bfs = try tree.bfs(pool);
+    // while (bfs.next()) |n| {
+    //     const r0 = RBTree.data(n);
+    //     std.debug.print("{c} ", .{r0.*.c});
+    // }
 
-    std.debug.print("\n", .{});
+    // std.debug.print("\n", .{});
 
-    var it = tree.iterator(RBTree.TraverseOrderType.PostOrder);
-    while (it.next()) |n| {
-        const r0 = RBTree.data(n);
-        std.debug.print("{c} ", .{r0.*.c});
-    }
+    // var it = tree.iterator(RBTree.TraverseOrderType.PostOrder);
+    // while (it.next()) |n| {
+    //     const r0 = RBTree.data(n);
+    //     std.debug.print("{c} ", .{r0.*.c});
+    // }
 }
