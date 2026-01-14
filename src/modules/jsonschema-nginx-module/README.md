@@ -1,120 +1,66 @@
 ## JSON Schema Validation Module
 
-Request and response validation against JSON Schema.
+Validates JSON request bodies against inline JSON Schema in the access phase.
 
-### Status
-
-**Not Implemented** - Skeleton only
-
-### Planned Features
-
-- **Request Validation**: Validate JSON request bodies against schemas
-- **Response Validation**: Validate backend responses (dev/staging mode)
-- **Schema Caching**: Compile and cache schemas for performance
-- **Detailed Errors**: Return structured error responses with validation details
-- **Draft Support**: JSON Schema Draft 4, 6, 7, and 2019-09
-- **Refs Support**: $ref resolution for modular schemas
-
-### Planned Directives
+### Directives
 
 #### jsonschema
 
-*syntax:* `jsonschema on|off;`  
-*default:* `jsonschema off;`  
+*syntax:* `jsonschema '<json_schema>';`
 *context:* `location`
 
-Enable JSON Schema validation.
+Enable JSON Schema validation with an inline schema. Only validates POST, PUT, and PATCH requests with `Content-Type: application/json`.
 
-#### jsonschema_request
+### Supported Schema Keywords
 
-*syntax:* `jsonschema_request <schema_file>;`  
-*context:* `location`
+- **type**: `string`, `number`, `integer`, `boolean`, `object`, `array`, `null`
+- **required**: Array of required field names for objects
+- **properties**: Nested schema definitions for object properties
+- **minLength** / **maxLength**: String length constraints
+- **minimum** / **maximum**: Number value constraints
 
-Path to JSON Schema file for request validation.
-
-#### jsonschema_response
-
-*syntax:* `jsonschema_response <schema_file>;`  
-*context:* `location`
-
-Path to JSON Schema file for response validation.
-
-#### jsonschema_error_format
-
-*syntax:* `jsonschema_error_format simple|detailed;`  
-*default:* `jsonschema_error_format detailed;`  
-*context:* `location`
-
-Error response format.
-
-### Planned Usage
+### Usage
 
 ```nginx
 http {
     server {
+        listen 8888;
+
         location /api/users {
-            jsonschema on;
-            jsonschema_request /etc/nginx/schemas/user-create.json;
-            
+            jsonschema '{"type":"object","required":["name","email"],"properties":{"name":{"type":"string","minLength":1},"email":{"type":"string"},"age":{"type":"number","minimum":0}}}';
             proxy_pass http://backend;
         }
-        
-        # Development mode - validate responses too
-        location /api/dev {
-            jsonschema on;
-            jsonschema_request /etc/nginx/schemas/request.json;
-            jsonschema_response /etc/nginx/schemas/response.json;
-            
-            proxy_pass http://backend;
+
+        location /api/simple {
+            jsonschema '{"type":"object"}';
+            echozn '{"status":"ok"}';
         }
     }
 }
 ```
 
-### Example Schema
+### Error Response
 
-```json
-{
-  "$schema": "http://json-schema.org/draft-07/schema#",
-  "type": "object",
-  "required": ["name", "email"],
-  "properties": {
-    "name": {
-      "type": "string",
-      "minLength": 1,
-      "maxLength": 100
-    },
-    "email": {
-      "type": "string",
-      "format": "email"
-    },
-    "age": {
-      "type": "integer",
-      "minimum": 0
-    }
-  }
-}
-```
-
-### Example Error Response
+On validation failure, returns HTTP 400 with JSON body:
 
 ```json
 {
   "error": "validation_failed",
-  "details": [
-    {
-      "path": "/email",
-      "message": "must be a valid email address"
-    },
-    {
-      "path": "/age",
-      "message": "must be >= 0"
-    }
-  ]
+  "message": "missing required field"
 }
 ```
 
-### References
+Possible error messages:
+- `invalid JSON` - Request body is not valid JSON
+- `must be a string` / `must be a number` / `must be an object` / etc. - Type mismatch
+- `missing required field` - Required field not present
+- `string too short` / `string too long` - String length violation
+- `number below minimum` / `number above maximum` - Number range violation
+- `schema too deep` - Schema exceeds maximum recursion depth (100)
 
-- [JSON Schema](https://json-schema.org/)
-- [Understanding JSON Schema](https://json-schema.org/understanding-json-schema/)
+### Behavior
+
+- GET requests and other methods without body pass through without validation
+- Requests without `Content-Type: application/json` header pass through without validation
+- Empty request bodies pass through without validation
+- Validation runs in the access phase before content handlers

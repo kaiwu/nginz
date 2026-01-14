@@ -1,66 +1,75 @@
-## Advanced Rate Limiting Module
+## Rate Limiting Module
 
-Flexible rate limiting with multiple algorithms and per-key limits.
+Simple per-IP rate limiting with fixed window algorithm.
 
-### Status
-
-**Not Implemented** - Skeleton only
-
-### Planned Features
-
-- **Multiple Algorithms**: Leaky bucket, token bucket, sliding window, fixed window
-- **Flexible Keys**: Rate limit by IP, API key, user ID, or any nginx variable
-- **Burst Handling**: Allow bursts with configurable limits
-- **Delay vs Reject**: Option to delay excess requests instead of rejecting
-- **Shared State**: Cross-worker rate limiting via shared memory
-- **Distributed**: Optional Redis backend for multi-instance deployments
-
-### Planned Directives
-
-#### ratelimit_zone
-
-*syntax:* `ratelimit_zone zone=<name>:<size> rate=<rate> [burst=<n>] [algorithm=<type>];`  
-*context:* `http`
-
-Define a shared memory zone for rate limiting.
+### Directives
 
 #### ratelimit
 
-*syntax:* `ratelimit zone=<name> [key=<variable>] [delay] [status=<code>];`  
+*syntax:* `ratelimit;`
 *context:* `location`
 
-Apply rate limiting to a location.
+Enable rate limiting for this location.
 
-#### ratelimit_status
+#### ratelimit_rate
 
-*syntax:* `ratelimit_status <code>;`  
-*default:* `ratelimit_status 429;`  
+*syntax:* `ratelimit_rate <N>r/s;` or `ratelimit_rate <N>;`
+*default:* `10r/s`
 *context:* `location`
 
-HTTP status code to return when rate limit is exceeded.
+Set the rate limit in requests per second.
 
-### Planned Usage
+#### ratelimit_burst
+
+*syntax:* `ratelimit_burst <N>;`
+*default:* `0`
+*context:* `location`
+
+Allow additional burst requests beyond the rate limit.
+
+### Usage
 
 ```nginx
 http {
-    ratelimit_zone zone=api:10m rate=100r/s burst=50 algorithm=sliding_window;
-    ratelimit_zone zone=login:1m rate=5r/m burst=2;
-    
     server {
+        listen 8888;
+
+        # Basic rate limiting: 10 requests/second (default)
         location /api {
-            ratelimit zone=api key=$http_x_api_key;
+            ratelimit;
             proxy_pass http://backend;
         }
-        
+
+        # Custom rate with burst
+        location /api/heavy {
+            ratelimit;
+            ratelimit_rate 5r/s;
+            ratelimit_burst 10;
+            proxy_pass http://backend;
+        }
+
+        # Strict rate limiting
         location /login {
-            ratelimit zone=login key=$binary_remote_addr delay;
+            ratelimit;
+            ratelimit_rate 3r/s;
             proxy_pass http://auth;
         }
     }
 }
 ```
 
-### References
+### Behavior
 
-- [NGINX Rate Limiting](https://www.nginx.com/blog/rate-limiting-nginx/)
-- [lua-resty-limit-traffic](https://github.com/openresty/lua-resty-limit-traffic)
+- Rate limiting is per client IP address
+- Uses a 1-second fixed window algorithm
+- Returns HTTP 429 (Too Many Requests) when limit exceeded
+- Runs in the preaccess phase
+- Storage is per-worker (not shared between workers)
+- Maximum 1024 unique IP entries tracked per worker (LRU eviction)
+
+### Algorithm
+
+The module uses a simple fixed window counter:
+- Each IP gets a counter that resets every second
+- Requests are allowed if `count < rate + burst`
+- When the window expires, the counter resets to 0
