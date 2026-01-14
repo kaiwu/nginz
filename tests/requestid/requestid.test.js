@@ -1,18 +1,31 @@
 import { describe, test, expect, beforeAll, afterAll } from "bun:test";
-import { startNginz, stopNginz, cleanupRuntime, TEST_URL } from "../harness.js";
+import {
+  startNginz,
+  stopNginz,
+  cleanupRuntime,
+  TEST_URL,
+  createHTTPMock,
+  MOCK_PORTS,
+} from "../harness.js";
 
 const MODULE = "requestid";
+let httpMock;
 
 // UUID4 regex pattern: 8-4-4-4-12 hex characters
 const UUID4_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 
 describe("requestid module", () => {
   beforeAll(async () => {
+    // Start mock backend server
+    httpMock = createHTTPMock(MOCK_PORTS.HTTP);
+    httpMock.get("/", { body: { status: "ok" }, status: 200 });
+
     await startNginz(`tests/${MODULE}/nginx.conf`, MODULE);
   });
 
   afterAll(async () => {
     await stopNginz();
+    httpMock.stop();
     cleanupRuntime(MODULE);
   });
 
