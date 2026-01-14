@@ -10,9 +10,10 @@ const cjson = ngx.cjson;
 const CJSON = cjson.CJSON;
 
 const NGX_OK = core.NGX_OK;
+const NGX_DONE = core.NGX_DONE;
+const NGX_AGAIN = core.NGX_AGAIN;
 const NGX_ERROR = core.NGX_ERROR;
 const NGX_DECLINED = core.NGX_DECLINED;
-const NGX_DONE = core.NGX_DONE;
 
 const ngx_str_t = core.ngx_str_t;
 const ngx_int_t = core.ngx_int_t;
@@ -362,11 +363,7 @@ export fn ngx_http_jsonschema_access_handler(r: [*c]ngx_http_request_t) callconv
     rctx.*.lccf = lccf;
     // Read request body
     const rc = http.ngx_http_read_client_request_body(r, ngx_http_jsonschema_body_handler);
-    if (rc >= http.NGX_HTTP_SPECIAL_RESPONSE) {
-        return rc;
-    }
-
-    return NGX_DONE;
+    return if (rc == NGX_AGAIN) NGX_DONE else rc;
 }
 
 fn create_loc_conf(cf: [*c]ngx_conf_t) callconv(.c) ?*anyopaque {
