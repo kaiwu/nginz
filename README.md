@@ -56,9 +56,9 @@ functionality in native Zig:
 
 - [ ] **ngx-http-jwt-module** - JWT Authentication (HS256/RS256/ES256 validation, claims extraction)
 - [ ] **ngx-http-healthcheck-module** - Active Health Checks (periodic probes, custom endpoints, slow-start)
-- [ ] **ngx-http-ratelimit-module** - Advanced Rate Limiting (token bucket, sliding window, per-user limits)
+- ✅  **ngx-http-ratelimit-module** - Advanced Rate Limiting (token bucket, sliding window, per-user limits)
 - [ ] **ngx-http-redis-module** - Non-blocking Redis Client (GET/SET, connection pooling, pipelining)
-- [ ] **ngx-http-circuit-breaker-module** - Circuit Breaker Pattern (failure detection, half-open state, gradual recovery)
+- ✅  **ngx-http-circuit-breaker-module** - Circuit Breaker Pattern (failure detection, half-open state, gradual recovery)
 
 ### Medium Priority
 
@@ -66,15 +66,15 @@ functionality in native Zig:
 - [ ] **ngx-http-acme-module** - Auto SSL/Let's Encrypt (certificate provisioning, renewal, ACME protocol)
 - [ ] **ngx-http-oidc-module** - OpenID Connect (SSO with IdPs, token refresh, session management)
 - [ ] **ngx-http-graphql-module** - GraphQL Gateway (query parsing, depth limiting, field auth, caching)
-- [ ] **ngx-http-jsonschema-module** - Request/Response Validation (JSON schema validation, structured errors)
+- ✅  **ngx-http-jsonschema-module** - Request/Response Validation (JSON schema validation, structured errors)
 - [ ] **ngx-http-transform-module** - Request/Response Transformation (JSON-to-JSON, XML-to-JSON)
 - [ ] **ngx-http-consul-module** - Service Discovery (Consul/etcd integration, dynamic upstreams)
-- [ ] **ngx-http-canary-module** - Traffic Splitting (percentage-based, header/cookie routing, A/B testing)
+- ✅  **ngx-http-canary-module** - Traffic Splitting (percentage-based, header/cookie routing, A/B testing)
 - [ ] **ngx-http-prometheus-module** - Native Prometheus Metrics (request counts, latencies, /metrics endpoint)
 
 ### Low Priority
 
-- [ ] **ngx-http-requestid-module** - Request Correlation (unique ID generation, X-Request-ID propagation)
+- ✅  **ngx-http-requestid-module** - Request Correlation (unique ID generation, X-Request-ID propagation)
 - [ ] **ngx-http-cache-tags-module** - Cache Invalidation (tag-based entries, purge by tag/pattern)
 
 
