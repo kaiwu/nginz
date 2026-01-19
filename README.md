@@ -54,7 +54,7 @@ functionality in native Zig:
 
 ### High Priority
 
-- [ ] **ngx-http-jwt-module** - JWT Authentication (HS256/RS256/ES256 validation, claims extraction)
+- ✅  **ngx-http-jwt-module** - JWT Authentication (HS256/RS256/ES256 validation, claims extraction)
 - [ ] **ngx-http-healthcheck-module** - Active Health Checks (periodic probes, custom endpoints, slow-start)
 - ✅  **ngx-http-ratelimit-module** - Advanced Rate Limiting (token bucket, sliding window, per-user limits)
 - [ ] **ngx-http-redis-module** - Non-blocking Redis Client (GET/SET, connection pooling, pipelining)

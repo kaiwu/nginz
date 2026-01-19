@@ -1,108 +1,127 @@
-## Request/Response Transform Module
+## Transform Module
 
-Transform request and response bodies between formats.
+JSON response transformation using JSON path extraction.
 
 ### Status
 
-**Not Implemented** - Skeleton only
+**Implemented** - Basic functionality complete
 
-### Planned Features
+### Features
 
-- **JSON-to-JSON**: jq-like transformations for restructuring JSON
-- **XML-to-JSON**: Convert XML responses to JSON
-- **JSON-to-XML**: Convert JSON requests to XML for legacy backends
-- **Template Engine**: Template-based transformations
-- **Field Mapping**: Map fields between different API schemas
-- **Streaming**: Stream large responses without full buffering
+- **JSON Path Extraction**: Extract nested values from JSON responses
+- **Path Syntax**: Supports `$.data.items`, `$.items.0` notation
+- **Passthrough**: Non-JSON responses pass through unchanged
+- **Graceful Fallback**: Returns original response if path not found
 
-### Planned Directives
-
-#### transform
-
-*syntax:* `transform on|off;`  
-*default:* `transform off;`  
-*context:* `location`
-
-Enable body transformation.
-
-#### transform_request
-
-*syntax:* `transform_request <expression|file>;`  
-*context:* `location`
-
-Transformation rule for request body.
+### Directives
 
 #### transform_response
 
-*syntax:* `transform_response <expression|file>;`  
+*syntax:* `transform_response <json_path>;`
 *context:* `location`
 
-Transformation rule for response body.
+Extract and return only the specified JSON path from upstream responses.
 
-#### transform_type
-
-*syntax:* `transform_type json|xml|template;`  
-*default:* `transform_type json;`  
-*context:* `location`
-
-Transformation type.
-
-### Planned Usage
+### Usage
 
 ```nginx
 http {
     server {
-        # Restructure JSON response
-        location /api/v2/users {
-            transform on;
-            transform_response '{id: .user_id, name: .full_name, email: .email_address}';
-            
-            proxy_pass http://legacy-api/users;
+        listen 8080;
+
+        # Extract nested data
+        location /api/users {
+            proxy_pass http://backend/users;
+            transform_response $.data;
         }
-        
-        # Convert XML backend to JSON API
-        location /api/orders {
-            transform on;
-            transform_type xml;
-            transform_response /etc/nginx/transforms/orders-xml-to-json.tpl;
-            
-            proxy_pass http://soap-backend/orders;
+
+        # Extract specific field
+        location /api/count {
+            proxy_pass http://backend/stats;
+            transform_response $.data.total;
         }
-        
-        # Transform request for legacy backend
-        location /api/submit {
-            transform on;
-            transform_request '{legacy_field: .modern_field, old_format: .new_format}';
-            
-            proxy_pass http://legacy-backend;
+
+        # Extract array element
+        location /api/first {
+            proxy_pass http://backend/items;
+            transform_response $.items.0;
         }
     }
 }
 ```
 
-### Example Transformations
+### Examples
 
-**Input:**
+**Original Response:**
 ```json
 {
-  "user_id": 123,
-  "full_name": "John Doe",
-  "email_address": "john@example.com"
+  "status": "ok",
+  "data": {
+    "users": [
+      {"id": 1, "name": "Alice"},
+      {"id": 2, "name": "Bob"}
+    ],
+    "total": 2
+  }
 }
 ```
 
-**Rule:** `{id: .user_id, name: .full_name, email: .email_address}`
-
-**Output:**
+**With `transform_response $.data`:**
 ```json
 {
-  "id": 123,
-  "name": "John Doe",
-  "email": "john@example.com"
+  "users": [
+    {"id": 1, "name": "Alice"},
+    {"id": 2, "name": "Bob"}
+  ],
+  "total": 2
 }
 ```
+
+**With `transform_response $.data.users`:**
+```json
+[
+  {"id": 1, "name": "Alice"},
+  {"id": 2, "name": "Bob"}
+]
+```
+
+**With `transform_response $.data.total`:**
+```
+2
+```
+
+### Path Syntax
+
+| Pattern | Description |
+|---------|-------------|
+| `$.foo` | Root-level field |
+| `$.foo.bar` | Nested field |
+| `$.items.0` | Array index (0-based) |
+| `$.data.items.0.name` | Deeply nested with array |
+
+### Behavior
+
+- **Non-JSON**: Responses without `application/json` content-type pass through unchanged
+- **Invalid Path**: If path doesn't exist, original response is returned
+- **Parse Error**: If JSON parsing fails, original response is returned
+
+### Limitations
+
+Current implementation has these limitations:
+
+- **Simple Paths Only**: No array filters or complex JSONPath expressions
+- **Memory Buffering**: Full response is buffered in memory
+- **No Request Transform**: Only transforms responses, not requests
+
+### Future Enhancements
+
+- **Request Transform**: Transform request bodies before proxying
+- **JSONPath Filters**: Support `$.items[?(@.active)]` syntax
+- **XML Support**: XML-to-JSON transformation
+- **Template Transform**: Jinja-style response templates
+- **Multiple Extractions**: Extract multiple paths into new structure
 
 ### References
 
+- [JSONPath Specification](https://goessner.net/articles/JsonPath/)
 - [jq Manual](https://stedolan.github.io/jq/manual/)
-- [Kong Request Transformer](https://docs.konghq.com/hub/kong-inc/request-transformer/)

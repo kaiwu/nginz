@@ -151,6 +151,7 @@ export const ngx_modules = [_][*c]ngx_module_t{
     &ngx_http_wechatpay_module,
     &ngx_http_jsonschema_module,
     &ngx_http_ratelimit_module,
+    &ngx_http_jwt_module,
     &ngx_http_waf_module,
     &ngx_http_circuit_breaker_module,
 
@@ -196,7 +197,6 @@ export const ngx_modules = [_][*c]ngx_module_t{
     &ngx_http_hello_module,
 
     // Security & Auth
-    &ngx_http_jwt_module,
     &ngx_http_oidc_module,
     &ngx_http_acme_module,
 

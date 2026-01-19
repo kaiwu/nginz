@@ -109,6 +109,7 @@ Access nginx APIs through the ngx namespace:
 - `ngx/pq.zig` - NEVER use it directly, likewise it is the libpq c bindings file, use its wrapper `ngx.pq` 
 - `ngz_modules.zig` For a filter module, make sure to position the module in between `ngx_http_userid_filter_module` and `ngx_http_headers_filter_module` of this file
 - `KEEP_LOGS=1 bun test tests/<module>/` - Use this env var to preserve runtime directory and nginx logs when debugging failed tests. Logs are at `tests/<module>/runtime/logs/`
+- Each module requires its own `README.md` documenting status, features, directives, usage examples, limitations, and future enhancements (see `prometheus-nginx-module/README.md` for reference)
 
 ### Testing
 

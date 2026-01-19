@@ -1,65 +1,51 @@
 ## Cache Tags Module
 
-Tag-based cache invalidation for advanced cache management.
+Tag-based cache invalidation for nginx responses.
 
 ### Status
 
-**Not Implemented** - Skeleton only
+**Implemented** - Basic functionality complete
 
-### Planned Features
+### Features
 
-- **Tag Association**: Associate cache entries with tags from response headers
-- **Tag-Based Purge**: Invalidate all cache entries with a specific tag
-- **Pattern Purge**: Purge by tag prefix or pattern
-- **Multi-Tag**: Support multiple tags per cache entry
-- **Surrogate Keys**: Support Fastly-style surrogate-key headers
-- **API Endpoint**: REST API for cache management
+- **Tag Collection**: Captures `Cache-Tag` header from upstream responses
+- **Per-Worker Storage**: Stores URL-to-tags mapping in worker memory
+- **Purge Endpoint**: REST API for invalidating cache entries by tag
+- **Pattern Matching**: Purge by exact tag or wildcard pattern
 
-### Planned Directives
+### Directives
 
 #### cache_tags
 
-*syntax:* `cache_tags on|off;`  
-*default:* `cache_tags off;`  
+*syntax:* `cache_tags on|off;`
 *context:* `location`
 
-Enable cache tagging.
-
-#### cache_tags_header
-
-*syntax:* `cache_tags_header <name>;`  
-*default:* `cache_tags_header Cache-Tag;`  
-*context:* `http`
-
-Header containing cache tags (comma-separated).
+Enable cache tag collection for responses in this location. The module captures the `Cache-Tag` header from upstream responses.
 
 #### cache_tags_purge
 
-*syntax:* `cache_tags_purge on|off;`  
+*syntax:* `cache_tags_purge;`
 *context:* `location`
 
-Enable purge endpoint at this location.
+Enable the purge endpoint at this location. Accepts POST requests with tag parameter.
 
-### Planned Usage
+### Usage
 
 ```nginx
 http {
-    proxy_cache_path /var/cache/nginx levels=1:2 keys_zone=cache:10m;
-    
-    cache_tags_header Cache-Tag;
-    
     server {
+        listen 8080;
+
+        # Application with cache tags
         location /api {
-            proxy_cache cache;
-            cache_tags on;
-            
             proxy_pass http://backend;
+            cache_tags on;
         }
-        
+
         # Purge endpoint
         location /cache/purge {
-            cache_tags_purge on;
-            
+            cache_tags_purge;
+
             # Restrict access
             allow 127.0.0.1;
             deny all;
@@ -68,30 +54,43 @@ http {
 }
 ```
 
-### Backend Response Headers
+### Upstream Response
 
-Backend should send tags in response:
+Your backend should include the `Cache-Tag` header:
+
 ```http
 HTTP/1.1 200 OK
-Cache-Tag: product-123, category-electronics, homepage
-Cache-Control: public, max-age=3600
+Content-Type: application/json
+Cache-Tag: user-123, product-456, category-electronics
 ```
 
 ### Purge API
 
 ```bash
-# Purge all entries with tag "product-123"
-curl -X PURGE http://localhost/cache/purge?tag=product-123
+# Purge by exact tag
+curl -X POST "http://localhost:8080/cache/purge?tag=user-123"
 
-# Purge multiple tags
-curl -X PURGE http://localhost/cache/purge?tag=category-electronics,homepage
-
-# Purge by pattern
-curl -X PURGE http://localhost/cache/purge?pattern=product-*
+# Response
+{"purged": 5, "tag": "user-123"}
 ```
+
+### Limitations
+
+Current implementation has these limitations:
+
+- **Per-Worker Storage**: Tags are stored per-worker and not shared
+- **Memory Only**: Tags are lost on worker restart/reload
+- **No Wildcards Yet**: Pattern matching limited to exact tags
+
+### Future Enhancements
+
+- **Shared Memory**: Cross-worker tag storage using nginx shared zones
+- **Wildcard Purge**: Support patterns like `user-*` or `product-*`
+- **Bulk Purge**: Purge multiple tags in one request
+- **Tag TTL**: Automatic expiration of stale tags
+- **Persistence**: Optional disk-backed storage
 
 ### References
 
 - [Fastly Surrogate Keys](https://docs.fastly.com/en/guides/purging-api-cache-with-surrogate-keys)
-- [Varnish Cache Tags](https://varnish-cache.org/docs/6.0/users-guide/purging.html)
-- [NGINX Cache Purging](https://docs.nginx.com/nginx/admin-guide/content-cache/content-caching/#purging-content-from-the-cache)
+- [Varnish Cache Tags](https://varnish-cache.org/docs/trunk/users-guide/purging.html)

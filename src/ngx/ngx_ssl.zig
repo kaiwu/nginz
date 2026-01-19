@@ -66,7 +66,7 @@ const EVP_PKEY_private_check = ngx.EVP_PKEY_private_check;
 
 // SHA256 DIGEST SIGN/VERIFY
 const SHA256_DIGEST_LENGTH = ngx.SHA256_DIGEST_LENGTH;
-const EVP_sha256 = ngx.EVP_sha256;
+pub const EVP_sha256 = ngx.EVP_sha256;
 const EVP_MD_CTX = ngx.EVP_MD_CTX;
 const EVP_MD_CTX_new = ngx.EVP_MD_CTX_new;
 const EVP_MD_CTX_free = ngx.EVP_MD_CTX_free;
@@ -81,6 +81,15 @@ const EVP_DigestSignFinal = ngx.EVP_DigestSignFinal;
 // base64
 const EVP_EncodeBlock = ngx.EVP_EncodeBlock;
 const EVP_DecodeBlock = ngx.EVP_DecodeBlock;
+
+// HMAC
+pub const HMAC_CTX = ngx.HMAC_CTX;
+pub const HMAC_CTX_new = ngx.HMAC_CTX_new;
+pub const HMAC_CTX_free = ngx.HMAC_CTX_free;
+pub const HMAC_Init_ex = ngx.HMAC_Init_ex;
+pub const HMAC_Update = ngx.HMAC_Update;
+pub const HMAC_Final = ngx.HMAC_Final;
+pub const EVP_MD = ngx.EVP_MD;
 
 const ERR_get_error = ngx.ERR_get_error;
 const ERR_error_string_n = ngx.ERR_error_string_n;
