@@ -210,6 +210,8 @@ pub const ngx_http_run_posted_requests = ngx.ngx_http_run_posted_requests;
 pub const ngx_http_request_empty_handler = ngx.ngx_http_request_empty_handler;
 pub const ngx_http_read_client_request_body = ngx.ngx_http_read_client_request_body;
 pub const ngx_http_upstream_hide_headers_hash = ngx.ngx_http_upstream_hide_headers_hash;
+pub const ngx_http_upstream_non_buffered_filter = ngx.ngx_http_upstream_non_buffered_filter;
+pub const ngx_http_upstream_non_buffered_filter_init = ngx.ngx_http_upstream_non_buffered_filter_init;
 
 pub inline fn ngx_http_clear_content_length(r: [*c]ngx_http_request_t) void {
     r.*.headers_out.content_length_n = -1;

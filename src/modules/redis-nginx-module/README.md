@@ -9,9 +9,11 @@ Simple Redis client for fetching cached values from Redis.
 ### Features
 
 - **GET Command**: Fetch values from Redis using RESP protocol
+- **Non-blocking I/O**: Uses nginx upstream module for async operations
 - **URI-based Keys**: Use request URI path as Redis key
 - **Static Keys**: Configure fixed key via directive
 - **JSON Responses**: Returns values as JSON objects
+- **Connection Reuse**: Supports keepalive connections to Redis
 
 ### Directives
 
@@ -91,15 +93,12 @@ The leading slash is stripped from the URI to form the key.
 Current implementation has these limitations:
 
 - **GET Only**: Only Redis GET command is supported
-- **Blocking I/O**: Uses blocking TCP connection (not nginx upstream)
-- **No Connection Pooling**: New connection per request
 - **No Authentication**: Redis AUTH not supported
 - **No Pipelining**: Single command per connection
 
 ### Future Enhancements
 
 - **More Commands**: SET, DEL, INCR, EXPIRE, MGET
-- **Non-blocking I/O**: nginx upstream integration with connection pooling
 - **Authentication**: Redis AUTH and ACL support
 - **Variable Expansion**: Support nginx variables in redis_key
 - **Timeout Configuration**: Configurable connection and read timeouts

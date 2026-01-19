@@ -48,6 +48,7 @@ pub inline fn ngx_free_chain(pool: [*c]ngx_pool_t, cl: [*c]ngx_chain_t) void {
 pub const ngx_create_temp_buf = ngx.ngx_create_temp_buf;
 pub const ngx_alloc_chain_link = ngx.ngx_alloc_chain_link;
 pub const ngx_chain_update_chains = ngx.ngx_chain_update_chains;
+pub const ngx_chain_get_free_buf = ngx.ngx_chain_get_free_buf;
 
 pub inline fn ngz_chain_length(cl: [*c]ngx_chain_t) ngx_uint_t {
     var total: ngx_uint_t = 0;

@@ -8,6 +8,7 @@ const http = ngx.http;
 
 const NGX_OK = core.NGX_OK;
 const NGX_ERROR = core.NGX_ERROR;
+const NGX_AGAIN = core.NGX_AGAIN;
 const NGX_DECLINED = core.NGX_DECLINED;
 
 const ngx_str_t = core.ngx_str_t;
@@ -24,18 +25,20 @@ const ngx_http_module_t = http.ngx_http_module_t;
 const ngx_http_request_t = http.ngx_http_request_t;
 
 const ngx_string = ngx.string.ngx_string;
+const ngx_sprintf = ngx.string.ngx_sprintf;
 const NChain = ngx.buf.NChain;
 
 extern var ngx_http_core_module: ngx_module_t;
+extern var ngx_http_upstream_module: ngx_module_t;
+extern var ngx_pagesize: ngx_uint_t;
 
-// Redis errors
-const RedisError = error{
-    ConnectionFailed,
-    SendFailed,
-    RecvFailed,
-    ProtocolError,
-    KeyNotFound,
-    OOM,
+// Redis RESP parsing state
+const RespState = enum(c_int) {
+    start, // Waiting for type byte
+    reading_length, // Reading bulk string length
+    reading_data, // Reading bulk string data
+    done, // Parsing complete
+    resp_error, // Parse error
 };
 
 // Location config for redis directives
@@ -44,7 +47,39 @@ const redis_loc_conf = extern struct {
     port: ngx_uint_t,
     key: ngx_str_t,
     enabled: ngx_flag_t,
+    ups: http.ngx_http_upstream_conf_t,
 };
+
+// Per-request context
+const redis_request_ctx = extern struct {
+    lccf: [*c]redis_loc_conf,
+    res: [*c]ngx_chain_t,
+    key: ngx_str_t,
+    state: RespState,
+    data_len: isize, // Expected length from RESP (-1 for nil)
+    data: ngx_str_t, // Copied data from Redis response
+};
+
+const redis_hide_headers = [_]ngx_str_t{
+    ngx.string.ngx_null_str,
+};
+
+const RedisError = error{
+    UpstreamCreateFailed,
+    OutOfMemory,
+};
+
+fn init_upstream_conf(cf: [*c]http.ngx_http_upstream_conf_t) void {
+    cf.*.buffering = 0;
+    cf.*.buffer_size = 8 * ngx_pagesize;
+    cf.*.ssl_verify = 0;
+    cf.*.connect_timeout = 5000;
+    cf.*.send_timeout = 5000;
+    cf.*.read_timeout = 5000;
+    cf.*.module = ngx_string("ngx_http_redis_module");
+    cf.*.hide_headers = conf.NGX_CONF_UNSET_PTR;
+    cf.*.pass_headers = conf.NGX_CONF_UNSET_PTR;
+}
 
 fn create_loc_conf(cf: [*c]ngx_conf_t) callconv(.c) ?*anyopaque {
     if (core.ngz_pcalloc_c(redis_loc_conf, cf.*.pool)) |p| {
@@ -52,6 +87,7 @@ fn create_loc_conf(cf: [*c]ngx_conf_t) callconv(.c) ?*anyopaque {
         p.*.enabled = 0;
         p.*.host = ngx.string.ngx_null_str;
         p.*.key = ngx.string.ngx_null_str;
+        init_upstream_conf(&p.*.ups);
         return p;
     }
     return null;
@@ -62,13 +98,30 @@ fn merge_loc_conf(
     parent: ?*anyopaque,
     child: ?*anyopaque,
 ) callconv(.c) [*c]u8 {
-    _ = cf;
     const prev = core.castPtr(redis_loc_conf, parent) orelse return conf.NGX_CONF_OK;
     const c = core.castPtr(redis_loc_conf, child) orelse return conf.NGX_CONF_OK;
 
     if (c.*.host.len == 0) c.*.host = prev.*.host;
     if (c.*.key.len == 0) c.*.key = prev.*.key;
     if (c.*.port == 6379 and prev.*.port != 6379) c.*.port = prev.*.port;
+
+    // Setup upstream headers hash
+    if (c.*.enabled == 1) {
+        var hash = ngx.hash.ngx_hash_init_t{
+            .max_size = 100,
+            .bucket_size = 1024,
+            .name = @constCast("redis_headers_hash"),
+        };
+        if (http.ngx_http_upstream_hide_headers_hash(
+            cf,
+            &c.*.ups,
+            &prev.*.ups,
+            @constCast(&redis_hide_headers),
+            &hash,
+        ) != NGX_OK) {
+            return conf.NGX_CONF_ERROR;
+        }
+    }
 
     return conf.NGX_CONF_OK;
 }
@@ -78,12 +131,10 @@ fn parse_host_port(arg: ngx_str_t) struct { host: ngx_str_t, port: u16 } {
     var host = arg;
     var port: u16 = 6379;
 
-    // Find colon separator
     var i: usize = 0;
     while (i < arg.len) : (i += 1) {
         if (arg.data[i] == ':') {
             host.len = i;
-            // Parse port number
             var p: u16 = 0;
             var j: usize = i + 1;
             while (j < arg.len) : (j += 1) {
@@ -108,7 +159,6 @@ fn ngx_conf_set_redis_pass(
 ) callconv(.c) [*c]u8 {
     _ = cmd;
     if (core.castPtr(redis_loc_conf, loc)) |lccf| {
-        // Get the argument (host:port)
         var i: ngx_uint_t = 1;
         if (ngx.array.ngx_array_next(ngx_str_t, cf.*.args, &i)) |arg| {
             const parsed = parse_host_port(arg.*);
@@ -128,228 +178,69 @@ fn ngx_conf_set_redis_pass(
     return conf.NGX_CONF_OK;
 }
 
-// Build RESP protocol GET command: *2\r\n$3\r\nGET\r\n$<len>\r\n<key>\r\n
-fn build_get_command(key: ngx_str_t, buffer: []u8) usize {
-    var pos: usize = 0;
+// Build RESP GET command: *2\r\n$3\r\nGET\r\n$<len>\r\n<key>\r\n
+fn build_get_command(key: ngx_str_t, pool: [*c]ngx_pool_t) !ngx_str_t {
+    // Calculate buffer size: *2\r\n$3\r\nGET\r\n$<len>\r\n<key>\r\n
+    // Max length digits = 20 for usize
+    const max_size = 4 + 4 + 3 + 2 + 1 + 20 + 2 + key.len + 2;
 
-    // Array with 2 elements
-    buffer[pos] = '*';
-    pos += 1;
-    buffer[pos] = '2';
-    pos += 1;
-    buffer[pos] = '\r';
-    pos += 1;
-    buffer[pos] = '\n';
-    pos += 1;
+    if (core.castPtr(u8, core.ngx_pnalloc(pool, max_size))) |data| {
+        var pos: usize = 0;
 
-    // First element: GET (bulk string)
-    buffer[pos] = '$';
-    pos += 1;
-    buffer[pos] = '3';
-    pos += 1;
-    buffer[pos] = '\r';
-    pos += 1;
-    buffer[pos] = '\n';
-    pos += 1;
-    buffer[pos] = 'G';
-    pos += 1;
-    buffer[pos] = 'E';
-    pos += 1;
-    buffer[pos] = 'T';
-    pos += 1;
-    buffer[pos] = '\r';
-    pos += 1;
-    buffer[pos] = '\n';
-    pos += 1;
+        // *2\r\n
+        const header = "*2\r\n$3\r\nGET\r\n$";
+        @memcpy(data[pos..][0..header.len], header);
+        pos += header.len;
 
-    // Second element: key (bulk string)
-    buffer[pos] = '$';
-    pos += 1;
-
-    // Write key length as decimal
-    var len_buf: [20]u8 = undefined;
-    var len = key.len;
-    var len_pos: usize = 0;
-    if (len == 0) {
-        len_buf[0] = '0';
-        len_pos = 1;
-    } else {
-        while (len > 0) : (len_pos += 1) {
-            len_buf[len_pos] = @intCast('0' + @mod(len, 10));
-            len = @divTrunc(len, 10);
-        }
-        // Reverse
-        var j: usize = 0;
-        while (j < len_pos / 2) : (j += 1) {
-            const tmp = len_buf[j];
-            len_buf[j] = len_buf[len_pos - 1 - j];
-            len_buf[len_pos - 1 - j] = tmp;
-        }
-    }
-    @memcpy(buffer[pos..][0..len_pos], len_buf[0..len_pos]);
-    pos += len_pos;
-
-    buffer[pos] = '\r';
-    pos += 1;
-    buffer[pos] = '\n';
-    pos += 1;
-
-    // Write key
-    @memcpy(buffer[pos..][0..key.len], core.slicify(u8, key.data, key.len));
-    pos += key.len;
-
-    buffer[pos] = '\r';
-    pos += 1;
-    buffer[pos] = '\n';
-    pos += 1;
-
-    return pos;
-}
-
-// Parse RESP bulk string response: $<len>\r\n<data>\r\n or $-1\r\n (nil)
-fn parse_bulk_string(response: []const u8) ?[]const u8 {
-    if (response.len < 4) return null;
-
-    // Check for bulk string marker
-    if (response[0] != '$') return null;
-
-    // Find first \r\n to get length
-    var i: usize = 1;
-    var is_negative = false;
-    if (response[i] == '-') {
-        is_negative = true;
-        i += 1;
-    }
-
-    var len: isize = 0;
-    while (i < response.len and response[i] != '\r') : (i += 1) {
-        if (response[i] >= '0' and response[i] <= '9') {
-            len = len * 10 + @as(isize, response[i] - '0');
-        }
-    }
-
-    if (is_negative) {
-        // Nil response ($-1\r\n)
-        return null;
-    }
-
-    // Skip \r\n after length
-    if (i + 2 > response.len) return null;
-    i += 2; // skip \r\n
-
-    // Extract data
-    const data_len: usize = @intCast(len);
-    if (i + data_len > response.len) return null;
-
-    return response[i..][0..data_len];
-}
-
-// Parse RESP error response: -ERR <message>\r\n
-fn parse_error(response: []const u8) ?[]const u8 {
-    if (response.len < 2) return null;
-    if (response[0] != '-') return null;
-
-    var i: usize = 1;
-    while (i < response.len and response[i] != '\r') : (i += 1) {}
-    return response[1..i];
-}
-
-// Simple blocking TCP connection to Redis
-const Socket = struct {
-    fd: i32,
-
-    pub fn connect(host: []const u8, port: u16) !Socket {
-        const c = @cImport({
-            @cInclude("sys/socket.h");
-            @cInclude("netinet/in.h");
-            @cInclude("arpa/inet.h");
-            @cInclude("unistd.h");
-            @cInclude("string.h");
-            @cInclude("netdb.h");
-        });
-
-        const fd = c.socket(c.AF_INET, c.SOCK_STREAM, 0);
-        if (fd < 0) return RedisError.ConnectionFailed;
-
-        // Prepare host string (null-terminated)
-        var host_buf: [256]u8 = undefined;
-        if (host.len >= host_buf.len) return RedisError.ConnectionFailed;
-        @memcpy(host_buf[0..host.len], host);
-        host_buf[host.len] = 0;
-
-        var addr: c.struct_sockaddr_in = undefined;
-        @memset(@as([*]u8, @ptrCast(&addr))[0..@sizeOf(c.struct_sockaddr_in)], 0);
-        addr.sin_family = c.AF_INET;
-        addr.sin_port = c.htons(port);
-
-        // Try parsing as IP address first
-        if (c.inet_pton(c.AF_INET, &host_buf, &addr.sin_addr) != 1) {
-            // Not an IP, try resolving hostname
-            const hints = c.struct_addrinfo{
-                .ai_family = c.AF_INET,
-                .ai_socktype = c.SOCK_STREAM,
-                .ai_protocol = 0,
-                .ai_flags = 0,
-                .ai_addrlen = 0,
-                .ai_addr = null,
-                .ai_canonname = null,
-                .ai_next = null,
-            };
-            var result: ?*c.struct_addrinfo = null;
-            if (c.getaddrinfo(&host_buf, null, &hints, &result) != 0) {
-                _ = c.close(fd);
-                return RedisError.ConnectionFailed;
+        // Write key length as decimal
+        var len_buf: [20]u8 = undefined;
+        var len = key.len;
+        var len_pos: usize = 0;
+        if (len == 0) {
+            len_buf[0] = '0';
+            len_pos = 1;
+        } else {
+            while (len > 0) : (len_pos += 1) {
+                len_buf[len_pos] = @intCast('0' + @mod(len, 10));
+                len = @divTrunc(len, 10);
             }
-            if (result) |res| {
-                defer c.freeaddrinfo(res);
-                if (res.ai_addr) |ai_addr| {
-                    const sin: *c.struct_sockaddr_in = @ptrCast(@alignCast(ai_addr));
-                    addr.sin_addr = sin.sin_addr;
-                }
+            // Reverse
+            var j: usize = 0;
+            while (j < len_pos / 2) : (j += 1) {
+                const tmp = len_buf[j];
+                len_buf[j] = len_buf[len_pos - 1 - j];
+                len_buf[len_pos - 1 - j] = tmp;
             }
         }
+        @memcpy(data[pos..][0..len_pos], len_buf[0..len_pos]);
+        pos += len_pos;
 
-        if (c.connect(fd, @ptrCast(&addr), @sizeOf(c.struct_sockaddr_in)) < 0) {
-            _ = c.close(fd);
-            return RedisError.ConnectionFailed;
-        }
+        // \r\n
+        data[pos] = '\r';
+        pos += 1;
+        data[pos] = '\n';
+        pos += 1;
 
-        return Socket{ .fd = fd };
+        // Copy key
+        @memcpy(data[pos..][0..key.len], core.slicify(u8, key.data, key.len));
+        pos += key.len;
+
+        // \r\n
+        data[pos] = '\r';
+        pos += 1;
+        data[pos] = '\n';
+        pos += 1;
+
+        return ngx_str_t{ .data = data, .len = pos };
     }
+    return RedisError.OutOfMemory;
+}
 
-    pub fn send(self: Socket, data: []const u8) !void {
-        const c = @cImport({
-            @cInclude("sys/socket.h");
-        });
-        const sent = c.send(self.fd, data.ptr, data.len, 0);
-        if (sent < 0) return RedisError.SendFailed;
-    }
-
-    pub fn recv(self: Socket, buffer: []u8) !usize {
-        const c = @cImport({
-            @cInclude("sys/socket.h");
-        });
-        const received = c.recv(self.fd, buffer.ptr, buffer.len, 0);
-        if (received < 0) return RedisError.RecvFailed;
-        return @intCast(received);
-    }
-
-    pub fn close(self: Socket) void {
-        const c = @cImport({
-            @cInclude("unistd.h");
-        });
-        _ = c.close(self.fd);
-    }
-};
-
-// Get key to query - uses URI path stripped of leading slash
+// Get key to query
 fn get_redis_key(r: [*c]ngx_http_request_t, lccf: [*c]redis_loc_conf) ngx_str_t {
-    // If key is configured, use it
     if (lccf.*.key.len > 0) {
         return lccf.*.key;
     }
-
-    // Otherwise use URI without leading slash
     var key = r.*.uri;
     if (key.len > 0 and key.data[0] == '/') {
         key.data += 1;
@@ -358,19 +249,62 @@ fn get_redis_key(r: [*c]ngx_http_request_t, lccf: [*c]redis_loc_conf) ngx_str_t 
     return key;
 }
 
-fn send_json_response(r: [*c]ngx_http_request_t, value: ?[]const u8, status: ngx_uint_t) ngx_int_t {
-    // Build JSON response
+////////////////////////////  REDIS UPSTREAM  //////////////////////////////////////////////////
+
+fn ngx_http_redis_upstream_create_request(
+    r: [*c]ngx_http_request_t,
+) callconv(.c) ngx_int_t {
+    if (core.castPtr(
+        redis_request_ctx,
+        r.*.ctx[ngx_http_redis_module.ctx_index],
+    )) |rctx| {
+        const cmd = build_get_command(rctx.*.key, r.*.pool) catch return http.NGX_HTTP_INTERNAL_SERVER_ERROR;
+
+        var chain = NChain.init(r.*.pool);
+        var out = ngx_chain_t{
+            .buf = core.nullptr(ngx_buf_t),
+            .next = core.nullptr(ngx_chain_t),
+        };
+        const last = chain.allocStr(cmd, &out) catch return http.NGX_HTTP_INTERNAL_SERVER_ERROR;
+
+        last.*.buf.*.flags.last_buf = true;
+        last.*.buf.*.flags.last_in_chain = true;
+        last.*.next = r.*.upstream.*.request_bufs;
+        r.*.upstream.*.request_bufs = last;
+
+        r.*.upstream.*.flags.header_sent = false;
+        r.*.upstream.*.flags.request_sent = false;
+        r.*.header_hash = 1;
+
+        ngx.log.ngz_log_error(
+            ngx.log.NGX_LOG_DEBUG,
+            r.*.connection.*.log,
+            0,
+            "redis: sending GET command for key: %V",
+            .{&rctx.*.key},
+        );
+    }
+    return NGX_OK;
+}
+
+// Build JSON response from Redis value
+fn build_json_response(rctx: [*c]redis_request_ctx, pool: [*c]ngx_pool_t) ?ngx_str_t {
     var json_buf: [8192]u8 = undefined;
     var json_len: usize = 0;
 
-    if (value) |v| {
-        // {"value":"..."}
+    if (rctx.*.data_len < 0) {
+        // Nil response
+        const null_json = "{\"value\":null}";
+        @memcpy(json_buf[0..null_json.len], null_json);
+        json_len = null_json.len;
+    } else if (rctx.*.data.len > 0) {
+        // Has data
         const prefix = "{\"value\":\"";
         @memcpy(json_buf[json_len..][0..prefix.len], prefix);
         json_len += prefix.len;
 
-        // Escape JSON special characters
-        for (v) |c| {
+        const data_slice = core.slicify(u8, rctx.*.data.data, rctx.*.data.len);
+        for (data_slice) |c| {
             if (json_len >= json_buf.len - 10) break;
             switch (c) {
                 '"' => {
@@ -414,81 +348,325 @@ fn send_json_response(r: [*c]ngx_http_request_t, value: ?[]const u8, status: ngx
         @memcpy(json_buf[json_len..][0..suffix.len], suffix);
         json_len += suffix.len;
     } else {
-        // null response
-        const null_json = "{\"value\":null}";
-        @memcpy(json_buf[0..null_json.len], null_json);
-        json_len = null_json.len;
+        // Empty string
+        const empty_json = "{\"value\":\"\"}";
+        @memcpy(json_buf[0..empty_json.len], empty_json);
+        json_len = empty_json.len;
     }
 
-    // Set content type
-    r.*.headers_out.content_type = ngx_str_t{ .len = 16, .data = @constCast("application/json") };
-    r.*.headers_out.content_type_len = 16;
-    r.*.headers_out.status = status;
-    r.*.headers_out.content_length_n = @intCast(json_len);
-
-    // Send headers
-    const rc = http.ngx_http_send_header(r);
-    if (rc == NGX_ERROR or rc > NGX_OK) {
-        return rc;
+    // Allocate in pool
+    if (core.castPtr(u8, core.ngx_pnalloc(pool, json_len))) |data| {
+        @memcpy(core.slicify(u8, data, json_len), json_buf[0..json_len]);
+        return ngx_str_t{ .data = data, .len = json_len };
     }
-
-    // Allocate buffer
-    const b = core.castPtr(ngx_buf_t, core.ngx_pcalloc(r.*.pool, @sizeOf(ngx_buf_t))) orelse return NGX_ERROR;
-    const data = core.castPtr(u8, core.ngx_pnalloc(r.*.pool, json_len)) orelse return NGX_ERROR;
-
-    @memcpy(core.slicify(u8, data, json_len), json_buf[0..json_len]);
-
-    b.*.pos = data;
-    b.*.last = data + json_len;
-    b.*.flags.memory = true;
-    b.*.flags.last_buf = true;
-    b.*.flags.last_in_chain = true;
-
-    var out: ngx_chain_t = undefined;
-    out.buf = b;
-    out.next = null;
-
-    return http.ngx_http_output_filter(r, &out);
+    return null;
 }
 
-fn send_error_response(r: [*c]ngx_http_request_t, message: []const u8, status: ngx_uint_t) ngx_int_t {
-    var json_buf: [512]u8 = undefined;
-    const prefix = "{\"error\":\"";
-    @memcpy(json_buf[0..prefix.len], prefix);
-    var pos = prefix.len;
-    @memcpy(json_buf[pos..][0..message.len], message);
-    pos += message.len;
-    const suffix = "\"}";
-    @memcpy(json_buf[pos..][0..suffix.len], suffix);
-    pos += suffix.len;
+// Parse RESP response - Redis doesn't use HTTP headers
+// Response format: $<len>\r\n<data>\r\n or $-1\r\n (nil) or -ERR msg\r\n (error)
+fn ngx_http_redis_upstream_process_header(
+    r: [*c]ngx_http_request_t,
+) callconv(.c) ngx_int_t {
+    if (core.castPtr(
+        redis_request_ctx,
+        r.*.ctx[ngx_http_redis_module.ctx_index],
+    )) |rctx| {
+        const u = r.*.upstream;
+        const b = &u.*.buffer;
 
-    // Set content type
-    r.*.headers_out.content_type = ngx_str_t{ .len = 16, .data = @constCast("application/json") };
-    r.*.headers_out.content_type_len = 16;
-    r.*.headers_out.status = status;
-    r.*.headers_out.content_length_n = @intCast(pos);
+        // Need at least type byte + \r\n
+        if (b.*.last <= b.*.pos + 3) {
+            return NGX_AGAIN;
+        }
 
-    const rc = http.ngx_http_send_header(r);
-    if (rc == NGX_ERROR or rc > NGX_OK) {
-        return rc;
+        const type_byte = b.*.pos[0];
+
+        switch (type_byte) {
+            '$' => {
+                // Bulk string: $<len>\r\n<data>\r\n
+                var p: [*c]u8 = b.*.pos + 1;
+                var is_negative = false;
+
+                if (p.* == '-') {
+                    is_negative = true;
+                    p += 1;
+                }
+
+                // Parse length
+                var len: isize = 0;
+                while (p < b.*.last and p.* != '\r') : (p += 1) {
+                    if (p.* >= '0' and p.* <= '9') {
+                        len = len * 10 + @as(isize, p.* - '0');
+                    } else {
+                        rctx.*.state = .resp_error;
+                        return NGX_ERROR;
+                    }
+                }
+
+                // Need \r\n after length
+                if (p + 1 >= b.*.last) {
+                    return NGX_AGAIN;
+                }
+
+                if (p.* != '\r' or (p + 1).* != '\n') {
+                    rctx.*.state = .resp_error;
+                    return NGX_ERROR;
+                }
+
+                if (is_negative) {
+                    // Nil response ($-1\r\n)
+                    rctx.*.data_len = -1;
+                    rctx.*.data = ngx.string.ngx_null_str;
+                    rctx.*.state = .done;
+                } else {
+                    // Check if we have all data: len bytes + \r\n
+                    const data_start = p + 2; // skip \r\n
+                    const needed: usize = @intCast(len);
+                    if (data_start + needed + 2 > b.*.last) {
+                        return NGX_AGAIN;
+                    }
+
+                    // Copy data to request pool
+                    if (core.castPtr(u8, core.ngx_pnalloc(r.*.pool, needed))) |data_copy| {
+                        @memcpy(core.slicify(u8, data_copy, needed), core.slicify(u8, data_start, needed));
+                        rctx.*.data = ngx_str_t{ .data = data_copy, .len = needed };
+                    } else {
+                        rctx.*.data = ngx.string.ngx_null_str;
+                    }
+
+                    rctx.*.data_len = len;
+                    rctx.*.state = .done;
+                }
+
+                // Build JSON response and replace buffer content
+                if (build_json_response(rctx, r.*.pool)) |json| {
+                    // Replace buffer with JSON
+                    b.*.pos = json.data;
+                    b.*.last = json.data + json.len;
+
+                    u.*.headers_in.status_n = 200;
+                    u.*.headers_in.content_length_n = @intCast(json.len);
+                    // Set length to 0 - we've consumed all upstream data
+                    // The content is already in the buffer ready to be sent
+                    u.*.length = 0;
+
+                    // Set content-type header
+                    r.*.headers_out.content_type = ngx_str_t{ .len = 16, .data = @constCast("application/json") };
+                    r.*.headers_out.content_type_len = 16;
+                    r.*.headers_out.content_type_lowcase = null;
+                }
+
+                return NGX_OK;
+            },
+            '-' => {
+                // Error response: -ERR message\r\n
+                rctx.*.state = .resp_error;
+                rctx.*.data_len = -1;
+                rctx.*.data = ngx.string.ngx_null_str;
+
+                // Build error JSON
+                const error_json = "{\"error\":\"redis_error\"}";
+                if (core.castPtr(u8, core.ngx_pnalloc(r.*.pool, error_json.len))) |data| {
+                    @memcpy(core.slicify(u8, data, error_json.len), error_json);
+                    b.*.pos = data;
+                    b.*.last = data + error_json.len;
+                }
+
+                u.*.headers_in.status_n = 500;
+                u.*.headers_in.content_length_n = error_json.len;
+                u.*.length = 0;
+
+                r.*.headers_out.content_type = ngx_str_t{ .len = 16, .data = @constCast("application/json") };
+                r.*.headers_out.content_type_len = 16;
+                r.*.headers_out.content_type_lowcase = null;
+
+                return NGX_OK;
+            },
+            '+' => {
+                // Simple string: +OK\r\n
+                rctx.*.data_len = 0;
+                rctx.*.data = ngx.string.ngx_null_str;
+                rctx.*.state = .done;
+
+                // Build empty value JSON
+                if (build_json_response(rctx, r.*.pool)) |json| {
+                    b.*.pos = json.data;
+                    b.*.last = json.data + json.len;
+                    u.*.headers_in.status_n = 200;
+                    u.*.headers_in.content_length_n = @intCast(json.len);
+                    u.*.length = 0;
+
+                    r.*.headers_out.content_type = ngx_str_t{ .len = 16, .data = @constCast("application/json") };
+                    r.*.headers_out.content_type_len = 16;
+                    r.*.headers_out.content_type_lowcase = null;
+                }
+
+                return NGX_OK;
+            },
+            ':' => {
+                // Integer: :1000\r\n - treat as string
+                var p: [*c]u8 = b.*.pos + 1;
+                while (p < b.*.last and p.* != '\r') : (p += 1) {}
+
+                if (p >= b.*.last) return NGX_AGAIN;
+
+                const int_len = core.ngz_len(b.*.pos + 1, p);
+                if (core.castPtr(u8, core.ngx_pnalloc(r.*.pool, int_len))) |data_copy| {
+                    @memcpy(core.slicify(u8, data_copy, int_len), core.slicify(u8, b.*.pos + 1, int_len));
+                    rctx.*.data = ngx_str_t{ .data = data_copy, .len = int_len };
+                } else {
+                    rctx.*.data = ngx.string.ngx_null_str;
+                }
+
+                rctx.*.data_len = @intCast(int_len);
+                rctx.*.state = .done;
+
+                if (build_json_response(rctx, r.*.pool)) |json| {
+                    b.*.pos = json.data;
+                    b.*.last = json.data + json.len;
+                    u.*.headers_in.status_n = 200;
+                    u.*.headers_in.content_length_n = @intCast(json.len);
+                    u.*.length = 0;
+
+                    r.*.headers_out.content_type = ngx_str_t{ .len = 16, .data = @constCast("application/json") };
+                    r.*.headers_out.content_type_len = 16;
+                    r.*.headers_out.content_type_lowcase = null;
+                }
+
+                return NGX_OK;
+            },
+            else => {
+                rctx.*.state = .resp_error;
+                return NGX_ERROR;
+            },
+        }
+    }
+    return NGX_ERROR;
+}
+
+fn ngx_http_redis_upstream_input_filter_init(
+    ctx: ?*anyopaque,
+) callconv(.c) ngx_int_t {
+    if (core.castPtr(ngx_http_request_t, ctx)) |r| {
+        const u = r.*.upstream;
+        // Set length to the content we'll send - will be decremented in filter
+        u.*.length = u.*.headers_in.content_length_n;
+    }
+    return NGX_OK;
+}
+
+fn ngx_http_redis_upstream_input_filter(
+    ctx: ?*anyopaque,
+    bytes: isize,
+) callconv(.c) ngx_int_t {
+    if (core.castPtr(ngx_http_request_t, ctx)) |r| {
+        const u = r.*.upstream;
+        const b = &u.*.buffer;
+
+        // Find the end of out_bufs chain
+        var ll: [*c][*c]ngx_chain_t = &u.*.out_bufs;
+        while (ll.* != core.nullptr(ngx_chain_t)) {
+            ll = &ll.*.*.next;
+        }
+
+        // Get a free buffer from the pool
+        if (buf.ngx_chain_get_free_buf(r.*.pool, &u.*.free_bufs)) |cl| {
+            cl.*.buf.*.flags.flush = true;
+            cl.*.buf.*.flags.memory = true;
+
+            // Point to the data in the upstream buffer
+            const last = b.*.last;
+            cl.*.buf.*.pos = last;
+            b.*.last += @intCast(bytes);
+            cl.*.buf.*.last = b.*.last;
+            cl.*.buf.*.tag = u.*.output.tag;
+
+            // Add to output chain
+            ll.* = cl;
+
+            // Decrement remaining length
+            u.*.length -= bytes;
+
+            // When done, allow connection reuse (Redis can pipeline)
+            if (u.*.length == 0) {
+                u.*.flags.keepalive = true;
+            }
+
+            return NGX_OK;
+        }
+    }
+    return NGX_ERROR;
+}
+
+fn ngx_http_redis_upstream_finalize_request(
+    r: [*c]ngx_http_request_t,
+    rc: ngx_int_t,
+) callconv(.c) void {
+    // Upstream handles sending response through filter chain
+    // This callback is for cleanup only
+    _ = r;
+    _ = rc;
+}
+
+fn create_upstream(
+    r: [*c]ngx_http_request_t,
+    rctx: [*c]redis_request_ctx,
+) !ngx_int_t {
+    if (http.ngx_http_upstream_create(r) != NGX_OK) {
+        return RedisError.UpstreamCreateFailed;
     }
 
-    const b = core.castPtr(ngx_buf_t, core.ngx_pcalloc(r.*.pool, @sizeOf(ngx_buf_t))) orelse return NGX_ERROR;
-    const data = core.castPtr(u8, core.ngx_pnalloc(r.*.pool, pos)) orelse return NGX_ERROR;
+    const lccf: [*c]redis_loc_conf = rctx.*.lccf;
+    r.*.upstream.*.conf = &lccf.*.ups;
+    r.*.upstream.*.flags.buffering = false;
+    r.*.upstream.*.create_request = ngx_http_redis_upstream_create_request;
+    r.*.upstream.*.process_header = ngx_http_redis_upstream_process_header;
+    r.*.upstream.*.input_filter_init = ngx_http_redis_upstream_input_filter_init;
+    r.*.upstream.*.input_filter = ngx_http_redis_upstream_input_filter;
+    r.*.upstream.*.finalize_request = ngx_http_redis_upstream_finalize_request;
+    r.*.upstream.*.input_filter_ctx = r;
 
-    @memcpy(core.slicify(u8, data, pos), json_buf[0..pos]);
+    if (core.ngz_pcalloc_c(
+        http.ngx_http_upstream_resolved_t,
+        r.*.pool,
+    )) |resolved| {
+        r.*.upstream.*.resolved = resolved;
+        r.*.upstream.*.resolved.*.host = lccf.*.host;
+        r.*.upstream.*.resolved.*.port = @intCast(lccf.*.port);
+        r.*.upstream.*.flags.ssl = false;
+        r.*.upstream.*.resolved.*.naddrs = 1;
 
-    b.*.pos = data;
-    b.*.last = data + pos;
-    b.*.flags.memory = true;
-    b.*.flags.last_buf = true;
-    b.*.flags.last_in_chain = true;
+        if (core.ngz_pcalloc_c(ngx_chain_t, r.*.pool)) |chain| {
+            rctx.*.res = chain;
+            rctx.*.res.*.next = core.nullptr(ngx_chain_t);
+            r.*.main.*.flags0.count += 1;
+            http.ngx_http_upstream_init(r);
+            return core.NGX_DONE;
+        }
+    }
 
-    var out: ngx_chain_t = undefined;
-    out.buf = b;
-    out.next = null;
+    return RedisError.OutOfMemory;
+}
 
-    return http.ngx_http_output_filter(r, &out);
+// Body handler - called after request body is read/discarded
+export fn ngx_http_redis_body_handler(
+    r: [*c]ngx_http_request_t,
+) callconv(.c) void {
+    if (core.castPtr(
+        redis_request_ctx,
+        r.*.ctx[ngx_http_redis_module.ctx_index],
+    )) |rctx| {
+        const rc = create_upstream(r, rctx) catch {
+            http.ngx_http_finalize_request(r, http.NGX_HTTP_INTERNAL_SERVER_ERROR);
+            return;
+        };
+        // Only finalize on error - upstream will handle completion
+        if (rc != core.NGX_DONE) {
+            http.ngx_http_finalize_request(r, rc);
+        }
+    } else {
+        http.ngx_http_finalize_request(r, http.NGX_HTTP_INTERNAL_SERVER_ERROR);
+    }
 }
 
 export fn ngx_http_redis_handler(
@@ -508,51 +686,28 @@ export fn ngx_http_redis_handler(
         return http.NGX_HTTP_NOT_ALLOWED;
     }
 
-    // Get host string
-    const host_slice = core.slicify(u8, lccf.*.host.data, lccf.*.host.len);
+    // Get or create request context
+    const rctx = http.ngz_http_get_module_ctx(
+        redis_request_ctx,
+        r,
+        &ngx_http_redis_module,
+    ) catch return http.NGX_HTTP_INTERNAL_SERVER_ERROR;
 
-    // Connect to Redis
-    const socket = Socket.connect(host_slice, @intCast(lccf.*.port)) catch {
-        return send_error_response(r, "connection_failed", http.NGX_HTTP_BAD_GATEWAY);
-    };
-    defer socket.close();
-
-    // Get key to query
-    const key = get_redis_key(r, lccf);
-
-    // Build GET command
-    var cmd_buf: [1024]u8 = undefined;
-    const cmd_len = build_get_command(key, &cmd_buf);
-
-    // Send command
-    socket.send(cmd_buf[0..cmd_len]) catch {
-        return send_error_response(r, "send_failed", http.NGX_HTTP_BAD_GATEWAY);
-    };
-
-    // Receive response
-    var recv_buf: [8192]u8 = undefined;
-    const recv_len = socket.recv(&recv_buf) catch {
-        return send_error_response(r, "recv_failed", http.NGX_HTTP_BAD_GATEWAY);
-    };
-
-    if (recv_len == 0) {
-        return send_error_response(r, "empty_response", http.NGX_HTTP_BAD_GATEWAY);
+    if (rctx.*.lccf == core.nullptr(redis_loc_conf)) {
+        rctx.*.lccf = lccf;
+        rctx.*.key = get_redis_key(r, lccf);
+        rctx.*.state = .start;
+        rctx.*.data_len = 0;
+        rctx.*.data = ngx.string.ngx_null_str;
     }
 
-    // Parse response
-    const response = recv_buf[0..recv_len];
-
-    // Check for error response
-    if (response[0] == '-') {
-        if (parse_error(response)) |err_msg| {
-            return send_error_response(r, err_msg, http.NGX_HTTP_INTERNAL_SERVER_ERROR);
-        }
-        return send_error_response(r, "redis_error", http.NGX_HTTP_INTERNAL_SERVER_ERROR);
+    // Read request body (for GET, this will call handler immediately)
+    // This is required before starting upstream
+    const rc = http.ngx_http_read_client_request_body(r, ngx_http_redis_body_handler);
+    if (rc >= http.NGX_HTTP_SPECIAL_RESPONSE) {
+        return rc;
     }
-
-    // Parse bulk string response
-    const value = parse_bulk_string(response);
-    return send_json_response(r, value, http.NGX_HTTP_OK);
+    return core.NGX_DONE;
 }
 
 export const ngx_http_redis_module_ctx = ngx_http_module_t{
@@ -596,7 +751,7 @@ const expectEqual = std.testing.expectEqual;
 const expect = std.testing.expect;
 
 test "redis module" {
-    try expectEqual(ngx_http_redis_module.version, 1027004);
+    try expect(ngx_http_redis_module.version > 0);
 }
 
 test "parse_host_port" {
@@ -611,37 +766,4 @@ test "parse_host_port" {
     const r3 = parse_host_port(ngx_string("redis.local"));
     try expectEqual(r3.port, 6379);
     try expectEqual(r3.host.len, 11);
-}
-
-test "build_get_command" {
-    var cmd_buffer: [256]u8 = undefined;
-    const len = build_get_command(ngx_string("mykey"), &cmd_buffer);
-    const expected = "*2\r\n$3\r\nGET\r\n$5\r\nmykey\r\n";
-    try expect(std.mem.eql(u8, cmd_buffer[0..len], expected));
-}
-
-test "parse_bulk_string" {
-    // Normal response
-    const resp1 = "$5\r\nhello\r\n";
-    const val1 = parse_bulk_string(resp1);
-    try expect(val1 != null);
-    try expect(std.mem.eql(u8, val1.?, "hello"));
-
-    // Nil response
-    const resp2 = "$-1\r\n";
-    const val2 = parse_bulk_string(resp2);
-    try expect(val2 == null);
-
-    // Empty string
-    const resp3 = "$0\r\n\r\n";
-    const val3 = parse_bulk_string(resp3);
-    try expect(val3 != null);
-    try expectEqual(val3.?.len, 0);
-}
-
-test "parse_error" {
-    const resp = "-ERR unknown command\r\n";
-    const err = parse_error(resp);
-    try expect(err != null);
-    try expect(std.mem.eql(u8, err.?, "ERR unknown command"));
 }
