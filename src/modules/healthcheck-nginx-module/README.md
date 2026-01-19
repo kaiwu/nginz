@@ -1,62 +1,144 @@
-## Active Health Check Module
+## Health Check Module
 
-Active health checks for upstream servers, probing backends periodically rather than relying on passive failure detection.
+Health status endpoints for Kubernetes probes and load balancer health checks.
 
 ### Status
 
-**Not Implemented** - Skeleton only
+**Implemented** - Basic functionality complete
 
-### Planned Features
+### Features
 
-- **Periodic Probes**: Configurable interval health checks to upstream servers
-- **Custom Endpoints**: Define specific URI paths for health check requests
-- **Match Conditions**: Validate response status codes, headers, and body content
-- **Slow Start**: Gradually increase traffic to recovered servers
-- **Mandatory Checks**: Require new servers to pass health checks before receiving traffic
+- **Health Status**: JSON endpoint with health metrics and status
+- **Liveness Probe**: Kubernetes-compatible `/healthz` endpoint
+- **Readiness Probe**: Kubernetes-compatible `/ready` endpoint
+- **JSON Responses**: Machine-readable health information
 
-### Planned Directives
+### Directives
 
-#### health_check
+#### health_status
 
-*syntax:* `health_check [interval=time] [passes=number] [fails=number] [uri=uri] [match=name];`  
-*default:* `—`  
-*context:* `upstream`
+*syntax:* `health_status;`
+*context:* `location`
 
-Enable active health checks for the upstream.
+Enable detailed health status endpoint. Returns JSON with health metrics.
 
-#### health_check_timeout
+#### health_liveness
 
-*syntax:* `health_check_timeout <time>;`  
-*default:* `health_check_timeout 1s;`  
-*context:* `upstream`
+*syntax:* `health_liveness;`
+*context:* `location`
 
-Timeout for health check requests.
+Enable liveness probe endpoint. Always returns 200 if nginx is running.
 
-#### match
+#### health_readiness
 
-*syntax:* `match <name> { ... }`  
-*context:* `http`
+*syntax:* `health_readiness;`
+*context:* `location`
 
-Define a match block for health check response validation.
+Enable readiness probe endpoint. Returns 200 when ready to serve traffic, 503 otherwise.
 
-### Planned Usage
+### Usage
 
 ```nginx
-upstream backend {
-    server 10.0.0.1:8080;
-    server 10.0.0.2:8080;
-    
-    health_check interval=5s passes=2 fails=3 uri=/health;
-    health_check_timeout 2s;
-}
+http {
+    server {
+        listen 8080;
 
-match healthy {
-    status 200;
-    body ~ "ok";
+        # Detailed health status
+        location /health {
+            health_status;
+        }
+
+        # Kubernetes liveness probe
+        location /healthz {
+            health_liveness;
+        }
+
+        # Kubernetes readiness probe
+        location /ready {
+            health_readiness;
+        }
+
+        # Application endpoints
+        location / {
+            proxy_pass http://backend;
+        }
+    }
 }
 ```
 
+### Response Examples
+
+**health_status:**
+```json
+{
+  "status": "healthy",
+  "healthy": true,
+  "ready": true,
+  "requests": 12345,
+  "failed": 5,
+  "success_rate": 99
+}
+```
+
+**health_liveness:**
+```json
+{"status": "alive"}
+```
+
+**health_readiness:**
+```json
+{"status": "ready"}
+```
+
+### Kubernetes Configuration
+
+```yaml
+apiVersion: v1
+kind: Pod
+spec:
+  containers:
+  - name: nginx
+    livenessProbe:
+      httpGet:
+        path: /healthz
+        port: 8080
+      initialDelaySeconds: 3
+      periodSeconds: 10
+    readinessProbe:
+      httpGet:
+        path: /ready
+        port: 8080
+      initialDelaySeconds: 3
+      periodSeconds: 5
+```
+
+### Load Balancer Configuration
+
+**AWS ALB:**
+```
+Health check path: /health
+Healthy threshold: 2
+Unhealthy threshold: 3
+Interval: 30 seconds
+```
+
+### Limitations
+
+Current implementation has these limitations:
+
+- **No Active Probing**: Does not actively probe upstream servers
+- **Per-Worker State**: Health state is per-worker, not shared
+- **No Upstream Integration**: Does not mark upstream servers up/down
+
+### Future Enhancements
+
+- **Active Health Checks**: Periodic probes to upstream servers
+- **Upstream Integration**: Mark servers healthy/unhealthy based on probes
+- **Shared State**: Cross-worker health state using shared memory
+- **Custom Match Rules**: Validate response body/headers
+- **Slow Start**: Gradually increase traffic to recovered servers
+
 ### References
 
-- [NGINX Plus Active Health Checks](https://docs.nginx.com/nginx/admin-guide/load-balancer/http-health-check/)
-- [lua-resty-upstream-healthcheck](https://github.com/openresty/lua-resty-upstream-healthcheck)
+- [Kubernetes Probes](https://kubernetes.io/docs/tasks/configure-pod-container/configure-liveness-readiness-startup-probes/)
+- [NGINX Plus Health Checks](https://docs.nginx.com/nginx/admin-guide/load-balancer/http-health-check/)
