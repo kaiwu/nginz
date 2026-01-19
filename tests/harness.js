@@ -97,7 +97,9 @@ export async function waitForTCPPort(port, timeout = 5000) {
 }
 
 // Clean up runtime directory
+// Set KEEP_LOGS=1 to preserve runtime dir for debugging failed tests
 export function cleanupRuntime(moduleName) {
+  if (process.env.KEEP_LOGS) return;
   const runtimeDir = join(process.cwd(), "tests", moduleName, "runtime");
   if (existsSync(runtimeDir)) {
     rmSync(runtimeDir, { recursive: true });

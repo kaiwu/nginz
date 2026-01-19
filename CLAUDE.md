@@ -106,8 +106,8 @@ Access nginx APIs through the ngx namespace:
 - `ngx/nginx.zig` - NEVER modify this file, neither delete nor add anything. It is imported as `ngx` in nginx module implementations, which is confusing as it reuses the same name
 - `ngx/cjson.zig` - NEVER use it directly, it is the cjson c bindings file, use its wrapper `ngx.cjson`
 - `ngx/pq.zig` - NEVER use it directly, likewise it is the libpq c bindings file, use its wrapper `ngx.pq` 
-- `cleanupRuntime(MODULE);` Comment this line of the `...test.js` file to keep the runtime folder and its nginx logs from being removed
 - `ngz_modules.zig` For a filter module, make sure to position the module in between `ngx_http_userid_filter_module` and `ngx_http_headers_filter_module` of this file
+- `KEEP_LOGS=1 bun test tests/<module>/` - Use this env var to preserve runtime directory and nginx logs when debugging failed tests. Logs are at `tests/<module>/runtime/logs/`
 
 ### Testing
 
