@@ -67,7 +67,7 @@ functionality in native Zig:
 - [ ] **ngx-http-oidc-module** - OpenID Connect (SSO with IdPs, token refresh, session management)
 - [ ] **ngx-http-graphql-module** - GraphQL Gateway (query parsing, depth limiting, field auth, caching)
 - ✅  **ngx-http-jsonschema-module** - Request/Response Validation (JSON schema validation, structured errors)
-- [ ] **ngx-http-transform-module** - Request/Response Transformation (JSON-to-JSON, XML-to-JSON)
+- ✅  **ngx-http-transform-module** - Request/Response Transformation (JSON-to-JSON, XML-to-JSON)
 - [ ] **ngx-http-consul-module** - Service Discovery (Consul/etcd integration, dynamic upstreams)
 - ✅  **ngx-http-canary-module** - Traffic Splitting (percentage-based, header/cookie routing, A/B testing)
 - ✅  **ngx-http-prometheus-module** - Native Prometheus Metrics (request counts, latencies, /metrics endpoint)

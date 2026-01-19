@@ -61,6 +61,7 @@ Each module needs:
 2. Entry in `build.zig` modules array
 3. Entry in `src/ngz_modules.zig` (both `ngx_modules` array and `ngx_module_names`)
 4. `tests/<name>/nginx.conf` and `<name>.test.js` for integration tests
+5. No need of feature rich just yet, strive for correctness, simplicity and product proven
 
 Module structure pattern:
 ```zig

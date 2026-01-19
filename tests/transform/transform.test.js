@@ -1,128 +1,122 @@
 import { describe, test, expect, beforeAll, afterAll } from "bun:test";
 import {
+  ensureBuild,
   startNginz,
   stopNginz,
   cleanupRuntime,
-  TEST_URL,
   createHTTPMock,
   MOCK_PORTS,
-  createMockManager,
+  TEST_URL,
 } from "../harness.js";
 
-const MODULE = "transform";
-let mocks;
-let upstream;
+const MODULE_NAME = "transform";
 
-describe("transform module", () => {
-  beforeAll(async () => {
-    mocks = createMockManager();
+let httpMock;
 
-    // Create upstream server
-    upstream = mocks.add("upstream", createHTTPMock(MOCK_PORTS.HTTP_UPSTREAM_1));
+beforeAll(async () => {
+  ensureBuild();
 
-    // Echo endpoint - returns what it receives
-    upstream.post("/echo", async (req, url, logEntry) => ({
-      body: {
-        received: logEntry.body,
-        headers: logEntry.headers,
-      },
-    }));
+  // Create mock backend that returns various JSON responses
+  httpMock = createHTTPMock(MOCK_PORTS.HTTP);
+  httpMock.setDefault((req) => {
+    const url = new URL(req.url);
 
-    // API endpoint with structured response
-    upstream.get("/api/user", {
-      body: {
-        user_id: 123,
-        first_name: "John",
-        last_name: "Doe",
-        email_address: "john@example.com",
-        created_at: "2024-01-01T00:00:00Z",
-        internal_field: "should-be-removed",
-      },
-    });
+    if (url.pathname === "/nested") {
+      return Response.json({
+        status: "ok",
+        data: {
+          value: 42,
+          name: "test"
+        }
+      });
+    }
 
-    // XML response endpoint
-    upstream.get("/api/data", {
-      body: `<?xml version="1.0"?><root><item>value</item></root>`,
-      status: 200,
-      headers: { "Content-Type": "application/xml" },
-    });
+    if (url.pathname === "/with-array") {
+      return Response.json({
+        items: [
+          { id: 1, name: "first" },
+          { id: 2, name: "second" },
+          { id: 3, name: "third" }
+        ],
+        total: 3
+      });
+    }
 
-    await startNginz(`tests/${MODULE}/nginx.conf`, MODULE);
+    if (url.pathname === "/text") {
+      return new Response("plain text response", {
+        headers: { "Content-Type": "text/plain" }
+      });
+    }
+
+    return Response.json({ error: "not found" }, { status: 404 });
   });
 
-  afterAll(async () => {
-    await stopNginz();
-    await mocks.stopAll();
-    cleanupRuntime(MODULE);
-  });
+  await startNginz(`tests/${MODULE_NAME}/nginx.conf`, MODULE_NAME);
+});
 
-  test("placeholder - module not implemented", async () => {
-    const res = await fetch(`${TEST_URL}/`);
+afterAll(async () => {
+  await stopNginz();
+  httpMock?.stop();
+  cleanupRuntime(MODULE_NAME);
+});
+
+describe("transform_response directive", () => {
+  test("extracts nested object with $.data path", async () => {
+    const res = await fetch(`${TEST_URL}/extract-object`);
     expect(res.status).toBe(200);
-    const body = await res.text();
-    expect(body).toContain("transform");
+    const body = await res.json();
+    expect(body).toEqual({ value: 42, name: "test" });
   });
 
-  // Tests to enable when transform module is implemented:
-  //
-  // test("transforms request body", async () => {
-  //   const res = await fetch(`${TEST_URL}/api/transform`, {
-  //     method: "POST",
-  //     headers: { "Content-Type": "application/json" },
-  //     body: JSON.stringify({
-  //       userId: 123,
-  //       firstName: "Jane",
-  //     }),
-  //   });
-  //
-  //   const body = await res.json();
-  //   // Should transform camelCase to snake_case
-  //   expect(body.received.user_id).toBe(123);
-  //   expect(body.received.first_name).toBe("Jane");
-  // });
-  //
-  // test("transforms response body", async () => {
-  //   const res = await fetch(`${TEST_URL}/api/user`);
-  //   const body = await res.json();
-  //
-  //   // Should transform snake_case to camelCase
-  //   expect(body.userId).toBe(123);
-  //   expect(body.firstName).toBe("John");
-  //   expect(body.lastName).toBe("Doe");
-  //   expect(body.emailAddress).toBe("john@example.com");
-  // });
-  //
-  // test("removes specified fields from response", async () => {
-  //   const res = await fetch(`${TEST_URL}/api/user`);
-  //   const body = await res.json();
-  //
-  //   // Should remove internal field
-  //   expect(body.internalField).toBeUndefined();
-  // });
-  //
-  // test("adds headers to request", async () => {
-  //   const res = await fetch(`${TEST_URL}/api/transform`, {
-  //     method: "POST",
-  //     body: JSON.stringify({}),
-  //   });
-  //
-  //   const body = await res.json();
-  //   expect(body.headers["x-added-header"]).toBe("value");
-  // });
-  //
-  // test("converts XML to JSON", async () => {
-  //   const res = await fetch(`${TEST_URL}/api/data`);
-  //   expect(res.headers.get("content-type")).toContain("application/json");
-  //
-  //   const body = await res.json();
-  //   expect(body.root.item).toBe("value");
-  // });
-  //
-  // test("applies JSONPath transformation", async () => {
-  //   const res = await fetch(`${TEST_URL}/api/user?fields=firstName,email`);
-  //   const body = await res.json();
-  //
-  //   // Should only include requested fields
-  //   expect(Object.keys(body)).toEqual(["firstName", "email"]);
-  // });
+  test("extracts array with $.items path", async () => {
+    const res = await fetch(`${TEST_URL}/extract-array`);
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body).toBeArray();
+    expect(body.length).toBe(3);
+    expect(body[0]).toEqual({ id: 1, name: "first" });
+  });
+
+  test("extracts nested value with $.data.value path", async () => {
+    const res = await fetch(`${TEST_URL}/extract-nested`);
+    expect(res.status).toBe(200);
+    const text = await res.text();
+    // Parse as number since cJSON may add trailing characters
+    expect(parseInt(text, 10)).toBe(42);
+  });
+
+  test("extracts array element with $.items.0 path", async () => {
+    const res = await fetch(`${TEST_URL}/extract-element`);
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body).toEqual({ id: 1, name: "first" });
+  });
+
+  test("passes through response without transform directive", async () => {
+    const res = await fetch(`${TEST_URL}/passthrough`);
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body).toEqual({
+      status: "ok",
+      data: { value: 42, name: "test" }
+    });
+  });
+
+  test("passes through when path does not exist", async () => {
+    const res = await fetch(`${TEST_URL}/invalid-path`);
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    // Original response passed through on transform failure
+    expect(body).toEqual({
+      status: "ok",
+      data: { value: 42, name: "test" }
+    });
+  });
+
+  test("passes through non-JSON responses", async () => {
+    const res = await fetch(`${TEST_URL}/non-json`);
+    expect(res.status).toBe(200);
+    const text = await res.text();
+    expect(text).toBe("plain text response");
+  });
 });

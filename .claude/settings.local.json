@@ -16,7 +16,10 @@
       "Bash(zig test:*)",
       "Bash(grep:*)",
       "Bash(ls:*)",
-      "Bash(curl:*)"
+      "Bash(curl:*)",
+      "Bash(KEEP_LOGS=1 bun test:*)",
+      "Bash(xxd:*)",
+      "Bash(echo:*)"
     ]
   }
 }
