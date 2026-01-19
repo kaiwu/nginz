@@ -27,7 +27,7 @@ bun test tests/<module-name>/
 ### Directory Structure
 - `src/ngx/` - Zig bindings for nginx internals (nginx.zig is the main entry point)
 - `src/modules/<name>-nginx-module/` - Individual nginx modules written in Zig
-- `src/ngz_modules.zig` - Module registration and load order (critical for phase ordering)
+- `src/ngz_modules.zig` - Module registration and load order (critical for phase ordering), especially for filter modules
 - `tests/<module>/` - Integration tests with nginx.conf and JS test files
 
 ### Module Registration Order
@@ -97,7 +97,7 @@ Access nginx APIs through the ngx namespace:
 - `ngz_log_error`- Logging
 
 ### Reference modules
-- `echoz-nginx-module` - content module, header filter module
+- `echoz-nginx-module` - content module, header filter module, implement multiple module in the same file
 - `wechatpay-nginx-module` - upstream, access module, header filter module, json encode/decode
 
 ### ATTENTIONS
@@ -107,6 +107,7 @@ Access nginx APIs through the ngx namespace:
 - `ngx/cjson.zig` - NEVER use it directly, it is the cjson c bindings file, use its wrapper `ngx.cjson`
 - `ngx/pq.zig` - NEVER use it directly, likewise it is the libpq c bindings file, use its wrapper `ngx.pq` 
 - `cleanupRuntime(MODULE);` Comment this line of the `...test.js` file to keep the runtime folder and its nginx logs from being removed
+- `ngz_modules.zig` For a filter module, make sure to position the module in between `ngx_http_userid_filter_module` and `ngx_http_headers_filter_module` of this file
 
 ### Testing
 

@@ -15,7 +15,8 @@
       "Bash(kill:*)",
       "Bash(zig test:*)",
       "Bash(grep:*)",
-      "Bash(ls:*)"
+      "Bash(ls:*)",
+      "Bash(curl:*)"
     ]
   }
 }

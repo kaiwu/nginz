@@ -3,55 +3,44 @@ import {
   startNginz,
   stopNginz,
   cleanupRuntime,
-  TEST_URL,
   createHTTPMock,
-  createRedisMock,
-  MOCK_PORTS,
   createMockManager,
+  MOCK_PORTS,
+  TEST_URL,
 } from "../harness.js";
 
 const MODULE = "cache-tags";
-let mocks;
-let upstream;
-let redisMock;
-let requestCount = 0;
 
 describe("cache-tags module", () => {
+  let mocks;
+  let backend;
+
   beforeAll(async () => {
     mocks = createMockManager();
 
-    // Create Redis mock for cache tag storage
-    redisMock = mocks.add("redis", createRedisMock(MOCK_PORTS.REDIS));
+    // Create mock backend that returns Cache-Tag headers
+    backend = mocks.add(
+      "backend",
+      createHTTPMock(MOCK_PORTS.HTTP_UPSTREAM_1)
+    );
 
-    // Create upstream server
-    upstream = mocks.add("upstream", createHTTPMock(MOCK_PORTS.HTTP_UPSTREAM_1));
+    // API endpoints return product,api tags
+    backend.get("/api/*", () => ({
+      body: { id: 123, name: "Product" },
+      headers: { "Cache-Tag": "product,api" },
+    }));
 
-    // Configure upstream to return cacheable responses with tags
-    upstream.get("/articles/:id", (req, url, logEntry) => {
-      requestCount++;
-      const id = logEntry.params.id;
-      return {
-        body: { id, title: `Article ${id}`, requestCount },
-        status: 200,
-        headers: {
-          "Cache-Control": "max-age=3600",
-          "Cache-Tag": `article:${id},articles,content`,
-        },
-      };
-    });
+    // Products endpoints return product,catalog tags
+    backend.get("/products/*", () => ({
+      body: { products: [] },
+      headers: { "Cache-Tag": "product,catalog" },
+    }));
 
-    upstream.get("/users/:id", (req, url, logEntry) => {
-      requestCount++;
-      const id = logEntry.params.id;
-      return {
-        body: { id, name: `User ${id}`, requestCount },
-        status: 200,
-        headers: {
-          "Cache-Control": "max-age=3600",
-          "Cache-Tag": `user:${id},users`,
-        },
-      };
-    });
+    // Categories endpoints return category,catalog tags
+    backend.get("/categories/*", () => ({
+      body: { categories: [] },
+      headers: { "Cache-Tag": "category,catalog" },
+    }));
 
     await startNginz(`tests/${MODULE}/nginx.conf`, MODULE);
   });
@@ -62,77 +51,152 @@ describe("cache-tags module", () => {
     cleanupRuntime(MODULE);
   });
 
-  test("placeholder - module not implemented", async () => {
-    const res = await fetch(`${TEST_URL}/`);
+  test("health check", async () => {
+    const res = await fetch(`${TEST_URL}/health`);
     expect(res.status).toBe(200);
-    const body = await res.text();
-    expect(body).toContain("cache-tags");
+    const text = await res.text();
+    expect(text.trim()).toBe("ok");
   });
 
-  // Tests to enable when cache-tags module is implemented:
-  //
-  // test("caches response with tags", async () => {
-  //   const res1 = await fetch(`${TEST_URL}/articles/1`);
-  //   const body1 = await res1.json();
-  //
-  //   const res2 = await fetch(`${TEST_URL}/articles/1`);
-  //   const body2 = await res2.json();
-  //
-  //   // Should be same response (cached)
-  //   expect(body1.requestCount).toBe(body2.requestCount);
-  // });
-  //
-  // test("purges cache by single tag", async () => {
-  //   // Cache the response
-  //   await fetch(`${TEST_URL}/articles/2`);
-  //
-  //   // Purge by tag
-  //   const purgeRes = await fetch(`${TEST_URL}/purge`, {
-  //     method: "POST",
-  //     headers: { "Content-Type": "application/json" },
-  //     body: JSON.stringify({ tags: ["article:2"] }),
-  //   });
-  //   expect(purgeRes.status).toBe(200);
-  //
-  //   // Next request should hit upstream
-  //   const beforeCount = requestCount;
-  //   await fetch(`${TEST_URL}/articles/2`);
-  //   expect(requestCount).toBe(beforeCount + 1);
-  // });
-  //
-  // test("purges cache by multiple tags", async () => {
-  //   // Cache multiple responses
-  //   await fetch(`${TEST_URL}/articles/3`);
-  //   await fetch(`${TEST_URL}/articles/4`);
-  //
-  //   // Purge by common tag
-  //   await fetch(`${TEST_URL}/purge`, {
-  //     method: "POST",
-  //     body: JSON.stringify({ tags: ["articles"] }),
-  //   });
-  //
-  //   // Both should be purged
-  //   const beforeCount = requestCount;
-  //   await fetch(`${TEST_URL}/articles/3`);
-  //   await fetch(`${TEST_URL}/articles/4`);
-  //   expect(requestCount).toBe(beforeCount + 2);
-  // });
-  //
-  // test("purge only affects matching tags", async () => {
-  //   // Cache article and user
-  //   await fetch(`${TEST_URL}/articles/5`);
-  //   const userRes = await fetch(`${TEST_URL}/users/1`);
-  //   const userData = await userRes.json();
-  //
-  //   // Purge articles
-  //   await fetch(`${TEST_URL}/purge`, {
-  //     method: "POST",
-  //     body: JSON.stringify({ tags: ["articles"] }),
-  //   });
-  //
-  //   // User should still be cached
-  //   const userRes2 = await fetch(`${TEST_URL}/users/1`);
-  //   const userData2 = await userRes2.json();
-  //   expect(userData.requestCount).toBe(userData2.requestCount);
-  // });
+  test("backend returns Cache-Tag header via proxy", async () => {
+    const res = await fetch(`${TEST_URL}/api/test`);
+    expect(res.status).toBe(200);
+    expect(res.headers.get("Cache-Tag")).toBe("product,api");
+  });
+
+  describe("/cache/purge endpoint", () => {
+    test("returns JSON response", async () => {
+      const res = await fetch(`${TEST_URL}/cache/purge`);
+      expect(res.status).toBe(200);
+      const contentType = res.headers.get("content-type");
+      expect(contentType).toContain("application/json");
+    });
+
+    test("lists tags when no tag parameter", async () => {
+      const res = await fetch(`${TEST_URL}/cache/purge`);
+      const json = await res.json();
+      expect(json).toHaveProperty("tags");
+      expect(Array.isArray(json.tags)).toBe(true);
+    });
+  });
+
+  describe("tag capture", () => {
+    test("captures tags from proxied response headers", async () => {
+      // Make requests to populate tags
+      await fetch(`${TEST_URL}/api/item1`);
+      await fetch(`${TEST_URL}/products/list`);
+
+      // Check tags were captured
+      const res = await fetch(`${TEST_URL}/cache/purge`);
+      const json = await res.json();
+
+      expect(json.tags.length).toBeGreaterThan(0);
+
+      // Find the product tag (common to both endpoints)
+      const productTag = json.tags.find((t) => t.tag === "product");
+      expect(productTag).toBeDefined();
+      expect(productTag.uris).toBeGreaterThanOrEqual(1);
+    });
+
+    test("multiple tags per response are captured", async () => {
+      // /api/ returns "product,api" tags
+      await fetch(`${TEST_URL}/api/multi`);
+
+      const res = await fetch(`${TEST_URL}/cache/purge`);
+      const json = await res.json();
+
+      const productTag = json.tags.find((t) => t.tag === "product");
+      const apiTag = json.tags.find((t) => t.tag === "api");
+
+      expect(productTag).toBeDefined();
+      expect(apiTag).toBeDefined();
+    });
+
+    test("same URI with same tag is not duplicated", async () => {
+      // Make unique request and get initial count
+      const uniqueUri = `/api/dedup-${Date.now()}`;
+      await fetch(`${TEST_URL}${uniqueUri}`);
+
+      let res = await fetch(`${TEST_URL}/cache/purge`);
+      let json = await res.json();
+      const apiTag = json.tags.find((t) => t.tag === "api");
+      const initialCount = apiTag ? apiTag.uris : 0;
+
+      // Request same URI again
+      await fetch(`${TEST_URL}${uniqueUri}`);
+
+      // Count should not increase for same URI
+      res = await fetch(`${TEST_URL}/cache/purge`);
+      json = await res.json();
+      const apiTagAfter = json.tags.find((t) => t.tag === "api");
+      expect(apiTagAfter.uris).toBe(initialCount);
+    });
+  });
+
+  describe("purge by tag", () => {
+    test("purge removes tag and returns count", async () => {
+      // Make request to create category tag
+      await fetch(`${TEST_URL}/categories/all`);
+
+      // Verify category tag exists
+      let res = await fetch(`${TEST_URL}/cache/purge`);
+      let json = await res.json();
+      const categoryTag = json.tags.find((t) => t.tag === "category");
+      expect(categoryTag).toBeDefined();
+
+      // Purge the category tag
+      res = await fetch(`${TEST_URL}/cache/purge?tag=category`);
+      json = await res.json();
+      expect(json.tag).toBe("category");
+      expect(json.purged).toBeGreaterThanOrEqual(1);
+
+      // Verify tag is gone
+      res = await fetch(`${TEST_URL}/cache/purge`);
+      json = await res.json();
+      const removedTag = json.tags.find((t) => t.tag === "category");
+      expect(removedTag).toBeUndefined();
+    });
+
+    test("purge non-existent tag returns zero", async () => {
+      const res = await fetch(`${TEST_URL}/cache/purge?tag=nonexistent`);
+      const json = await res.json();
+      expect(json.tag).toBe("nonexistent");
+      expect(json.purged).toBe(0);
+    });
+
+    test("purge one tag does not affect others", async () => {
+      // Populate multiple tags
+      await fetch(`${TEST_URL}/api/preserve1`);
+      await fetch(`${TEST_URL}/categories/preserve2`);
+
+      // Get initial state
+      let res = await fetch(`${TEST_URL}/cache/purge`);
+      let json = await res.json();
+      const apiTagBefore = json.tags.find((t) => t.tag === "api");
+      expect(apiTagBefore).toBeDefined();
+
+      // Purge category only
+      await fetch(`${TEST_URL}/cache/purge?tag=category`);
+
+      // api tag should still exist
+      res = await fetch(`${TEST_URL}/cache/purge`);
+      json = await res.json();
+      const apiTagAfter = json.tags.find((t) => t.tag === "api");
+      expect(apiTagAfter).toBeDefined();
+    });
+  });
+
+  describe("catalog tag (shared between products and categories)", () => {
+    test("catalog tag captures URIs from multiple locations", async () => {
+      await fetch(`${TEST_URL}/products/cat1`);
+      await fetch(`${TEST_URL}/categories/cat2`);
+
+      const res = await fetch(`${TEST_URL}/cache/purge`);
+      const json = await res.json();
+
+      const catalogTag = json.tags.find((t) => t.tag === "catalog");
+      expect(catalogTag).toBeDefined();
+      expect(catalogTag.uris).toBeGreaterThanOrEqual(2);
+    });
+  });
 });

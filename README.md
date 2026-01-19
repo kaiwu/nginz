@@ -70,12 +70,12 @@ functionality in native Zig:
 - [ ] **ngx-http-transform-module** - Request/Response Transformation (JSON-to-JSON, XML-to-JSON)
 - [ ] **ngx-http-consul-module** - Service Discovery (Consul/etcd integration, dynamic upstreams)
 - ✅  **ngx-http-canary-module** - Traffic Splitting (percentage-based, header/cookie routing, A/B testing)
-- [ ] **ngx-http-prometheus-module** - Native Prometheus Metrics (request counts, latencies, /metrics endpoint)
+- ✅  **ngx-http-prometheus-module** - Native Prometheus Metrics (request counts, latencies, /metrics endpoint)
 
 ### Low Priority
 
 - ✅  **ngx-http-requestid-module** - Request Correlation (unique ID generation, X-Request-ID propagation)
-- [ ] **ngx-http-cache-tags-module** - Cache Invalidation (tag-based entries, purge by tag/pattern)
+- ✅  **ngx-http-cache-tags-module** - Cache Invalidation (tag-based entries, purge by tag/pattern)
 
 
 

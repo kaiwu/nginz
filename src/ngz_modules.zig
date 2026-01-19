@@ -110,7 +110,7 @@ extern var ngx_http_circuit_breaker_module: ngx_module_t;
 // Advanced Processing Modules
 extern var ngx_http_graphql_module: ngx_module_t;
 extern var ngx_http_transform_module: ngx_module_t;
-extern var ngx_http_cache_tags_module: ngx_module_t;
+extern var ngx_http_cache_tags_filter_module: ngx_module_t;
 extern var ngx_http_prometheus_module: ngx_module_t;
 
 // Ordered list of modules (following nginx's module loading order)
@@ -207,7 +207,6 @@ export const ngx_modules = [_][*c]ngx_module_t{
     // Advanced Processing
     &ngx_http_graphql_module,
     &ngx_http_transform_module,
-    &ngx_http_cache_tags_module,
     &ngx_http_prometheus_module,
 
     // Filter Modules (placed at the end)
@@ -225,6 +224,7 @@ export const ngx_modules = [_][*c]ngx_module_t{
     &ngx_http_echoz_filter_module,
     &ngx_http_wechatpay_filter_module,
     &ngx_http_requestid_filter_module,
+    &ngx_http_cache_tags_filter_module,
 
     &ngx_http_headers_filter_module,
 
@@ -298,7 +298,6 @@ export const ngx_module_names = [_][*c]const u8{
     "ngx_http_canary_module",
     "ngx_http_graphql_module",
     "ngx_http_transform_module",
-    "ngx_http_cache_tags_module",
     "ngx_http_prometheus_module",
     "ngx_http_write_filter_module",
     "ngx_http_header_filter_module",
@@ -314,6 +313,7 @@ export const ngx_module_names = [_][*c]const u8{
     "ngx_http_echoz_filter_module",
     "ngx_http_wechatpay_filter_module",
     "ngx_http_requestid_filter_module",
+    "ngx_http_cache_tags_filter_module",
 
     "ngx_http_headers_filter_module",
     "ngx_http_copy_filter_module",
