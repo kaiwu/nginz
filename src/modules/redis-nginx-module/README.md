@@ -1,73 +1,111 @@
-## Redis Client Module
+## Redis Module
 
-Non-blocking Redis client for nginx with connection pooling.
+Simple Redis client for fetching cached values from Redis.
 
 ### Status
 
-**Not Implemented** - Skeleton only
+**Implemented** - Basic GET functionality complete
 
-### Planned Features
+### Features
 
-- **Non-blocking I/O**: Fully asynchronous Redis operations
-- **Connection Pooling**: Reuse connections across requests
-- **Full Command Support**: GET, SET, HGET, HSET, DEL, EXPIRE, PUBLISH, etc.
-- **Pipeline Support**: Batch multiple commands in a single round-trip
-- **Lua Scripting**: Execute Redis Lua scripts
-- **Cluster Support**: Redis Cluster routing (future)
+- **GET Command**: Fetch values from Redis using RESP protocol
+- **URI-based Keys**: Use request URI path as Redis key
+- **Static Keys**: Configure fixed key via directive
+- **JSON Responses**: Returns values as JSON objects
 
-### Planned Directives
+### Directives
 
 #### redis_pass
 
-*syntax:* `redis_pass <upstream>;`  
+*syntax:* `redis_pass <host>:<port>;`
 *context:* `location`
 
-Proxy requests to Redis server.
-
-#### redis_server
-
-*syntax:* `redis_server <host>:<port> [weight=n] [pool_size=n];`  
-*context:* `upstream`
-
-Define Redis server in upstream block.
-
-#### redis_timeout
-
-*syntax:* `redis_timeout <time>;`  
-*default:* `redis_timeout 1s;`  
-*context:* `location`
-
-Timeout for Redis operations.
-
-#### redis_query
-
-*syntax:* `redis_query <command> [args...];`  
-*context:* `location`
-
-Execute a Redis command.
-
-### Planned Usage
+Enable Redis passthrough and specify the Redis server address.
 
 ```nginx
-upstream redis {
-    redis_server 127.0.0.1:6379 pool_size=10;
-}
+redis_pass 127.0.0.1:6379;
+redis_pass redis.local:6380;
+```
 
-server {
-    location /cache {
-        redis_pass redis;
-        redis_query GET $uri;
-    }
-    
-    location /session {
-        set $session_key "session:$cookie_sid";
-        redis_pass redis;
-        redis_query HGETALL $session_key;
+#### redis_key
+
+*syntax:* `redis_key <key>;`
+*context:* `location`
+
+Set a static Redis key instead of deriving from URI.
+
+```nginx
+redis_key mykey;
+```
+
+### Usage
+
+```nginx
+http {
+    server {
+        listen 8080;
+
+        # Get value using URI path as key
+        # GET /cache/mykey -> Redis GET "cache/mykey"
+        location /cache/ {
+            redis_pass 127.0.0.1:6379;
+        }
+
+        # Get value using static key
+        # GET /config -> Redis GET "app-config"
+        location /config {
+            redis_pass 127.0.0.1:6379;
+            redis_key app-config;
+        }
     }
 }
 ```
 
+### Response Format
+
+**Successful GET (key exists):**
+```json
+{"value":"the-value-from-redis"}
+```
+
+**Key not found:**
+```json
+{"value":null}
+```
+
+**Error response:**
+```json
+{"error":"connection_failed"}
+```
+
+### Key Derivation
+
+When `redis_key` is not configured, the key is derived from the request URI:
+- URI `/cache/mykey` → Redis key `cache/mykey`
+- URI `/data` → Redis key `data`
+
+The leading slash is stripped from the URI to form the key.
+
+### Limitations
+
+Current implementation has these limitations:
+
+- **GET Only**: Only Redis GET command is supported
+- **Blocking I/O**: Uses blocking TCP connection (not nginx upstream)
+- **No Connection Pooling**: New connection per request
+- **No Authentication**: Redis AUTH not supported
+- **No Pipelining**: Single command per connection
+
+### Future Enhancements
+
+- **More Commands**: SET, DEL, INCR, EXPIRE, MGET
+- **Non-blocking I/O**: nginx upstream integration with connection pooling
+- **Authentication**: Redis AUTH and ACL support
+- **Variable Expansion**: Support nginx variables in redis_key
+- **Timeout Configuration**: Configurable connection and read timeouts
+- **Cluster Support**: Redis Cluster mode routing
+
 ### References
 
-- [lua-resty-redis](https://github.com/openresty/lua-resty-redis)
-- [redis2-nginx-module](https://github.com/openresty/redis2-nginx-module)
+- [Redis Protocol (RESP)](https://redis.io/docs/reference/protocol-spec/)
+- [ngx_http_redis Module](https://www.nginx.com/resources/wiki/modules/redis/)
