@@ -209,6 +209,7 @@ pub const ngx_http_parse_request_line = ngx.ngx_http_parse_request_line;
 pub const ngx_http_run_posted_requests = ngx.ngx_http_run_posted_requests;
 pub const ngx_http_request_empty_handler = ngx.ngx_http_request_empty_handler;
 pub const ngx_http_read_client_request_body = ngx.ngx_http_read_client_request_body;
+pub const ngx_http_discard_request_body = ngx.ngx_http_discard_request_body;
 pub const ngx_http_upstream_hide_headers_hash = ngx.ngx_http_upstream_hide_headers_hash;
 pub const ngx_http_upstream_non_buffered_filter = ngx.ngx_http_upstream_non_buffered_filter;
 pub const ngx_http_upstream_non_buffered_filter_init = ngx.ngx_http_upstream_non_buffered_filter_init;

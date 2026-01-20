@@ -1,94 +1,258 @@
-## Service Discovery Module
+## Consul Module
 
-Dynamic upstream resolution using Consul, etcd, or DNS SRV records.
+Service discovery and KV store integration with HashiCorp Consul.
 
 ### Status
 
-**Not Implemented** - Skeleton only
+**Implemented** - Core functionality complete
 
-### Planned Features
+### Features
 
-- **Consul Integration**: Fetch healthy service instances from Consul
-- **etcd Support**: Service discovery via etcd key-value store
-- **DNS SRV**: Standard DNS SRV record resolution
-- **Health-Aware**: Only route to healthy instances
-- **Watch/Polling**: Real-time updates or configurable polling interval
-- **Datacenter Support**: Multi-datacenter routing for Consul
-- **Tag Filtering**: Filter services by tags
+- **Service Discovery**: Fetch healthy service instances from Consul catalog
+- **KV Store**: Read values from Consul KV store with Base64 decoding
+- **Catalog Listing**: List all registered services
+- **Tag Filtering**: Filter services by tag
+- **Datacenter Support**: Query specific datacenters
+- **ACL Token**: Authentication support for secured Consul clusters
+- **JSON Response**: All endpoints return structured JSON responses
 
-### Planned Directives
+### Directives
 
-#### consul
+#### consul_services
 
-*syntax:* `consul <address>;`  
-*context:* `http`
+*syntax:* `consul_services <address>;`
+*context:* `location`
 
-Consul agent address.
+Enable service discovery endpoint. Service name is extracted from URI path.
+
+#### consul_kv
+
+*syntax:* `consul_kv <address>;`
+*context:* `location`
+
+Enable KV store endpoint. Key is extracted from URI path.
+
+#### consul_catalog
+
+*syntax:* `consul_catalog <address>;`
+*context:* `location`
+
+Enable catalog listing endpoint. Lists all registered service names.
 
 #### consul_service
 
-*syntax:* `consul_service <name> [tag=<tag>] [dc=<datacenter>];`  
-*context:* `upstream`
+*syntax:* `consul_service <name>;`
+*context:* `location`
 
-Resolve upstream servers from Consul service.
+Set a fixed service name instead of extracting from URI.
 
-#### consul_refresh
+#### consul_key
 
-*syntax:* `consul_refresh <time>;`  
-*default:* `consul_refresh 5s;`  
-*context:* `http`
+*syntax:* `consul_key <key>;`
+*context:* `location`
 
-Interval for polling Consul for updates.
+Set a fixed KV key instead of extracting from URI.
+
+#### consul_tag
+
+*syntax:* `consul_tag <tag>;`
+*context:* `location`
+
+Filter services by tag.
+
+#### consul_dc
+
+*syntax:* `consul_dc <datacenter>;`
+*context:* `location`
+
+Query a specific Consul datacenter.
 
 #### consul_token
 
-*syntax:* `consul_token <token>;`  
-*context:* `http`
+*syntax:* `consul_token <token>;`
+*context:* `location`
 
 Consul ACL token for authentication.
 
-### Planned Usage
+### Usage Examples
+
+#### Service Discovery (dynamic name from URI)
+
+```nginx
+location /services/ {
+    consul_services 127.0.0.1:8500;
+}
+```
+
+Request: `GET /services/api-service`
+
+Response:
+```json
+{
+  "services": [
+    {
+      "id": "api-1",
+      "address": "10.0.0.1",
+      "port": 8080,
+      "tags": ["production", "v2"]
+    },
+    {
+      "id": "api-2",
+      "address": "10.0.0.2",
+      "port": 8080,
+      "tags": ["production", "v2"]
+    }
+  ]
+}
+```
+
+#### Service Discovery (fixed name)
+
+```nginx
+location /api {
+    consul_services 127.0.0.1:8500;
+    consul_service api-service;
+    consul_tag production;
+}
+```
+
+#### KV Store Lookup (dynamic key from URI)
+
+```nginx
+location /kv/ {
+    consul_kv 127.0.0.1:8500;
+}
+```
+
+Request: `GET /kv/config/app/timeout`
+
+Response:
+```json
+{
+  "value": "30"
+}
+```
+
+#### KV Store (fixed key)
+
+```nginx
+location /config/timeout {
+    consul_kv 127.0.0.1:8500;
+    consul_key config/app/timeout;
+}
+```
+
+#### Catalog Listing
+
+```nginx
+location /catalog {
+    consul_catalog 127.0.0.1:8500;
+}
+```
+
+Response:
+```json
+{
+  "services": ["api-service", "cache-service", "db-service"]
+}
+```
+
+#### Full Configuration Example
 
 ```nginx
 http {
-    consul 127.0.0.1:8500;
-    consul_refresh 5s;
-    consul_token "your-acl-token";
-    
-    upstream api {
-        consul_service api-service tag=production;
-        # Servers populated dynamically from Consul
-    }
-    
-    upstream cache {
-        consul_service redis tag=primary dc=us-east-1;
-    }
-    
     server {
-        location /api {
-            proxy_pass http://api;
+        listen 8080;
+
+        # Service discovery with dynamic service name
+        location /services/ {
+            consul_services 127.0.0.1:8500;
+        }
+
+        # Service discovery with fixed name and tag filter
+        location /api-service {
+            consul_services 127.0.0.1:8500;
+            consul_service api-service;
+            consul_tag production;
+            consul_dc us-east-1;
+        }
+
+        # KV store with dynamic key
+        location /kv/ {
+            consul_kv 127.0.0.1:8500;
+        }
+
+        # KV store with fixed key
+        location /config/timeout {
+            consul_kv 127.0.0.1:8500;
+            consul_key config/app/timeout;
+        }
+
+        # List all services
+        location /catalog {
+            consul_catalog 127.0.0.1:8500;
         }
     }
 }
 ```
 
-### Consul Service Example
+### Consul API Endpoints Used
 
-Register service in Consul:
+- `GET /v1/health/service/:service` - Service discovery (healthy instances)
+- `GET /v1/kv/:key` - KV store lookup
+- `GET /v1/catalog/services` - Catalog listing
+
+### Response Formats
+
+#### Service Discovery
+
 ```json
 {
-  "Name": "api-service",
-  "Tags": ["production", "v2"],
-  "Port": 8080,
-  "Check": {
-    "HTTP": "http://localhost:8080/health",
-    "Interval": "10s"
-  }
+  "services": [
+    {
+      "id": "string",
+      "address": "string",
+      "port": number,
+      "tags": ["string"]
+    }
+  ]
 }
 ```
+
+#### KV Store
+
+```json
+{
+  "value": "string or null"
+}
+```
+
+#### Catalog
+
+```json
+{
+  "services": ["service-name-1", "service-name-2"]
+}
+```
+
+### Limitations
+
+- Read-only access to Consul (no service registration or KV writes)
+- No caching of Consul responses (each request queries Consul)
+- No watch/blocking query support (polling model only)
+- HTTP only (no HTTPS support for Consul connection)
+
+### Future Enhancements
+
+- [ ] Response caching with TTL
+- [ ] Blocking queries for real-time updates
+- [ ] HTTPS support for Consul connection
+- [ ] Service registration endpoint
+- [ ] Health check integration
+- [ ] Multiple datacenter fallback
 
 ### References
 
 - [Consul HTTP API](https://www.consul.io/api-docs)
-- [nginx-upsync-module](https://github.com/weibocom/nginx-upsync-module)
-- [NGINX Plus Service Discovery](https://docs.nginx.com/nginx/admin-guide/load-balancer/http-load-balancer/#service-discovery)
+- [Consul Health Endpoint](https://www.consul.io/api-docs/health)
+- [Consul KV Store](https://www.consul.io/api-docs/kv)

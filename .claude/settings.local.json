@@ -19,7 +19,9 @@
       "Bash(curl:*)",
       "Bash(KEEP_LOGS=1 bun test:*)",
       "Bash(xxd:*)",
-      "Bash(echo:*)"
+      "Bash(echo:*)",
+      "Bash(cat:*)",
+      "Bash(./zig-out/bin/nginz:*)"
     ]
   }
 }
