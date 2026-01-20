@@ -32,6 +32,16 @@ extern var ngx_http_core_module: ngx_module_t;
 extern var ngx_http_upstream_module: ngx_module_t;
 extern var ngx_pagesize: ngx_uint_t;
 
+// Redis commands supported
+const RedisCommand = enum(c_int) {
+    get = 0, // GET key
+    set = 1, // SET key value
+    del = 2, // DEL key
+    incr = 3, // INCR key
+    expire = 4, // EXPIRE key seconds
+    mget = 5, // MGET key1 key2 ...
+};
+
 // Redis RESP parsing state
 const RespState = enum(c_int) {
     start, // Waiting for type byte
@@ -47,6 +57,7 @@ const redis_loc_conf = extern struct {
     port: ngx_uint_t,
     key: ngx_str_t,
     enabled: ngx_flag_t,
+    command: RedisCommand,
     ups: http.ngx_http_upstream_conf_t,
 };
 
@@ -55,9 +66,13 @@ const redis_request_ctx = extern struct {
     lccf: [*c]redis_loc_conf,
     res: [*c]ngx_chain_t,
     key: ngx_str_t,
+    value: ngx_str_t, // For SET: value to store; For EXPIRE: TTL as string
+    command: RedisCommand, // Command for this request
     state: RespState,
     data_len: isize, // Expected length from RESP (-1 for nil)
     data: ngx_str_t, // Copied data from Redis response
+    mget_count: ngx_uint_t, // For MGET: number of keys
+    mget_keys: [16]ngx_str_t, // For MGET: array of keys (max 16)
 };
 
 const redis_hide_headers = [_]ngx_str_t{
@@ -87,6 +102,7 @@ fn create_loc_conf(cf: [*c]ngx_conf_t) callconv(.c) ?*anyopaque {
         p.*.enabled = 0;
         p.*.host = ngx.string.ngx_null_str;
         p.*.key = ngx.string.ngx_null_str;
+        p.*.command = .get; // Default to GET
         init_upstream_conf(&p.*.ups);
         return p;
     }
@@ -178,6 +194,74 @@ fn ngx_conf_set_redis_pass(
     return conf.NGX_CONF_OK;
 }
 
+fn ngx_conf_set_redis_command(
+    cf: [*c]ngx_conf_t,
+    cmd: [*c]ngx_command_t,
+    loc: ?*anyopaque,
+) callconv(.c) [*c]u8 {
+    _ = cmd;
+    if (core.castPtr(redis_loc_conf, loc)) |lccf| {
+        var i: ngx_uint_t = 1;
+        if (ngx.array.ngx_array_next(ngx_str_t, cf.*.args, &i)) |arg| {
+            const s = core.slicify(u8, arg.*.data, arg.*.len);
+            if (std.mem.eql(u8, s, "get")) {
+                lccf.*.command = .get;
+            } else if (std.mem.eql(u8, s, "set")) {
+                lccf.*.command = .set;
+            } else if (std.mem.eql(u8, s, "del")) {
+                lccf.*.command = .del;
+            } else if (std.mem.eql(u8, s, "incr")) {
+                lccf.*.command = .incr;
+            } else if (std.mem.eql(u8, s, "expire")) {
+                lccf.*.command = .expire;
+            } else if (std.mem.eql(u8, s, "mget")) {
+                lccf.*.command = .mget;
+            } else {
+                return conf.NGX_CONF_ERROR;
+            }
+        }
+    }
+    return conf.NGX_CONF_OK;
+}
+
+// Helper: write usize as decimal string, return length written
+fn write_decimal(out: []u8, value: usize) usize {
+    var len_buf: [20]u8 = undefined;
+    var v = value;
+    var len_pos: usize = 0;
+    if (v == 0) {
+        out[0] = '0';
+        return 1;
+    }
+    while (v > 0) : (len_pos += 1) {
+        len_buf[len_pos] = @intCast('0' + @mod(v, 10));
+        v = @divTrunc(v, 10);
+    }
+    // Reverse into output buffer
+    var j: usize = 0;
+    while (j < len_pos) : (j += 1) {
+        out[j] = len_buf[len_pos - 1 - j];
+    }
+    return len_pos;
+}
+
+// Helper: write bulk string $<len>\r\n<data>\r\n
+fn write_bulk_string(out: [*c]u8, pos: *usize, str: ngx_str_t) void {
+    out[pos.*] = '$';
+    pos.* += 1;
+    pos.* += write_decimal(core.slicify(u8, out + pos.*, 20), str.len);
+    out[pos.*] = '\r';
+    pos.* += 1;
+    out[pos.*] = '\n';
+    pos.* += 1;
+    @memcpy(core.slicify(u8, out + pos.*, str.len), core.slicify(u8, str.data, str.len));
+    pos.* += str.len;
+    out[pos.*] = '\r';
+    pos.* += 1;
+    out[pos.*] = '\n';
+    pos.* += 1;
+}
+
 // Build RESP GET command: *2\r\n$3\r\nGET\r\n$<len>\r\n<key>\r\n
 fn build_get_command(key: ngx_str_t, pool: [*c]ngx_pool_t) !ngx_str_t {
     // Calculate buffer size: *2\r\n$3\r\nGET\r\n$<len>\r\n<key>\r\n
@@ -236,6 +320,100 @@ fn build_get_command(key: ngx_str_t, pool: [*c]ngx_pool_t) !ngx_str_t {
     return RedisError.OutOfMemory;
 }
 
+// Build RESP SET command: *3\r\n$3\r\nSET\r\n$<keylen>\r\n<key>\r\n$<vallen>\r\n<val>\r\n
+fn build_set_command(key: ngx_str_t, value: ngx_str_t, pool: [*c]ngx_pool_t) !ngx_str_t {
+    const max_size = 64 + key.len + value.len;
+    if (core.castPtr(u8, core.ngx_pnalloc(pool, max_size))) |data| {
+        var pos: usize = 0;
+        const header = "*3\r\n$3\r\nSET\r\n";
+        @memcpy(data[pos..][0..header.len], header);
+        pos += header.len;
+        write_bulk_string(data, &pos, key);
+        write_bulk_string(data, &pos, value);
+        return ngx_str_t{ .data = data, .len = pos };
+    }
+    return RedisError.OutOfMemory;
+}
+
+// Build RESP DEL command: *2\r\n$3\r\nDEL\r\n$<keylen>\r\n<key>\r\n
+fn build_del_command(key: ngx_str_t, pool: [*c]ngx_pool_t) !ngx_str_t {
+    const max_size = 64 + key.len;
+    if (core.castPtr(u8, core.ngx_pnalloc(pool, max_size))) |data| {
+        var pos: usize = 0;
+        const header = "*2\r\n$3\r\nDEL\r\n";
+        @memcpy(data[pos..][0..header.len], header);
+        pos += header.len;
+        write_bulk_string(data, &pos, key);
+        return ngx_str_t{ .data = data, .len = pos };
+    }
+    return RedisError.OutOfMemory;
+}
+
+// Build RESP INCR command: *2\r\n$4\r\nINCR\r\n$<keylen>\r\n<key>\r\n
+fn build_incr_command(key: ngx_str_t, pool: [*c]ngx_pool_t) !ngx_str_t {
+    const max_size = 64 + key.len;
+    if (core.castPtr(u8, core.ngx_pnalloc(pool, max_size))) |data| {
+        var pos: usize = 0;
+        const header = "*2\r\n$4\r\nINCR\r\n";
+        @memcpy(data[pos..][0..header.len], header);
+        pos += header.len;
+        write_bulk_string(data, &pos, key);
+        return ngx_str_t{ .data = data, .len = pos };
+    }
+    return RedisError.OutOfMemory;
+}
+
+// Build RESP EXPIRE command: *3\r\n$6\r\nEXPIRE\r\n$<keylen>\r\n<key>\r\n$<ttllen>\r\n<ttl>\r\n
+fn build_expire_command(key: ngx_str_t, ttl: ngx_str_t, pool: [*c]ngx_pool_t) !ngx_str_t {
+    const max_size = 64 + key.len + ttl.len;
+    if (core.castPtr(u8, core.ngx_pnalloc(pool, max_size))) |data| {
+        var pos: usize = 0;
+        const header = "*3\r\n$6\r\nEXPIRE\r\n";
+        @memcpy(data[pos..][0..header.len], header);
+        pos += header.len;
+        write_bulk_string(data, &pos, key);
+        write_bulk_string(data, &pos, ttl);
+        return ngx_str_t{ .data = data, .len = pos };
+    }
+    return RedisError.OutOfMemory;
+}
+
+// Build RESP MGET command: *<n+1>\r\n$4\r\nMGET\r\n$<len1>\r\n<key1>\r\n...
+fn build_mget_command(keys: []const ngx_str_t, count: usize, pool: [*c]ngx_pool_t) !ngx_str_t {
+    // Calculate max size
+    var total_key_len: usize = 0;
+    for (keys[0..count]) |k| {
+        total_key_len += k.len;
+    }
+    const max_size = 64 + total_key_len + count * 32;
+
+    if (core.castPtr(u8, core.ngx_pnalloc(pool, max_size))) |data| {
+        var pos: usize = 0;
+
+        // *<count+1>\r\n
+        data[pos] = '*';
+        pos += 1;
+        pos += write_decimal(core.slicify(u8, data + pos, 20), count + 1);
+        data[pos] = '\r';
+        pos += 1;
+        data[pos] = '\n';
+        pos += 1;
+
+        // $4\r\nMGET\r\n
+        const mget_str = "$4\r\nMGET\r\n";
+        @memcpy(data[pos..][0..mget_str.len], mget_str);
+        pos += mget_str.len;
+
+        // Write each key
+        for (keys[0..count]) |k| {
+            write_bulk_string(data, &pos, k);
+        }
+
+        return ngx_str_t{ .data = data, .len = pos };
+    }
+    return RedisError.OutOfMemory;
+}
+
 // Get key to query
 fn get_redis_key(r: [*c]ngx_http_request_t, lccf: [*c]redis_loc_conf) ngx_str_t {
     if (lccf.*.key.len > 0) {
@@ -258,7 +436,15 @@ fn ngx_http_redis_upstream_create_request(
         redis_request_ctx,
         r.*.ctx[ngx_http_redis_module.ctx_index],
     )) |rctx| {
-        const cmd = build_get_command(rctx.*.key, r.*.pool) catch return http.NGX_HTTP_INTERNAL_SERVER_ERROR;
+        // Build command based on type
+        const cmd = switch (rctx.*.command) {
+            .get => build_get_command(rctx.*.key, r.*.pool),
+            .set => build_set_command(rctx.*.key, rctx.*.value, r.*.pool),
+            .del => build_del_command(rctx.*.key, r.*.pool),
+            .incr => build_incr_command(rctx.*.key, r.*.pool),
+            .expire => build_expire_command(rctx.*.key, rctx.*.value, r.*.pool),
+            .mget => build_mget_command(&rctx.*.mget_keys, rctx.*.mget_count, r.*.pool),
+        } catch return http.NGX_HTTP_INTERNAL_SERVER_ERROR;
 
         var chain = NChain.init(r.*.pool);
         var out = ngx_chain_t{
@@ -280,11 +466,55 @@ fn ngx_http_redis_upstream_create_request(
             ngx.log.NGX_LOG_DEBUG,
             r.*.connection.*.log,
             0,
-            "redis: sending GET command for key: %V",
+            "redis: sending command for key: %V",
             .{&rctx.*.key},
         );
     }
     return NGX_OK;
+}
+
+// Helper to escape string for JSON
+fn json_escape_string(json_buf: []u8, json_len: *usize, str: ngx_str_t) void {
+    const data_slice = core.slicify(u8, str.data, str.len);
+    for (data_slice) |c| {
+        if (json_len.* >= json_buf.len - 10) break;
+        switch (c) {
+            '"' => {
+                json_buf[json_len.*] = '\\';
+                json_len.* += 1;
+                json_buf[json_len.*] = '"';
+                json_len.* += 1;
+            },
+            '\\' => {
+                json_buf[json_len.*] = '\\';
+                json_len.* += 1;
+                json_buf[json_len.*] = '\\';
+                json_len.* += 1;
+            },
+            '\n' => {
+                json_buf[json_len.*] = '\\';
+                json_len.* += 1;
+                json_buf[json_len.*] = 'n';
+                json_len.* += 1;
+            },
+            '\r' => {
+                json_buf[json_len.*] = '\\';
+                json_len.* += 1;
+                json_buf[json_len.*] = 'r';
+                json_len.* += 1;
+            },
+            '\t' => {
+                json_buf[json_len.*] = '\\';
+                json_len.* += 1;
+                json_buf[json_len.*] = 't';
+                json_len.* += 1;
+            },
+            else => {
+                json_buf[json_len.*] = c;
+                json_len.* += 1;
+            },
+        }
+    }
 }
 
 // Build JSON response from Redis value
@@ -298,61 +528,85 @@ fn build_json_response(rctx: [*c]redis_request_ctx, pool: [*c]ngx_pool_t) ?ngx_s
         @memcpy(json_buf[0..null_json.len], null_json);
         json_len = null_json.len;
     } else if (rctx.*.data.len > 0) {
-        // Has data
-        const prefix = "{\"value\":\"";
-        @memcpy(json_buf[json_len..][0..prefix.len], prefix);
-        json_len += prefix.len;
+        // Has data - check if integer command (INCR, DEL, EXPIRE return integers)
+        if (rctx.*.command == .incr or rctx.*.command == .del or rctx.*.command == .expire) {
+            // Return as integer
+            const prefix = "{\"value\":";
+            @memcpy(json_buf[json_len..][0..prefix.len], prefix);
+            json_len += prefix.len;
+            @memcpy(json_buf[json_len..][0..rctx.*.data.len], core.slicify(u8, rctx.*.data.data, rctx.*.data.len));
+            json_len += rctx.*.data.len;
+            json_buf[json_len] = '}';
+            json_len += 1;
+        } else {
+            // Return as string
+            const prefix = "{\"value\":\"";
+            @memcpy(json_buf[json_len..][0..prefix.len], prefix);
+            json_len += prefix.len;
+            json_escape_string(&json_buf, &json_len, rctx.*.data);
+            const suffix = "\"}";
+            @memcpy(json_buf[json_len..][0..suffix.len], suffix);
+            json_len += suffix.len;
+        }
+    } else {
+        // Empty string or OK response
+        if (rctx.*.command == .set) {
+            // SET returns OK
+            const ok_json = "{\"ok\":true}";
+            @memcpy(json_buf[0..ok_json.len], ok_json);
+            json_len = ok_json.len;
+        } else {
+            const empty_json = "{\"value\":\"\"}";
+            @memcpy(json_buf[0..empty_json.len], empty_json);
+            json_len = empty_json.len;
+        }
+    }
 
-        const data_slice = core.slicify(u8, rctx.*.data.data, rctx.*.data.len);
-        for (data_slice) |c| {
-            if (json_len >= json_buf.len - 10) break;
-            switch (c) {
-                '"' => {
-                    json_buf[json_len] = '\\';
-                    json_len += 1;
-                    json_buf[json_len] = '"';
-                    json_len += 1;
-                },
-                '\\' => {
-                    json_buf[json_len] = '\\';
-                    json_len += 1;
-                    json_buf[json_len] = '\\';
-                    json_len += 1;
-                },
-                '\n' => {
-                    json_buf[json_len] = '\\';
-                    json_len += 1;
-                    json_buf[json_len] = 'n';
-                    json_len += 1;
-                },
-                '\r' => {
-                    json_buf[json_len] = '\\';
-                    json_len += 1;
-                    json_buf[json_len] = 'r';
-                    json_len += 1;
-                },
-                '\t' => {
-                    json_buf[json_len] = '\\';
-                    json_len += 1;
-                    json_buf[json_len] = 't';
-                    json_len += 1;
-                },
-                else => {
-                    json_buf[json_len] = c;
-                    json_len += 1;
-                },
-            }
+    // Allocate in pool
+    if (core.castPtr(u8, core.ngx_pnalloc(pool, json_len))) |data| {
+        @memcpy(core.slicify(u8, data, json_len), json_buf[0..json_len]);
+        return ngx_str_t{ .data = data, .len = json_len };
+    }
+    return null;
+}
+
+// Build JSON array response from MGET results
+fn build_mget_json_response(values: [][2]ngx_str_t, count: usize, pool: [*c]ngx_pool_t) ?ngx_str_t {
+    var json_buf: [16384]u8 = undefined;
+    var json_len: usize = 0;
+
+    // {"values":[
+    const prefix = "{\"values\":[";
+    @memcpy(json_buf[json_len..][0..prefix.len], prefix);
+    json_len += prefix.len;
+
+    var i: usize = 0;
+    while (i < count) : (i += 1) {
+        if (i > 0) {
+            json_buf[json_len] = ',';
+            json_len += 1;
         }
 
-        const suffix = "\"}";
-        @memcpy(json_buf[json_len..][0..suffix.len], suffix);
-        json_len += suffix.len;
-    } else {
-        // Empty string
-        const empty_json = "{\"value\":\"\"}";
-        @memcpy(json_buf[0..empty_json.len], empty_json);
-        json_len = empty_json.len;
+        // values[i][0] indicates if nil (len=0 means nil), values[i][1] is the actual value
+        if (values[i][0].len == 0) {
+            // Nil
+            const null_str = "null";
+            @memcpy(json_buf[json_len..][0..null_str.len], null_str);
+            json_len += null_str.len;
+        } else {
+            // Has value
+            json_buf[json_len] = '"';
+            json_len += 1;
+            json_escape_string(&json_buf, &json_len, values[i][1]);
+            json_buf[json_len] = '"';
+            json_len += 1;
+        }
     }
+
+    // ]}
+    const suffix = "]}";
+    @memcpy(json_buf[json_len..][0..suffix.len], suffix);
+    json_len += suffix.len;
 
     // Allocate in pool
     if (core.castPtr(u8, core.ngx_pnalloc(pool, json_len))) |data| {
@@ -535,6 +789,94 @@ fn ngx_http_redis_upstream_process_header(
 
                 return NGX_OK;
             },
+            '*' => {
+                // Array response (MGET): *<count>\r\n<elements>
+                var p: [*c]u8 = b.*.pos + 1;
+
+                // Parse array count
+                var count: usize = 0;
+                while (p < b.*.last and p.* != '\r') : (p += 1) {
+                    if (p.* >= '0' and p.* <= '9') {
+                        count = count * 10 + @as(usize, p.* - '0');
+                    } else {
+                        rctx.*.state = .resp_error;
+                        return NGX_ERROR;
+                    }
+                }
+
+                if (p + 1 >= b.*.last) return NGX_AGAIN;
+                if (p.* != '\r' or (p + 1).* != '\n') {
+                    rctx.*.state = .resp_error;
+                    return NGX_ERROR;
+                }
+                p += 2; // Skip \r\n
+
+                // Parse each array element
+                var values: [16][2]ngx_str_t = undefined; // [is_present, value]
+                var idx: usize = 0;
+                while (idx < count and idx < 16) : (idx += 1) {
+                    if (p >= b.*.last) return NGX_AGAIN;
+
+                    if (p.* == '$') {
+                        p += 1;
+                        var is_nil = false;
+                        if (p < b.*.last and p.* == '-') {
+                            is_nil = true;
+                            p += 1;
+                        }
+
+                        // Parse length
+                        var elem_len: usize = 0;
+                        while (p < b.*.last and p.* != '\r') : (p += 1) {
+                            if (p.* >= '0' and p.* <= '9') {
+                                elem_len = elem_len * 10 + @as(usize, p.* - '0');
+                            }
+                        }
+
+                        if (p + 1 >= b.*.last) return NGX_AGAIN;
+                        p += 2; // Skip \r\n
+
+                        if (is_nil) {
+                            values[idx][0] = ngx.string.ngx_null_str; // nil marker
+                            values[idx][1] = ngx.string.ngx_null_str;
+                        } else {
+                            if (p + elem_len + 2 > b.*.last) return NGX_AGAIN;
+
+                            // Copy value
+                            if (core.castPtr(u8, core.ngx_pnalloc(r.*.pool, elem_len))) |val_copy| {
+                                @memcpy(core.slicify(u8, val_copy, elem_len), core.slicify(u8, p, elem_len));
+                                values[idx][0] = ngx_str_t{ .data = @constCast("1"), .len = 1 }; // present marker
+                                values[idx][1] = ngx_str_t{ .data = val_copy, .len = elem_len };
+                            } else {
+                                values[idx][0] = ngx.string.ngx_null_str;
+                                values[idx][1] = ngx.string.ngx_null_str;
+                            }
+
+                            p += elem_len + 2; // Skip data + \r\n
+                        }
+                    } else {
+                        rctx.*.state = .resp_error;
+                        return NGX_ERROR;
+                    }
+                }
+
+                rctx.*.state = .done;
+
+                // Build MGET JSON response
+                if (build_mget_json_response(&values, count, r.*.pool)) |json| {
+                    b.*.pos = json.data;
+                    b.*.last = json.data + json.len;
+                    u.*.headers_in.status_n = 200;
+                    u.*.headers_in.content_length_n = @intCast(json.len);
+                    u.*.length = 0;
+
+                    r.*.headers_out.content_type = ngx_str_t{ .len = 16, .data = @constCast("application/json") };
+                    r.*.headers_out.content_type_len = 16;
+                    r.*.headers_out.content_type_lowcase = null;
+                }
+
+                return NGX_OK;
+            },
             else => {
                 rctx.*.state = .resp_error;
                 return NGX_ERROR;
@@ -656,6 +998,20 @@ export fn ngx_http_redis_body_handler(
         redis_request_ctx,
         r.*.ctx[ngx_http_redis_module.ctx_index],
     )) |rctx| {
+        // Extract value from request body for SET and EXPIRE
+        if (rctx.*.command == .set or rctx.*.command == .expire) {
+            rctx.*.value = get_request_body(r);
+            if (rctx.*.value.len == 0 and rctx.*.command == .set) {
+                // SET requires a value
+                http.ngx_http_finalize_request(r, http.NGX_HTTP_BAD_REQUEST);
+                return;
+            }
+            if (rctx.*.value.len == 0 and rctx.*.command == .expire) {
+                // EXPIRE requires TTL - default to 60 seconds
+                rctx.*.value = ngx_string("60");
+            }
+        }
+
         const rc = create_upstream(r, rctx) catch {
             http.ngx_http_finalize_request(r, http.NGX_HTTP_INTERNAL_SERVER_ERROR);
             return;
@@ -666,6 +1022,93 @@ export fn ngx_http_redis_body_handler(
         }
     } else {
         http.ngx_http_finalize_request(r, http.NGX_HTTP_INTERNAL_SERVER_ERROR);
+    }
+}
+
+// Parse request body content from chain
+fn get_request_body(r: [*c]ngx_http_request_t) ngx_str_t {
+    if (r.*.request_body == core.nullptr(http.ngx_http_request_body_t)) {
+        return ngx.string.ngx_null_str;
+    }
+    if (r.*.request_body.*.bufs == core.nullptr(ngx_chain_t)) {
+        return ngx.string.ngx_null_str;
+    }
+
+    const b = r.*.request_body.*.bufs.*.buf;
+    if (b == core.nullptr(ngx_buf_t)) {
+        return ngx.string.ngx_null_str;
+    }
+
+    const len = @intFromPtr(b.*.last) - @intFromPtr(b.*.pos);
+    if (len == 0) {
+        return ngx.string.ngx_null_str;
+    }
+
+    return ngx_str_t{ .data = b.*.pos, .len = len };
+}
+
+// Parse comma-separated keys from query string for MGET
+fn parse_mget_keys(r: [*c]ngx_http_request_t, rctx: [*c]redis_request_ctx) void {
+    // Look for ?keys=key1,key2,key3 in args
+    if (r.*.args.len == 0) {
+        // Use URI as single key
+        rctx.*.mget_keys[0] = get_redis_key(r, rctx.*.lccf);
+        rctx.*.mget_count = 1;
+        return;
+    }
+
+    // Parse keys=... from query string
+    const args = core.slicify(u8, r.*.args.data, r.*.args.len);
+    var pos: usize = 0;
+
+    // Find keys= parameter
+    while (pos + 5 < args.len) : (pos += 1) {
+        if (std.mem.eql(u8, args[pos..][0..5], "keys=")) {
+            pos += 5;
+            break;
+        }
+    }
+
+    if (pos + 5 >= args.len and !std.mem.eql(u8, args[0..@min(5, args.len)], "keys=")) {
+        // No keys= found, use URI as single key
+        rctx.*.mget_keys[0] = get_redis_key(r, rctx.*.lccf);
+        rctx.*.mget_count = 1;
+        return;
+    }
+
+    if (pos == 0 and args.len >= 5 and std.mem.eql(u8, args[0..5], "keys=")) {
+        pos = 5;
+    }
+
+    // Parse comma-separated keys
+    var count: ngx_uint_t = 0;
+    var key_start = pos;
+
+    while (pos <= args.len and count < 16) {
+        const is_end = pos == args.len;
+        const is_sep = !is_end and (args[pos] == ',' or args[pos] == '&');
+
+        if (is_end or is_sep) {
+            const key_len = pos - key_start;
+            if (key_len > 0) {
+                // Copy key to pool
+                if (core.castPtr(u8, core.ngx_pnalloc(r.*.pool, key_len))) |key_copy| {
+                    @memcpy(core.slicify(u8, key_copy, key_len), args[key_start..pos]);
+                    rctx.*.mget_keys[count] = ngx_str_t{ .data = key_copy, .len = key_len };
+                    count += 1;
+                }
+            }
+            if (is_end or args[pos] == '&') break;
+            key_start = pos + 1;
+        }
+        pos += 1;
+    }
+
+    rctx.*.mget_count = count;
+    if (count == 0) {
+        // Fallback to URI as single key
+        rctx.*.mget_keys[0] = get_redis_key(r, rctx.*.lccf);
+        rctx.*.mget_count = 1;
     }
 }
 
@@ -681,9 +1124,35 @@ export fn ngx_http_redis_handler(
         return NGX_DECLINED;
     }
 
-    // Only handle GET requests
-    if (r.*.method != http.NGX_HTTP_GET) {
-        return http.NGX_HTTP_NOT_ALLOWED;
+    // Determine command based on config and HTTP method
+    var command = lccf.*.command;
+
+    // Map HTTP methods to commands if using default GET command
+    if (command == .get) {
+        if (r.*.method == http.NGX_HTTP_DELETE) {
+            command = .del;
+        } else if (r.*.method != http.NGX_HTTP_GET and r.*.method != http.NGX_HTTP_POST) {
+            return http.NGX_HTTP_NOT_ALLOWED;
+        }
+    }
+
+    // Validate HTTP method for command
+    switch (command) {
+        .get, .mget => {
+            if (r.*.method != http.NGX_HTTP_GET) {
+                return http.NGX_HTTP_NOT_ALLOWED;
+            }
+        },
+        .set, .incr, .expire => {
+            if (r.*.method != http.NGX_HTTP_POST) {
+                return http.NGX_HTTP_NOT_ALLOWED;
+            }
+        },
+        .del => {
+            if (r.*.method != http.NGX_HTTP_DELETE and r.*.method != http.NGX_HTTP_POST) {
+                return http.NGX_HTTP_NOT_ALLOWED;
+            }
+        },
     }
 
     // Get or create request context
@@ -695,14 +1164,21 @@ export fn ngx_http_redis_handler(
 
     if (rctx.*.lccf == core.nullptr(redis_loc_conf)) {
         rctx.*.lccf = lccf;
+        rctx.*.command = command;
         rctx.*.key = get_redis_key(r, lccf);
+        rctx.*.value = ngx.string.ngx_null_str;
         rctx.*.state = .start;
         rctx.*.data_len = 0;
         rctx.*.data = ngx.string.ngx_null_str;
+        rctx.*.mget_count = 0;
+
+        // Parse MGET keys from query string
+        if (command == .mget) {
+            parse_mget_keys(r, rctx);
+        }
     }
 
-    // Read request body (for GET, this will call handler immediately)
-    // This is required before starting upstream
+    // Read request body (needed for SET/EXPIRE with value in body)
     const rc = http.ngx_http_read_client_request_body(r, ngx_http_redis_body_handler);
     if (rc >= http.NGX_HTTP_SPECIAL_RESPONSE) {
         return rc;
@@ -736,6 +1212,14 @@ export const ngx_http_redis_commands = [_]ngx_command_t{
         .set = conf.ngx_conf_set_str_slot,
         .conf = conf.NGX_HTTP_LOC_CONF_OFFSET,
         .offset = @offsetOf(redis_loc_conf, "key"),
+        .post = null,
+    },
+    ngx_command_t{
+        .name = ngx_string("redis_command"),
+        .type = conf.NGX_HTTP_LOC_CONF | conf.NGX_CONF_TAKE1,
+        .set = ngx_conf_set_redis_command,
+        .conf = conf.NGX_HTTP_LOC_CONF_OFFSET,
+        .offset = 0,
         .post = null,
     },
     conf.ngx_null_command,
