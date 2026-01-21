@@ -4,80 +4,17 @@ import {
   stopNginz,
   cleanupRuntime,
   TEST_URL,
-  createHTTPMock,
-  MOCK_PORTS,
-  createMockManager,
 } from "../harness.js";
 
 const MODULE = "graphql";
-let mocks;
-let graphqlUpstream;
 
 describe("graphql module", () => {
   beforeAll(async () => {
-    mocks = createMockManager();
-
-    // Create GraphQL upstream server
-    graphqlUpstream = mocks.add(
-      "graphql",
-      createHTTPMock(MOCK_PORTS.HTTP_UPSTREAM_1)
-    );
-
-    // Mock GraphQL endpoint - echoes back query info for verification
-    graphqlUpstream.post("/graphql", async (req, url, logEntry) => {
-      const body = logEntry.body;
-      return {
-        body: {
-          data: {
-            received: true,
-            query: body?.query || null,
-          },
-        },
-      };
-    });
-
-    graphqlUpstream.post("/graphql-introspection", async (req, url, logEntry) => {
-      const body = logEntry.body;
-      return {
-        body: {
-          data: {
-            received: true,
-            query: body?.query || null,
-          },
-        },
-      };
-    });
-
-    graphqlUpstream.post("/graphql-shallow", async (req, url, logEntry) => {
-      const body = logEntry.body;
-      return {
-        body: {
-          data: {
-            received: true,
-            query: body?.query || null,
-          },
-        },
-      };
-    });
-
-    graphqlUpstream.post("/graphql-disabled", async (req, url, logEntry) => {
-      const body = logEntry.body;
-      return {
-        body: {
-          data: {
-            received: true,
-            query: body?.query || null,
-          },
-        },
-      };
-    });
-
     await startNginz(`tests/${MODULE}/nginx.conf`, MODULE);
   });
 
   afterAll(async () => {
     await stopNginz();
-    await mocks.stopAll();
     cleanupRuntime(MODULE);
   });
 
@@ -231,7 +168,7 @@ describe("graphql module", () => {
       expect(res.status).toBe(400);
       const body = await res.json();
       expect(body.errors).toBeDefined();
-      expect(body.errors[0].message).toContain("introspection");
+      expect(body.errors[0].message).toContain("Introspection");
     });
 
     test("blocks __type query when introspection disabled", async () => {
@@ -244,7 +181,7 @@ describe("graphql module", () => {
       });
       expect(res.status).toBe(400);
       const body = await res.json();
-      expect(body.errors[0].message).toContain("introspection");
+      expect(body.errors[0].message).toContain("Introspection");
     });
 
     test("allows __schema when introspection enabled", async () => {
@@ -415,7 +352,7 @@ describe("graphql module", () => {
 
       const body = await res.json();
       expect(body.errors).toBeInstanceOf(Array);
-      expect(body.errors[0].message).toContain("introspection");
+      expect(body.errors[0].message).toContain("Introspection");
     });
   });
 });
