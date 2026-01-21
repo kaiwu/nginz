@@ -166,14 +166,14 @@ export class ConsulMock {
           }
         }
         if (results.length === 0) {
-          return new Response(null, { status: 404 });
+          return new Response("", { status: 404, headers: { "Content-Length": "0" } });
         }
         return this.jsonResponse(results);
       }
 
       const value = this.kv.get(key);
       if (value === undefined) {
-        return new Response(null, { status: 404 });
+        return new Response("", { status: 404, headers: { "Content-Length": "0" } });
       }
 
       return this.jsonResponse([
@@ -221,7 +221,7 @@ export class ConsulMock {
     }
 
     // Not found
-    return new Response(null, { status: 404 });
+    return new Response("", { status: 404, headers: { "Content-Length": "0" } });
   }
 
   jsonResponse(data) {

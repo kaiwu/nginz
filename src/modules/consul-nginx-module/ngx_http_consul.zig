@@ -281,7 +281,7 @@ fn build_consul_request(rctx: [*c]consul_request_ctx, pool: [*c]ngx_pool_t) !ngx
         pos += 1;
 
         // Connection header
-        const conn = "Connection: close\r\n";
+        const conn = "Connection: keep-alive\r\n";
         @memcpy(data[pos..][0..conn.len], conn);
         pos += conn.len;
 
@@ -625,9 +625,6 @@ fn ngx_http_consul_upstream_process_header(
 
         // Get response body length
         const body_len = @intFromPtr(b.*.last) - @intFromPtr(body_start);
-        if (body_len == 0) {
-            return NGX_AGAIN;
-        }
 
         // Store response data
         rctx.*.response_data = ngx_str_t{
@@ -635,7 +632,7 @@ fn ngx_http_consul_upstream_process_header(
             .len = body_len,
         };
 
-        // Handle based on status
+        // Handle based on status - 404 first since it may have empty body
         if (status == 404) {
             // Not found - return empty/null response
             const not_found = if (rctx.*.query_type == .kv)
@@ -905,18 +902,32 @@ export fn ngx_http_consul_handler(
         }
     }
 
-    // Discard request body
-    const rc = http.ngx_http_discard_request_body(r);
-    if (rc != NGX_OK) {
+    // Read request body (even if we don't need it, this properly manages request lifecycle)
+    const rc = http.ngx_http_read_client_request_body(r, ngx_http_consul_body_handler);
+    if (rc >= http.NGX_HTTP_SPECIAL_RESPONSE) {
         return rc;
     }
+    return core.NGX_DONE;
+}
 
-    // Create upstream connection
-    const upstream_rc = create_upstream(r, rctx) catch {
-        return http.NGX_HTTP_INTERNAL_SERVER_ERROR;
-    };
-
-    return upstream_rc;
+export fn ngx_http_consul_body_handler(
+    r: [*c]ngx_http_request_t,
+) callconv(.c) void {
+    if (core.castPtr(
+        consul_request_ctx,
+        r.*.ctx[ngx_http_consul_module.ctx_index],
+    )) |rctx| {
+        const rc = create_upstream(r, rctx) catch {
+            http.ngx_http_finalize_request(r, http.NGX_HTTP_INTERNAL_SERVER_ERROR);
+            return;
+        };
+        // Only finalize on error - upstream will handle completion
+        if (rc != core.NGX_DONE) {
+            http.ngx_http_finalize_request(r, rc);
+        }
+    } else {
+        http.ngx_http_finalize_request(r, http.NGX_HTTP_INTERNAL_SERVER_ERROR);
+    }
 }
 
 ////////////////////////////  DIRECTIVES  //////////////////////////////////////////////////
