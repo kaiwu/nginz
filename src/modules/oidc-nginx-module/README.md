@@ -369,3 +369,34 @@ Mock IdP server that:
 - [OAuth 2.0 for Browser-Based Apps (PKCE)](https://datatracker.ietf.org/doc/html/draft-ietf-oauth-browser-based-apps)
 - [RFC 7636 - PKCE](https://datatracker.ietf.org/doc/html/rfc7636)
 - [lua-resty-openidc](https://github.com/zmartzone/lua-resty-openidc)
+
+### Current Status
+
+  Build/Test Status
+
+  - zig build - PASSES ✓
+  - zig build test (unit tests) - PASSES ✓
+  - bun test tests/oidc/ (integration tests) - FAILS ✗
+
+  Module Implementation
+
+  The OIDC module is fully implemented with:
+  - Config directives (oidc, oidc_client_id, oidc_redirect_uri, etc.)
+  - AES-256-GCM session cookie encryption/decryption
+  - Authorization redirect with state/nonce
+  - PKCE (code_challenge/code_verifier) support
+  - Callback handler with state verification
+  - ACCESS phase handler registration
+
+  The Issue
+
+  The problem is sending 302 redirects with custom Set-Cookie headers from the ACCESS phase:
+
+  1. If we manually call ngx_http_send_header() and return NGX_OK → nginx continues to content phase which tries to send headers again ("header already sent" error)
+  2. If we just return 302 and let nginx handle it → nginx generates a 302 response but doesn't include our Set-Cookie headers from headers_out.headers
+  3. Calling ngx_http_finalize_request() with various values causes hangs or crashes
+
+  Summary
+
+  The module code is complete and compiles. The challenge is nginx's request lifecycle - properly terminating a request after sending custom headers from the ACCESS phase. This is a common
+  challenge when doing redirects with cookies from access handlers.

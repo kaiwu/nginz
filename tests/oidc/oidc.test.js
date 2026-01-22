@@ -4,80 +4,149 @@ import {
   stopNginz,
   cleanupRuntime,
   TEST_URL,
-  createOIDCMock,
-  MOCK_PORTS,
 } from "../harness.js";
 
 const MODULE = "oidc";
-let oidcMock;
 
 describe("oidc module", () => {
   beforeAll(async () => {
-    // Start OIDC mock provider
-    oidcMock = createOIDCMock(MOCK_PORTS.OIDC);
-
-    // Register additional test users
-    oidcMock.registerUser("admin", {
-      name: "Admin User",
-      email: "admin@example.com",
-      email_verified: true,
-      roles: ["admin"],
-    });
-
     await startNginz(`tests/${MODULE}/nginx.conf`, MODULE);
   });
 
   afterAll(async () => {
     await stopNginz();
-    if (oidcMock) {
-      oidcMock.stop();
-    }
     cleanupRuntime(MODULE);
   });
 
-  test("placeholder - module not implemented", async () => {
-    const res = await fetch(`${TEST_URL}/`);
-    expect(res.status).toBe(200);
-    const body = await res.text();
-    expect(body).toContain("oidc");
+  describe("authorization redirect", () => {
+    test("redirects unauthenticated request to authorization endpoint", async () => {
+      const res = await fetch(`${TEST_URL}/protected`, {
+        redirect: "manual",
+      });
+      expect(res.status).toBe(302);
+
+      const location = res.headers.get("location");
+      expect(location).toBeDefined();
+      expect(location).toContain("http://localhost:9999/authorize");
+    });
+
+    test("redirect URL contains required OIDC parameters", async () => {
+      const res = await fetch(`${TEST_URL}/protected`, {
+        redirect: "manual",
+      });
+      expect(res.status).toBe(302);
+
+      const location = res.headers.get("location");
+      expect(location).toContain("response_type=code");
+      expect(location).toContain("client_id=test-client");
+      expect(location).toContain("redirect_uri=");
+      expect(location).toContain("state=");
+      expect(location).toContain("nonce=");
+    });
+
+    test("redirect URL includes PKCE parameters when enabled", async () => {
+      const res = await fetch(`${TEST_URL}/protected`, {
+        redirect: "manual",
+      });
+      expect(res.status).toBe(302);
+
+      const location = res.headers.get("location");
+      expect(location).toContain("code_challenge=");
+      expect(location).toContain("code_challenge_method=S256");
+    });
+
+    test("redirect URL excludes PKCE when disabled", async () => {
+      const res = await fetch(`${TEST_URL}/no-pkce`, {
+        redirect: "manual",
+      });
+      expect(res.status).toBe(302);
+
+      const location = res.headers.get("location");
+      expect(location).not.toContain("code_challenge=");
+      expect(location).not.toContain("code_challenge_method=");
+    });
+
+    test("sets state cookie on redirect", async () => {
+      const res = await fetch(`${TEST_URL}/protected`, {
+        redirect: "manual",
+      });
+      expect(res.status).toBe(302);
+
+      const setCookie = res.headers.get("set-cookie");
+      expect(setCookie).toBeDefined();
+      expect(setCookie).toContain("oidc_state=");
+      expect(setCookie).toContain("Path=/");
+      expect(setCookie).toContain("HttpOnly");
+    });
+
+    test("state parameter is hex encoded (64 chars)", async () => {
+      const res = await fetch(`${TEST_URL}/protected`, {
+        redirect: "manual",
+      });
+      expect(res.status).toBe(302);
+
+      const location = res.headers.get("location");
+      const stateMatch = location.match(/state=([a-f0-9]+)/);
+      expect(stateMatch).toBeDefined();
+      expect(stateMatch[1].length).toBe(64);
+    });
   });
 
-  // Tests to enable when oidc module is implemented:
-  //
-  // test("redirects unauthenticated requests to IdP", async () => {
-  //   const res = await fetch(`${TEST_URL}/protected`, { redirect: "manual" });
-  //   expect(res.status).toBe(302);
-  //   const location = res.headers.get("location");
-  //   expect(location).toContain(`127.0.0.1:${MOCK_PORTS.OIDC}/authorize`);
-  // });
-  //
-  // test("handles callback with authorization code", async () => {
-  //   // Simulate the callback from IdP
-  //   const res = await fetch(`${TEST_URL}/callback?code=test-code&state=test-state`);
-  //   expect(res.status).toBe(302); // Redirect to original URL
-  // });
-  //
-  // test("allows access with valid token", async () => {
-  //   const token = oidcMock.createAccessToken("user1", "openid profile");
-  //   const res = await fetch(`${TEST_URL}/protected`, {
-  //     headers: { Authorization: `Bearer ${token}` },
-  //   });
-  //   expect(res.status).toBe(200);
-  // });
-  //
-  // test("rejects expired token", async () => {
-  //   const token = oidcMock.createAccessToken("user1", "openid", -1);
-  //   const res = await fetch(`${TEST_URL}/protected`, {
-  //     headers: { Authorization: `Bearer ${token}` },
-  //   });
-  //   expect(res.status).toBe(401);
-  // });
-  //
-  // test("validates token scopes", async () => {
-  //   const token = oidcMock.createAccessToken("user1", "openid");
-  //   const res = await fetch(`${TEST_URL}/admin`, {
-  //     headers: { Authorization: `Bearer ${token}` },
-  //   });
-  //   expect(res.status).toBe(403); // Missing admin scope
-  // });
+  describe("callback handling", () => {
+    test("callback without code returns error", async () => {
+      const res = await fetch(`${TEST_URL}/callback?state=abc123`, {
+        redirect: "manual",
+      });
+      expect(res.status).toBe(400);
+      const body = await res.text();
+      expect(body).toContain("Missing authorization code");
+    });
+
+    test("callback without state returns error", async () => {
+      const res = await fetch(`${TEST_URL}/callback?code=abc123`, {
+        redirect: "manual",
+      });
+      expect(res.status).toBe(400);
+      const body = await res.text();
+      expect(body).toContain("Missing state");
+    });
+
+    test("callback without state cookie returns error", async () => {
+      const res = await fetch(`${TEST_URL}/callback?code=abc123&state=xyz789`, {
+        redirect: "manual",
+      });
+      expect(res.status).toBe(400);
+      const body = await res.text();
+      expect(body).toContain("Missing state cookie");
+    });
+  });
+
+  describe("public endpoints", () => {
+    test("public endpoint allows access without OIDC", async () => {
+      const res = await fetch(`${TEST_URL}/public`);
+      expect(res.status).toBe(200);
+      const body = await res.json();
+      expect(body.status).toBe("public_content");
+    });
+
+    test("health endpoint works", async () => {
+      const res = await fetch(`${TEST_URL}/`);
+      expect(res.status).toBe(200);
+      const body = await res.json();
+      expect(body.status).toBe("ok");
+    });
+  });
+
+  describe("scope handling", () => {
+    test("default scope includes openid profile email", async () => {
+      const res = await fetch(`${TEST_URL}/protected`, {
+        redirect: "manual",
+      });
+      expect(res.status).toBe(302);
+
+      const location = res.headers.get("location");
+      // URL encoded "openid profile email" = "openid%20profile%20email"
+      expect(location).toContain("scope=openid");
+    });
+  });
 });
