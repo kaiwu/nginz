@@ -515,6 +515,1009 @@ fn buildJwsJson(
 }
 
 // ============================================================================
+// CSR (Certificate Signing Request) Generation
+// ============================================================================
+
+// X509_REQ bindings
+const X509_REQ = ssl.X509_REQ;
+const X509_NAME = ssl.X509_NAME;
+const X509_REQ_new = ssl.X509_REQ_new;
+const X509_REQ_free = ssl.X509_REQ_free;
+const X509_REQ_set_version = ssl.X509_REQ_set_version;
+const X509_REQ_get_subject_name = ssl.X509_REQ_get_subject_name;
+const X509_REQ_set_pubkey = ssl.X509_REQ_set_pubkey;
+const X509_REQ_sign = ssl.X509_REQ_sign;
+const X509_NAME_add_entry_by_txt = ssl.X509_NAME_add_entry_by_txt;
+const i2d_X509_REQ = ssl.i2d_X509_REQ;
+const MBSTRING_ASC = ssl.MBSTRING_ASC;
+
+/// Generate a Certificate Signing Request (CSR) for a domain
+/// Returns base64url-encoded DER format CSR
+pub fn generateCsr(pool: [*c]ngx_pool_t, domain: ngx_str_t, pkey: *EVP_PKEY) !ngx_str_t {
+    _ = OPENSSL_init_crypto(OPENSSL_INIT_ADD_ALL_CIPHERS | OPENSSL_INIT_ADD_ALL_DIGESTS | OPENSSL_INIT_LOAD_CRYPTO_STRINGS, null);
+
+    // Create new X509_REQ
+    const req = X509_REQ_new() orelse return error.CsrCreateFailed;
+    defer X509_REQ_free(req);
+
+    // Set version to 0 (v1)
+    if (X509_REQ_set_version(req, 0) != 1) {
+        return error.CsrVersionFailed;
+    }
+
+    // Get subject name and add CN
+    const subject_name = X509_REQ_get_subject_name(req) orelse return error.CsrSubjectFailed;
+
+    // Add Common Name (CN) with the domain
+    if (X509_NAME_add_entry_by_txt(
+        subject_name,
+        "CN",
+        @intCast(MBSTRING_ASC),
+        domain.data,
+        @intCast(domain.len),
+        -1,
+        0,
+    ) != 1) {
+        return error.CsrCnFailed;
+    }
+
+    // Set public key
+    if (X509_REQ_set_pubkey(req, pkey) != 1) {
+        return error.CsrPubkeyFailed;
+    }
+
+    // Sign with SHA256
+    if (X509_REQ_sign(req, pkey, EVP_sha256()) == 0) {
+        return error.CsrSignFailed;
+    }
+
+    // Convert to DER format
+    // First call to get size
+    var der_len = i2d_X509_REQ(req, null);
+    if (der_len <= 0) {
+        return error.CsrDerFailed;
+    }
+
+    // Allocate buffer for DER
+    const der_buf = core.castPtr(u8, core.ngx_pnalloc(pool, @intCast(der_len))) orelse return error.AllocFailed;
+
+    // Second call to actually encode
+    var der_ptr: [*c]u8 = der_buf;
+    der_len = i2d_X509_REQ(req, &der_ptr);
+    if (der_len <= 0) {
+        return error.CsrDerFailed;
+    }
+
+    // Base64url encode the DER
+    return base64url_encode(pool, core.slicify(u8, der_buf, @intCast(der_len))) orelse error.EncodeFailed;
+}
+
+/// Domain key for certificate (separate from account key)
+pub const AcmeDomainKey = struct {
+    const Self = @This();
+
+    pkey: ?*EVP_PKEY,
+
+    pub fn generate(pool: [*c]ngx_pool_t) !Self {
+        _ = pool;
+        _ = OPENSSL_init_crypto(OPENSSL_INIT_ADD_ALL_CIPHERS | OPENSSL_INIT_ADD_ALL_DIGESTS | OPENSSL_INIT_LOAD_CRYPTO_STRINGS, null);
+
+        // Generate 2048-bit RSA key for the certificate
+        const pkey = EVP_RSA_gen(2048) orelse return error.KeyGenFailed;
+
+        return Self{
+            .pkey = pkey,
+        };
+    }
+
+    pub fn loadFromPem(pem: ngx_str_t) !Self {
+        _ = OPENSSL_init_crypto(OPENSSL_INIT_ADD_ALL_CIPHERS | OPENSSL_INIT_ADD_ALL_DIGESTS | OPENSSL_INIT_LOAD_CRYPTO_STRINGS, null);
+
+        const bio = BIO_new_mem_buf(pem.data, @intCast(pem.len)) orelse return error.BioFailed;
+        defer _ = BIO_free(bio);
+
+        const pkey = PEM_read_bio_PrivateKey(bio, null, null, null) orelse return error.PemParseFailed;
+
+        return Self{
+            .pkey = pkey,
+        };
+    }
+
+    pub fn toPem(self: *Self, pool: [*c]ngx_pool_t) !ngx_str_t {
+        const bio = BIO_new(BIO_s_mem()) orelse return error.BioFailed;
+        defer _ = BIO_free(bio);
+
+        if (PEM_write_bio_PrivateKey(bio, self.pkey, null, null, 0, null, null) != 1) {
+            return error.PemWriteFailed;
+        }
+
+        // Get the PEM data from BIO
+        var data: [*c]u8 = undefined;
+        const len = BIO_ctrl(bio, BIO_CTRL_INFO, 0, @ptrCast(&data));
+
+        if (len <= 0) return error.BioEmpty;
+
+        // Copy to pool
+        const pem_buf = core.castPtr(u8, core.ngx_pnalloc(pool, @intCast(len))) orelse return error.AllocFailed;
+        @memcpy(core.slicify(u8, pem_buf, @intCast(len)), core.slicify(u8, data, @intCast(len)));
+
+        return ngx_str_t{ .len = @intCast(len), .data = pem_buf };
+    }
+
+    pub fn createCsr(self: *Self, pool: [*c]ngx_pool_t, domain: ngx_str_t) !ngx_str_t {
+        return generateCsr(pool, domain, self.pkey orelse return error.NullKey);
+    }
+
+    pub fn deinit(self: *Self) void {
+        if (self.pkey) |key| EVP_PKEY_free(key);
+        self.pkey = null;
+    }
+};
+
+// ============================================================================
+// File Storage
+// ============================================================================
+
+/// ACME storage manager for account keys, domain keys, and certificates
+/// Storage layout:
+///   {storage_path}/
+///   ├── account.key           # RSA private key (PEM)
+///   └── certs/
+///       └── {domain}/
+///           ├── privkey.pem   # Domain private key
+///           └── fullchain.pem # Certificate + intermediates
+pub const AcmeStorage = struct {
+    const Self = @This();
+    const fs = std.fs;
+
+    storage_path: []const u8,
+
+    pub fn init(path: []const u8) Self {
+        return Self{ .storage_path = path };
+    }
+
+    /// Ensure storage directories exist
+    pub fn ensureDirectories(self: *Self) !void {
+        // Create base directory
+        fs.cwd().makePath(self.storage_path) catch |err| {
+            if (err != error.PathAlreadyExists) return err;
+        };
+
+        // Create certs subdirectory
+        var path_buf: [512]u8 = undefined;
+        const certs_path = std.fmt.bufPrint(&path_buf, "{s}/certs", .{self.storage_path}) catch return error.PathTooLong;
+        fs.cwd().makePath(certs_path) catch |err| {
+            if (err != error.PathAlreadyExists) return err;
+        };
+    }
+
+    /// Ensure domain directory exists
+    pub fn ensureDomainDir(self: *Self, domain: []const u8) !void {
+        var path_buf: [512]u8 = undefined;
+        const domain_path = std.fmt.bufPrint(&path_buf, "{s}/certs/{s}", .{ self.storage_path, domain }) catch return error.PathTooLong;
+        fs.cwd().makePath(domain_path) catch |err| {
+            if (err != error.PathAlreadyExists) return err;
+        };
+    }
+
+    // ---- Account Key ----
+
+    pub fn accountKeyPath(self: *Self, buf: []u8) ![]const u8 {
+        return std.fmt.bufPrint(buf, "{s}/account.key", .{self.storage_path}) catch return error.PathTooLong;
+    }
+
+    pub fn saveAccountKey(self: *Self, pem: []const u8) !void {
+        var path_buf: [512]u8 = undefined;
+        const path = try self.accountKeyPath(&path_buf);
+
+        const file = try fs.cwd().createFile(path, .{ .mode = 0o600 });
+        defer file.close();
+        try file.writeAll(pem);
+    }
+
+    pub fn loadAccountKey(self: *Self, buf: []u8) ![]const u8 {
+        var path_buf: [512]u8 = undefined;
+        const path = try self.accountKeyPath(&path_buf);
+
+        const file = fs.cwd().openFile(path, .{}) catch return error.AccountKeyNotFound;
+        defer file.close();
+
+        const bytes_read = try file.readAll(buf);
+        return buf[0..bytes_read];
+    }
+
+    pub fn accountKeyExists(self: *Self) bool {
+        var path_buf: [512]u8 = undefined;
+        const path = self.accountKeyPath(&path_buf) catch return false;
+        fs.cwd().access(path, .{}) catch return false;
+        return true;
+    }
+
+    // ---- Domain Key ----
+
+    pub fn domainKeyPath(self: *Self, domain: []const u8, buf: []u8) ![]const u8 {
+        return std.fmt.bufPrint(buf, "{s}/certs/{s}/privkey.pem", .{ self.storage_path, domain }) catch return error.PathTooLong;
+    }
+
+    pub fn saveDomainKey(self: *Self, domain: []const u8, pem: []const u8) !void {
+        try self.ensureDomainDir(domain);
+
+        var path_buf: [512]u8 = undefined;
+        const path = try self.domainKeyPath(domain, &path_buf);
+
+        const file = try fs.cwd().createFile(path, .{ .mode = 0o600 });
+        defer file.close();
+        try file.writeAll(pem);
+    }
+
+    pub fn loadDomainKey(self: *Self, domain: []const u8, buf: []u8) ![]const u8 {
+        var path_buf: [512]u8 = undefined;
+        const path = try self.domainKeyPath(domain, &path_buf);
+
+        const file = fs.cwd().openFile(path, .{}) catch return error.DomainKeyNotFound;
+        defer file.close();
+
+        const bytes_read = try file.readAll(buf);
+        return buf[0..bytes_read];
+    }
+
+    pub fn domainKeyExists(self: *Self, domain: []const u8) bool {
+        var path_buf: [512]u8 = undefined;
+        const path = self.domainKeyPath(domain, &path_buf) catch return false;
+        fs.cwd().access(path, .{}) catch return false;
+        return true;
+    }
+
+    // ---- Certificate ----
+
+    pub fn certPath(self: *Self, domain: []const u8, buf: []u8) ![]const u8 {
+        return std.fmt.bufPrint(buf, "{s}/certs/{s}/fullchain.pem", .{ self.storage_path, domain }) catch return error.PathTooLong;
+    }
+
+    pub fn saveCertificate(self: *Self, domain: []const u8, pem: []const u8) !void {
+        try self.ensureDomainDir(domain);
+
+        var path_buf: [512]u8 = undefined;
+        const path = try self.certPath(domain, &path_buf);
+
+        const file = try fs.cwd().createFile(path, .{ .mode = 0o644 });
+        defer file.close();
+        try file.writeAll(pem);
+    }
+
+    pub fn loadCertificate(self: *Self, domain: []const u8, buf: []u8) ![]const u8 {
+        var path_buf: [512]u8 = undefined;
+        const path = try self.certPath(domain, &path_buf);
+
+        const file = fs.cwd().openFile(path, .{}) catch return error.CertNotFound;
+        defer file.close();
+
+        const bytes_read = try file.readAll(buf);
+        return buf[0..bytes_read];
+    }
+
+    pub fn certExists(self: *Self, domain: []const u8) bool {
+        var path_buf: [512]u8 = undefined;
+        const path = self.certPath(domain, &path_buf) catch return false;
+        fs.cwd().access(path, .{}) catch return false;
+        return true;
+    }
+
+    /// Remove all storage for a domain
+    pub fn removeDomain(self: *Self, domain: []const u8) !void {
+        var path_buf: [512]u8 = undefined;
+        const domain_path = std.fmt.bufPrint(&path_buf, "{s}/certs/{s}", .{ self.storage_path, domain }) catch return error.PathTooLong;
+        fs.cwd().deleteTree(domain_path) catch |err| {
+            if (err != error.FileNotFound) return err;
+        };
+    }
+
+    /// Clean up entire storage (for testing)
+    pub fn removeAll(self: *Self) void {
+        fs.cwd().deleteTree(self.storage_path) catch {};
+    }
+};
+
+// ============================================================================
+// Certificate Expiry Checking
+// ============================================================================
+
+// X509 certificate parsing bindings
+const X509 = ssl.X509;
+const X509_free = ssl.X509_free;
+const PEM_read_bio_X509 = ssl.PEM_read_bio_X509;
+const X509_get_notAfter = ssl.X509_get_notAfter;
+const ASN1_TIME_diff = ssl.ASN1_TIME_diff;
+
+/// Get days until certificate expires
+/// Returns negative if already expired, positive if still valid
+pub fn getCertDaysRemaining(cert_pem: []const u8) !i32 {
+    _ = OPENSSL_init_crypto(OPENSSL_INIT_ADD_ALL_CIPHERS | OPENSSL_INIT_ADD_ALL_DIGESTS | OPENSSL_INIT_LOAD_CRYPTO_STRINGS, null);
+
+    const bio = BIO_new_mem_buf(cert_pem.ptr, @intCast(cert_pem.len)) orelse return error.BioFailed;
+    defer _ = BIO_free(bio);
+
+    const cert = PEM_read_bio_X509(bio, null, null, null) orelse return error.CertParseFailed;
+    defer X509_free(cert);
+
+    const not_after = X509_get_notAfter(cert);
+    if (not_after == null) return error.CertNoExpiry;
+
+    var days: c_int = 0;
+    var secs: c_int = 0;
+
+    // ASN1_TIME_diff compares to current time if first arg is null
+    if (ASN1_TIME_diff(&days, &secs, null, not_after) != 1) {
+        return error.TimeDiffFailed;
+    }
+
+    return days;
+}
+
+/// Check if certificate needs renewal
+pub fn certNeedsRenewal(cert_pem: []const u8, renew_before_days: u32) !bool {
+    const days_remaining = try getCertDaysRemaining(cert_pem);
+    return days_remaining <= @as(i32, @intCast(renew_before_days));
+}
+
+// ============================================================================
+// ACME Client - Protocol State Machine and Request Builder
+// ============================================================================
+
+/// ACME protocol states
+pub const AcmeState = enum {
+    idle, // Not started
+    need_directory, // Need to fetch directory
+    need_nonce, // Need to get a fresh nonce
+    need_account, // Need to register/lookup account
+    need_order, // Need to create certificate order
+    need_authorization, // Need to get authorization details
+    need_challenge_ready, // Need to signal challenge ready
+    waiting_validation, // Waiting for ACME server to validate
+    need_finalize, // Need to finalize order with CSR
+    need_certificate, // Need to download certificate
+    complete, // Certificate obtained
+    err, // Error state
+};
+
+/// ACME directory endpoints (parsed from /directory response)
+pub const AcmeDirectory = struct {
+    new_nonce: ngx_str_t,
+    new_account: ngx_str_t,
+    new_order: ngx_str_t,
+    revoke_cert: ngx_str_t,
+    key_change: ngx_str_t,
+
+    pub fn init() AcmeDirectory {
+        return AcmeDirectory{
+            .new_nonce = ngx_null_str,
+            .new_account = ngx_null_str,
+            .new_order = ngx_null_str,
+            .revoke_cert = ngx_null_str,
+            .key_change = ngx_null_str,
+        };
+    }
+
+    /// Parse directory JSON response
+    pub fn parse(pool: [*c]ngx_pool_t, json_body: []const u8) !AcmeDirectory {
+        var cj = ngx.cjson.CJSON.init(pool);
+        const json = try cj.decode(ngx_str_t{ .len = json_body.len, .data = @constCast(json_body.ptr) });
+
+        var dir = AcmeDirectory.init();
+
+        if (cj.queryStr(json, "$.newNonce")) |v| dir.new_nonce = v;
+        if (cj.queryStr(json, "$.newAccount")) |v| dir.new_account = v;
+        if (cj.queryStr(json, "$.newOrder")) |v| dir.new_order = v;
+        if (cj.queryStr(json, "$.revokeCert")) |v| dir.revoke_cert = v;
+        if (cj.queryStr(json, "$.keyChange")) |v| dir.key_change = v;
+
+        // Verify required endpoints are present
+        if (dir.new_nonce.len == 0 or dir.new_account.len == 0 or dir.new_order.len == 0) {
+            return error.InvalidDirectory;
+        }
+
+        return dir;
+    }
+};
+
+/// ACME order state
+pub const AcmeOrder = struct {
+    order_url: ngx_str_t, // URL of the order (from Location header)
+    finalize_url: ngx_str_t, // URL to finalize the order
+    certificate_url: ngx_str_t, // URL to download certificate (after finalization)
+    authorization_urls: [8]ngx_str_t, // URLs for authorization objects
+    authorization_count: usize,
+    status: ngx_str_t, // "pending", "ready", "processing", "valid", "invalid"
+
+    pub fn init() AcmeOrder {
+        return AcmeOrder{
+            .order_url = ngx_null_str,
+            .finalize_url = ngx_null_str,
+            .certificate_url = ngx_null_str,
+            .authorization_urls = [_]ngx_str_t{ngx_null_str} ** 8,
+            .authorization_count = 0,
+            .status = ngx_null_str,
+        };
+    }
+
+    /// Parse order JSON response
+    pub fn parse(self: *AcmeOrder, pool: [*c]ngx_pool_t, json_body: []const u8) !void {
+        var cj = ngx.cjson.CJSON.init(pool);
+        const json = try cj.decode(ngx_str_t{ .len = json_body.len, .data = @constCast(json_body.ptr) });
+
+        if (cj.queryStr(json, "$.status")) |v| self.status = v;
+        if (cj.queryStr(json, "$.finalize")) |v| self.finalize_url = v;
+        if (cj.queryStr(json, "$.certificate")) |v| self.certificate_url = v;
+
+        // Parse authorizations array
+        if (cj.query(json, "$.authorizations")) |auth_array| {
+            if (ngx.cjson.CJSON.arrayValue(auth_array)) |arr| {
+                var it = arr.iterator();
+                while (it.next()) |item| {
+                    if (self.authorization_count < self.authorization_urls.len) {
+                        if (ngx.cjson.CJSON.strValue(item)) |url| {
+                            self.authorization_urls[self.authorization_count] = url;
+                            self.authorization_count += 1;
+                        }
+                    }
+                }
+            }
+        }
+    }
+};
+
+/// ACME authorization state
+pub const AcmeAuthorization = struct {
+    challenge_url: ngx_str_t, // URL to POST to signal challenge ready
+    challenge_token: ngx_str_t, // Token for HTTP-01 challenge
+    status: ngx_str_t, // "pending", "valid", "invalid"
+
+    pub fn init() AcmeAuthorization {
+        return AcmeAuthorization{
+            .challenge_url = ngx_null_str,
+            .challenge_token = ngx_null_str,
+            .status = ngx_null_str,
+        };
+    }
+
+    /// Parse authorization JSON response, extract HTTP-01 challenge
+    pub fn parse(self: *AcmeAuthorization, pool: [*c]ngx_pool_t, json_body: []const u8) !void {
+        var cj = ngx.cjson.CJSON.init(pool);
+        const json = try cj.decode(ngx_str_t{ .len = json_body.len, .data = @constCast(json_body.ptr) });
+
+        if (cj.queryStr(json, "$.status")) |v| self.status = v;
+
+        // Find HTTP-01 challenge in challenges array
+        if (cj.query(json, "$.challenges")) |chlgs| {
+            if (ngx.cjson.CJSON.arrayValue(chlgs)) |arr| {
+                var it = arr.iterator();
+                while (it.next()) |challenge| {
+                    if (cj.queryStr(challenge, "$.type")) |challenge_type| {
+                        if (std.mem.eql(u8, core.slicify(u8, challenge_type.data, challenge_type.len), "http-01")) {
+                            if (cj.queryStr(challenge, "$.url")) |v| self.challenge_url = v;
+                            if (cj.queryStr(challenge, "$.token")) |v| self.challenge_token = v;
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+    }
+};
+
+/// ACME Client - manages protocol state and builds requests
+pub const AcmeClient = struct {
+    const Self = @This();
+
+    pool: [*c]ngx_pool_t,
+    state: AcmeState,
+    directory_url: ngx_str_t,
+    domain: ngx_str_t,
+
+    // Protocol state
+    directory: AcmeDirectory,
+    current_nonce: ngx_str_t,
+    account_url: ngx_str_t, // kid for JWS
+    order: AcmeOrder,
+    authorization: AcmeAuthorization,
+    current_auth_index: usize, // Which authorization we're processing
+
+    // Keys
+    account_key: ?*AcmeAccountKey,
+    domain_key: ?*AcmeDomainKey,
+
+    // Error info
+    last_error: ngx_str_t,
+
+    pub fn init(pool: [*c]ngx_pool_t, directory_url: ngx_str_t, domain: ngx_str_t) Self {
+        return Self{
+            .pool = pool,
+            .state = .idle,
+            .directory_url = directory_url,
+            .domain = domain,
+            .directory = AcmeDirectory.init(),
+            .current_nonce = ngx_null_str,
+            .account_url = ngx_null_str,
+            .order = AcmeOrder.init(),
+            .authorization = AcmeAuthorization.init(),
+            .current_auth_index = 0,
+            .account_key = null,
+            .domain_key = null,
+            .last_error = ngx_null_str,
+        };
+    }
+
+    /// Set account key (must be called before starting)
+    pub fn setAccountKey(self: *Self, key: *AcmeAccountKey) void {
+        self.account_key = key;
+    }
+
+    /// Set domain key (must be called before finalization)
+    pub fn setDomainKey(self: *Self, key: *AcmeDomainKey) void {
+        self.domain_key = key;
+    }
+
+    /// Update nonce from response header
+    pub fn updateNonce(self: *Self, nonce: ngx_str_t) void {
+        self.current_nonce = nonce;
+    }
+
+    /// Start the ACME flow
+    pub fn start(self: *Self) void {
+        self.state = .need_directory;
+    }
+
+    // ---- Request Builders ----
+
+    /// Build HTTP request for fetching directory
+    pub fn buildDirectoryRequest(self: *Self) !AcmeHttpRequest {
+        return AcmeHttpRequest{
+            .method = .GET,
+            .url = self.directory_url,
+            .body = ngx_null_str,
+            .content_type = ngx_null_str,
+        };
+    }
+
+    /// Build HTTP request for getting a nonce
+    pub fn buildNonceRequest(self: *Self) !AcmeHttpRequest {
+        return AcmeHttpRequest{
+            .method = .HEAD,
+            .url = self.directory.new_nonce,
+            .body = ngx_null_str,
+            .content_type = ngx_null_str,
+        };
+    }
+
+    /// Build HTTP request for account registration
+    pub fn buildAccountRequest(self: *Self) !AcmeHttpRequest {
+        const key = self.account_key orelse return error.NoAccountKey;
+
+        // Payload: {"termsOfServiceAgreed": true, "contact": ["mailto:..."]}
+        const payload = ngx_string("{\"termsOfServiceAgreed\":true}");
+
+        const jws = try createJws(
+            self.pool,
+            key,
+            self.current_nonce,
+            self.directory.new_account,
+            null, // No kid for new account (uses embedded JWK)
+            payload,
+        );
+
+        return AcmeHttpRequest{
+            .method = .POST,
+            .url = self.directory.new_account,
+            .body = jws,
+            .content_type = ngx_string("application/jose+json"),
+        };
+    }
+
+    /// Build HTTP request for creating an order
+    pub fn buildOrderRequest(self: *Self) !AcmeHttpRequest {
+        const key = self.account_key orelse return error.NoAccountKey;
+
+        // Build payload: {"identifiers": [{"type": "dns", "value": "domain"}]}
+        const payload_template = "{\"identifiers\":[{\"type\":\"dns\",\"value\":\"";
+        const payload_suffix = "\"}]}";
+        const payload_len = payload_template.len + self.domain.len + payload_suffix.len;
+        const payload_buf = core.castPtr(u8, core.ngx_pnalloc(self.pool, payload_len)) orelse return error.AllocFailed;
+
+        var pos: usize = 0;
+        @memcpy(payload_buf[pos .. pos + payload_template.len], payload_template);
+        pos += payload_template.len;
+        @memcpy(payload_buf[pos .. pos + self.domain.len], core.slicify(u8, self.domain.data, self.domain.len));
+        pos += self.domain.len;
+        @memcpy(payload_buf[pos .. pos + payload_suffix.len], payload_suffix);
+
+        const payload = ngx_str_t{ .len = payload_len, .data = payload_buf };
+
+        const jws = try createJws(
+            self.pool,
+            key,
+            self.current_nonce,
+            self.directory.new_order,
+            self.account_url,
+            payload,
+        );
+
+        return AcmeHttpRequest{
+            .method = .POST,
+            .url = self.directory.new_order,
+            .body = jws,
+            .content_type = ngx_string("application/jose+json"),
+        };
+    }
+
+    /// Build HTTP request for getting authorization details
+    pub fn buildAuthorizationRequest(self: *Self) !AcmeHttpRequest {
+        const key = self.account_key orelse return error.NoAccountKey;
+
+        if (self.current_auth_index >= self.order.authorization_count) {
+            return error.NoMoreAuthorizations;
+        }
+
+        const auth_url = self.order.authorization_urls[self.current_auth_index];
+
+        // POST-as-GET (empty payload)
+        const jws = try createJws(
+            self.pool,
+            key,
+            self.current_nonce,
+            auth_url,
+            self.account_url,
+            null, // Empty payload for POST-as-GET
+        );
+
+        return AcmeHttpRequest{
+            .method = .POST,
+            .url = auth_url,
+            .body = jws,
+            .content_type = ngx_string("application/jose+json"),
+        };
+    }
+
+    /// Build HTTP request for signaling challenge ready
+    pub fn buildChallengeReadyRequest(self: *Self) !AcmeHttpRequest {
+        const key = self.account_key orelse return error.NoAccountKey;
+
+        // Empty object payload to signal ready
+        const payload = ngx_string("{}");
+
+        const jws = try createJws(
+            self.pool,
+            key,
+            self.current_nonce,
+            self.authorization.challenge_url,
+            self.account_url,
+            payload,
+        );
+
+        return AcmeHttpRequest{
+            .method = .POST,
+            .url = self.authorization.challenge_url,
+            .body = jws,
+            .content_type = ngx_string("application/jose+json"),
+        };
+    }
+
+    /// Build HTTP request for finalizing order with CSR
+    pub fn buildFinalizeRequest(self: *Self) !AcmeHttpRequest {
+        const key = self.account_key orelse return error.NoAccountKey;
+        const domain_key = self.domain_key orelse return error.NoDomainKey;
+
+        // Generate CSR
+        const csr = try domain_key.createCsr(self.pool, self.domain);
+
+        // Build payload: {"csr": "base64url-encoded-csr"}
+        const payload_prefix = "{\"csr\":\"";
+        const payload_suffix = "\"}";
+        const payload_len = payload_prefix.len + csr.len + payload_suffix.len;
+        const payload_buf = core.castPtr(u8, core.ngx_pnalloc(self.pool, payload_len)) orelse return error.AllocFailed;
+
+        var pos: usize = 0;
+        @memcpy(payload_buf[pos .. pos + payload_prefix.len], payload_prefix);
+        pos += payload_prefix.len;
+        @memcpy(payload_buf[pos .. pos + csr.len], core.slicify(u8, csr.data, csr.len));
+        pos += csr.len;
+        @memcpy(payload_buf[pos .. pos + payload_suffix.len], payload_suffix);
+
+        const payload = ngx_str_t{ .len = payload_len, .data = payload_buf };
+
+        const jws = try createJws(
+            self.pool,
+            key,
+            self.current_nonce,
+            self.order.finalize_url,
+            self.account_url,
+            payload,
+        );
+
+        return AcmeHttpRequest{
+            .method = .POST,
+            .url = self.order.finalize_url,
+            .body = jws,
+            .content_type = ngx_string("application/jose+json"),
+        };
+    }
+
+    /// Build HTTP request for downloading certificate
+    pub fn buildCertificateRequest(self: *Self) !AcmeHttpRequest {
+        const key = self.account_key orelse return error.NoAccountKey;
+
+        // POST-as-GET
+        const jws = try createJws(
+            self.pool,
+            key,
+            self.current_nonce,
+            self.order.certificate_url,
+            self.account_url,
+            null,
+        );
+
+        return AcmeHttpRequest{
+            .method = .POST,
+            .url = self.order.certificate_url,
+            .body = jws,
+            .content_type = ngx_string("application/jose+json"),
+        };
+    }
+
+    // ---- Response Handlers ----
+
+    /// Handle directory response
+    pub fn handleDirectoryResponse(self: *Self, body: []const u8) !void {
+        self.directory = try AcmeDirectory.parse(self.pool, body);
+        self.state = .need_nonce;
+    }
+
+    /// Handle nonce response (nonce is in header, already updated via updateNonce)
+    pub fn handleNonceResponse(self: *Self) void {
+        if (self.account_url.len == 0) {
+            self.state = .need_account;
+        } else {
+            self.state = .need_order;
+        }
+    }
+
+    /// Handle account response
+    pub fn handleAccountResponse(self: *Self, account_url: ngx_str_t) void {
+        self.account_url = account_url;
+        self.state = .need_order;
+    }
+
+    /// Handle order response
+    pub fn handleOrderResponse(self: *Self, order_url: ngx_str_t, body: []const u8) !void {
+        self.order.order_url = order_url;
+        try self.order.parse(self.pool, body);
+
+        // Check order status
+        const status = core.slicify(u8, self.order.status.data, self.order.status.len);
+        if (std.mem.eql(u8, status, "ready")) {
+            self.state = .need_finalize;
+        } else if (std.mem.eql(u8, status, "valid")) {
+            self.state = .need_certificate;
+        } else if (std.mem.eql(u8, status, "pending")) {
+            self.current_auth_index = 0;
+            self.state = .need_authorization;
+        } else {
+            self.state = .err;
+            self.last_error = self.order.status;
+        }
+    }
+
+    /// Handle authorization response
+    pub fn handleAuthorizationResponse(self: *Self, body: []const u8) !void {
+        try self.authorization.parse(self.pool, body);
+
+        const status = core.slicify(u8, self.authorization.status.data, self.authorization.status.len);
+        if (std.mem.eql(u8, status, "valid")) {
+            // This authorization is already valid, check next
+            self.current_auth_index += 1;
+            if (self.current_auth_index >= self.order.authorization_count) {
+                self.state = .need_finalize;
+            } else {
+                self.state = .need_authorization;
+            }
+        } else if (std.mem.eql(u8, status, "pending")) {
+            // Need to complete challenge
+            self.state = .need_challenge_ready;
+        } else {
+            self.state = .err;
+            self.last_error = self.authorization.status;
+        }
+    }
+
+    /// Handle challenge ready response
+    pub fn handleChallengeReadyResponse(self: *Self) void {
+        self.state = .waiting_validation;
+    }
+
+    /// Handle finalize response
+    pub fn handleFinalizeResponse(self: *Self, body: []const u8) !void {
+        try self.order.parse(self.pool, body);
+
+        const status = core.slicify(u8, self.order.status.data, self.order.status.len);
+        if (std.mem.eql(u8, status, "valid")) {
+            self.state = .need_certificate;
+        } else if (std.mem.eql(u8, status, "processing")) {
+            // Need to poll order status
+            self.state = .waiting_validation;
+        } else {
+            self.state = .err;
+            self.last_error = self.order.status;
+        }
+    }
+
+    /// Handle certificate response (returns the PEM certificate)
+    pub fn handleCertificateResponse(self: *Self, body: []const u8) []const u8 {
+        self.state = .complete;
+        return body;
+    }
+
+    /// Prepare challenge for HTTP-01 validation
+    /// Returns the key authorization to serve at /.well-known/acme-challenge/{token}
+    pub fn prepareChallenge(self: *Self) !ngx_str_t {
+        const key = self.account_key orelse return error.NoAccountKey;
+
+        // Get thumbprint
+        const thumbprint = key.getThumbprint(self.pool) orelse return error.ThumbprintFailed;
+
+        // Key authorization = token.thumbprint
+        const token = self.authorization.challenge_token;
+        const key_auth_len = token.len + 1 + thumbprint.len;
+        const key_auth_buf = core.castPtr(u8, core.ngx_pnalloc(self.pool, key_auth_len)) orelse return error.AllocFailed;
+
+        var pos: usize = 0;
+        @memcpy(key_auth_buf[pos .. pos + token.len], core.slicify(u8, token.data, token.len));
+        pos += token.len;
+        key_auth_buf[pos] = '.';
+        pos += 1;
+        @memcpy(key_auth_buf[pos .. pos + thumbprint.len], core.slicify(u8, thumbprint.data, thumbprint.len));
+
+        return ngx_str_t{ .len = key_auth_len, .data = key_auth_buf };
+    }
+
+    /// Register the challenge in the challenge storage
+    pub fn registerChallenge(self: *Self) !void {
+        const key_auth = try self.prepareChallenge();
+        const token_slice = core.slicify(u8, self.authorization.challenge_token.data, self.authorization.challenge_token.len);
+
+        // Add to challenge storage (expires in 5 minutes)
+        if (!add_challenge(
+            self.authorization.challenge_token,
+            key_auth,
+            self.domain,
+            std.math.maxInt(ngx_msec_t), // Use max for now, will be cleaned up after validation
+        )) {
+            return error.ChallengeFull;
+        }
+        _ = token_slice;
+    }
+};
+
+/// HTTP request method
+pub const HttpMethod = enum {
+    GET,
+    HEAD,
+    POST,
+};
+
+/// HTTP request structure for ACME operations
+pub const AcmeHttpRequest = struct {
+    method: HttpMethod,
+    url: ngx_str_t,
+    body: ngx_str_t,
+    content_type: ngx_str_t,
+
+    /// Build raw HTTP/1.1 request bytes
+    pub fn build(self: *const AcmeHttpRequest, pool: [*c]ngx_pool_t, host: ngx_str_t) !ngx_str_t {
+        // Parse path from URL
+        const url_slice = core.slicify(u8, self.url.data, self.url.len);
+        var path_start: usize = 0;
+
+        // Skip scheme
+        if (std.mem.indexOf(u8, url_slice, "://")) |idx| {
+            path_start = idx + 3;
+            // Find end of host
+            if (std.mem.indexOfScalar(u8, url_slice[path_start..], '/')) |slash_idx| {
+                path_start = path_start + slash_idx;
+            } else {
+                path_start = url_slice.len;
+            }
+        }
+
+        const path = if (path_start < url_slice.len) url_slice[path_start..] else "/";
+
+        // Method string
+        const method_str = switch (self.method) {
+            .GET => "GET",
+            .HEAD => "HEAD",
+            .POST => "POST",
+        };
+
+        // Calculate request size
+        var size: usize = method_str.len + 1 + path.len + " HTTP/1.1\r\n".len;
+        size += "Host: ".len + host.len + "\r\n".len;
+
+        if (self.content_type.len > 0) {
+            size += "Content-Type: ".len + self.content_type.len + "\r\n".len;
+        }
+        if (self.body.len > 0) {
+            size += "Content-Length: ".len + 10 + "\r\n".len; // 10 digits for length
+        }
+        size += "\r\n".len; // End of headers
+        size += self.body.len;
+
+        // Allocate buffer
+        const buf = core.castPtr(u8, core.ngx_pnalloc(pool, size)) orelse return error.AllocFailed;
+        var pos: usize = 0;
+
+        // Request line
+        @memcpy(buf[pos .. pos + method_str.len], method_str);
+        pos += method_str.len;
+        buf[pos] = ' ';
+        pos += 1;
+        @memcpy(buf[pos .. pos + path.len], path);
+        pos += path.len;
+        const http_version = " HTTP/1.1\r\n";
+        @memcpy(buf[pos .. pos + http_version.len], http_version);
+        pos += http_version.len;
+
+        // Host header
+        const host_header = "Host: ";
+        @memcpy(buf[pos .. pos + host_header.len], host_header);
+        pos += host_header.len;
+        @memcpy(buf[pos .. pos + host.len], core.slicify(u8, host.data, host.len));
+        pos += host.len;
+        buf[pos] = '\r';
+        buf[pos + 1] = '\n';
+        pos += 2;
+
+        // Content-Type
+        if (self.content_type.len > 0) {
+            const ct_header = "Content-Type: ";
+            @memcpy(buf[pos .. pos + ct_header.len], ct_header);
+            pos += ct_header.len;
+            @memcpy(buf[pos .. pos + self.content_type.len], core.slicify(u8, self.content_type.data, self.content_type.len));
+            pos += self.content_type.len;
+            buf[pos] = '\r';
+            buf[pos + 1] = '\n';
+            pos += 2;
+        }
+
+        // Content-Length
+        if (self.body.len > 0) {
+            const cl_header = "Content-Length: ";
+            @memcpy(buf[pos .. pos + cl_header.len], cl_header);
+            pos += cl_header.len;
+
+            // Convert body length to string
+            var len_buf: [10]u8 = undefined;
+            const len_str = std.fmt.bufPrint(&len_buf, "{d}", .{self.body.len}) catch return error.FormatFailed;
+            @memcpy(buf[pos .. pos + len_str.len], len_str);
+            pos += len_str.len;
+            buf[pos] = '\r';
+            buf[pos + 1] = '\n';
+            pos += 2;
+        }
+
+        // End of headers
+        buf[pos] = '\r';
+        buf[pos + 1] = '\n';
+        pos += 2;
+
+        // Body
+        if (self.body.len > 0) {
+            @memcpy(buf[pos .. pos + self.body.len], core.slicify(u8, self.body.data, self.body.len));
+            pos += self.body.len;
+        }
+
+        return ngx_str_t{ .len = pos, .data = buf };
+    }
+};
+
+// ============================================================================
 // Config Structures
 // ============================================================================
 
@@ -1220,3 +2223,249 @@ test "JWS POST-as-GET (empty payload)" {
     // Should have empty payload: "payload":""
     try std.testing.expect(std.mem.indexOf(u8, jws_str, "\"payload\":\"\"") != null);
 }
+
+test "Domain key generation" {
+    const nlog = ngx_log_init(core.c_str(""), core.c_str(""));
+    const pool = ngx_create_pool(8192, nlog);
+    defer ngx_destroy_pool(pool);
+
+    // Generate a domain key
+    var key = AcmeDomainKey.generate(pool) catch |err| {
+        std.debug.print("Domain key generation failed: {}\n", .{err});
+        return error.TestFailed;
+    };
+    defer key.deinit();
+
+    // Key should be valid
+    try std.testing.expect(key.pkey != null);
+}
+
+test "Domain key to PEM and back" {
+    const nlog = ngx_log_init(core.c_str(""), core.c_str(""));
+    const pool = ngx_create_pool(16384, nlog);
+    defer ngx_destroy_pool(pool);
+
+    // Generate a key
+    var key = AcmeDomainKey.generate(pool) catch return error.TestFailed;
+    defer key.deinit();
+
+    // Convert to PEM
+    const pem = key.toPem(pool) catch return error.TestFailed;
+
+    // Verify PEM format
+    try std.testing.expect(pem.len > 0);
+    const pem_str = core.slicify(u8, pem.data, pem.len);
+    try std.testing.expect(std.mem.startsWith(u8, pem_str, "-----BEGIN PRIVATE KEY-----") or
+        std.mem.startsWith(u8, pem_str, "-----BEGIN RSA PRIVATE KEY-----"));
+
+    // Load from PEM
+    var loaded_key = AcmeDomainKey.loadFromPem(pem) catch return error.TestFailed;
+    defer loaded_key.deinit();
+
+    try std.testing.expect(loaded_key.pkey != null);
+}
+
+test "CSR generation" {
+    const nlog = ngx_log_init(core.c_str(""), core.c_str(""));
+    const pool = ngx_create_pool(16384, nlog);
+    defer ngx_destroy_pool(pool);
+
+    // Generate a domain key
+    var key = AcmeDomainKey.generate(pool) catch return error.TestFailed;
+    defer key.deinit();
+
+    // Create CSR for a domain
+    const domain = ngx_string("example.com");
+    const csr = key.createCsr(pool, domain) catch |err| {
+        std.debug.print("CSR creation failed: {}\n", .{err});
+        return error.TestFailed;
+    };
+
+    // CSR should be base64url encoded
+    try std.testing.expect(csr.len > 0);
+
+    // Should only contain base64url characters
+    for (core.slicify(u8, csr.data, csr.len)) |c| {
+        try std.testing.expect((c >= 'a' and c <= 'z') or
+            (c >= 'A' and c <= 'Z') or
+            (c >= '0' and c <= '9') or
+            c == '-' or c == '_');
+    }
+
+    // Base64url encoded DER CSR is typically 600-1000 bytes for 2048-bit key
+    try std.testing.expect(csr.len > 400);
+    try std.testing.expect(csr.len < 1500);
+}
+
+test "CSR with different domain" {
+    const nlog = ngx_log_init(core.c_str(""), core.c_str(""));
+    const pool = ngx_create_pool(16384, nlog);
+    defer ngx_destroy_pool(pool);
+
+    var key = AcmeDomainKey.generate(pool) catch return error.TestFailed;
+    defer key.deinit();
+
+    // Create CSRs for different domains
+    const csr1 = key.createCsr(pool, ngx_string("example.com")) catch return error.TestFailed;
+    const csr2 = key.createCsr(pool, ngx_string("test.example.com")) catch return error.TestFailed;
+
+    // CSRs should be different (different CN)
+    try std.testing.expect(!std.mem.eql(
+        u8,
+        core.slicify(u8, csr1.data, csr1.len),
+        core.slicify(u8, csr2.data, csr2.len),
+    ));
+}
+
+test "AcmeStorage directory creation" {
+    const test_path = "/tmp/acme-test-storage";
+    var storage = AcmeStorage.init(test_path);
+    defer storage.removeAll();
+
+    // Create directories
+    try storage.ensureDirectories();
+
+    // Verify base dir exists
+    std.fs.cwd().access(test_path, .{}) catch {
+        return error.TestFailed;
+    };
+
+    // Verify certs dir exists
+    std.fs.cwd().access(test_path ++ "/certs", .{}) catch {
+        return error.TestFailed;
+    };
+}
+
+test "AcmeStorage account key save/load" {
+    const nlog = ngx_log_init(core.c_str(""), core.c_str(""));
+    const pool = ngx_create_pool(16384, nlog);
+    defer ngx_destroy_pool(pool);
+
+    const test_path = "/tmp/acme-test-account";
+    var storage = AcmeStorage.init(test_path);
+    defer storage.removeAll();
+
+    try storage.ensureDirectories();
+
+    // Generate account key
+    var key = AcmeAccountKey.generate(pool) catch return error.TestFailed;
+    defer key.deinit();
+
+    // Convert to PEM
+    const pem = key.toPem(pool) catch return error.TestFailed;
+    const pem_slice = core.slicify(u8, pem.data, pem.len);
+
+    // Save
+    try storage.saveAccountKey(pem_slice);
+
+    // Check exists
+    try std.testing.expect(storage.accountKeyExists());
+
+    // Load back
+    var load_buf: [4096]u8 = undefined;
+    const loaded = try storage.loadAccountKey(&load_buf);
+
+    // Verify matches
+    try std.testing.expectEqualStrings(pem_slice, loaded);
+}
+
+test "AcmeStorage domain key save/load" {
+    const nlog = ngx_log_init(core.c_str(""), core.c_str(""));
+    const pool = ngx_create_pool(16384, nlog);
+    defer ngx_destroy_pool(pool);
+
+    const test_path = "/tmp/acme-test-domain";
+    var storage = AcmeStorage.init(test_path);
+    defer storage.removeAll();
+
+    try storage.ensureDirectories();
+
+    const domain = "test.example.com";
+
+    // Generate domain key
+    var key = AcmeDomainKey.generate(pool) catch return error.TestFailed;
+    defer key.deinit();
+
+    // Convert to PEM
+    const pem = key.toPem(pool) catch return error.TestFailed;
+    const pem_slice = core.slicify(u8, pem.data, pem.len);
+
+    // Save
+    try storage.saveDomainKey(domain, pem_slice);
+
+    // Check exists
+    try std.testing.expect(storage.domainKeyExists(domain));
+
+    // Load back
+    var load_buf: [4096]u8 = undefined;
+    const loaded = try storage.loadDomainKey(domain, &load_buf);
+
+    // Verify matches
+    try std.testing.expectEqualStrings(pem_slice, loaded);
+}
+
+test "AcmeStorage certificate save/load" {
+    const test_path = "/tmp/acme-test-cert";
+    var storage = AcmeStorage.init(test_path);
+    defer storage.removeAll();
+
+    try storage.ensureDirectories();
+
+    const domain = "cert.example.com";
+    const test_cert = "-----BEGIN CERTIFICATE-----\nMIIB...fake...cert\n-----END CERTIFICATE-----\n";
+
+    // Save
+    try storage.saveCertificate(domain, test_cert);
+
+    // Check exists
+    try std.testing.expect(storage.certExists(domain));
+
+    // Load back
+    var load_buf: [4096]u8 = undefined;
+    const loaded = try storage.loadCertificate(domain, &load_buf);
+
+    // Verify matches
+    try std.testing.expectEqualStrings(test_cert, loaded);
+}
+
+test "AcmeStorage paths" {
+    var storage = AcmeStorage.init("/etc/nginx/acme");
+
+    var buf: [512]u8 = undefined;
+
+    const account_path = try storage.accountKeyPath(&buf);
+    try std.testing.expectEqualStrings("/etc/nginx/acme/account.key", account_path);
+
+    const domain_path = try storage.domainKeyPath("example.com", &buf);
+    try std.testing.expectEqualStrings("/etc/nginx/acme/certs/example.com/privkey.pem", domain_path);
+
+    const cert_path = try storage.certPath("example.com", &buf);
+    try std.testing.expectEqualStrings("/etc/nginx/acme/certs/example.com/fullchain.pem", cert_path);
+}
+
+test "AcmeStorage non-existent files" {
+    const test_path = "/tmp/acme-test-nonexist";
+    var storage = AcmeStorage.init(test_path);
+    defer storage.removeAll();
+
+    try storage.ensureDirectories();
+
+    // Account key should not exist
+    try std.testing.expect(!storage.accountKeyExists());
+
+    // Domain key should not exist
+    try std.testing.expect(!storage.domainKeyExists("nonexistent.com"));
+
+    // Cert should not exist
+    try std.testing.expect(!storage.certExists("nonexistent.com"));
+
+    // Load should fail with appropriate error
+    var buf: [4096]u8 = undefined;
+    const result = storage.loadAccountKey(&buf);
+    try std.testing.expectError(error.AccountKeyNotFound, result);
+}
+
+// Note: Certificate expiry tests require a valid X509 certificate.
+// These are tested via integration tests with real certificates.
+// The getCertDaysRemaining and certNeedsRenewal functions work with
+// actual PEM certificates obtained from ACME servers.

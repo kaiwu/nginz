@@ -91,6 +91,28 @@ pub const EVP_DigestSignInit = ngx.EVP_DigestSignInit;
 pub const EVP_DigestSignUpdate = ngx.EVP_DigestSignUpdate;
 pub const EVP_DigestSignFinal = ngx.EVP_DigestSignFinal;
 
+// X509_REQ (CSR) generation for ACME
+pub const X509_REQ = ngx.X509_REQ;
+pub const X509_NAME = ngx.X509_NAME;
+pub const X509_REQ_new = ngx.X509_REQ_new;
+pub const X509_REQ_free = ngx.X509_REQ_free;
+pub const X509_REQ_set_version = ngx.X509_REQ_set_version;
+pub const X509_REQ_get_subject_name = ngx.X509_REQ_get_subject_name;
+pub const X509_REQ_set_pubkey = ngx.X509_REQ_set_pubkey;
+pub const X509_REQ_sign = ngx.X509_REQ_sign;
+pub const X509_NAME_add_entry_by_txt = ngx.X509_NAME_add_entry_by_txt;
+pub const i2d_X509_REQ = ngx.i2d_X509_REQ;
+pub const MBSTRING_ASC = ngx.MBSTRING_ASC;
+pub const RSA = ngx.struct_rsa_st;
+
+// X509 certificate parsing (for expiry checking)
+pub const X509 = ngx.X509;
+pub const X509_free = ngx.X509_free;
+pub const PEM_read_bio_X509 = ngx.PEM_read_bio_X509;
+pub const X509_get_notAfter = ngx.X509_get_notAfter;
+pub const ASN1_TIME = ngx.ASN1_TIME;
+pub const ASN1_TIME_diff = ngx.ASN1_TIME_diff;
+
 // base64
 const EVP_EncodeBlock = ngx.EVP_EncodeBlock;
 const EVP_DecodeBlock = ngx.EVP_DecodeBlock;

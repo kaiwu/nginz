@@ -4,7 +4,28 @@ Automatic SSL certificate provisioning and renewal using the ACME protocol (RFC 
 
 ### Status
 
-**Planned** - Design complete, implementation pending
+**In Progress** - Core crypto and storage implemented, HTTP client pending
+
+#### Implemented Features
+- [x] Base64url encoding/decoding (RFC 4648)
+- [x] SHA256 hashing
+- [x] JWK thumbprint calculation (RFC 7638)
+- [x] RSA key generation (2048-bit)
+- [x] JWS signing with RS256 (RFC 7515)
+- [x] CSR generation (X509_REQ)
+- [x] HTTP-01 challenge handler (content phase)
+- [x] Challenge storage (in-memory, max 32)
+- [x] File storage (account keys, domain keys, certificates)
+- [x] Certificate expiry checking
+- [x] Module configuration and directives
+
+#### Pending Features
+- [ ] ACME HTTP client (upstream-based)
+- [ ] Nonce management
+- [ ] Account registration
+- [ ] Order creation and finalization
+- [ ] Certificate download
+- [ ] Renewal timer
 
 ### Implementation Plan
 
