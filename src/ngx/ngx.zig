@@ -9273,7 +9273,7 @@ pub extern fn EVP_PKEY_set_utf8_string_param(pkey: ?*EVP_PKEY, key_name: [*c]con
 pub extern fn EVP_PKEY_set_octet_string_param(pkey: ?*EVP_PKEY, key_name: [*c]const u8, buf: [*c]const u8, bsize: usize) c_int;
 pub extern fn EVP_PKEY_get_ec_point_conv_form(pkey: ?*const EVP_PKEY) c_int;
 pub extern fn EVP_PKEY_get_field_type(pkey: ?*const EVP_PKEY) c_int;
-pub extern fn EVP_PKEY_Q_keygen(libctx: ?*OSSL_LIB_CTX, propq: [*c]const u8, @"type": [*c]const u8, ...) ?*EVP_PKEY;
+pub extern fn EVP_PKEY_Q_keygen(libctx: ?*anyopaque, propq: ?*anyopaque, @"type": [*c]const u8, ...) ?*EVP_PKEY;
 pub extern fn EVP_PKEY_paramgen_init(ctx: ?*EVP_PKEY_CTX) c_int;
 pub extern fn EVP_PKEY_paramgen(ctx: ?*EVP_PKEY_CTX, ppkey: [*c]?*EVP_PKEY) c_int;
 pub extern fn EVP_PKEY_keygen_init(ctx: ?*EVP_PKEY_CTX) c_int;

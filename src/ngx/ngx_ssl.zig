@@ -65,6 +65,17 @@ pub const EVP_PKEY_decrypt = ngx.EVP_PKEY_decrypt;
 pub const EVP_PKEY_public_check = ngx.EVP_PKEY_public_check;
 pub const EVP_PKEY_private_check = ngx.EVP_PKEY_private_check;
 
+// ACME
+pub const BIGNUM = ngx.BIGNUM;
+pub const BIO_new = ngx.BIO_new;
+pub const BIO_ctrl = ngx.BIO_ctrl;
+pub const BIO_s_mem = ngx.BIO_s_mem;
+pub const BN_bn2bin = ngx.BN_bn2bin;
+pub const BN_num_bytes = ngx.BN_num_bytes;
+pub const RSA_get0_key = ngx.RSA_get0_key;
+pub const BIO_CTRL_INFO = ngx.BIO_CTRL_INFO;
+pub const EVP_PKEY_get0_RSA = ngx.EVP_PKEY_get0_RSA;
+pub const PEM_write_bio_PrivateKey = ngx.PEM_write_bio_PrivateKey;
 
 // SHA256 DIGEST SIGN/VERIFY
 const SHA256_DIGEST_LENGTH = ngx.SHA256_DIGEST_LENGTH;
