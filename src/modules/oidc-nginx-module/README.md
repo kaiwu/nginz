@@ -4,7 +4,7 @@ OpenID Connect Relying Party implementation for nginx SSO integration.
 
 ### Status
 
-**Planned** - Implementation plan below
+**Implemented** - Core flow with redirect + callback handling
 
 ### Implementation Plan
 
@@ -42,9 +42,11 @@ Client Request
     |
     +-- Generate state, nonce, PKCE
     |
-    +-- Store state in cookie
+    +-- Store state in cookie (queued)
     |
     +-- 302 Redirect to authorization_endpoint
+         |
+     [HEADER FILTER] inject Set-Cookie before headers are sent
 ```
 
 #### Module Structure
@@ -99,6 +101,10 @@ const oidc_request_ctx = extern struct {
     sub: ngx_str_t,
     email: ngx_str_t,
     name: ngx_str_t,
+
+    // Pending Set-Cookie values (queued until header filter)
+    pending_cookies: [MAX_PENDING_COOKIES]ngx_str_t,
+    pending_cookie_count: ngx_uint_t,
 };
 ```
 
@@ -152,7 +158,7 @@ fn redirectToAuthorization(r: *ngx_http_request_t, lccf: *oidc_loc_conf) ngx_int
     // 1. Generate random state (32 bytes, hex encoded)
     // 2. Generate nonce (32 bytes, hex encoded)
     // 3. If PKCE: generate code_verifier, compute code_challenge (S256)
-    // 4. Store state + code_verifier + original_uri in state cookie
+    // 4. Store state + code_verifier + original_uri in state cookie (queued)
     // 5. Build authorization URL:
     //    {authorization_endpoint}?
     //      response_type=code&
@@ -163,7 +169,7 @@ fn redirectToAuthorization(r: *ngx_http_request_t, lccf: *oidc_loc_conf) ngx_int
     //      nonce={nonce}&
     //      code_challenge={code_challenge}&
     //      code_challenge_method=S256
-    // 6. Return 302 redirect
+    // 6. Return 302 redirect (header filter adds Set-Cookie)
 }
 ```
 
@@ -224,7 +230,7 @@ fn createSession(r: *ngx_http_request_t, claims: *Claims, original_uri: []const 
     // 1. Build session JSON with claims + exp + original_uri
     // 2. AES-256-GCM encrypt with cookie_secret
     // 3. Base64 encode
-    // 4. Set-Cookie header with HttpOnly, Secure, SameSite=Lax
+    // 4. Queue Set-Cookie (header filter injects later)
     // 5. 302 redirect to original_uri
 }
 ```
@@ -369,34 +375,3 @@ Mock IdP server that:
 - [OAuth 2.0 for Browser-Based Apps (PKCE)](https://datatracker.ietf.org/doc/html/draft-ietf-oauth-browser-based-apps)
 - [RFC 7636 - PKCE](https://datatracker.ietf.org/doc/html/rfc7636)
 - [lua-resty-openidc](https://github.com/zmartzone/lua-resty-openidc)
-
-### Current Status
-
-  Build/Test Status
-
-  - zig build - PASSES ✓
-  - zig build test (unit tests) - PASSES ✓
-  - bun test tests/oidc/ (integration tests) - FAILS ✗
-
-  Module Implementation
-
-  The OIDC module is fully implemented with:
-  - Config directives (oidc, oidc_client_id, oidc_redirect_uri, etc.)
-  - AES-256-GCM session cookie encryption/decryption
-  - Authorization redirect with state/nonce
-  - PKCE (code_challenge/code_verifier) support
-  - Callback handler with state verification
-  - ACCESS phase handler registration
-
-  The Issue
-
-  The problem is sending 302 redirects with custom Set-Cookie headers from the ACCESS phase:
-
-  1. If we manually call ngx_http_send_header() and return NGX_OK → nginx continues to content phase which tries to send headers again ("header already sent" error)
-  2. If we just return 302 and let nginx handle it → nginx generates a 302 response but doesn't include our Set-Cookie headers from headers_out.headers
-  3. Calling ngx_http_finalize_request() with various values causes hangs or crashes
-
-  Summary
-
-  The module code is complete and compiles. The challenge is nginx's request lifecycle - properly terminating a request after sending custom headers from the ACCESS phase. This is a common
-  challenge when doing redirects with cookies from access handlers.

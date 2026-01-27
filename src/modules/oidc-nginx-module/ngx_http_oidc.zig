@@ -46,6 +46,7 @@ const STATE_SIZE = 32;
 const NONCE_SIZE = 32;
 const IV_SIZE = NSSL_AES_256_GCM.IV_SIZE;
 const SESSION_DURATION_SEC = 3600; // 1 hour default
+const MAX_PENDING_COOKIES: usize = 4;
 
 // Location configuration
 const oidc_loc_conf = extern struct {
@@ -81,6 +82,9 @@ const oidc_request_ctx = extern struct {
     state: ngx_str_t,
     code_verifier: ngx_str_t,
     original_uri: ngx_str_t,
+
+    pending_cookies: [MAX_PENDING_COOKIES]ngx_str_t,
+    pending_cookie_count: ngx_uint_t,
 };
 
 // Session structure (stored in encrypted cookie)
@@ -443,16 +447,13 @@ fn generateCodeChallenge(pool: [*c]ngx_pool_t, code_verifier: []const u8) ?ngx_s
 // ============================================================================
 
 fn sendRedirect(r: [*c]ngx_http_request_t, location: ngx_str_t) ngx_int_t {
-    // Set the location header in headers_out for nginx's 302 handler
-    // Allocate header element from pool
-    const h = core.castPtr(ngx_table_elt_t, core.ngx_pcalloc(r.*.pool, @sizeOf(ngx_table_elt_t))) orelse return NGX_ERROR;
-
+    // Add Location header to headers_out list and set location pointer
+    var headers = NList(ngx_table_elt_t).init0(&r.*.headers_out.headers);
+    const h = headers.append() catch return NGX_ERROR;
     h.*.hash = 1;
     h.*.key = ngx_string("Location");
     h.*.value = location;
     h.*.lowcase_key = @constCast("location");
-
-    // Set the location pointer that nginx uses for redirect responses
     r.*.headers_out.location = h;
 
     // Return 302 - nginx will generate the response
@@ -557,7 +558,7 @@ fn buildAuthorizationUrl(
     return ngx_str_t{ .len = offset, .data = url_buf };
 }
 
-fn redirectToAuthorization(r: [*c]ngx_http_request_t, lccf: *oidc_loc_conf) ngx_int_t {
+fn redirectToAuthorization(r: [*c]ngx_http_request_t, lccf: *oidc_loc_conf, rctx: *oidc_request_ctx) ngx_int_t {
     // Generate state and nonce
     const state = generateRandomHex(r.*.pool, STATE_SIZE) orelse return NGX_ERROR;
     const nonce = generateRandomHex(r.*.pool, NONCE_SIZE) orelse return NGX_ERROR;
@@ -578,7 +579,7 @@ fn redirectToAuthorization(r: [*c]ngx_http_request_t, lccf: *oidc_loc_conf) ngx_
 
     // Store state cookie (encrypted with original URI)
     const original_uri = ngx_str_t{ .len = r.*.uri.len, .data = r.*.uri.data };
-    _ = setStateCookie(r, lccf, state, code_verifier, original_uri);
+    _ = setStateCookie(r, lccf, rctx, state, code_verifier, original_uri);
 
     // Send 302 redirect
     return sendRedirect(r, auth_url);
@@ -587,6 +588,7 @@ fn redirectToAuthorization(r: [*c]ngx_http_request_t, lccf: *oidc_loc_conf) ngx_
 fn setStateCookie(
     r: [*c]ngx_http_request_t,
     lccf: *oidc_loc_conf,
+    rctx: *oidc_request_ctx,
     state: ngx_str_t,
     code_verifier: ?ngx_str_t,
     original_uri: ngx_str_t,
@@ -608,10 +610,21 @@ fn setStateCookie(
 
     // Set cookie
     const cookie_name = "oidc_state";
-    return setHttpCookie(r, cookie_name, encrypted, 300, true); // 5 min expiry
+    return queueHttpCookie(r, rctx, cookie_name, encrypted, 300, true); // 5 min expiry
 }
 
-fn setHttpCookie(r: [*c]ngx_http_request_t, name: []const u8, value: ngx_str_t, max_age: i64, http_only: bool) bool {
+fn queueHttpCookie(
+    r: [*c]ngx_http_request_t,
+    rctx: *oidc_request_ctx,
+    name: []const u8,
+    value: ngx_str_t,
+    max_age: i64,
+    http_only: bool,
+) bool {
+    if (rctx.pending_cookie_count >= MAX_PENDING_COOKIES) {
+        return false;
+    }
+
     // Build Set-Cookie header value
     const cookie_len = name.len + 1 + value.len + 100; // Extra for attributes
     const cookie_buf = core.castPtr(u8, core.ngx_pnalloc(r.*.pool, cookie_len)) orelse return false;
@@ -648,15 +661,8 @@ fn setHttpCookie(r: [*c]ngx_http_request_t, name: []const u8, value: ngx_str_t, 
     @memcpy(cookie_buf[offset..][0..ss.len], ss);
     offset += ss.len;
 
-    // Add Set-Cookie header using NList
-    var headers = NList(ngx_table_elt_t).init0(&r.*.headers_out.headers);
-    const h = headers.append() catch return false;
-
-    h.*.hash = 1;
-    h.*.key = ngx_string("Set-Cookie");
-    h.*.value = ngx_str_t{ .len = offset, .data = cookie_buf };
-    h.*.lowcase_key = @constCast("set-cookie");
-
+    rctx.pending_cookies[rctx.pending_cookie_count] = ngx_str_t{ .len = offset, .data = cookie_buf };
+    rctx.pending_cookie_count += 1;
     return true;
 }
 
@@ -684,7 +690,7 @@ fn isCallbackUri(r: [*c]ngx_http_request_t, lccf: *oidc_loc_conf) bool {
     return false;
 }
 
-fn handleCallback(r: [*c]ngx_http_request_t, lccf: *oidc_loc_conf) ngx_int_t {
+fn handleCallback(r: [*c]ngx_http_request_t, lccf: *oidc_loc_conf, rctx: *oidc_request_ctx) ngx_int_t {
     // Get authorization code from query params
     const code = getQueryParam(r, "code") orelse {
         return sendError(r, 400, "Missing authorization code");
@@ -748,10 +754,10 @@ fn handleCallback(r: [*c]ngx_http_request_t, lccf: *oidc_loc_conf) ngx_int_t {
     else
         "oidc_session";
 
-    _ = setHttpCookie(r, cookie_name, encrypted_session, SESSION_DURATION_SEC, true);
+    _ = queueHttpCookie(r, rctx, cookie_name, encrypted_session, SESSION_DURATION_SEC, true);
 
     // Clear state cookie
-    _ = setHttpCookie(r, "oidc_state", ngx_str_t{ .len = 0, .data = core.nullptr(u8) }, 0, false);
+    _ = queueHttpCookie(r, rctx, "oidc_state", ngx_str_t{ .len = 0, .data = core.nullptr(u8) }, 0, false);
 
     // Redirect to original URI
     return sendRedirect(r, original_uri);
@@ -815,6 +821,7 @@ export fn ngx_http_oidc_handler(r: [*c]ngx_http_request_t) callconv(.c) ngx_int_
     }
 
     rctx.*.lccf = lccf;
+    rctx.*.pending_cookie_count = 0;
 
     // Check for valid session
     if (checkSession(r, lccf, rctx)) {
@@ -827,12 +834,45 @@ export fn ngx_http_oidc_handler(r: [*c]ngx_http_request_t) callconv(.c) ngx_int_
     // Check if this is the callback URI
     if (isCallbackUri(r, lccf)) {
         rctx.*.done = 1;
-        return handleCallback(r, lccf);
+        return handleCallback(r, lccf, rctx);
     }
 
     // No session, not callback - redirect to authorization endpoint
     rctx.*.done = 1;
-    return redirectToAuthorization(r, lccf);
+    return redirectToAuthorization(r, lccf, rctx);
+}
+
+// ============================================================================
+// Header Filter
+// ============================================================================
+
+var ngx_http_oidc_next_header_filter: http.ngx_http_output_header_filter_pt = null;
+
+fn getOidcCtx(r: [*c]ngx_http_request_t) ?[*c]oidc_request_ctx {
+    return core.castPtr(oidc_request_ctx, r.*.ctx[ngx_http_oidc_module.ctx_index]);
+}
+
+export fn ngx_http_oidc_header_filter(r: [*c]ngx_http_request_t) callconv(.c) ngx_int_t {
+    if (getOidcCtx(r)) |rctx| {
+        if (rctx.*.pending_cookie_count > 0) {
+            var headers = NList(ngx_table_elt_t).init0(&r.*.headers_out.headers);
+            var idx: usize = 0;
+            while (idx < rctx.*.pending_cookie_count) : (idx += 1) {
+                if (headers.append()) |h| {
+                    h.*.hash = 1;
+                    h.*.key = ngx_string("Set-Cookie");
+                    h.*.value = rctx.*.pending_cookies[idx];
+                    h.*.lowcase_key = @constCast("set-cookie");
+                } else |_| {}
+            }
+            rctx.*.pending_cookie_count = 0;
+        }
+    }
+
+    if (ngx_http_oidc_next_header_filter) |next| {
+        return next(r);
+    }
+    return NGX_OK;
 }
 
 // ============================================================================
@@ -927,6 +967,13 @@ fn postconfiguration(cf: [*c]ngx_conf_t) callconv(.c) ngx_int_t {
     const h = handlers.append() catch return NGX_ERROR;
     h.* = ngx_http_oidc_handler;
 
+    return NGX_OK;
+}
+
+fn postconfiguration_filter(cf: [*c]ngx_conf_t) callconv(.c) ngx_int_t {
+    _ = cf;
+    ngx_http_oidc_next_header_filter = http.ngx_http_top_header_filter;
+    http.ngx_http_top_header_filter = ngx_http_oidc_header_filter;
     return NGX_OK;
 }
 
@@ -1036,6 +1083,26 @@ export const ngx_http_oidc_commands = [_]ngx_command_t{
 export var ngx_http_oidc_module = ngx.module.make_module(
     @constCast(&ngx_http_oidc_commands),
     @constCast(&ngx_http_oidc_module_ctx),
+);
+
+export const ngx_http_oidc_filter_module_ctx = ngx_http_module_t{
+    .preconfiguration = null,
+    .postconfiguration = postconfiguration_filter,
+    .create_main_conf = null,
+    .init_main_conf = null,
+    .create_srv_conf = null,
+    .merge_srv_conf = null,
+    .create_loc_conf = null,
+    .merge_loc_conf = null,
+};
+
+export const ngx_http_oidc_filter_commands = [_]ngx_command_t{
+    conf.ngx_null_command,
+};
+
+export var ngx_http_oidc_filter_module = ngx.module.make_module(
+    @constCast(&ngx_http_oidc_filter_commands),
+    @constCast(&ngx_http_oidc_filter_module_ctx),
 );
 
 // ============================================================================

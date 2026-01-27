@@ -64,7 +64,7 @@ functionality in native Zig:
 
 - ✅  **ngx-http-waf-module** - Web Application Firewall (SQLi, XSS, OWASP rules, IP reputation)
 - [ ] **ngx-http-acme-module** - Auto SSL/Let's Encrypt (certificate provisioning, renewal, ACME protocol)
-- [ ] **ngx-http-oidc-module** - OpenID Connect (SSO with IdPs, token refresh, session management)
+- ✅  **ngx-http-oidc-module** - OpenID Connect (SSO with IdPs, token refresh, session management)
 - ✅  **ngx-http-graphql-module** - GraphQL Gateway (query parsing, depth limiting, field auth, caching)
 - ✅  **ngx-http-jsonschema-module** - Request/Response Validation (JSON schema validation, structured errors)
 - ✅  **ngx-http-transform-module** - Request/Response Transformation (JSON-to-JSON, XML-to-JSON)
