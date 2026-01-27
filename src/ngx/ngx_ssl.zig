@@ -15,23 +15,23 @@ const CRYPTO_malloc_fn = ngx.CRYPTO_malloc_fn;
 const CRYPTO_realloc_fn = ngx.CRYPTO_realloc_fn;
 const CRYPTO_free_fn = ngx.CRYPTO_free_fn;
 
-const OPENSSL_init_crypto = ngx.OPENSSL_init_crypto;
-const CRYPTO_set_mem_functions = ngx.CRYPTO_set_mem_functions;
-const OPENSSL_INIT_ADD_ALL_CIPHERS = ngx.OPENSSL_INIT_ADD_ALL_CIPHERS;
-const OPENSSL_INIT_ADD_ALL_DIGESTS = ngx.OPENSSL_INIT_ADD_ALL_DIGESTS;
-const OPENSSL_INIT_LOAD_CRYPTO_STRINGS = ngx.OPENSSL_INIT_LOAD_CRYPTO_STRINGS;
+pub const OPENSSL_init_crypto = ngx.OPENSSL_init_crypto;
+pub const CRYPTO_set_mem_functions = ngx.CRYPTO_set_mem_functions;
+pub const OPENSSL_INIT_ADD_ALL_CIPHERS = ngx.OPENSSL_INIT_ADD_ALL_CIPHERS;
+pub const OPENSSL_INIT_ADD_ALL_DIGESTS = ngx.OPENSSL_INIT_ADD_ALL_DIGESTS;
+pub const OPENSSL_INIT_LOAD_CRYPTO_STRINGS = ngx.OPENSSL_INIT_LOAD_CRYPTO_STRINGS;
 
 pub const RAND_bytes = ngx.RAND_bytes;
-const EVP_PKEY_free = ngx.EVP_PKEY_free;
-const EVP_PKEY_CTX_new = ngx.EVP_PKEY_CTX_new;
-const EVP_PKEY_CTX_free = ngx.EVP_PKEY_CTX_free;
+pub const EVP_PKEY_free = ngx.EVP_PKEY_free;
+pub const EVP_PKEY_CTX_new = ngx.EVP_PKEY_CTX_new;
+pub const EVP_PKEY_CTX_free = ngx.EVP_PKEY_CTX_free;
 
-const BIO = ngx.BIO;
-const EVP_PKEY = ngx.EVP_PKEY;
-const BIO_free = ngx.BIO_free;
-const BIO_new_mem_buf = ngx.BIO_new_mem_buf;
-const PEM_read_bio_PUBKEY = ngx.PEM_read_bio_PUBKEY;
-const PEM_read_bio_PrivateKey = ngx.PEM_read_bio_PrivateKey;
+pub const BIO = ngx.BIO;
+pub const EVP_PKEY = ngx.EVP_PKEY;
+pub const BIO_free = ngx.BIO_free;
+pub const BIO_new_mem_buf = ngx.BIO_new_mem_buf;
+pub const PEM_read_bio_PUBKEY = ngx.PEM_read_bio_PUBKEY;
+pub const PEM_read_bio_PrivateKey = ngx.PEM_read_bio_PrivateKey;
 
 // AES-256-GCM
 const EVP_CIPHER_CTX = ngx.EVP_CIPHER_CTX;
@@ -52,31 +52,33 @@ const EVP_DecryptUpdate = ngx.EVP_DecryptUpdate;
 const EVP_DecryptFinal_ex = ngx.EVP_DecryptFinal_ex;
 
 // RSA-OAEP
-const EVP_PKEY_CTX = ngx.EVP_PKEY_CTX;
-const RSA_PKCS1_OAEP_PADDING = ngx.RSA_PKCS1_OAEP_PADDING;
-const RSA_PKCS1_PADDING = ngx.RSA_PKCS1_PADDING;
-const RSA_NO_PADDING = ngx.RSA_NO_PADDING;
-const EVP_PKEY_encrypt_init = ngx.EVP_PKEY_encrypt_init;
-const EVP_PKEY_CTX_set_rsa_padding = ngx.EVP_PKEY_CTX_set_rsa_padding;
-const EVP_PKEY_encrypt = ngx.EVP_PKEY_encrypt;
-const EVP_PKEY_decrypt_init = ngx.EVP_PKEY_decrypt_init;
-const EVP_PKEY_decrypt = ngx.EVP_PKEY_decrypt;
-const EVP_PKEY_public_check = ngx.EVP_PKEY_public_check;
-const EVP_PKEY_private_check = ngx.EVP_PKEY_private_check;
+pub const EVP_RSA_gen = ngx.EVP_RSA_gen;
+pub const EVP_PKEY_CTX = ngx.EVP_PKEY_CTX;
+pub const RSA_PKCS1_OAEP_PADDING = ngx.RSA_PKCS1_OAEP_PADDING;
+pub const RSA_PKCS1_PADDING = ngx.RSA_PKCS1_PADDING;
+pub const RSA_NO_PADDING = ngx.RSA_NO_PADDING;
+pub const EVP_PKEY_encrypt_init = ngx.EVP_PKEY_encrypt_init;
+pub const EVP_PKEY_CTX_set_rsa_padding = ngx.EVP_PKEY_CTX_set_rsa_padding;
+pub const EVP_PKEY_encrypt = ngx.EVP_PKEY_encrypt;
+pub const EVP_PKEY_decrypt_init = ngx.EVP_PKEY_decrypt_init;
+pub const EVP_PKEY_decrypt = ngx.EVP_PKEY_decrypt;
+pub const EVP_PKEY_public_check = ngx.EVP_PKEY_public_check;
+pub const EVP_PKEY_private_check = ngx.EVP_PKEY_private_check;
+
 
 // SHA256 DIGEST SIGN/VERIFY
 const SHA256_DIGEST_LENGTH = ngx.SHA256_DIGEST_LENGTH;
 pub const EVP_sha256 = ngx.EVP_sha256;
-const EVP_MD_CTX = ngx.EVP_MD_CTX;
-const EVP_MD_CTX_new = ngx.EVP_MD_CTX_new;
-const EVP_MD_CTX_free = ngx.EVP_MD_CTX_free;
-const EVP_MD_CTX_reset = ngx.EVP_MD_CTX_reset;
-const EVP_DigestVerifyInit = ngx.EVP_DigestVerifyInit;
-const EVP_DigestVerifyUpdate = ngx.EVP_DigestVerifyUpdate;
-const EVP_DigestVerifyFinal = ngx.EVP_DigestVerifyFinal;
-const EVP_DigestSignInit = ngx.EVP_DigestSignInit;
-const EVP_DigestSignUpdate = ngx.EVP_DigestSignUpdate;
-const EVP_DigestSignFinal = ngx.EVP_DigestSignFinal;
+pub const EVP_MD_CTX = ngx.EVP_MD_CTX;
+pub const EVP_MD_CTX_new = ngx.EVP_MD_CTX_new;
+pub const EVP_MD_CTX_free = ngx.EVP_MD_CTX_free;
+pub const EVP_MD_CTX_reset = ngx.EVP_MD_CTX_reset;
+pub const EVP_DigestVerifyInit = ngx.EVP_DigestVerifyInit;
+pub const EVP_DigestVerifyUpdate = ngx.EVP_DigestVerifyUpdate;
+pub const EVP_DigestVerifyFinal = ngx.EVP_DigestVerifyFinal;
+pub const EVP_DigestSignInit = ngx.EVP_DigestSignInit;
+pub const EVP_DigestSignUpdate = ngx.EVP_DigestSignUpdate;
+pub const EVP_DigestSignFinal = ngx.EVP_DigestSignFinal;
 
 // base64
 const EVP_EncodeBlock = ngx.EVP_EncodeBlock;
