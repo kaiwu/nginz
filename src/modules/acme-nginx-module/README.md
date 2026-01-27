@@ -18,13 +18,13 @@ Automatic SSL certificate provisioning and renewal using the ACME protocol (RFC 
 - [x] File storage (account keys, domain keys, certificates)
 - [x] Certificate expiry checking
 - [x] Module configuration and directives
+- [x] ACME protocol state machine
+- [x] ACME directory/order/authorization parsing
+- [x] HTTP request builder for ACME operations
 
 #### Pending Features
-- [ ] ACME HTTP client (upstream-based)
-- [ ] Nonce management
-- [ ] Account registration
-- [ ] Order creation and finalization
-- [ ] Certificate download
+- [ ] Upstream integration for actual HTTP requests
+- [ ] Trigger endpoint to advance ACME flow
 - [ ] Renewal timer
 
 ### Implementation Plan

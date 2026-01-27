@@ -900,16 +900,27 @@ pub const AcmeDirectory = struct {
 
     /// Parse directory JSON response
     pub fn parse(pool: [*c]ngx_pool_t, json_body: []const u8) !AcmeDirectory {
-        var cj = ngx.cjson.CJSON.init(pool);
+        const CJSON = ngx.cjson.CJSON;
+        var cj = CJSON.init(pool);
         const json = try cj.decode(ngx_str_t{ .len = json_body.len, .data = @constCast(json_body.ptr) });
 
         var dir = AcmeDirectory.init();
 
-        if (cj.queryStr(json, "$.newNonce")) |v| dir.new_nonce = v;
-        if (cj.queryStr(json, "$.newAccount")) |v| dir.new_account = v;
-        if (cj.queryStr(json, "$.newOrder")) |v| dir.new_order = v;
-        if (cj.queryStr(json, "$.revokeCert")) |v| dir.revoke_cert = v;
-        if (cj.queryStr(json, "$.keyChange")) |v| dir.key_change = v;
+        if (CJSON.query(json, "$.newNonce")) |n| if (CJSON.stringValue(n)) |v| {
+            dir.new_nonce = v;
+        };
+        if (CJSON.query(json, "$.newAccount")) |n| if (CJSON.stringValue(n)) |v| {
+            dir.new_account = v;
+        };
+        if (CJSON.query(json, "$.newOrder")) |n| if (CJSON.stringValue(n)) |v| {
+            dir.new_order = v;
+        };
+        if (CJSON.query(json, "$.revokeCert")) |n| if (CJSON.stringValue(n)) |v| {
+            dir.revoke_cert = v;
+        };
+        if (CJSON.query(json, "$.keyChange")) |n| if (CJSON.stringValue(n)) |v| {
+            dir.key_change = v;
+        };
 
         // Verify required endpoints are present
         if (dir.new_nonce.len == 0 or dir.new_account.len == 0 or dir.new_order.len == 0) {
@@ -942,20 +953,27 @@ pub const AcmeOrder = struct {
 
     /// Parse order JSON response
     pub fn parse(self: *AcmeOrder, pool: [*c]ngx_pool_t, json_body: []const u8) !void {
-        var cj = ngx.cjson.CJSON.init(pool);
+        const CJSON = ngx.cjson.CJSON;
+        var cj = CJSON.init(pool);
         const json = try cj.decode(ngx_str_t{ .len = json_body.len, .data = @constCast(json_body.ptr) });
 
-        if (cj.queryStr(json, "$.status")) |v| self.status = v;
-        if (cj.queryStr(json, "$.finalize")) |v| self.finalize_url = v;
-        if (cj.queryStr(json, "$.certificate")) |v| self.certificate_url = v;
+        if (CJSON.query(json, "$.status")) |n| if (CJSON.stringValue(n)) |v| {
+            self.status = v;
+        };
+        if (CJSON.query(json, "$.finalize")) |n| if (CJSON.stringValue(n)) |v| {
+            self.finalize_url = v;
+        };
+        if (CJSON.query(json, "$.certificate")) |n| if (CJSON.stringValue(n)) |v| {
+            self.certificate_url = v;
+        };
 
         // Parse authorizations array
-        if (cj.query(json, "$.authorizations")) |auth_array| {
-            if (ngx.cjson.CJSON.arrayValue(auth_array)) |arr| {
-                var it = arr.iterator();
+        if (CJSON.query(json, "$.authorizations")) |auth_array| {
+            if (CJSON.arrValue(auth_array)) |arr| {
+                var it = CJSON.Iterator.init(arr);
                 while (it.next()) |item| {
                     if (self.authorization_count < self.authorization_urls.len) {
-                        if (ngx.cjson.CJSON.strValue(item)) |url| {
+                        if (CJSON.stringValue(item)) |url| {
                             self.authorization_urls[self.authorization_count] = url;
                             self.authorization_count += 1;
                         }
@@ -982,21 +1000,30 @@ pub const AcmeAuthorization = struct {
 
     /// Parse authorization JSON response, extract HTTP-01 challenge
     pub fn parse(self: *AcmeAuthorization, pool: [*c]ngx_pool_t, json_body: []const u8) !void {
-        var cj = ngx.cjson.CJSON.init(pool);
+        const CJSON = ngx.cjson.CJSON;
+        var cj = CJSON.init(pool);
         const json = try cj.decode(ngx_str_t{ .len = json_body.len, .data = @constCast(json_body.ptr) });
 
-        if (cj.queryStr(json, "$.status")) |v| self.status = v;
+        if (CJSON.query(json, "$.status")) |n| if (CJSON.stringValue(n)) |v| {
+            self.status = v;
+        };
 
         // Find HTTP-01 challenge in challenges array
-        if (cj.query(json, "$.challenges")) |chlgs| {
-            if (ngx.cjson.CJSON.arrayValue(chlgs)) |arr| {
-                var it = arr.iterator();
+        if (CJSON.query(json, "$.challenges")) |chlgs| {
+            if (CJSON.arrValue(chlgs)) |arr| {
+                var it = CJSON.Iterator.init(arr);
                 while (it.next()) |challenge| {
-                    if (cj.queryStr(challenge, "$.type")) |challenge_type| {
-                        if (std.mem.eql(u8, core.slicify(u8, challenge_type.data, challenge_type.len), "http-01")) {
-                            if (cj.queryStr(challenge, "$.url")) |v| self.challenge_url = v;
-                            if (cj.queryStr(challenge, "$.token")) |v| self.challenge_token = v;
-                            break;
+                    if (CJSON.query(challenge, "$.type")) |type_node| {
+                        if (CJSON.stringValue(type_node)) |challenge_type| {
+                            if (std.mem.eql(u8, core.slicify(u8, challenge_type.data, challenge_type.len), "http-01")) {
+                                if (CJSON.query(challenge, "$.url")) |url_node| {
+                                    if (CJSON.stringValue(url_node)) |v| self.challenge_url = v;
+                                }
+                                if (CJSON.query(challenge, "$.token")) |token_node| {
+                                    if (CJSON.stringValue(token_node)) |v| self.challenge_token = v;
+                                }
+                                break;
+                            }
                         }
                     }
                 }
@@ -2469,3 +2496,256 @@ test "AcmeStorage non-existent files" {
 // These are tested via integration tests with real certificates.
 // The getCertDaysRemaining and certNeedsRenewal functions work with
 // actual PEM certificates obtained from ACME servers.
+
+// ============================================================================
+// ACME Client Unit Tests
+// ============================================================================
+
+test "AcmeDirectory parse" {
+    const nlog = ngx_log_init(core.c_str(""), core.c_str(""));
+    const pool = ngx_create_pool(8192, nlog);
+    defer ngx_destroy_pool(pool);
+
+    const json =
+        \\{
+        \\  "newNonce": "https://acme.example.com/acme/new-nonce",
+        \\  "newAccount": "https://acme.example.com/acme/new-acct",
+        \\  "newOrder": "https://acme.example.com/acme/new-order",
+        \\  "revokeCert": "https://acme.example.com/acme/revoke-cert",
+        \\  "keyChange": "https://acme.example.com/acme/key-change"
+        \\}
+    ;
+
+    const dir = AcmeDirectory.parse(pool, json) catch return error.TestFailed;
+
+    try std.testing.expectEqualStrings(
+        "https://acme.example.com/acme/new-nonce",
+        core.slicify(u8, dir.new_nonce.data, dir.new_nonce.len),
+    );
+    try std.testing.expectEqualStrings(
+        "https://acme.example.com/acme/new-acct",
+        core.slicify(u8, dir.new_account.data, dir.new_account.len),
+    );
+    try std.testing.expectEqualStrings(
+        "https://acme.example.com/acme/new-order",
+        core.slicify(u8, dir.new_order.data, dir.new_order.len),
+    );
+}
+
+test "AcmeOrder parse" {
+    const nlog = ngx_log_init(core.c_str(""), core.c_str(""));
+    const pool = ngx_create_pool(8192, nlog);
+    defer ngx_destroy_pool(pool);
+
+    const json =
+        \\{
+        \\  "status": "pending",
+        \\  "finalize": "https://acme.example.com/acme/order/12345/finalize",
+        \\  "authorizations": [
+        \\    "https://acme.example.com/acme/authz/abc123"
+        \\  ]
+        \\}
+    ;
+
+    var order = AcmeOrder.init();
+    order.parse(pool, json) catch return error.TestFailed;
+
+    try std.testing.expectEqualStrings(
+        "pending",
+        core.slicify(u8, order.status.data, order.status.len),
+    );
+    try std.testing.expectEqualStrings(
+        "https://acme.example.com/acme/order/12345/finalize",
+        core.slicify(u8, order.finalize_url.data, order.finalize_url.len),
+    );
+    try std.testing.expectEqual(order.authorization_count, 1);
+    try std.testing.expectEqualStrings(
+        "https://acme.example.com/acme/authz/abc123",
+        core.slicify(u8, order.authorization_urls[0].data, order.authorization_urls[0].len),
+    );
+}
+
+test "AcmeAuthorization parse" {
+    const nlog = ngx_log_init(core.c_str(""), core.c_str(""));
+    const pool = ngx_create_pool(8192, nlog);
+    defer ngx_destroy_pool(pool);
+
+    const json =
+        \\{
+        \\  "status": "pending",
+        \\  "challenges": [
+        \\    {
+        \\      "type": "http-01",
+        \\      "url": "https://acme.example.com/acme/chall/abc123",
+        \\      "token": "evaGxfADs6pSRb2LAv9IZf17Dt3juxGJ-PCt92wr-oA"
+        \\    },
+        \\    {
+        \\      "type": "dns-01",
+        \\      "url": "https://acme.example.com/acme/chall/xyz789",
+        \\      "token": "other-token"
+        \\    }
+        \\  ]
+        \\}
+    ;
+
+    var auth = AcmeAuthorization.init();
+    auth.parse(pool, json) catch return error.TestFailed;
+
+    try std.testing.expectEqualStrings(
+        "pending",
+        core.slicify(u8, auth.status.data, auth.status.len),
+    );
+    // Should have selected http-01 challenge
+    try std.testing.expectEqualStrings(
+        "https://acme.example.com/acme/chall/abc123",
+        core.slicify(u8, auth.challenge_url.data, auth.challenge_url.len),
+    );
+    try std.testing.expectEqualStrings(
+        "evaGxfADs6pSRb2LAv9IZf17Dt3juxGJ-PCt92wr-oA",
+        core.slicify(u8, auth.challenge_token.data, auth.challenge_token.len),
+    );
+}
+
+test "AcmeClient state machine" {
+    const nlog = ngx_log_init(core.c_str(""), core.c_str(""));
+    const pool = ngx_create_pool(16384, nlog);
+    defer ngx_destroy_pool(pool);
+
+    var client = AcmeClient.init(
+        pool,
+        ngx_string("https://acme.example.com/directory"),
+        ngx_string("test.example.com"),
+    );
+
+    // Initial state
+    try std.testing.expectEqual(client.state, AcmeState.idle);
+
+    // Start
+    client.start();
+    try std.testing.expectEqual(client.state, AcmeState.need_directory);
+
+    // Handle directory response
+    const dir_json =
+        \\{"newNonce":"https://acme.example.com/nonce","newAccount":"https://acme.example.com/acct","newOrder":"https://acme.example.com/order"}
+    ;
+    client.handleDirectoryResponse(dir_json) catch return error.TestFailed;
+    try std.testing.expectEqual(client.state, AcmeState.need_nonce);
+
+    // Handle nonce response (no account yet)
+    client.updateNonce(ngx_string("test-nonce-12345"));
+    client.handleNonceResponse();
+    try std.testing.expectEqual(client.state, AcmeState.need_account);
+}
+
+test "AcmeClient build directory request" {
+    const nlog = ngx_log_init(core.c_str(""), core.c_str(""));
+    const pool = ngx_create_pool(8192, nlog);
+    defer ngx_destroy_pool(pool);
+
+    var client = AcmeClient.init(
+        pool,
+        ngx_string("https://acme-v02.api.letsencrypt.org/directory"),
+        ngx_string("example.com"),
+    );
+
+    const req = client.buildDirectoryRequest() catch return error.TestFailed;
+
+    try std.testing.expectEqual(req.method, HttpMethod.GET);
+    try std.testing.expectEqualStrings(
+        "https://acme-v02.api.letsencrypt.org/directory",
+        core.slicify(u8, req.url.data, req.url.len),
+    );
+    try std.testing.expectEqual(req.body.len, 0);
+}
+
+test "AcmeHttpRequest build GET" {
+    const nlog = ngx_log_init(core.c_str(""), core.c_str(""));
+    const pool = ngx_create_pool(4096, nlog);
+    defer ngx_destroy_pool(pool);
+
+    const req = AcmeHttpRequest{
+        .method = .GET,
+        .url = ngx_string("https://acme.example.com/directory"),
+        .body = ngx_null_str,
+        .content_type = ngx_null_str,
+    };
+
+    const raw = req.build(pool, ngx_string("acme.example.com")) catch return error.TestFailed;
+    const raw_str = core.slicify(u8, raw.data, raw.len);
+
+    // Should start with GET request line
+    try std.testing.expect(std.mem.startsWith(u8, raw_str, "GET /directory HTTP/1.1\r\n"));
+
+    // Should contain Host header
+    try std.testing.expect(std.mem.indexOf(u8, raw_str, "Host: acme.example.com\r\n") != null);
+
+    // Should end with \r\n\r\n (no body)
+    try std.testing.expect(std.mem.endsWith(u8, raw_str, "\r\n\r\n"));
+}
+
+test "AcmeHttpRequest build POST" {
+    const nlog = ngx_log_init(core.c_str(""), core.c_str(""));
+    const pool = ngx_create_pool(4096, nlog);
+    defer ngx_destroy_pool(pool);
+
+    const req = AcmeHttpRequest{
+        .method = .POST,
+        .url = ngx_string("https://acme.example.com/new-account"),
+        .body = ngx_string("{\"test\":\"body\"}"),
+        .content_type = ngx_string("application/jose+json"),
+    };
+
+    const raw = req.build(pool, ngx_string("acme.example.com")) catch return error.TestFailed;
+    const raw_str = core.slicify(u8, raw.data, raw.len);
+
+    // Should start with POST request line
+    try std.testing.expect(std.mem.startsWith(u8, raw_str, "POST /new-account HTTP/1.1\r\n"));
+
+    // Should contain headers
+    try std.testing.expect(std.mem.indexOf(u8, raw_str, "Host: acme.example.com\r\n") != null);
+    try std.testing.expect(std.mem.indexOf(u8, raw_str, "Content-Type: application/jose+json\r\n") != null);
+    try std.testing.expect(std.mem.indexOf(u8, raw_str, "Content-Length: 15\r\n") != null);
+
+    // Should end with body
+    try std.testing.expect(std.mem.endsWith(u8, raw_str, "{\"test\":\"body\"}"));
+}
+
+test "AcmeClient build order request" {
+    const nlog = ngx_log_init(core.c_str(""), core.c_str(""));
+    const pool = ngx_create_pool(16384, nlog);
+    defer ngx_destroy_pool(pool);
+
+    // Generate account key
+    var key = AcmeAccountKey.generate(pool) catch return error.TestFailed;
+    defer key.deinit();
+
+    var client = AcmeClient.init(
+        pool,
+        ngx_string("https://acme.example.com/directory"),
+        ngx_string("test.example.com"),
+    );
+
+    client.setAccountKey(&key);
+    client.directory.new_order = ngx_string("https://acme.example.com/new-order");
+    client.current_nonce = ngx_string("test-nonce");
+    client.account_url = ngx_string("https://acme.example.com/acct/12345");
+
+    const req = client.buildOrderRequest() catch return error.TestFailed;
+
+    try std.testing.expectEqual(req.method, HttpMethod.POST);
+    try std.testing.expectEqualStrings(
+        "https://acme.example.com/new-order",
+        core.slicify(u8, req.url.data, req.url.len),
+    );
+    try std.testing.expect(req.body.len > 0);
+    try std.testing.expectEqualStrings(
+        "application/jose+json",
+        core.slicify(u8, req.content_type.data, req.content_type.len),
+    );
+
+    // Body should be valid JWS JSON
+    const body = core.slicify(u8, req.body.data, req.body.len);
+    try std.testing.expect(std.mem.indexOf(u8, body, "\"protected\":\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, body, "\"payload\":\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, body, "\"signature\":\"") != null);
+}
