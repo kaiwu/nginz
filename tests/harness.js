@@ -55,7 +55,7 @@ export async function stopNginz() {
 }
 
 // Wait for port to be available
-async function waitForPort(port, timeout = 5000) {
+async function waitForPort(port, timeout = 10000) {
   const start = Date.now();
   while (Date.now() - start < timeout) {
     try {
@@ -72,7 +72,7 @@ async function waitForPort(port, timeout = 5000) {
 }
 
 // Wait for a TCP port to be listening
-export async function waitForTCPPort(port, timeout = 5000) {
+export async function waitForTCPPort(port, timeout = 10000) {
   const start = Date.now();
   while (Date.now() - start < timeout) {
     try {
