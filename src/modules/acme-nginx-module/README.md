@@ -4,7 +4,7 @@ Automatic SSL certificate provisioning and renewal using the ACME protocol (RFC 
 
 ### Status
 
-**In Progress** - Core crypto and storage implemented, HTTP client pending
+**In Progress** - Core crypto, storage, and handlers implemented. Upstream ACME flow needs testing.
 
 #### Implemented Features
 - [x] Base64url encoding/decoding (RFC 4648)
@@ -13,19 +13,28 @@ Automatic SSL certificate provisioning and renewal using the ACME protocol (RFC 
 - [x] RSA key generation (2048-bit)
 - [x] JWS signing with RS256 (RFC 7515)
 - [x] CSR generation (X509_REQ)
-- [x] HTTP-01 challenge handler (content phase)
-- [x] Challenge storage (in-memory, max 32)
+- [x] HTTP-01 challenge handler (ACCESS phase, intercepts regardless of location handler)
+- [x] Challenge storage (in-memory, max 32 active challenges)
 - [x] File storage (account keys, domain keys, certificates)
 - [x] Certificate expiry checking
 - [x] Module configuration and directives
-- [x] ACME protocol state machine
-- [x] ACME directory/order/authorization parsing
-- [x] HTTP request builder for ACME operations
+- [x] ACME protocol state machine (`AcmeState` enum with 12 states)
+- [x] ACME directory/order/authorization parsing (JSON via cJSON)
+- [x] HTTP request builder for ACME operations (`AcmeHttpRequest`)
+- [x] Trigger endpoint (`/.well-known/acme-trigger`) to initiate ACME flow
+- [x] Upstream integration skeleton (callbacks implemented)
+
+#### Current Limitations
+- Upstream ACME requests not fully tested with real ACME servers
+- Full ACME flow (directory → account → order → authz → finalize → cert) needs end-to-end testing
+- Renewal timer not implemented (manual trigger via endpoint)
+- Single worker process support only (global state not shared)
 
 #### Pending Features
-- [ ] Upstream integration for actual HTTP requests
-- [ ] Trigger endpoint to advance ACME flow
-- [ ] Renewal timer
+- [ ] End-to-end testing with Let's Encrypt staging/Pebble
+- [ ] Automatic renewal timer (background process)
+- [ ] Multi-worker support (shared state via shm)
+- [ ] Error recovery and retry logic
 
 ### Implementation Plan
 

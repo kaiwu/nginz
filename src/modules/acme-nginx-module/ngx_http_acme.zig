@@ -2220,8 +2220,7 @@ var global_storage_path_buf: [512]u8 = undefined;
 var global_storage_instance: AcmeStorage = undefined;
 var global_storage: ?*AcmeStorage = null;
 
-/// ACME trigger handler - returns current ACME state
-/// Note: Full ACME flow with upstream connections is TODO - requires timer-based background processing
+/// ACME trigger handler - advances the ACME state machine
 export fn ngx_http_acme_trigger_handler(r: [*c]ngx_http_request_t) callconv(.c) ngx_int_t {
     // Check if this is an ACME trigger request
     if (!is_acme_trigger_uri(r.*.uri)) {
@@ -2248,18 +2247,118 @@ export fn ngx_http_acme_trigger_handler(r: [*c]ngx_http_request_t) callconv(.c) 
         return NGX_DECLINED;
     }
 
-    // Return current state
-    if (global_acme_client) |client| {
-        return switch (client.state) {
-            .idle => send_acme_status(r, "idle", "Not started"),
-            .complete => send_acme_status(r, "complete", "Certificate obtained"),
-            .err => send_acme_status(r, "error", "ACME error occurred"),
-            else => send_acme_status(r, "pending", "ACME flow in progress"),
+    // Initialize global ACME state if needed
+    if (global_acme_client == null) {
+        // Initialize storage
+        const storage_path = core.slicify(u8, mcf.*.storage_path.data, mcf.*.storage_path.len);
+        if (storage_path.len >= global_storage_path_buf.len) {
+            return send_acme_status(r, "error", "Storage path too long");
+        }
+        @memcpy(global_storage_path_buf[0..storage_path.len], storage_path);
+        global_storage_instance = AcmeStorage.init(global_storage_path_buf[0..storage_path.len]);
+        global_storage_instance.ensureDirectories() catch {
+            return send_acme_status(r, "error", "Failed to create storage directories");
         };
+        global_storage = &global_storage_instance;
+
+        // Load or generate account key
+        const account_key_ptr = core.ngz_pcalloc(AcmeAccountKey, r.*.pool) orelse {
+            return send_acme_status(r, "error", "Failed to allocate account key");
+        };
+        if (global_storage.?.accountKeyExists()) {
+            var key_buf: [8192]u8 = undefined;
+            const pem = global_storage.?.loadAccountKey(&key_buf) catch {
+                return send_acme_status(r, "error", "Failed to load account key");
+            };
+            account_key_ptr.* = AcmeAccountKey.loadFromPem(ngx_str_t{ .len = pem.len, .data = @constCast(pem.ptr) }, r.*.pool) catch {
+                return send_acme_status(r, "error", "Failed to parse account key");
+            };
+        } else {
+            account_key_ptr.* = AcmeAccountKey.generate(r.*.pool) catch {
+                return send_acme_status(r, "error", "Failed to generate account key");
+            };
+            // Save account key
+            const pem = account_key_ptr.toPem(r.*.pool) catch {
+                return send_acme_status(r, "error", "Failed to export account key");
+            };
+            global_storage.?.saveAccountKey(core.slicify(u8, pem.data, pem.len)) catch {
+                return send_acme_status(r, "error", "Failed to save account key");
+            };
+        }
+        global_account_key = account_key_ptr;
+
+        // Create ACME client
+        const client_ptr = core.ngz_pcalloc(AcmeClient, r.*.pool) orelse {
+            return send_acme_status(r, "error", "Failed to allocate ACME client");
+        };
+        client_ptr.* = AcmeClient.init(r.*.pool, mcf.*.directory_url, scf.*.domain);
+        client_ptr.setAccountKey(account_key_ptr);
+        client_ptr.start();
+        global_acme_client = client_ptr;
+
+        return send_acme_status(r, "initialized", "ACME client initialized, call again to start flow");
     }
 
-    // Not initialized yet
-    return send_acme_status(r, "idle", "ACME client not initialized");
+    const client = global_acme_client.?;
+    const account_key = global_account_key.?;
+    const storage = global_storage.?;
+
+    // Check current state and respond appropriately
+    if (client.state == .complete) {
+        return send_acme_status(r, "complete", "Certificate obtained successfully");
+    }
+
+    if (client.state == .err) {
+        return send_acme_status(r, "error", "ACME error occurred");
+    }
+
+    if (client.state == .idle) {
+        client.start();
+        return send_acme_status(r, "started", "ACME flow started");
+    }
+
+    if (client.state == .waiting_validation) {
+        // Need to poll for validation - advance to check authorization
+        client.state = .need_authorization;
+    }
+
+    // Generate domain key if needed for finalization
+    if (client.state == .need_finalize and global_domain_key == null) {
+        const domain_key_ptr = core.ngz_pcalloc(AcmeDomainKey, r.*.pool) orelse {
+            return send_acme_status(r, "error", "Failed to allocate domain key");
+        };
+        domain_key_ptr.* = AcmeDomainKey.generate(r.*.pool) catch {
+            return send_acme_status(r, "error", "Failed to generate domain key");
+        };
+        client.setDomainKey(domain_key_ptr);
+        global_domain_key = domain_key_ptr;
+    }
+
+    // Create request context for upstream
+    const rctx = core.ngz_pcalloc(acme_request_context, r.*.pool) orelse {
+        return send_acme_status(r, "error", "Failed to allocate request context");
+    };
+    rctx.* = acme_request_context{
+        .client = @ptrCast(client),
+        .account_key = @ptrCast(account_key),
+        .domain_key = if (global_domain_key) |dk| @ptrCast(dk) else null,
+        .storage = @ptrCast(storage),
+        .status = std.mem.zeroes(http.ngx_http_status_t),
+        .response_body = ngx_null_str,
+        .response_nonce = ngx_null_str,
+        .response_location = ngx_null_str,
+        .res = core.nullptr(ngx_chain_t),
+        .domain = scf.*.domain,
+    };
+
+    r.*.ctx[ngx_http_acme_module.ctx_index] = rctx;
+
+    // Create upstream and initiate request
+    const rc = create_acme_upstream(r, rctx) catch {
+        return send_acme_status(r, "error", "Failed to create upstream");
+    };
+
+    return rc;
 }
 
 fn send_acme_status(r: [*c]ngx_http_request_t, status: []const u8, message: []const u8) ngx_int_t {

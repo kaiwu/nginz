@@ -265,18 +265,21 @@ describe("acme module", () => {
   });
 
   describe("Trigger Endpoint", () => {
-    test("trigger endpoint exists and responds", async () => {
+    test("trigger endpoint initializes ACME client on first call", async () => {
       // The trigger endpoint should exist at /.well-known/acme-trigger
       const res = await fetch(`${TEST_URL}/.well-known/acme-trigger`);
-      // Should return some status (200 for success, or error status if ACME server unreachable)
-      // The important thing is that it doesn't 404
-      expect(res.status).not.toBe(404);
+      expect(res.status).toBe(200);
+
+      const body = await res.json();
+      // First call initializes the client, or returns current state
+      expect(body.status).toBeDefined();
+      expect(["initialized", "started", "pending", "error"]).toContain(body.status);
     });
 
     test("trigger endpoint not available on server without acme_domain", async () => {
       // Server on port 8890 has no acme_domain
       const res = await fetch(`${TEST_URL_8890}/.well-known/acme-trigger`);
-      // Should return the default handler response (echozn)
+      // Should return the default handler response (echozn) since we decline
       expect(res.status).toBe(200);
       const body = await res.json();
       expect(body.status).toBe("ok");
