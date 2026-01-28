@@ -1,6 +1,6 @@
 ## Nginz
 
-nginz is a `nginx` module writer, which allows one to write nginx modules in `zig`. so far it 
+nginz is a `nginx` module writer. It allows one to write nginx modules in `zig`. so far it 
 is based on official nginx release 1.29.4 and zig 0.15. nginz is tested with linux only.
 
 A typical workflow is following: 
@@ -8,21 +8,14 @@ A typical workflow is following:
 ```
 $ git submodule init
 $ git submodule update
+$ rm -rf .zig-cache zig-out submodules/nginx/objs # might needed for a fresh build
 $ zig build
 $ zig build test
+$ bun test
 ```
 
-One might need to first address the system library dependencies, a requirement for nginx development.
-specifically they are.
-  
-  * -lz
-  * -lcrypt
-  * -lcrypto
-  * -lexslt
-  * -lxslt
-  * -lpcre
-  * -lssl
-  * -lgd
+Nginx development requires some system library dependencies, which shall be addressed first.
+A Dockerfile is provided as reference so that one can build their own dev image.
 
 > [!NOTE]
 > The SSL zig bindings are generated with `OpenSSL 3`.
