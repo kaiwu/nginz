@@ -25,7 +25,8 @@ jobs:
             libcrypt-dev \
             libpcre2-dev \
             libpq-dev \
-            libxslt1-dev
+            libxslt1-dev \
+            libgd-dev
 
       - name: Setup Zig
         uses: goto-bus-stop/setup-zig@v2
@@ -57,7 +58,8 @@ jobs:
             libcrypt-dev \
             libpcre2-dev \
             libpq-dev \
-            libxslt1-dev
+            libxslt1-dev \
+            libgd-dev
 
       - name: Setup Zig
         uses: goto-bus-stop/setup-zig@v2
