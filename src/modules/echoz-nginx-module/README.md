@@ -1,110 +1,140 @@
-## Echoz
+## Echoz Module
 
-`echoz` is a simplified replica of [echo][1] module. It implements many of its directives in `Zig`. The main drive is
-to demo how to implement nginx content handler module as well as filter module, taking advantages of the language features.
-On the other hand, `echoz` does not intend to deal with a long history of nginx releases and changes. It only addresses to
-the recent nginx releases and their exposed calibers, so that a learner might find the implementations cleaner.
+Content handler and filter module for outputting text, variables, and request bodies. A Zig implementation inspired by the [echo-nginx-module](https://github.com/openresty/echo-nginx-module).
 
-A full and much better documentation can be found at the original [echo][1] module. This doc also references the original work
-as much as it can.
+### Status
 
-### Synopsis
+**Implemented** - Core directives complete with 11 passing tests
 
-```nginx
+### Features
 
-```
-
-### Deployment
-
-Instead of providing standard nginx building routines, the project artifacts are module object files,
-with which one shall build into a target `nginx` binary.
-
-`ngx_http_echoz_module.o` provides **2** nginx modules, a content handler module and a filter module,
-they can be added in the `objs/ngx_modules.c` as following.
-
-```c
-
-  extern ngx_module_t ngx_core_module;
-  /*...*/
-  extern ngx_module_t ngx_http_echoz_module;
-  extern ngx_module_t ngx_http_echoz_filter_module;
-
-  ngx_module_t *ngx_modules[] = {
-      &ngx_core_module,
-      &ngx_errlog_module,
-      /*...*/
-      &ngx_http_echoz_module,
-      /*...*/
-      /*...*/
-      &ngx_http_echoz_filter_module,
-      /*...*/
-      &ngx_http_not_modified_filter_module,
-      NULL
-  };
-
-  char* ngx_module_names[] = {
-      "ngx_core_module",
-      "ngx_errlog_module",
-      /*...*/
-      "ngx_http_echoz_module",
-      /*...*/
-      /*...*/
-      "ngx_http_echoz_filter_module",
-      /*...*/
-      "ngx_http_not_modified_filter_module",
-      NULL
-  };
-
-```
-
-### Versions
-
-`echoz` is tested with following `nginx` releases
-
-- 1.27.4
-- 1.27.3
+- [x] **Text Output** - Output literal strings with/without newlines
+- [x] **Variable Interpolation** - Expand nginx variables like `$request_method`, `$uri`
+- [x] **Request Body Echo** - Output the request body content
+- [x] **String Duplication** - Repeat a string N times
+- [x] **Internal Redirects** - Redirect to named or regular locations
+- [x] **Async Subrequests** - Fire-and-forget subrequests to other locations
+- [x] **Body Filters** - Prepend/append content to responses
+- [x] **Response Headers** - Set custom status codes and headers
 
 ### Directives
 
-#### echoz
+| Directive | Syntax | Context | Description |
+|-----------|--------|---------|-------------|
+| `echoz` | `<string>...` | location | Output text with trailing newline |
+| `echozn` | `<string>...` | location | Output text without newline |
+| `echoz_duplicate` | `<count> <string>` | location | Repeat string N times |
+| `echoz_flush` | - | location | Flush output buffer |
+| `echoz_sleep` | `<seconds>` | location | Pause execution |
+| `echoz_request_body` | - | location | Output request body |
+| `echoz_read_request_body` | - | location | Read request body into memory |
+| `echoz_exec` | `<location>` | location | Internal redirect to location |
+| `echoz_location_async` | `<location>` | location | Async subrequest (fire-and-forget) |
+| `echoz_before_body` | `<string>` | location | Prepend to response body (filter) |
+| `echoz_after_body` | `<string>` | location | Append to response body (filter) |
+| `echoz_status` | `<code>` | location | Set response status code |
+| `echoz_header` | `<name> <value>` | location | Add response header |
 
-#### echozn
+### Usage
 
-#### echoz_duplicate
-
-#### echoz_flush
-
-#### echoz_sleep
-
-#### echoz_location_async
-
-#### echoz_request_body
-
-#### echoz_read_request_body
-
-#### echoz_exec
-
-#### echoz_before_body
-
-#### echoz_after_body
-
-#### echoz_status
-
-#### echoz_header
-
-*syntax:*           
-*default:*          
-*context:*          
-*phase:*            
-
+Basic text output:
 ```nginx
-
+location /hello {
+    echoz "Hello, World!";
+}
+# Response: Hello, World!\n
 ```
 
+Multiple lines:
+```nginx
+location /multi {
+    echoz "line1";
+    echoz "line2";
+    echoz "line3";
+}
+# Response: line1\nline2\nline3\n
+```
 
+Without newline:
+```nginx
+location /json {
+    echozn '{"status":"ok"}';
+}
+# Response: {"status":"ok"}
+```
 
+Variable interpolation:
+```nginx
+location /info {
+    echoz "Method: $request_method";
+    echoz "URI: $uri";
+    echoz "Host: $host";
+}
+```
 
-[1]: https://github.com/openresty/echo-nginx-module "echo"
+Echo request body:
+```nginx
+location /echo {
+    echoz_read_request_body;
+    echoz "Received: ";
+    echoz_request_body;
+}
+```
 
+String duplication:
+```nginx
+location /repeat {
+    echoz_duplicate 3 "abc";
+}
+# Response: abcabcabc
+```
 
+Internal redirect:
+```nginx
+location /old {
+    echoz_exec @new;
+}
 
+location @new {
+    echoz "Redirected!";
+}
+```
+
+Body filters:
+```nginx
+location /wrapped {
+    echoz_before_body "<html><body>";
+    echoz_after_body "</body></html>";
+    proxy_pass http://backend;
+}
+```
+
+### Architecture
+
+The module provides two nginx modules in one:
+
+1. **Content Handler Module** (`ngx_http_echoz_module`)
+   - Handles `echoz`, `echozn`, `echoz_duplicate`, etc.
+   - Runs in CONTENT phase
+   - Generates response body
+
+2. **Filter Module** (`ngx_http_echoz_filter_module`)
+   - Handles `echoz_before_body`, `echoz_after_body`
+   - Runs in output filter chain
+   - Modifies responses from other handlers
+
+### Test Coverage
+
+- `echoz` outputs text with newline
+- `echozn` outputs text without newline
+- Multiple `echoz` commands output multiple lines
+- Variable interpolation works (`$request_method`, `$uri`)
+- `echoz_duplicate` repeats strings correctly
+- `echoz_exec` redirects to named locations
+- `echoz_exec` redirects to regular locations
+- `echoz_request_body` echoes POST body
+- `echoz_location_async` fires async subrequests
+
+### References
+
+- [echo-nginx-module](https://github.com/openresty/echo-nginx-module) - Original echo module by OpenResty
