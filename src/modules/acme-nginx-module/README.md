@@ -27,14 +27,26 @@ Automatic SSL certificate provisioning and renewal using the ACME protocol (RFC 
 #### Current Limitations
 - Upstream ACME requests not fully tested with real ACME servers
 - Full ACME flow (directory → account → order → authz → finalize → cert) needs end-to-end testing
-- Renewal timer not implemented (manual trigger via endpoint)
 - Single worker process support only (global state not shared)
 
 #### Pending Features
 - [ ] End-to-end testing with Let's Encrypt staging/Pebble
-- [ ] Automatic renewal timer (background process)
 - [ ] Multi-worker support (shared state via shm)
 - [ ] Error recovery and retry logic
+
+#### Renewal Strategy
+
+Renewal is handled externally via the trigger endpoint - no internal timer needed:
+
+```bash
+# Cron job (recommended)
+0 0 * * * curl -s http://localhost/.well-known/acme-trigger
+
+# Or systemd timer
+# /etc/systemd/system/acme-renewal.timer
+```
+
+This approach is simpler, more debuggable, and follows the same pattern as certbot.
 
 ### Implementation Plan
 
