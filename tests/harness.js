@@ -7,9 +7,19 @@ const NGINZ_BIN = "./zig-out/bin/nginz";
 const TEST_PORT = 8888;
 
 // Build nginz before running tests
+// Set ZIG_OPTIMIZE=ReleaseSafe (or ReleaseFast, ReleaseSmall) for optimized builds
 export function ensureBuild() {
-  console.log("Building nginz...");
-  const result = spawnSync(["zig", "build"], {
+  const optimize = process.env.ZIG_OPTIMIZE;
+  const args = ["zig", "build"];
+
+  if (optimize) {
+    args.push(`-Doptimize=${optimize}`);
+    console.log(`Building nginz with -Doptimize=${optimize}...`);
+  } else {
+    console.log("Building nginz...");
+  }
+
+  const result = spawnSync(args, {
     stdout: "inherit",
     stderr: "inherit",
   });
