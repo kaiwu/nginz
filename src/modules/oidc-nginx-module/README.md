@@ -4,7 +4,14 @@ OpenID Connect Relying Party implementation for nginx SSO integration.
 
 ### Status
 
-**Implemented** - Core flow with redirect + callback handling
+**Implemented** - Core OIDC flow with token exchange
+
+- Authorization redirect with state, nonce, and PKCE
+- Callback handling with state validation
+- Token exchange via nginx upstream
+- ID token JWT parsing (claims extraction)
+- Encrypted session cookie creation
+- Session validation for protected resources
 
 ### Implementation Plan
 
