@@ -40,35 +40,44 @@ so far is a simplified version of `echo` and it misses some of the directives.
 
 By all means, deploy the module objects with your own binary building toolchains.
 
-## Roadmap
+## Module Status
 
-The following modules are planned for implementation. They aim to provide NGINX Plus and OpenResty 
-functionality in native Zig:
+All modules have integration tests. Each module has its own README with detailed documentation.
 
-### High Priority
+### Production Ready
 
-- ✅  **ngx-http-jwt-module** - JWT Authentication (HS256/RS256/ES256 validation, claims extraction)
-- ✅  **ngx-http-healthcheck-module** - Active Health Checks (periodic probes, custom endpoints, slow-start)
-- ✅  **ngx-http-ratelimit-module** - Advanced Rate Limiting (token bucket, sliding window, per-user limits)
-- ✅  **ngx-http-redis-module** - Redis Client (GET command, JSON response)
-- ✅  **ngx-http-circuit-breaker-module** - Circuit Breaker Pattern (failure detection, half-open state, gradual recovery)
+| Module | Description |
+|--------|-------------|
+| **echoz** | Echo/response module with variable interpolation and filters |
+| **jwt** | JWT validation (HS256), claims extraction |
+| **jsonschema** | JSON Schema request/response validation |
+| **graphql** | Query depth limiting, introspection control |
+| **transform** | JSON path extraction and transformation |
+| **waf** | SQL injection and XSS pattern detection |
+| **canary** | Traffic splitting (percentage, header, cookie routing) |
+| **consul** | Service discovery and KV store integration |
+| **redis** | Redis commands via RESP protocol |
+| **requestid** | UUID4 generation and X-Request-ID propagation |
+| **ratelimit** | Fixed window rate limiting per IP |
 
-### Medium Priority
+### Working with Limitations
 
-- ✅  **ngx-http-waf-module** - Web Application Firewall (SQLi, XSS, OWASP rules, IP reputation)
-- ✅  **ngx-http-acme-module** - Auto SSL/Let's Encrypt (certificate provisioning, renewal, ACME protocol)
-- ✅  **ngx-http-oidc-module** - OpenID Connect (SSO with IdPs, token refresh, session management)
-- ✅  **ngx-http-graphql-module** - GraphQL Gateway (query parsing, depth limiting, field auth, caching)
-- ✅  **ngx-http-jsonschema-module** - Request/Response Validation (JSON schema validation, structured errors)
-- ✅  **ngx-http-transform-module** - Request/Response Transformation (JSON-to-JSON, XML-to-JSON)
-- ✅  **ngx-http-consul-module** - Service Discovery (Consul/etcd integration, dynamic upstreams)
-- ✅  **ngx-http-canary-module** - Traffic Splitting (percentage-based, header/cookie routing, A/B testing)
-- ✅  **ngx-http-prometheus-module** - Native Prometheus Metrics (request counts, latencies, /metrics endpoint)
+| Module | Description | Limitations |
+|--------|-------------|-------------|
+| **oidc** | OpenID Connect SSO with PKCE | Nginx variables (`$oidc_claim_*`) not yet implemented |
+| **acme** | Let's Encrypt certificate automation | Not tested with real ACME servers; single worker only |
+| **circuit-breaker** | Failure detection with half-open recovery | Per-worker state only (no shared memory) |
+| **prometheus** | Native /metrics endpoint | Per-worker counters; no histograms |
+| **healthcheck** | Health status endpoint | Passive only (no active probing) |
+| **cache-tags** | Tag-based cache invalidation | Per-worker storage; lost on restart |
+| **pgrest** | PostgreSQL REST API | Accept header ignored (JSON only); JWT role stub |
+| **wechatpay** | WeChat Pay signature verification | Some error paths have TODOs |
 
-### Low Priority
+### Reference
 
-- ✅  **ngx-http-requestid-module** - Request Correlation (unique ID generation, X-Request-ID propagation)
-- ✅  **ngx-http-cache-tags-module** - Cache Invalidation (tag-based entries, purge by tag/pattern)
+| Module | Description |
+|--------|-------------|
+| **hello** | Minimal module example |
 
 
 

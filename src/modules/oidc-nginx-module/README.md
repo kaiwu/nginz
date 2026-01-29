@@ -12,7 +12,6 @@ OpenID Connect Relying Party implementation for nginx SSO integration.
 - ID token JWT parsing (claims extraction)
 - Encrypted session cookie creation (AES-256-GCM)
 - Session validation for protected resources
-- Claim passthrough via nginx variables ($oidc_claim_*)
 
 ### Implementation Plan
 
@@ -330,6 +329,7 @@ server {
 
 Not in initial implementation:
 
+- [ ] **Nginx Variables** - Set `$oidc_claim_sub`, `$oidc_claim_email`, etc. for backend passthrough
 - [ ] **ID Token Signature Verification** - RSA/ECDSA verification with JWKS
 - [ ] **Discovery Caching** - Cache .well-known response
 - [ ] **Token Refresh** - Automatic access token refresh
