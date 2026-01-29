@@ -9,6 +9,9 @@ export class PostgresMock {
     this.server = null;
     this.tables = new Map(); // table_name -> [rows]
     this.queryHandlers = new Map(); // query pattern -> handler function
+    this.lastSetRole = null; // Track last SET ROLE command
+    this.lastSetJwt = null; // Track last SET request.jwt command
+    this.queryLog = []; // Log of all queries received
   }
 
   start() {
@@ -34,6 +37,26 @@ export class PostgresMock {
     }
     this.tables.clear();
     this.queryHandlers.clear();
+    this.lastSetRole = null;
+    this.lastSetJwt = null;
+    this.queryLog = [];
+  }
+
+  // Clear query tracking (useful between tests)
+  clearTracking() {
+    this.lastSetRole = null;
+    this.lastSetJwt = null;
+    this.queryLog = [];
+  }
+
+  // Get the last SET ROLE value
+  getLastSetRole() {
+    return this.lastSetRole;
+  }
+
+  // Get the last SET request.jwt value
+  getLastSetJwt() {
+    return this.lastSetJwt;
   }
 
   handleData(socket, data) {
@@ -142,6 +165,27 @@ export class PostgresMock {
 
   handleQuery(socket, query) {
     const upperQuery = query.toUpperCase().trim();
+
+    // Log all queries for debugging
+    this.queryLog.push(query);
+
+    // Track SET ROLE commands
+    const roleMatch = query.match(/SET\s+ROLE\s+'([^']+)'/i);
+    if (roleMatch) {
+      this.lastSetRole = roleMatch[1];
+      this.sendCommandComplete(socket, "SET");
+      socket.write(Buffer.from([0x5a, 0, 0, 0, 5, 0x49]));
+      return;
+    }
+
+    // Track SET request.jwt commands
+    const jwtMatch = query.match(/SET\s+request\.jwt\s+TO\s+'([^']+)'/i);
+    if (jwtMatch) {
+      this.lastSetJwt = jwtMatch[1];
+      this.sendCommandComplete(socket, "SET");
+      socket.write(Buffer.from([0x5a, 0, 0, 0, 5, 0x49]));
+      return;
+    }
 
     // Check custom handlers first
     for (const [pattern, handler] of this.queryHandlers) {

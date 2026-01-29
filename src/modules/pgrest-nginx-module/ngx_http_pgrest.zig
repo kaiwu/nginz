@@ -3,11 +3,13 @@ const ngx = @import("ngx");
 
 const pq = ngx.pq;
 const buf = ngx.buf;
+const ssl = ngx.ssl;
 const core = ngx.core;
 const conf = ngx.conf;
 const http = ngx.http;
 const file = ngx.file;
 const cjson = ngx.cjson;
+const CJSON = cjson.CJSON;
 
 // libpq types and functions (re-exported from ngx_pq.zig)
 const PGconn = pq.PGconn;
@@ -89,6 +91,11 @@ const ngx_pgrest_loc_conf_t = extern struct {
     upstream: ngx_str_t,
     conninfo: ngx_str_t, // PostgreSQL connection string
     pooling: ngx_flag_t, // Enable connection pooling (non-blocking mode)
+
+    // JWT role-based access control
+    jwt_secret: ngx_str_t, // HS256 secret for JWT validation
+    anon_role: ngx_str_t, // Default role when no valid JWT (e.g., "anon")
+    jwt_role_claim: ngx_str_t, // Claim name containing the role (default: "role")
 };
 
 // ============================================================================
@@ -609,9 +616,22 @@ fn format_result_as_json_smart(
     return format_result_as_json_with_options(result, ntuples, nfields, json_buf, strip_nulls);
 }
 
+/// JWT config for role-based access
+const JwtConfig = struct {
+    secret: []const u8,
+    anon_role: []const u8,
+    role_claim: []const u8,
+    pool: [*c]ngx_pool_t,
+};
+
 /// Execute a SQL query against PostgreSQL (blocking)
-/// Optional JWT token for setting request.jwt claim in PostgreSQL
-fn execute_pg_query_with_jwt(conninfo: []const u8, query: []const u8, jwt_token: ?[]const u8) PgQueryResult {
+/// Optional JWT token for setting request.jwt claim and role in PostgreSQL
+fn execute_pg_query_with_jwt(
+    conninfo: []const u8,
+    query: []const u8,
+    jwt_token: ?[]const u8,
+    jwt_config: ?JwtConfig,
+) PgQueryResult {
     // Need null-terminated strings for libpq
     var conn_buf: [512]u8 = undefined;
     var query_buf: [MAX_QUERY_SIZE + 1]u8 = undefined;
@@ -660,6 +680,30 @@ fn execute_pg_query_with_jwt(conninfo: []const u8, query: []const u8, jwt_token:
     // Set JWT claim in PostgreSQL if provided
     if (jwt_token) |token| {
         _ = set_postgresql_jwt_claim(conn, token);
+
+        // Handle role-based access if JWT config is provided
+        if (jwt_config) |cfg| {
+            if (cfg.secret.len > 0) {
+                // Validate JWT and extract role
+                if (validate_jwt_hs256(token, cfg.secret)) {
+                    // JWT is valid, extract role claim
+                    if (extract_jwt_role(cfg.pool, token, cfg.role_claim)) |role| {
+                        _ = set_postgresql_role(conn, role);
+                    } else if (cfg.anon_role.len > 0) {
+                        // No role claim in JWT, use anon_role
+                        _ = set_postgresql_role(conn, cfg.anon_role);
+                    }
+                } else if (cfg.anon_role.len > 0) {
+                    // Invalid JWT signature, use anon_role
+                    _ = set_postgresql_role(conn, cfg.anon_role);
+                }
+            }
+        }
+    } else if (jwt_config) |cfg| {
+        // No JWT provided, use anon_role if configured
+        if (cfg.anon_role.len > 0) {
+            _ = set_postgresql_role(conn, cfg.anon_role);
+        }
     }
 
     // Execute query
@@ -697,7 +741,7 @@ fn execute_pg_query_with_jwt(conninfo: []const u8, query: []const u8, jwt_token:
 
 /// Execute a SQL query against PostgreSQL (blocking)
 fn execute_pg_query(conninfo: []const u8, query: []const u8) PgQueryResult {
-    return execute_pg_query_with_jwt(conninfo, query, null);
+    return execute_pg_query_with_jwt(conninfo, query, null, null);
 }
 
 fn pgrest_create_srv_conf(cf: [*c]ngx_conf_t) callconv(.c) ?*anyopaque {
@@ -710,6 +754,8 @@ fn pgrest_create_srv_conf(cf: [*c]ngx_conf_t) callconv(.c) ?*anyopaque {
 fn pgrest_create_loc_conf(cf: [*c]ngx_conf_t) callconv(.c) ?*anyopaque {
     if (core.ngz_pcalloc_c(ngx_pgrest_loc_conf_t, cf.*.pool)) |loc| {
         loc.*.pooling = 0; // Disabled by default (blocking mode)
+        // Default role claim name is "role"
+        loc.*.jwt_role_claim = ngx_string("role");
         return loc;
     }
     return null;
@@ -784,6 +830,54 @@ fn ngx_conf_set_pgrest_pooling(
     if (core.castPtr(ngx_pgrest_loc_conf_t, data)) |loc| {
         loc.*.pooling = 1;
         return NGX_CONF_OK;
+    }
+    return NGX_CONF_ERROR;
+}
+
+fn ngx_conf_set_pgrest_jwt_secret(
+    cf: [*c]ngx_conf_t,
+    cmd: [*c]ngx_command_t,
+    data: ?*anyopaque,
+) callconv(.c) [*c]u8 {
+    _ = cmd;
+    if (core.castPtr(ngx_pgrest_loc_conf_t, data)) |loc| {
+        var i: ngx_uint_t = 1;
+        if (ngx.array.ngx_array_next(ngx_str_t, cf.*.args, &i)) |arg| {
+            loc.*.jwt_secret = arg.*;
+            return NGX_CONF_OK;
+        }
+    }
+    return NGX_CONF_ERROR;
+}
+
+fn ngx_conf_set_pgrest_anon_role(
+    cf: [*c]ngx_conf_t,
+    cmd: [*c]ngx_command_t,
+    data: ?*anyopaque,
+) callconv(.c) [*c]u8 {
+    _ = cmd;
+    if (core.castPtr(ngx_pgrest_loc_conf_t, data)) |loc| {
+        var i: ngx_uint_t = 1;
+        if (ngx.array.ngx_array_next(ngx_str_t, cf.*.args, &i)) |arg| {
+            loc.*.anon_role = arg.*;
+            return NGX_CONF_OK;
+        }
+    }
+    return NGX_CONF_ERROR;
+}
+
+fn ngx_conf_set_pgrest_jwt_role_claim(
+    cf: [*c]ngx_conf_t,
+    cmd: [*c]ngx_command_t,
+    data: ?*anyopaque,
+) callconv(.c) [*c]u8 {
+    _ = cmd;
+    if (core.castPtr(ngx_pgrest_loc_conf_t, data)) |loc| {
+        var i: ngx_uint_t = 1;
+        if (ngx.array.ngx_array_next(ngx_str_t, cf.*.args, &i)) |arg| {
+            loc.*.jwt_role_claim = arg.*;
+            return NGX_CONF_OK;
+        }
     }
     return NGX_CONF_ERROR;
 }
@@ -1550,19 +1644,159 @@ fn set_postgresql_jwt_claim(conn: ?*PGconn, jwt_token: []const u8) bool {
     return status == PGRES_COMMAND_OK;
 }
 
+// ============================================================================
+// JWT Role Support
+// ============================================================================
+
+/// Base64url decode (JWT uses URL-safe base64 without padding)
+fn base64url_decode(input: []const u8, output: []u8) ?usize {
+    const b64_chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+    var out_idx: usize = 0;
+    var bits: u32 = 0;
+    var bit_count: u32 = 0;
+
+    for (input) |c| {
+        const val: u32 = for (b64_chars, 0..) |bc, i| {
+            if (bc == c) break @intCast(i);
+        } else return null;
+
+        bits = (bits << 6) | val;
+        bit_count += 6;
+
+        if (bit_count >= 8) {
+            bit_count -= 8;
+            if (out_idx >= output.len) return null;
+            output[out_idx] = @truncate(bits >> @intCast(bit_count));
+            out_idx += 1;
+        }
+    }
+
+    return out_idx;
+}
+
+/// Compute HMAC-SHA256 for JWT signature verification
+fn hmac_sha256(key: []const u8, data: []const u8, output: *[32]u8) bool {
+    const ctx = ssl.HMAC_CTX_new() orelse return false;
+    defer ssl.HMAC_CTX_free(ctx);
+
+    if (ssl.HMAC_Init_ex(ctx, key.ptr, @intCast(key.len), ssl.EVP_sha256(), null) != 1) {
+        return false;
+    }
+
+    if (ssl.HMAC_Update(ctx, data.ptr, data.len) != 1) {
+        return false;
+    }
+
+    var len: c_uint = 32;
+    if (ssl.HMAC_Final(ctx, output, &len) != 1) {
+        return false;
+    }
+
+    return len == 32;
+}
+
+/// Validate JWT signature (HS256)
+fn validate_jwt_hs256(token: []const u8, secret: []const u8) bool {
+    // Find the two dots separating header.payload.signature
+    const first_dot = std.mem.indexOfScalar(u8, token, '.') orelse return false;
+    const rest = token[first_dot + 1 ..];
+    const second_dot = std.mem.indexOfScalar(u8, rest, '.') orelse return false;
+
+    const header_payload = token[0 .. first_dot + 1 + second_dot];
+    const signature_b64 = rest[second_dot + 1 ..];
+
+    // Decode signature
+    var signature: [256]u8 = undefined;
+    const sig_len = base64url_decode(signature_b64, &signature) orelse return false;
+
+    if (sig_len != 32) return false; // HS256 produces 32 bytes
+
+    // Compute expected signature
+    var expected: [32]u8 = undefined;
+    if (!hmac_sha256(secret, header_payload, &expected)) {
+        return false;
+    }
+
+    // Constant-time comparison
+    var diff: u8 = 0;
+    for (0..32) |i| {
+        diff |= signature[i] ^ expected[i];
+    }
+
+    return diff == 0;
+}
+
+/// Extract role claim from JWT payload
+/// Returns the role string or null if not found/invalid
+fn extract_jwt_role(pool: [*c]ngx_pool_t, jwt_token: []const u8, role_claim: []const u8) ?[]const u8 {
+    // Find the two dots
+    const first_dot = std.mem.indexOfScalar(u8, jwt_token, '.') orelse return null;
+    const rest = jwt_token[first_dot + 1 ..];
+    const second_dot = std.mem.indexOfScalar(u8, rest, '.') orelse return null;
+
+    const payload_b64 = rest[0..second_dot];
+
+    // Decode payload
+    var payload_buf: [4096]u8 = undefined;
+    const payload_len = base64url_decode(payload_b64, &payload_buf) orelse return null;
+    const payload = payload_buf[0..payload_len];
+
+    // Parse JSON
+    var cj = CJSON.init(pool);
+    const json = cj.decode(ngx_str_t{ .data = @constCast(payload.ptr), .len = payload.len }) catch return null;
+    defer cj.free(json);
+
+    // Build JSONPath query for the role claim
+    var query_buf: [128]u8 = undefined;
+    const query = std.fmt.bufPrint(&query_buf, "$.{s}", .{role_claim}) catch return null;
+
+    // Extract role claim
+    const role_node = CJSON.query(json, query) orelse return null;
+    const role_str = CJSON.stringValue(role_node) orelse return null;
+
+    return core.slicify(u8, role_str.data, role_str.len);
+}
+
 /// Set PostgreSQL session role from JWT 'role' claim
 /// This allows PostgreSQL to enforce row-level security based on JWT role
 /// Executes: SET ROLE '<role>'
-fn set_postgresql_role_from_jwt(conn: ?*PGconn, jwt_token: []const u8) bool {
-    if (conn == null or jwt_token.len == 0) return true; // Skip if no JWT
+fn set_postgresql_role(conn: ?*PGconn, role: []const u8) bool {
+    if (conn == null or role.len == 0) return true;
 
-    // For now, we would need to decode the JWT to extract the 'role' claim
-    // This is a simplified version - in production you'd parse the JWT payload
-    // For demonstration, we just set a default role claim if JWT exists
-    // The actual role would come from decoding the JWT payload (middle part between dots)
+    // Build SQL: SET ROLE '<role>'
+    var query_buf: [512]u8 = undefined;
+    var pos: usize = 0;
 
-    // This is a placeholder - full implementation would decode JWT
-    return true;
+    const set_prefix = "SET ROLE '";
+    @memcpy(query_buf[pos..][0..set_prefix.len], set_prefix);
+    pos += set_prefix.len;
+
+    // Copy role, escaping single quotes
+    for (role) |c| {
+        if (pos >= query_buf.len - 10) break;
+        if (c == '\'') {
+            query_buf[pos] = '\'';
+            pos += 1;
+            query_buf[pos] = '\'';
+            pos += 1;
+        } else {
+            query_buf[pos] = c;
+            pos += 1;
+        }
+    }
+
+    query_buf[pos] = '\'';
+    pos += 1;
+    query_buf[pos] = 0;
+
+    // Execute the SET ROLE command
+    const result = pgExec(conn, &query_buf);
+    if (result == null) return false;
+
+    const status = pgResultStatus(result);
+    pgClear(result);
+
+    return status == PGRES_COMMAND_OK;
 }
 
 /// ============================================================================
@@ -2241,7 +2475,7 @@ fn extract_table_name(uri: ngx_str_t) ?[]const u8 {
 }
 
 /// Handle RPC (stored procedure) call in blocking mode
-fn handle_rpc_call(r: [*c]ngx_http_request_t, conninfo: []const u8) ngx_int_t {
+fn handle_rpc_call(r: [*c]ngx_http_request_t, conninfo: []const u8, loc_conf: *ngx_pgrest_loc_conf_t) ngx_int_t {
     // Extract function name from URI
     const function_name = extract_rpc_function_name(r.*.uri) orelse {
         r.*.headers_out.status = http.NGX_HTTP_BAD_REQUEST;
@@ -2282,8 +2516,16 @@ fn handle_rpc_call(r: [*c]ngx_http_request_t, conninfo: []const u8) ngx_int_t {
     // Extract JWT token for PostgreSQL
     const jwt_token = extract_jwt_token(r);
 
+    // Build JWT config if secret is configured
+    const jwt_config: ?JwtConfig = if (loc_conf.*.jwt_secret.len > 0) JwtConfig{
+        .secret = core.slicify(u8, loc_conf.*.jwt_secret.data, loc_conf.*.jwt_secret.len),
+        .anon_role = core.slicify(u8, loc_conf.*.anon_role.data, loc_conf.*.anon_role.len),
+        .role_claim = core.slicify(u8, loc_conf.*.jwt_role_claim.data, loc_conf.*.jwt_role_claim.len),
+        .pool = r.*.pool,
+    } else null;
+
     // Execute RPC against PostgreSQL (with JWT if provided)
-    const pg_result = execute_pg_query_with_jwt(conninfo, query, jwt_token);
+    const pg_result = execute_pg_query_with_jwt(conninfo, query, jwt_token, jwt_config);
     defer if (pg_result.result != null) pgClear(pg_result.result);
 
     // Build JSON response based on query result
@@ -2444,7 +2686,7 @@ fn ngx_http_pgrest_handler(r: [*c]ngx_http_request_t) callconv(.c) ngx_int_t {
 
     // Check if this is an RPC (stored procedure) call
     if (is_rpc_endpoint(r.*.uri)) {
-        return handle_rpc_call(r, conninfo);
+        return handle_rpc_call(r, conninfo, loc_conf);
     }
 
     // Extract table name from URI
@@ -2528,8 +2770,16 @@ fn ngx_http_pgrest_handler(r: [*c]ngx_http_request_t) callconv(.c) ngx_int_t {
     // Extract JWT token for PostgreSQL
     const jwt_token = extract_jwt_token(r);
 
+    // Build JWT config if secret is configured
+    const jwt_config: ?JwtConfig = if (loc_conf.*.jwt_secret.len > 0) JwtConfig{
+        .secret = core.slicify(u8, loc_conf.*.jwt_secret.data, loc_conf.*.jwt_secret.len),
+        .anon_role = core.slicify(u8, loc_conf.*.anon_role.data, loc_conf.*.anon_role.len),
+        .role_claim = core.slicify(u8, loc_conf.*.jwt_role_claim.data, loc_conf.*.jwt_role_claim.len),
+        .pool = r.*.pool,
+    } else null;
+
     // Execute query against PostgreSQL (with JWT if provided)
-    const pg_result = execute_pg_query_with_jwt(conninfo, query, jwt_token);
+    const pg_result = execute_pg_query_with_jwt(conninfo, query, jwt_token, jwt_config);
     defer if (pg_result.result != null) pgClear(pg_result.result);
 
     // Build JSON response based on query result
@@ -3365,6 +3615,30 @@ export const ngx_http_pgrest_commands = [_]ngx_command_t{
         .name = ngx_string("pgrest_pass"),
         .type = conf.NGX_HTTP_LOC_CONF | conf.NGX_CONF_TAKE1,
         .set = ngx_conf_set_pgrest_pass,
+        .conf = conf.NGX_HTTP_LOC_CONF_OFFSET,
+        .offset = 0,
+        .post = null,
+    },
+    ngx_command_t{
+        .name = ngx_string("pgrest_jwt_secret"),
+        .type = conf.NGX_HTTP_LOC_CONF | conf.NGX_CONF_TAKE1,
+        .set = ngx_conf_set_pgrest_jwt_secret,
+        .conf = conf.NGX_HTTP_LOC_CONF_OFFSET,
+        .offset = 0,
+        .post = null,
+    },
+    ngx_command_t{
+        .name = ngx_string("pgrest_anon_role"),
+        .type = conf.NGX_HTTP_LOC_CONF | conf.NGX_CONF_TAKE1,
+        .set = ngx_conf_set_pgrest_anon_role,
+        .conf = conf.NGX_HTTP_LOC_CONF_OFFSET,
+        .offset = 0,
+        .post = null,
+    },
+    ngx_command_t{
+        .name = ngx_string("pgrest_jwt_role_claim"),
+        .type = conf.NGX_HTTP_LOC_CONF | conf.NGX_CONF_TAKE1,
+        .set = ngx_conf_set_pgrest_jwt_role_claim,
         .conf = conf.NGX_HTTP_LOC_CONF_OFFSET,
         .offset = 0,
         .post = null,

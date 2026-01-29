@@ -70,7 +70,7 @@ All modules have integration tests. Each module has its own README with detailed
 | **prometheus** | Native /metrics endpoint | Per-worker counters; no histograms |
 | **healthcheck** | Health status endpoint | Passive only (no active probing) |
 | **cache-tags** | Tag-based cache invalidation | Per-worker storage; lost on restart |
-| **pgrest** | PostgreSQL REST API | Accept header ignored (JSON only); JWT role stub |
+| **pgrest** | PostgreSQL REST API with JWT role-based access | Accept header ignored (JSON only) |
 | **wechatpay** | WeChat Pay signature verification | Some error paths have TODOs |
 
 ### Reference

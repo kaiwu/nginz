@@ -1,4 +1,4 @@
-import { describe, test, expect, beforeAll, afterAll } from "bun:test";
+import { describe, test, expect, beforeAll, afterAll, beforeEach } from "bun:test";
 import {
   startNginz,
   stopNginz,
@@ -255,5 +255,109 @@ describe("pgrest module", () => {
     expect(res.status).toBe(200);
     const body = await res.text();
     expect(body.trim()).toBe("OK");
+  });
+
+  // ============================================================================
+  // JWT Role-Based Access Control Tests
+  // ============================================================================
+
+  describe("JWT role-based access", () => {
+    // Helper to create a HS256 JWT
+    function createJwt(payload, secret) {
+      const header = { alg: "HS256", typ: "JWT" };
+      const b64Header = Buffer.from(JSON.stringify(header)).toString("base64url");
+      const b64Payload = Buffer.from(JSON.stringify(payload)).toString("base64url");
+      const data = `${b64Header}.${b64Payload}`;
+
+      // Create HMAC-SHA256 signature
+      const crypto = require("crypto");
+      const signature = crypto
+        .createHmac("sha256", secret)
+        .update(data)
+        .digest("base64url");
+
+      return `${data}.${signature}`;
+    }
+
+    const JWT_SECRET = "test-secret-key-for-hs256-jwt";
+
+    beforeEach(() => {
+      // Clear tracking between tests
+      pgMock.clearTracking();
+
+      // Handler for jwt-api/users endpoint
+      pgMock.setQueryHandler(/^SELECT \* FROM users$/, (query) => ({
+        columns: ["id", "name", "role"],
+        rows: [["1", "Test User", "authenticated"]],
+      }));
+    });
+
+    test("valid JWT with role claim sets PostgreSQL role", async () => {
+      const jwt = createJwt(
+        { sub: "user123", role: "authenticated_user", exp: Math.floor(Date.now() / 1000) + 3600 },
+        JWT_SECRET
+      );
+
+      const res = await fetch(`${TEST_URL}/jwt-api/users`, {
+        headers: { Authorization: `Bearer ${jwt}` },
+      });
+      expect(res.status).toBe(200);
+
+      // Check that SET ROLE was called with the role from JWT
+      expect(pgMock.getLastSetRole()).toBe("authenticated_user");
+    });
+
+    test("valid JWT without role claim uses anon_role", async () => {
+      const jwt = createJwt(
+        { sub: "user123", exp: Math.floor(Date.now() / 1000) + 3600 },
+        JWT_SECRET
+      );
+
+      const res = await fetch(`${TEST_URL}/jwt-api/users`, {
+        headers: { Authorization: `Bearer ${jwt}` },
+      });
+      expect(res.status).toBe(200);
+
+      // Should fall back to anon role since no role claim in JWT
+      expect(pgMock.getLastSetRole()).toBe("anon");
+    });
+
+    test("invalid JWT signature uses anon_role", async () => {
+      const jwt = createJwt(
+        { sub: "user123", role: "admin", exp: Math.floor(Date.now() / 1000) + 3600 },
+        "wrong-secret-key" // Different secret = invalid signature
+      );
+
+      const res = await fetch(`${TEST_URL}/jwt-api/users`, {
+        headers: { Authorization: `Bearer ${jwt}` },
+      });
+      expect(res.status).toBe(200);
+
+      // Should use anon role since JWT signature is invalid
+      expect(pgMock.getLastSetRole()).toBe("anon");
+    });
+
+    test("missing JWT uses anon_role", async () => {
+      const res = await fetch(`${TEST_URL}/jwt-api/users`);
+      expect(res.status).toBe(200);
+
+      // Should use anon role since no JWT provided
+      expect(pgMock.getLastSetRole()).toBe("anon");
+    });
+
+    test("JWT is passed to PostgreSQL via request.jwt claim", async () => {
+      const jwt = createJwt(
+        { sub: "user123", role: "authenticated_user", exp: Math.floor(Date.now() / 1000) + 3600 },
+        JWT_SECRET
+      );
+
+      const res = await fetch(`${TEST_URL}/jwt-api/users`, {
+        headers: { Authorization: `Bearer ${jwt}` },
+      });
+      expect(res.status).toBe(200);
+
+      // Check that the JWT was also set as request.jwt
+      expect(pgMock.getLastSetJwt()).toBe(jwt);
+    });
   });
 });

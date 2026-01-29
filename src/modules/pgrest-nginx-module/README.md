@@ -54,7 +54,7 @@ With `pgrest_pooling` enabled:
 - Up to 16 pooled connections (configurable)
 - Automatic connection state management
 
-## JWT Authentication (NEW!)
+## JWT Authentication
 
 pgrest supports JWT authentication that integrates directly with PostgreSQL. The JWT token is passed to PostgreSQL via the `request.jwt` claim, allowing your database functions to enforce authorization and access control.
 
@@ -66,9 +66,95 @@ pgrest supports JWT authentication that integrates directly with PostgreSQL. The
 4. PostgreSQL functions can access the JWT via `current_setting('request.jwt')`
 5. Your functions can validate and use JWT claims for authorization
 
-### Configuration
+### Basic Configuration
 
-No special configuration needed! Just send JWT tokens in the `Authorization` header using the standard Bearer scheme.
+No special configuration needed for basic JWT passthrough. Just send JWT tokens in the `Authorization` header using the standard Bearer scheme.
+
+### Role-Based Access Control (PostgREST-style)
+
+pgrest supports automatic PostgreSQL role switching based on JWT claims. This enables Row-Level Security (RLS) policies that work transparently with your API.
+
+#### Configuration
+
+```nginx
+location /api/ {
+    pgrest_pass "host=localhost dbname=mydb user=authenticator password=secret";
+
+    # JWT secret for HS256 signature validation
+    pgrest_jwt_secret "your-256-bit-secret-key-here";
+
+    # Default role when no valid JWT is provided
+    pgrest_anon_role "anon";
+
+    # JWT claim containing the role (default: "role")
+    pgrest_jwt_role_claim "role";
+}
+```
+
+#### How Role Switching Works
+
+1. Client sends request with JWT containing a `role` claim
+2. nginz validates the JWT signature using `pgrest_jwt_secret`
+3. If valid, nginz extracts the role from the JWT and executes `SET ROLE '<role>'`
+4. If invalid or missing, nginz uses `pgrest_anon_role`
+5. PostgreSQL RLS policies now apply based on the current role
+
+#### JWT Token Structure
+
+Your JWT should include a `role` claim:
+
+```json
+{
+  "sub": "user123",
+  "role": "authenticated_user",
+  "email": "user@example.com",
+  "exp": 1704067200
+}
+```
+
+#### PostgreSQL Setup
+
+```sql
+-- Create roles
+CREATE ROLE anon NOLOGIN;
+CREATE ROLE authenticated_user NOLOGIN;
+
+-- The authenticator role that pgrest connects as
+CREATE ROLE authenticator NOINHERIT LOGIN PASSWORD 'secret';
+GRANT anon TO authenticator;
+GRANT authenticated_user TO authenticator;
+
+-- Create table with RLS
+CREATE TABLE documents (
+  id serial PRIMARY KEY,
+  owner_id text NOT NULL,
+  title text,
+  content text
+);
+
+-- Enable RLS
+ALTER TABLE documents ENABLE ROW LEVEL SECURITY;
+
+-- Anonymous users can only read public documents
+CREATE POLICY anon_read ON documents FOR SELECT TO anon
+  USING (owner_id = 'public');
+
+-- Authenticated users can read their own documents
+CREATE POLICY user_read ON documents FOR SELECT TO authenticated_user
+  USING (owner_id = current_setting('request.jwt', true)::json->>'sub');
+
+-- Authenticated users can insert their own documents
+CREATE POLICY user_insert ON documents FOR INSERT TO authenticated_user
+  WITH CHECK (owner_id = current_setting('request.jwt', true)::json->>'sub');
+```
+
+#### Directives
+
+| Directive | Description |
+|-----------|-------------|
+| `pgrest_jwt_secret` | HS256 secret key for JWT signature validation |
+| `pgrest_anon_role` | PostgreSQL role to use when no valid JWT is provided |
+| `pgrest_jwt_role_claim` | JWT claim name containing the role (default: "role") |
 
 ### Usage Examples
 
