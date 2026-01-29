@@ -89,6 +89,8 @@ const oidc_loc_conf = extern struct {
 // Token exchange state
 const token_exchange_state = enum(ngx_uint_t) {
     PENDING,
+    READING_HEADERS,
+    READING_BODY,
     SUCCESS,
     FAILED,
 };
@@ -112,6 +114,12 @@ const oidc_request_ctx = extern struct {
     token_state: token_exchange_state,
     token_response: [*c]ngx_chain_t,
     http_status: http.ngx_http_status_t,
+
+    // Body reading state (for reading body in process_header)
+    content_length: isize,
+    body_received: usize,
+    body_buf: [*c]u8,
+    body_capacity: usize,
 
     pending_cookies: [MAX_PENDING_COOKIES]ngx_str_t,
     pending_cookie_count: ngx_uint_t,
@@ -895,6 +903,14 @@ fn oidc_upstream_process_status(r: [*c]ngx_http_request_t) callconv(.c) ngx_int_
     if (core.castPtr(u8, core.ngx_pnalloc(r.*.pool, len))) |data| {
         core.ngz_memcpy(data, rctx.*.http_status.start, len);
         u.*.headers_in.status_line.data = data;
+
+        // Initialize body reading state
+        rctx.*.token_state = .READING_HEADERS;
+        rctx.*.content_length = -1;
+        rctx.*.body_received = 0;
+        rctx.*.body_buf = core.nullptr(u8);
+        rctx.*.body_capacity = 0;
+
         u.*.process_header = oidc_upstream_process_header;
         return oidc_upstream_process_header(r);
     }
@@ -903,31 +919,172 @@ fn oidc_upstream_process_status(r: [*c]ngx_http_request_t) callconv(.c) ngx_int_
 }
 
 fn oidc_upstream_process_header(r: [*c]ngx_http_request_t) callconv(.c) ngx_int_t {
-    _ = core.castPtr(
-        http.ngx_http_upstream_main_conf_t,
-        conf.ngx_http_get_module_main_conf(r, &ngx_http_upstream_module),
+    const rctx = core.castPtr(
+        oidc_request_ctx,
+        r.*.ctx[ngx_http_oidc_module.ctx_index],
     ) orelse return NGX_ERROR;
 
     const u = r.*.upstream;
 
-    // Parse headers but don't pass them through to client - we'll generate our own response
-    while (true) {
-        const rc = http.ngx_http_parse_header_line(r, &u.*.buffer, 1);
-        switch (rc) {
-            NGX_OK => {
-                // Skip adding headers - we don't want to forward them
-                continue;
-            },
-            NGX_AGAIN => return rc,
-            http.NGX_HTTP_PARSE_HEADER_DONE => {
-                if (u.*.headers_in.flags.chunked) {
-                    u.*.headers_in.content_length_n = -1;
-                }
-                return NGX_OK;
-            },
-            else => return http.NGX_HTTP_UPSTREAM_INVALID_HEADER,
+    // Phase 1: Parse HTTP headers
+    if (rctx.*.token_state == .READING_HEADERS) {
+        while (true) {
+            const rc = http.ngx_http_parse_header_line(r, &u.*.buffer, 1);
+            switch (rc) {
+                NGX_OK => {
+                    // Check for Content-Length header
+                    const key_slice = core.slicify(u8, r.*.header_name_start, core.ngz_len(r.*.header_name_start, r.*.header_name_end));
+                    if (std.ascii.eqlIgnoreCase(key_slice, "content-length")) {
+                        const val_slice = core.slicify(u8, r.*.header_start, core.ngz_len(r.*.header_start, r.*.header_end));
+                        rctx.*.content_length = std.fmt.parseInt(isize, val_slice, 10) catch -1;
+                    }
+                    continue;
+                },
+                NGX_AGAIN => return rc,
+                http.NGX_HTTP_PARSE_HEADER_DONE => {
+                    // Headers done, start reading body
+                    rctx.*.token_state = .READING_BODY;
+
+                    // Allocate body buffer
+                    const body_size: usize = if (rctx.*.content_length > 0)
+                        @intCast(rctx.*.content_length)
+                    else
+                        4096; // Default buffer size
+
+                    rctx.*.body_buf = core.castPtr(u8, core.ngx_pnalloc(r.*.pool, body_size)) orelse return NGX_ERROR;
+                    rctx.*.body_capacity = body_size;
+                    rctx.*.body_received = 0;
+
+                    // Check if there's body data already in the buffer
+                    const remaining = core.ngz_len(u.*.buffer.pos, u.*.buffer.last);
+                    if (remaining > 0) {
+                        const to_copy = @min(remaining, rctx.*.body_capacity);
+                        @memcpy(rctx.*.body_buf[0..to_copy], core.slicify(u8, u.*.buffer.pos, to_copy));
+                        rctx.*.body_received = to_copy;
+                        u.*.buffer.pos += to_copy;
+                    }
+
+                    // Check if we have the complete body
+                    if (rctx.*.content_length >= 0 and rctx.*.body_received >= @as(usize, @intCast(rctx.*.content_length))) {
+                        return process_token_response_and_setup_redirect(r, rctx);
+                    }
+
+                    // Need more data
+                    return NGX_AGAIN;
+                },
+                else => return http.NGX_HTTP_UPSTREAM_INVALID_HEADER,
+            }
         }
     }
+
+    // Phase 2: Read body
+    if (rctx.*.token_state == .READING_BODY) {
+        // Read available data from buffer
+        const available = core.ngz_len(u.*.buffer.pos, u.*.buffer.last);
+        if (available > 0) {
+            const space_left = rctx.*.body_capacity - rctx.*.body_received;
+            const to_copy = @min(available, space_left);
+            if (to_copy > 0) {
+                @memcpy(rctx.*.body_buf[rctx.*.body_received..][0..to_copy], core.slicify(u8, u.*.buffer.pos, to_copy));
+                rctx.*.body_received += to_copy;
+                u.*.buffer.pos += to_copy;
+            }
+        }
+
+        // Check if we have the complete body
+        if (rctx.*.content_length >= 0 and rctx.*.body_received >= @as(usize, @intCast(rctx.*.content_length))) {
+            return process_token_response_and_setup_redirect(r, rctx);
+        }
+
+        // Need more data
+        return NGX_AGAIN;
+    }
+
+    return NGX_ERROR;
+}
+
+fn process_token_response_and_setup_redirect(r: [*c]ngx_http_request_t, rctx: [*c]oidc_request_ctx) ngx_int_t {
+    const body = ngx_str_t{
+        .data = rctx.*.body_buf,
+        .len = rctx.*.body_received,
+    };
+
+    if (body.len == 0) {
+        return setup_error_response(r, 502, "Empty token response");
+    }
+
+    // Parse JSON response
+    var cj = CJSON.init(r.*.pool);
+    const json = cj.decode(body) catch {
+        return setup_error_response(r, 502, "Invalid token response JSON");
+    };
+
+    // Check for error in response
+    if (CJSON.query(json, "$.error")) |_| {
+        return setup_error_response(r, 400, "IdP returned error");
+    }
+
+    // Extract id_token
+    const id_token_node = CJSON.query(json, "$.id_token") orelse {
+        return setup_error_response(r, 502, "No id_token in response");
+    };
+
+    const id_token = CJSON.stringValue(id_token_node) orelse {
+        return setup_error_response(r, 502, "Invalid id_token");
+    };
+
+    // Parse JWT and extract claims
+    const claims = parseIdToken(r.*.pool, core.slicify(u8, id_token.data, id_token.len)) orelse {
+        return setup_error_response(r, 400, "Failed to parse id_token");
+    };
+
+    // Create session with real claims
+    const session_created = createSessionFromClaims(r, rctx.*.lccf, rctx, claims);
+    if (!session_created) {
+        return setup_error_response(r, 500, "Failed to create session");
+    }
+
+    // Clear state cookie
+    _ = queueHttpCookie(r, rctx, "oidc_state", ngx_str_t{ .len = 0, .data = core.nullptr(u8) }, 0, false);
+
+    rctx.*.token_state = .SUCCESS;
+
+    // Setup 302 redirect response - this will be sent when nginx calls send_header
+    // Our header filter will add the session cookies
+    //
+    // IMPORTANT: We must set both status_n and status_line in u->headers_in
+    // because ngx_http_upstream_send_response copies both to r->headers_out
+    const u = r.*.upstream;
+    u.*.headers_in.status_n = NGX_HTTP_MOVED_TEMPORARILY;
+    u.*.headers_in.status_line = ngx_string("302 Moved Temporarily");
+    u.*.headers_in.content_length_n = 0;
+
+    r.*.headers_out.status = NGX_HTTP_MOVED_TEMPORARILY;
+    r.*.headers_out.content_length_n = 0;
+
+    // Add Location header to r->headers_out (this won't be overwritten)
+    var headers = NList(ngx_table_elt_t).init0(&r.*.headers_out.headers);
+    const h = headers.append() catch return NGX_ERROR;
+    h.*.hash = 1;
+    h.*.key = ngx_string("Location");
+    h.*.value = rctx.*.original_uri;
+    h.*.lowcase_key = @constCast("location");
+    r.*.headers_out.location = h;
+
+    // Return NGX_OK - nginx will now call send_header with our 302 response
+    // Our header filter will add the session cookies
+    return NGX_OK;
+}
+
+fn setup_error_response(r: [*c]ngx_http_request_t, status: ngx_uint_t, message: []const u8) ngx_int_t {
+    _ = message;
+    // Must also set upstream status because ngx_http_upstream_send_response
+    // overwrites r->headers_out.status from u->headers_in.status_n
+    r.*.headers_out.status = status;
+    r.*.upstream.*.headers_in.status_n = status;
+    r.*.upstream.*.headers_in.content_length_n = 0;
+    r.*.headers_out.content_length_n = 0;
+    return NGX_OK;
 }
 
 fn oidc_upstream_input_filter_init(ctx: ?*anyopaque) callconv(.c) ngx_int_t {
@@ -936,21 +1093,14 @@ fn oidc_upstream_input_filter_init(ctx: ?*anyopaque) callconv(.c) ngx_int_t {
 }
 
 fn oidc_upstream_input_filter(ctx: ?*anyopaque, bytes: isize) callconv(.c) ngx_int_t {
+    // We've already read the body in process_header, so just consume the data
     const r = core.castPtr(ngx_http_request_t, ctx) orelse return NGX_ERROR;
-    const rctx = core.castPtr(
-        oidc_request_ctx,
-        r.*.ctx[ngx_http_oidc_module.ctx_index],
-    ) orelse return NGX_ERROR;
-
     const u = r.*.upstream;
-    const len: usize = @intCast(bytes);
 
-    var chain = NChain.init(r.*.pool);
-    const last = buf.ngz_chain_last(rctx.*.token_response);
-    const cl = chain.alloc(len, last) catch return NGX_ERROR;
-    core.ngz_memcpy(cl.*.buf.*.last, u.*.buffer.last, len);
-    cl.*.buf.*.last += len;
-    u.*.buffer.last += len;
+    // Just advance the buffer position
+    if (bytes > 0) {
+        u.*.buffer.last += @intCast(bytes);
+    }
 
     if (u.*.length > 0) {
         u.*.length -= @min(u.*.length, bytes);
@@ -960,173 +1110,10 @@ fn oidc_upstream_input_filter(ctx: ?*anyopaque, bytes: isize) callconv(.c) ngx_i
 }
 
 fn oidc_upstream_finalize_request(r: [*c]ngx_http_request_t, rc: ngx_int_t) callconv(.c) void {
-    const rctx = core.castPtr(
-        oidc_request_ctx,
-        r.*.ctx[ngx_http_oidc_module.ctx_index],
-    ) orelse return;
-
-    rctx.*.token_state = .FAILED;
-
-    if (rc != NGX_OK) {
-        finalize_callback_with_error(r, rctx, 502, "Token exchange failed");
-        return;
-    }
-
-    // Parse token response body
-    const body = buf.ngz_chain_content(rctx.*.token_response, r.*.pool) catch {
-        finalize_callback_with_error(r, rctx, 502, "Failed to read token response");
-        return;
-    };
-
-    if (body.len == 0) {
-        finalize_callback_with_error(r, rctx, 502, "Empty token response");
-        return;
-    }
-
-    // Parse JSON response
-    var cj = CJSON.init(r.*.pool);
-    const json = cj.decode(body) catch {
-        finalize_callback_with_error(r, rctx, 502, "Invalid token response JSON");
-        return;
-    };
-
-    // Check for error in response
-    if (CJSON.query(json, "$.error")) |_| {
-        finalize_callback_with_error(r, rctx, 400, "IdP returned error");
-        return;
-    }
-
-    // Extract id_token
-    const id_token_node = CJSON.query(json, "$.id_token") orelse {
-        finalize_callback_with_error(r, rctx, 502, "No id_token in response");
-        return;
-    };
-
-    const id_token = CJSON.stringValue(id_token_node) orelse {
-        finalize_callback_with_error(r, rctx, 502, "Invalid id_token");
-        return;
-    };
-
-    // Parse JWT and extract claims
-    const claims = parseIdToken(r.*.pool, core.slicify(u8, id_token.data, id_token.len)) orelse {
-        finalize_callback_with_error(r, rctx, 400, "Failed to parse id_token");
-        return;
-    };
-
-    // Create session with real claims
-    const session_created = createSessionFromClaims(r, rctx.*.lccf, rctx, claims);
-    if (!session_created) {
-        finalize_callback_with_error(r, rctx, 500, "Failed to create session");
-        return;
-    }
-
-    // Clear state cookie
-    _ = queueHttpCookie(r, rctx, "oidc_state", ngx_str_t{ .len = 0, .data = core.nullptr(u8) }, 0, false);
-
-    rctx.*.token_state = .SUCCESS;
-
-    // Send redirect response with session cookie
-    finalize_callback_with_redirect(r, rctx, rctx.*.original_uri);
-}
-
-fn finalize_callback_with_error(r: [*c]ngx_http_request_t, rctx: [*c]oidc_request_ctx, status: ngx_uint_t, message: []const u8) void {
-    _ = rctx;
-
-    // Check if headers already sent
-    if (r.*.flags1.header_sent) {
-        // Can't send error, just close connection
-        http.ngx_http_finalize_request(r, NGX_ERROR);
-        return;
-    }
-
-    r.*.headers_out.status = status;
-    r.*.headers_out.content_type = ngx_string("text/plain");
-    r.*.headers_out.content_type_len = 10;
-    r.*.headers_out.content_length_n = @intCast(message.len);
-
-    const hrc = http.ngx_http_send_header(r);
-    if (hrc == NGX_ERROR or hrc > NGX_OK) {
-        http.ngx_http_finalize_request(r, hrc);
-        return;
-    }
-
-    // Create response body
-    const b = core.castPtr(ngx_buf_t, core.ngx_pcalloc(r.*.pool, @sizeOf(ngx_buf_t))) orelse {
-        http.ngx_http_finalize_request(r, NGX_ERROR);
-        return;
-    };
-
-    b.*.pos = @constCast(message.ptr);
-    b.*.last = @constCast(message.ptr) + message.len;
-    b.*.flags.memory = true;
-    b.*.flags.last_buf = true;
-    b.*.flags.last_in_chain = true;
-
-    var out: ngx_chain_t = undefined;
-    out.buf = b;
-    out.next = null;
-
-    const brc = http.ngx_http_output_filter(r, &out);
-    http.ngx_http_finalize_request(r, brc);
-}
-
-fn finalize_callback_with_redirect(r: [*c]ngx_http_request_t, rctx: [*c]oidc_request_ctx, location: ngx_str_t) void {
-    // Check if headers already sent
-    if (r.*.flags1.header_sent) {
-        // Can't send redirect, just close connection
-        http.ngx_http_finalize_request(r, NGX_ERROR);
-        return;
-    }
-
-    // Add Location header
-    var headers = NList(ngx_table_elt_t).init0(&r.*.headers_out.headers);
-    const h = headers.append() catch {
-        http.ngx_http_finalize_request(r, NGX_ERROR);
-        return;
-    };
-    h.*.hash = 1;
-    h.*.key = ngx_string("Location");
-    h.*.value = location;
-    h.*.lowcase_key = @constCast("location");
-    r.*.headers_out.location = h;
-
-    // Add Set-Cookie headers from pending cookies
-    if (rctx.*.pending_cookie_count > 0) {
-        var idx: usize = 0;
-        while (idx < rctx.*.pending_cookie_count) : (idx += 1) {
-            if (headers.append()) |cookie_h| {
-                cookie_h.*.hash = 1;
-                cookie_h.*.key = ngx_string("Set-Cookie");
-                cookie_h.*.value = rctx.*.pending_cookies[idx];
-                cookie_h.*.lowcase_key = @constCast("set-cookie");
-            } else |_| {}
-        }
-        rctx.*.pending_cookie_count = 0;
-    }
-
-    r.*.headers_out.status = NGX_HTTP_MOVED_TEMPORARILY;
-    r.*.headers_out.content_length_n = 0;
-
-    const hrc = http.ngx_http_send_header(r);
-    if (hrc == NGX_ERROR or hrc > NGX_OK) {
-        http.ngx_http_finalize_request(r, hrc);
-        return;
-    }
-
-    // Send empty body with last buf flag
-    const b = core.castPtr(ngx_buf_t, core.ngx_pcalloc(r.*.pool, @sizeOf(ngx_buf_t))) orelse {
-        http.ngx_http_finalize_request(r, NGX_ERROR);
-        return;
-    };
-    b.*.flags.last_buf = true;
-    b.*.flags.last_in_chain = true;
-
-    var out: ngx_chain_t = undefined;
-    out.buf = b;
-    out.next = null;
-
-    const brc = http.ngx_http_output_filter(r, &out);
-    http.ngx_http_finalize_request(r, brc);
+    _ = rc;
+    // Nothing to do here - we've already set up the response in process_header
+    // The header filter added cookies, nginx sent the 302 response
+    _ = r;
 }
 
 // ============================================================================

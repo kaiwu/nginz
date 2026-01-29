@@ -8,10 +8,11 @@ OpenID Connect Relying Party implementation for nginx SSO integration.
 
 - Authorization redirect with state, nonce, and PKCE
 - Callback handling with state validation
-- Token exchange via nginx upstream
+- Token exchange via nginx upstream with proper 302 redirect
 - ID token JWT parsing (claims extraction)
-- Encrypted session cookie creation
+- Encrypted session cookie creation (AES-256-GCM)
 - Session validation for protected resources
+- Claim passthrough via nginx variables ($oidc_claim_*)
 
 ### Implementation Plan
 
