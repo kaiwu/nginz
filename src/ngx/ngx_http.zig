@@ -279,7 +279,7 @@ test "http" {
     try expectEqual(@sizeOf(ngx_http_core_srv_conf_t), 176);
     try expectEqual(@sizeOf(ngx_http_addr_conf_t), 24);
     try expectEqual(@sizeOf(ngx_http_conf_addr_t), 176);
-    try expectEqual(@sizeOf(ngx_http_core_loc_conf_t), 744);
+    try expectEqual(@sizeOf(ngx_http_core_loc_conf_t), 736);
     try expectEqual(@sizeOf(ngx_http_headers_in_t), 384);
     try expectEqual(@sizeOf(ngx_http_request_body_t), 80);
     try expectEqual(@sizeOf(ngx_http_connection_t), 72);
@@ -303,8 +303,8 @@ test "http" {
     try expectEqual(@sizeOf(ngx_http_upstream_server_t), 136);
     try expectEqual(@sizeOf(ngx_http_upstream_conf_t), 584);
     try expectEqual(@sizeOf(ngx_http_upstream_headers_in_t), 312);
-    try expectEqual(@sizeOf(ngx_http_upstream_t), 1104);
-    try expectEqual(@sizeOf(ngx_http_upstream_rr_peer_t), 336);
+    try expectEqual(@sizeOf(ngx_http_upstream_t), 1096);
+    try expectEqual(@sizeOf(ngx_http_upstream_rr_peer_t), 320);
     try expectEqual(@sizeOf(ngx_http_upstream_rr_peers_t), 96);
 
     try expectEqual(@sizeOf(ngx_ssl_connection_t), 96);

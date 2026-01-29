@@ -3088,6 +3088,7 @@ pub const struct_ngx_log_s = extern struct {
     wdata: ?*anyopaque = @import("std").mem.zeroes(?*anyopaque),
     action: [*c]u8 = @import("std").mem.zeroes([*c]u8),
     next: [*c]ngx_log_t = @import("std").mem.zeroes([*c]ngx_log_t),
+    padding: [5]usize = @import("std").mem.zeroes([5]usize),
 };
 pub const ngx_log_t = struct_ngx_log_s;
 const struct_ngx_file_flags_s = packed struct {
@@ -17251,7 +17252,7 @@ pub const struct_ngx_peer_connection_s = extern struct {
     hint: [*c]ngx_str_t = @import("std").mem.zeroes([*c]ngx_str_t),
     sid: [*c]ngx_str_t = @import("std").mem.zeroes([*c]ngx_str_t),
     flags: struct_ngx_peer_connection_flags_s = @import("std").mem.zeroes(struct_ngx_peer_connection_flags_s),
-    spare: [2]u64 = @import("std").mem.zeroes([2]u64),
+    spare: [1]u64 = @import("std").mem.zeroes([1]u64),
 };
 pub const ngx_peer_connection_t = struct_ngx_peer_connection_s;
 pub const ngx_event_pipe_input_filter_pt = ?*const fn ([*c]ngx_event_pipe_t, [*c]ngx_buf_t) callconv(.c) ngx_int_t;
@@ -18305,7 +18306,7 @@ pub const struct_ngx_http_upstream_rr_peer_s = extern struct {
     host: [*c]ngx_http_upstream_host_t = @import("std").mem.zeroes([*c]ngx_http_upstream_host_t),
     sid: ngx_str_t = @import("std").mem.zeroes(ngx_str_t),
     next: [*c]ngx_http_upstream_rr_peer_t = @import("std").mem.zeroes([*c]ngx_http_upstream_rr_peer_t),
-    spare: [15]u64 = @import("std").mem.zeroes([15]u64),
+    spare: [13]u64 = @import("std").mem.zeroes([13]u64),
 };
 pub const ngx_http_upstream_rr_peer_t = struct_ngx_http_upstream_rr_peer_s;
 pub const ngx_http_upstream_rr_peers_t = struct_ngx_http_upstream_rr_peers_s;

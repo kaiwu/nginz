@@ -185,10 +185,10 @@ test "core" {
     try expectEqual(@sizeOf(ngx_uint_t), 8);
     try expectEqual(@sizeOf(ngx_msec_t), 8);
     try expectEqual(@sizeOf(ngx_pool_t), 80);
-    try expectEqual(@sizeOf(ngx_cycle_t), 648);
+    try expectEqual(@sizeOf(ngx_cycle_t), 688);
 
     try expectEqual(@sizeOf(ngx_output_chain_ctx_t), 128);
-    try expectEqual(@sizeOf(ngx_listening_t), 296);
+    try expectEqual(@sizeOf(ngx_listening_t), 336);
     try expectEqual(@sizeOf(ngx_connection_t), 248);
     try expectEqual(@sizeOf(ngx_ext_rename_file_t), 40);
     try expectEqual(@sizeOf(ngx_url_t), 224);
@@ -199,9 +199,9 @@ test "core" {
     try expectEqual(@sizeOf(ngx_resolver_ctx_t), 224);
     try expectEqual(@sizeOf(ngx_slab_pool_t), 200);
     try expectEqual(@sizeOf(ngx_variable_value_t), 16);
-    try expectEqual(@sizeOf(ngx_syslog_peer_t), 416);
+    try expectEqual(@sizeOf(ngx_syslog_peer_t), 456);
     try expectEqual(@sizeOf(ngx_event_t), 96);
-    try expectEqual(@sizeOf(ngx_peer_connection_t), 144);
+    try expectEqual(@sizeOf(ngx_peer_connection_t), 152);
     try expectEqual(@sizeOf(ngx_event_pipe_t), 304);
 }
 
