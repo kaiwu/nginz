@@ -199,7 +199,7 @@ test "core" {
     try expectEqual(@sizeOf(ngx_variable_value_t), 16);
     try expectEqual(@sizeOf(ngx_syslog_peer_t), 416);
     try expectEqual(@sizeOf(ngx_event_t), 96);
-    try expectEqual(@sizeOf(ngx_peer_connection_t), 144);
+    try expectEqual(@sizeOf(ngx_peer_connection_t), 152);
     try expectEqual(@sizeOf(ngx_event_pipe_t), 304);
 }
 

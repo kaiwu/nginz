@@ -33,7 +33,15 @@
       "Bash(zig zen:*)",
       "Bash(zig 2>&1 | grep -i \"std.io\" || echo \"---\"; python3 -c \"\n# Check Zig 0.15 API for stdout\nimport subprocess\nresult = subprocess.run\\(['zig', 'run', '-'], input=b'''\nconst std = @import\\(\\\\\"std\\\\\"\\);\npub fn main\\(\\) void {\n    const w = std.io.getStdOut\\(\\);\n    _ = w;\n}\n''', capture_output=True\\)\nprint\\(result.stderr.decode\\(\\)\\)\n\" 2>&1 | head -10)",
       "Bash(make -f project/nginz.makefile clean 2>&1 && zig build check-layout -Ddocker=true 2>&1)",
-      "Bash(make -f project/nginz.makefile clean 2>&1 && make -f project/nginz.makefile 2>&1 | tail -3)"
+      "Bash(make -f project/nginz.makefile clean 2>&1 && make -f project/nginz.makefile 2>&1 | tail -3)",
+      "Bash(git -C /home/kaiwu/Documents/gitea/nginz log --oneline -10)",
+      "Bash(git -C /home/kaiwu/Documents/gitea/nginz show b6ea6fb --stat | head -20)",
+      "Bash(git -C /home/kaiwu/Documents/gitea/nginz show b6ea6fb -- src/ngx/ngx.zig)",
+      "Bash(git -C /home/kaiwu/Documents/gitea/nginz show b65948b --stat | head -10)",
+      "Bash(git -C /home/kaiwu/Documents/gitea/nginz show b65948b -- src/ngx/ngx_http.zig 2>/dev/null | head -40)",
+      "Bash(git -C /home/kaiwu/Documents/gitea/nginz show b65948b -- src/ngx/ngx.zig | head -50)",
+      "Bash(gcc -o /tmp/check_sizes /tmp/check_sizes.c \\\\\n  -I submodules/nginx/src/core \\\\\n  -I submodules/nginx/src/event \\\\\n  -I submodules/nginx/src/event/quic \\\\\n  -I submodules/nginx/src/event/modules \\\\\n  -I submodules/nginx/src/http \\\\\n  -I submodules/nginx/src/http/modules \\\\\n  -I submodules/nginx/src/http/v2 \\\\\n  -I submodules/nginx/src/http/v3 \\\\\n  -I submodules/nginx/src/os/unix \\\\\n  -I submodules/nginx/objs \\\\\n  -include ngx_config.h \\\\\n  -DNGX_PREFIX=\\\\\"/tmp/\\\\\" \\\\\n  2>&1 && /tmp/check_sizes)",
+      "Bash(sed -i 's/offsetof\\(ngx_http_upstream_t, store\\)/0/' /tmp/check_sizes.c && gcc -o /tmp/check_sizes /tmp/check_sizes.c \\\\\n  -I submodules/nginx/src/core \\\\\n  -I submodules/nginx/src/event \\\\\n  -I submodules/nginx/src/event/quic \\\\\n  -I submodules/nginx/src/event/modules \\\\\n  -I submodules/nginx/src/http \\\\\n  -I submodules/nginx/src/http/modules \\\\\n  -I submodules/nginx/src/http/v2 \\\\\n  -I submodules/nginx/src/http/v3 \\\\\n  -I submodules/nginx/src/os/unix \\\\\n  -I submodules/nginx/objs \\\\\n  -include ngx_config.h \\\\\n  -DNGX_PREFIX=\\\\\"/tmp/\\\\\" \\\\\n  2>&1 && /tmp/check_sizes)"
     ]
   }
 }
