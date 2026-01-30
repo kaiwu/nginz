@@ -212,19 +212,6 @@ fn merge_loc_conf(
     return conf.NGX_CONF_OK;
 }
 
-fn ngx_conf_set_ratelimit(
-    cf: [*c]ngx_conf_t,
-    cmd: [*c]ngx_command_t,
-    loc: ?*anyopaque,
-) callconv(.c) [*c]u8 {
-    _ = cf;
-    _ = cmd;
-    if (core.castPtr(ratelimit_loc_conf, loc)) |lccf| {
-        lccf.*.enabled = 1;
-    }
-    return conf.NGX_CONF_OK;
-}
-
 fn ngx_conf_set_ratelimit_rate(
     cf: [*c]ngx_conf_t,
     cmd: [*c]ngx_command_t,
@@ -232,6 +219,7 @@ fn ngx_conf_set_ratelimit_rate(
 ) callconv(.c) [*c]u8 {
     _ = cmd;
     if (core.castPtr(ratelimit_loc_conf, loc)) |lccf| {
+        lccf.*.enabled = 1;
         var i: ngx_uint_t = 1;
         if (ngx.array.ngx_array_next(ngx_str_t, cf.*.args, &i)) |arg| {
             const slice = core.slicify(u8, arg.*.data, arg.*.len);
@@ -291,14 +279,6 @@ export const ngx_http_ratelimit_module_ctx = ngx_http_module_t{
 };
 
 export const ngx_http_ratelimit_commands = [_]ngx_command_t{
-    ngx_command_t{
-        .name = ngx_string("ratelimit"),
-        .type = conf.NGX_HTTP_LOC_CONF | conf.NGX_CONF_NOARGS,
-        .set = ngx_conf_set_ratelimit,
-        .conf = conf.NGX_HTTP_LOC_CONF_OFFSET,
-        .offset = 0,
-        .post = null,
-    },
     ngx_command_t{
         .name = ngx_string("ratelimit_rate"),
         .type = conf.NGX_HTTP_LOC_CONF | conf.NGX_CONF_TAKE1,

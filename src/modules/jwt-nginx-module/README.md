@@ -15,19 +15,12 @@ JWT (JSON Web Token) validation for nginx access control.
 
 ### Directives
 
-#### jwt
-
-*syntax:* `jwt;`
-*context:* `location`
-
-Enable JWT validation for this location. Requests without a valid token receive 401 Unauthorized.
-
 #### jwt_secret
 
 *syntax:* `jwt_secret <secret>;`
 *context:* `location`
 
-Set the HMAC secret key for HS256 signature validation. Can be inherited from parent locations.
+Enable JWT validation and set the HMAC secret key for HS256 signature validation. Both `enabled` and `secret` are inherited from parent locations. Requests without a valid token receive 401 Unauthorized.
 
 ### Usage
 
@@ -38,34 +31,33 @@ http {
 
         # Protected API
         location /api {
-            jwt;
             jwt_secret "your-secret-key-here";
-            
             proxy_pass http://backend;
         }
 
-        # Nested locations inherit secret
+        # All nested locations inherit enabled flag and secret
         location /admin {
             jwt_secret "admin-secret-key";
-            
+
+            # All children are protected
             location /admin/users {
-                jwt;
                 proxy_pass http://backend;
             }
-            
-            location /admin/public {
-                # No jwt; directive - public access
+
+            location /admin/settings {
                 proxy_pass http://backend;
             }
         }
 
-        # Public endpoints
+        # Public endpoints must be defined separately (not nested under protected locations)
         location /public {
             proxy_pass http://backend;
         }
     }
 }
 ```
+
+**Note**: Since `jwt_secret` enables JWT validation, all nested locations inherit this setting. To have public endpoints, define them outside protected location blocks.
 
 ### Token Format
 

@@ -300,19 +300,6 @@ fn postconfiguration(cf: [*c]ngx_conf_t) callconv(.c) ngx_int_t {
     return NGX_OK;
 }
 
-fn ngx_conf_set_requestid(
-    cf: [*c]ngx_conf_t,
-    cmd: [*c]ngx_command_t,
-    loc: ?*anyopaque,
-) callconv(.c) [*c]u8 {
-    _ = cf;
-    _ = cmd;
-    if (core.castPtr(requestid_loc_conf, loc)) |lccf| {
-        lccf.*.enabled = 1;
-    }
-    return conf.NGX_CONF_OK;
-}
-
 fn ngx_conf_set_requestid_header(
     cf: [*c]ngx_conf_t,
     cmd: [*c]ngx_command_t,
@@ -320,6 +307,7 @@ fn ngx_conf_set_requestid_header(
 ) callconv(.c) [*c]u8 {
     _ = cmd;
     if (core.castPtr(requestid_loc_conf, loc)) |lccf| {
+        lccf.*.enabled = 1;
         // Get the argument (header name)
         var i: ngx_uint_t = 1;
         if (ngx.array.ngx_array_next(ngx_str_t, cf.*.args, &i)) |arg| {
@@ -336,6 +324,7 @@ fn ngx_conf_set_requestid_response(
 ) callconv(.c) [*c]u8 {
     _ = cmd;
     if (core.castPtr(requestid_loc_conf, loc)) |lccf| {
+        lccf.*.enabled = 1;
         // Get the argument (on/off)
         var i: ngx_uint_t = 1;
         if (ngx.array.ngx_array_next(ngx_str_t, cf.*.args, &i)) |arg| {
@@ -362,14 +351,6 @@ export const ngx_http_requestid_filter_module_ctx = ngx_http_module_t{
 };
 
 export const ngx_http_requestid_commands = [_]ngx_command_t{
-    ngx_command_t{
-        .name = ngx_string("request_id"),
-        .type = conf.NGX_HTTP_LOC_CONF | conf.NGX_CONF_NOARGS,
-        .set = ngx_conf_set_requestid,
-        .conf = conf.NGX_HTTP_LOC_CONF_OFFSET,
-        .offset = 0,
-        .post = null,
-    },
     ngx_command_t{
         .name = ngx_string("request_id_header"),
         .type = conf.NGX_HTTP_LOC_CONF | conf.NGX_CONF_TAKE1,

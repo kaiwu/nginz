@@ -4,20 +4,12 @@ Simple per-IP rate limiting with fixed window algorithm.
 
 ### Directives
 
-#### ratelimit
-
-*syntax:* `ratelimit;`
-*context:* `location`
-
-Enable rate limiting for this location.
-
 #### ratelimit_rate
 
 *syntax:* `ratelimit_rate <N>r/s;` or `ratelimit_rate <N>;`
-*default:* `10r/s`
 *context:* `location`
 
-Set the rate limit in requests per second.
+Enable rate limiting and set the rate limit in requests per second.
 
 #### ratelimit_burst
 
@@ -34,15 +26,14 @@ http {
     server {
         listen 8888;
 
-        # Basic rate limiting: 10 requests/second (default)
+        # Basic rate limiting: 10 requests/second
         location /api {
-            ratelimit;
+            ratelimit_rate 10r/s;
             proxy_pass http://backend;
         }
 
         # Custom rate with burst
         location /api/heavy {
-            ratelimit;
             ratelimit_rate 5r/s;
             ratelimit_burst 10;
             proxy_pass http://backend;
@@ -50,7 +41,6 @@ http {
 
         # Strict rate limiting
         location /login {
-            ratelimit;
             ratelimit_rate 3r/s;
             proxy_pass http://auth;
         }

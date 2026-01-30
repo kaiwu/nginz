@@ -15,29 +15,20 @@ Traffic splitting for canary deployments and A/B testing.
 
 ### Directives
 
-#### canary
-
-*syntax:* `canary;`
-*default:* disabled
-*context:* `location`
-
-Enable canary routing for this location.
-
 #### canary_percentage
 
 *syntax:* `canary_percentage <0-100>;`
 *default:* `0`
 *context:* `location`
 
-Percentage of traffic to route to canary. Uses cryptographically secure random number generation.
+Enable canary routing and set percentage of traffic to route to canary. Uses cryptographically secure random number generation.
 
 #### canary_header
 
 *syntax:* `canary_header <name> <value>;`
-*default:* none
 *context:* `location`
 
-Route to canary when request header matches value (case-insensitive). This takes priority over percentage-based routing.
+Enable canary routing and route to canary when request header matches value (case-insensitive). This takes priority over percentage-based routing.
 
 ### Variables
 
@@ -70,21 +61,18 @@ http {
     server {
         # Percentage-based canary (10% to canary)
         location /api {
-            canary;
             canary_percentage 10;
             proxy_pass http://$backend;
         }
 
         # Header-based routing (for testers/developers)
         location /api/v2 {
-            canary;
             canary_header X-Canary true;
             proxy_pass http://$backend;
         }
 
         # Combined: header override + percentage fallback
         location /app {
-            canary;
             canary_percentage 5;
             canary_header X-Beta-Tester yes;
             proxy_pass http://$backend;
@@ -95,7 +83,7 @@ http {
 
 ### How It Works
 
-1. **Request arrives** at a location with `canary` enabled
+1. **Request arrives** at a location with canary configured
 2. **Header check** (if configured): If the specified header matches, route to canary
 3. **Percentage check** (if configured): Generate random number, route to canary if below threshold
 4. **Variable set**: `$ngz_canary` is set to "1" (canary) or "0" (stable)
@@ -105,21 +93,18 @@ http {
 
 **Gradual Rollout**
 ```nginx
-canary;
 canary_percentage 5;   # Start with 5%
 # Later increase to 10%, 25%, 50%, 100%
 ```
 
 **Developer Testing**
 ```nginx
-canary;
 canary_header X-Canary true;
 # Developers add header to test new version
 ```
 
 **A/B Testing**
 ```nginx
-canary;
 canary_percentage 50;  # 50/50 split
 # Track metrics per version
 ```

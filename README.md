@@ -107,7 +107,7 @@ make install
 | **requestid** | UUID4 generation and X-Request-ID propagation |
 | **ratelimit** | Fixed window rate limiting per IP |
 | **pgrest** | PostgreSQL REST API with JWT auth, content negotiation (JSON/CSV/XML) |
-| **wechatpay** | WeChat Pay signature verification | Some error paths incomplete |
+| **wechatpay** | WeChat Pay signature verification |
 
 ### Working with Limitations (6)
 

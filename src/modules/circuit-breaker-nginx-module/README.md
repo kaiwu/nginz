@@ -16,25 +16,18 @@ Circuit breaker pattern implementation for nginx to protect backends from cascad
 
 ### Directives
 
-#### circuit_breaker
-
-*syntax:* `circuit_breaker;`
-*context:* `location`
-
-Enable circuit breaker for the location.
-
 #### circuit_breaker_threshold
 
 *syntax:* `circuit_breaker_threshold <failures>;`
-*default:* `circuit_breaker_threshold 5;`
+*default:* `5`
 *context:* `location`
 
-Number of failures before opening the circuit.
+Enable circuit breaker and set the number of failures before opening the circuit.
 
 #### circuit_breaker_timeout
 
 *syntax:* `circuit_breaker_timeout <time>;`
-*default:* `circuit_breaker_timeout 30s;`
+*default:* `30s`
 *context:* `location`
 
 Time before transitioning from open to half-open state. Accepts seconds with 's' suffix or raw milliseconds.
@@ -42,7 +35,7 @@ Time before transitioning from open to half-open state. Accepts seconds with 's'
 #### circuit_breaker_success_threshold
 
 *syntax:* `circuit_breaker_success_threshold <successes>;`
-*default:* `circuit_breaker_success_threshold 2;`
+*default:* `2`
 *context:* `location`
 
 Number of successes in half-open state before closing the circuit.
@@ -59,7 +52,6 @@ server {
     listen 8080;
 
     location /api {
-        circuit_breaker;
         circuit_breaker_threshold 5;
         circuit_breaker_timeout 30s;
         circuit_breaker_success_threshold 2;
@@ -69,7 +61,7 @@ server {
 
     # Expose circuit state for monitoring
     location /circuit-status {
-        circuit_breaker;
+        circuit_breaker_threshold 5;
         add_header X-Circuit-State $ngz_circuit_state;
         return 200 "state: $ngz_circuit_state\n";
     }

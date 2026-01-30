@@ -16,24 +16,16 @@ Generate and propagate unique request IDs for distributed tracing.
 
 ### Directives
 
-#### request_id
-
-*syntax:* `request_id;`
-*default:* disabled
-*context:* `location`
-
-Enable request ID generation/propagation for this location. When enabled, the module will:
-1. Check for an incoming request ID header
-2. If found, propagate it to the response
-3. If not found, generate a new UUID4
-
 #### request_id_header
 
 *syntax:* `request_id_header <name>;`
 *default:* `X-Request-ID`
 *context:* `location`
 
-Header name to use for request ID (both incoming and outgoing).
+Enable request ID generation/propagation and set the header name to use (both incoming and outgoing). When enabled, the module will:
+1. Check for an incoming request ID header
+2. If found, propagate it to the response
+3. If not found, generate a new UUID4
 
 #### request_id_response
 
@@ -41,7 +33,7 @@ Header name to use for request ID (both incoming and outgoing).
 *default:* `on`
 *context:* `location`
 
-Whether to add the request ID to response headers.
+Enable request ID generation/propagation and control whether to add the request ID to response headers.
 
 ### Variables
 
@@ -65,34 +57,32 @@ http {
 
         # Basic usage - generates UUID4 and adds X-Request-ID to response
         location /api {
-            request_id;
+            request_id_response on;
             proxy_pass http://backend;
         }
 
         # Forward request ID to upstream
         location /backend {
-            request_id;
+            request_id_response on;
             proxy_set_header X-Request-ID $ngz_request_id;
             proxy_pass http://backend;
         }
 
         # Custom header name
         location /traced {
-            request_id;
             request_id_header X-Correlation-ID;
             proxy_pass http://backend;
         }
 
         # Disable response header (internal tracking only)
         location /internal {
-            request_id;
             request_id_response off;
             proxy_pass http://backend;
         }
 
         # Return request ID in response body
         location /debug {
-            request_id;
+            request_id_response on;
             return 200 "Your request ID: $ngz_request_id\n";
         }
     }
