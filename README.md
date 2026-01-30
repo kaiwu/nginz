@@ -42,9 +42,9 @@ By all means, deploy the module objects with your own binary building toolchains
 
 ## Module Status
 
-All modules have integration tests. Each module has its own README with detailed documentation.
+20 modules total. All modules have integration tests and individual README documentation.
 
-### Production Ready
+### Feature Ready (13)
 
 | Module | Description |
 |--------|-------------|
@@ -59,27 +59,25 @@ All modules have integration tests. Each module has its own README with detailed
 | **redis** | Redis commands via RESP protocol |
 | **requestid** | UUID4 generation and X-Request-ID propagation |
 | **ratelimit** | Fixed window rate limiting per IP |
+| **pgrest** | PostgreSQL REST API with JWT auth, content negotiation (JSON/CSV/XML) |
+| **wechatpay** | WeChat Pay signature verification | Some error paths incomplete |
 
-### Working with Limitations
+### Working with Limitations (6)
 
 | Module | Description | Limitations |
 |--------|-------------|-------------|
 | **oidc** | OpenID Connect SSO with PKCE | No ID token signature verification |
 | **acme** | Let's Encrypt certificate automation | Not tested with real ACME servers; single worker only |
 | **circuit-breaker** | Failure detection with half-open recovery | Per-worker state only (no shared memory) |
-| **prometheus** | Native /metrics endpoint | Per-worker counters; no histograms |
+| **prometheus** | Native /metrics endpoint with histograms | Per-worker metrics (no shared memory) |
 | **healthcheck** | Health status endpoint | Passive only (no active probing) |
 | **cache-tags** | Tag-based cache invalidation | Per-worker storage; lost on restart |
-| **pgrest** | PostgreSQL REST API with JWT role-based access | Binary format falls back to JSON |
-| **wechatpay** | WeChat Pay signature verification | Some error paths have TODOs |
 
-### Reference
+### Reference (1)
 
 | Module | Description |
 |--------|-------------|
 | **hello** | Minimal module example |
-
-
 
 [1]: https://github.com/openresty/echo-nginx-module "echo"
 [2]: https://github.com/agentzh "agentzh"

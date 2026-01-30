@@ -4,11 +4,12 @@ Native Prometheus metrics exporter for nginx.
 
 ### Status
 
-**Implemented** - Basic functionality complete
+**Implemented** - Core functionality complete with histograms
 
 ### Features
 
 - **Request Counters**: Total requests, requests by status code class (1xx-5xx)
+- **Latency Histogram**: Request duration with standard buckets (5ms to 10s)
 - **Metrics Endpoint**: Exposes `/metrics` in Prometheus exposition format
 - **Self-Exclusion**: Metrics endpoint requests are not counted
 
@@ -30,6 +31,23 @@ nginx_http_requests_by_status{status="2xx"} 10000
 nginx_http_requests_by_status{status="3xx"} 500
 nginx_http_requests_by_status{status="4xx"} 800
 nginx_http_requests_by_status{status="5xx"} 45
+
+# HELP nginx_http_request_duration_seconds Request duration in seconds
+# TYPE nginx_http_request_duration_seconds histogram
+nginx_http_request_duration_seconds_bucket{le="0.005"} 5000
+nginx_http_request_duration_seconds_bucket{le="0.01"} 7500
+nginx_http_request_duration_seconds_bucket{le="0.025"} 9000
+nginx_http_request_duration_seconds_bucket{le="0.05"} 10500
+nginx_http_request_duration_seconds_bucket{le="0.1"} 11200
+nginx_http_request_duration_seconds_bucket{le="0.25"} 11800
+nginx_http_request_duration_seconds_bucket{le="0.5"} 12100
+nginx_http_request_duration_seconds_bucket{le="1"} 12300
+nginx_http_request_duration_seconds_bucket{le="2.5"} 12340
+nginx_http_request_duration_seconds_bucket{le="5"} 12344
+nginx_http_request_duration_seconds_bucket{le="10"} 12345
+nginx_http_request_duration_seconds_bucket{le="+Inf"} 12345
+nginx_http_request_duration_seconds_sum 125.432
+nginx_http_request_duration_seconds_count 12345
 ```
 
 ### Directives
@@ -84,17 +102,16 @@ Current implementation has these limitations:
 
 - **Per-Worker Counters**: Metrics are per-worker process and reset on reload/restart
 - **No Shared Memory**: Counters are not aggregated across workers
-- **No Histograms**: Request duration histograms not yet implemented
 
 For production use with multiple workers, consider using a single worker or external aggregation.
 
 ### Future Enhancements
 
 - **Shared Memory**: Cross-worker metrics aggregation using nginx shared zones
-- **Latency Histograms**: Request duration with configurable buckets
 - **Connection Metrics**: Active connections, accepted, handled
 - **Upstream Metrics**: Upstream response times, failures
 - **Custom Labels**: Add labels from nginx variables
+- **Configurable Buckets**: Custom histogram bucket boundaries
 
 ### References
 

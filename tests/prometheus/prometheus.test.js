@@ -50,6 +50,21 @@ describe("prometheus module", () => {
       expect(body).toContain('nginx_http_requests_by_status{status="4xx"}');
       expect(body).toContain('nginx_http_requests_by_status{status="5xx"}');
     });
+
+    test("contains nginx_http_request_duration_seconds histogram", async () => {
+      const res = await fetch(`${TEST_URL}/metrics`);
+      const body = await res.text();
+      expect(body).toContain("# HELP nginx_http_request_duration_seconds");
+      expect(body).toContain("# TYPE nginx_http_request_duration_seconds histogram");
+      // Check for histogram buckets
+      expect(body).toContain('nginx_http_request_duration_seconds_bucket{le="0.005"}');
+      expect(body).toContain('nginx_http_request_duration_seconds_bucket{le="0.1"}');
+      expect(body).toContain('nginx_http_request_duration_seconds_bucket{le="1"}');
+      expect(body).toContain('nginx_http_request_duration_seconds_bucket{le="+Inf"}');
+      // Check for sum and count
+      expect(body).toMatch(/nginx_http_request_duration_seconds_sum [\d.]+/);
+      expect(body).toMatch(/nginx_http_request_duration_seconds_count \d+/);
+    });
   });
 
   describe("request counting", () => {
@@ -186,8 +201,8 @@ describe("prometheus module", () => {
       const body = await res.text();
       const lines = body.split("\n").filter((l) => l && !l.startsWith("#"));
       for (const line of lines) {
-        // Each metric line should end with a number
-        expect(line).toMatch(/\s\d+$/);
+        // Each metric line should end with a number (integer or decimal)
+        expect(line).toMatch(/\s[\d.]+$/);
       }
     });
   });

@@ -37,6 +37,20 @@ var metrics_requests_3xx: u64 = 0;
 var metrics_requests_4xx: u64 = 0;
 var metrics_requests_5xx: u64 = 0;
 
+// Histogram buckets for request duration (in milliseconds)
+// Standard buckets: 5ms, 10ms, 25ms, 50ms, 100ms, 250ms, 500ms, 1s, 2.5s, 5s, 10s
+const HISTOGRAM_BUCKETS = [_]u64{ 5, 10, 25, 50, 100, 250, 500, 1000, 2500, 5000, 10000 };
+const HISTOGRAM_BUCKET_LABELS = [_][]const u8{ "0.005", "0.01", "0.025", "0.05", "0.1", "0.25", "0.5", "1", "2.5", "5", "10" };
+
+// Histogram bucket counts (cumulative)
+var histogram_buckets: [HISTOGRAM_BUCKETS.len]u64 = [_]u64{0} ** HISTOGRAM_BUCKETS.len;
+var histogram_inf: u64 = 0; // +Inf bucket (all requests)
+var histogram_sum: u64 = 0; // Sum of all durations in milliseconds
+var histogram_count: u64 = 0; // Total count
+
+// External nginx timing
+extern var ngx_current_msec: ngx_msec_t;
+
 const prometheus_loc_conf = extern struct {
     metrics_endpoint: ngx_flag_t,
 };
@@ -121,65 +135,107 @@ export fn ngx_http_prometheus_handler(
     r.*.headers_out.content_type = content_type;
     r.*.headers_out.content_type_len = content_type.len;
 
-    // Build metrics response - use placeholders that won't conflict with Prometheus labels
-    const metrics_template =
-        \\# HELP nginx_up Whether nginx is up
-        \\# TYPE nginx_up gauge
-        \\nginx_up 1
-        \\
-        \\# HELP nginx_http_requests_total Total number of HTTP requests
-        \\# TYPE nginx_http_requests_total counter
-        \\nginx_http_requests_total <0>
-        \\
-        \\# HELP nginx_http_requests_by_status HTTP requests by status code class
-        \\# TYPE nginx_http_requests_by_status counter
-        \\nginx_http_requests_by_status{status="1xx"} <1>
-        \\nginx_http_requests_by_status{status="2xx"} <2>
-        \\nginx_http_requests_by_status{status="3xx"} <3>
-        \\nginx_http_requests_by_status{status="4xx"} <4>
-        \\nginx_http_requests_by_status{status="5xx"} <5>
-        \\
-    ;
-
-    // Format metrics with current values
-    var num_bufs: [6][20]u8 = undefined;
-    const total_str = formatU64(&num_bufs[0], metrics_requests_total);
-    const r1xx_str = formatU64(&num_bufs[1], metrics_requests_1xx);
-    const r2xx_str = formatU64(&num_bufs[2], metrics_requests_2xx);
-    const r3xx_str = formatU64(&num_bufs[3], metrics_requests_3xx);
-    const r4xx_str = formatU64(&num_bufs[4], metrics_requests_4xx);
-    const r5xx_str = formatU64(&num_bufs[5], metrics_requests_5xx);
-
-    // Calculate response size
-    const base_len = metrics_template.len - 12; // subtract format placeholders
-    const response_len = base_len + total_str.len + r1xx_str.len + r2xx_str.len + r3xx_str.len + r4xx_str.len + r5xx_str.len;
-
-    // Allocate buffer
-    const buf_mem = core.ngx_pnalloc(r.*.pool, response_len) orelse return NGX_ERROR;
+    // Allocate a large buffer for metrics output
+    const max_response_len: usize = 8192;
+    const buf_mem = core.ngx_pnalloc(r.*.pool, max_response_len) orelse return NGX_ERROR;
     const buf_ptr = core.castPtr(u8, buf_mem) orelse return NGX_ERROR;
-    const response_buf = core.slicify(u8, buf_ptr, response_len);
-
-    // Build response manually (simple template substitution)
     var pos: usize = 0;
-    var tmpl_pos: usize = 0;
-    var placeholder_idx: usize = 0;
-    const placeholders = [_][]const u8{ total_str, r1xx_str, r2xx_str, r3xx_str, r4xx_str, r5xx_str };
 
-    while (tmpl_pos < metrics_template.len) {
-        if (tmpl_pos + 2 < metrics_template.len and metrics_template[tmpl_pos] == '<' and metrics_template[tmpl_pos + 2] == '>') {
-            // Replace placeholder <N>
-            if (placeholder_idx < placeholders.len) {
-                @memcpy(response_buf[pos..][0..placeholders[placeholder_idx].len], placeholders[placeholder_idx]);
-                pos += placeholders[placeholder_idx].len;
-                placeholder_idx += 1;
-            }
-            tmpl_pos += 3;
-        } else {
-            response_buf[pos] = metrics_template[tmpl_pos];
-            pos += 1;
-            tmpl_pos += 1;
+    // Helper to append string
+    const appendStr = struct {
+        fn f(buffer: [*]u8, p: *usize, s: []const u8) void {
+            @memcpy(buffer[p.*..][0..s.len], s);
+            p.* += s.len;
         }
+    }.f;
+
+    // Helper to append number
+    const appendNum = struct {
+        fn f(buffer: [*]u8, p: *usize, value: u64) void {
+            var temp: [20]u8 = undefined;
+            var v = value;
+            var i: usize = 20;
+            if (v == 0) {
+                buffer[p.*] = '0';
+                p.* += 1;
+                return;
+            }
+            while (v > 0) {
+                i -= 1;
+                temp[i] = @intCast((v % 10) + '0');
+                v /= 10;
+            }
+            const len = 20 - i;
+            @memcpy(buffer[p.*..][0..len], temp[i..20]);
+            p.* += len;
+        }
+    }.f;
+
+    // nginx_up gauge
+    appendStr(buf_ptr, &pos, "# HELP nginx_up Whether nginx is up\n");
+    appendStr(buf_ptr, &pos, "# TYPE nginx_up gauge\n");
+    appendStr(buf_ptr, &pos, "nginx_up 1\n\n");
+
+    // nginx_http_requests_total counter
+    appendStr(buf_ptr, &pos, "# HELP nginx_http_requests_total Total number of HTTP requests\n");
+    appendStr(buf_ptr, &pos, "# TYPE nginx_http_requests_total counter\n");
+    appendStr(buf_ptr, &pos, "nginx_http_requests_total ");
+    appendNum(buf_ptr, &pos, metrics_requests_total);
+    appendStr(buf_ptr, &pos, "\n\n");
+
+    // nginx_http_requests_by_status counter
+    appendStr(buf_ptr, &pos, "# HELP nginx_http_requests_by_status HTTP requests by status code class\n");
+    appendStr(buf_ptr, &pos, "# TYPE nginx_http_requests_by_status counter\n");
+    appendStr(buf_ptr, &pos, "nginx_http_requests_by_status{status=\"1xx\"} ");
+    appendNum(buf_ptr, &pos, metrics_requests_1xx);
+    appendStr(buf_ptr, &pos, "\n");
+    appendStr(buf_ptr, &pos, "nginx_http_requests_by_status{status=\"2xx\"} ");
+    appendNum(buf_ptr, &pos, metrics_requests_2xx);
+    appendStr(buf_ptr, &pos, "\n");
+    appendStr(buf_ptr, &pos, "nginx_http_requests_by_status{status=\"3xx\"} ");
+    appendNum(buf_ptr, &pos, metrics_requests_3xx);
+    appendStr(buf_ptr, &pos, "\n");
+    appendStr(buf_ptr, &pos, "nginx_http_requests_by_status{status=\"4xx\"} ");
+    appendNum(buf_ptr, &pos, metrics_requests_4xx);
+    appendStr(buf_ptr, &pos, "\n");
+    appendStr(buf_ptr, &pos, "nginx_http_requests_by_status{status=\"5xx\"} ");
+    appendNum(buf_ptr, &pos, metrics_requests_5xx);
+    appendStr(buf_ptr, &pos, "\n\n");
+
+    // nginx_http_request_duration_seconds histogram
+    appendStr(buf_ptr, &pos, "# HELP nginx_http_request_duration_seconds Request duration in seconds\n");
+    appendStr(buf_ptr, &pos, "# TYPE nginx_http_request_duration_seconds histogram\n");
+
+    // Output histogram buckets
+    for (HISTOGRAM_BUCKET_LABELS, 0..) |label, i| {
+        appendStr(buf_ptr, &pos, "nginx_http_request_duration_seconds_bucket{le=\"");
+        appendStr(buf_ptr, &pos, label);
+        appendStr(buf_ptr, &pos, "\"} ");
+        appendNum(buf_ptr, &pos, histogram_buckets[i]);
+        appendStr(buf_ptr, &pos, "\n");
     }
+
+    // +Inf bucket
+    appendStr(buf_ptr, &pos, "nginx_http_request_duration_seconds_bucket{le=\"+Inf\"} ");
+    appendNum(buf_ptr, &pos, histogram_inf);
+    appendStr(buf_ptr, &pos, "\n");
+
+    // Sum (convert ms to seconds with 3 decimal places)
+    appendStr(buf_ptr, &pos, "nginx_http_request_duration_seconds_sum ");
+    const sum_secs = histogram_sum / 1000;
+    const sum_ms = histogram_sum % 1000;
+    appendNum(buf_ptr, &pos, sum_secs);
+    appendStr(buf_ptr, &pos, ".");
+    // Pad milliseconds with leading zeros
+    if (sum_ms < 100) appendStr(buf_ptr, &pos, "0");
+    if (sum_ms < 10) appendStr(buf_ptr, &pos, "0");
+    appendNum(buf_ptr, &pos, sum_ms);
+    appendStr(buf_ptr, &pos, "\n");
+
+    // Count
+    appendStr(buf_ptr, &pos, "nginx_http_request_duration_seconds_count ");
+    appendNum(buf_ptr, &pos, histogram_count);
+    appendStr(buf_ptr, &pos, "\n");
 
     // Set content length
     r.*.headers_out.status = 200;
@@ -208,7 +264,7 @@ export fn ngx_http_prometheus_handler(
     return http.ngx_http_output_filter(r, &out);
 }
 
-// Log phase handler to count requests
+// Log phase handler to count requests and track duration
 fn ngx_http_prometheus_log_handler(
     r: [*c]ngx_http_request_t,
 ) callconv(.c) ngx_int_t {
@@ -242,6 +298,23 @@ fn ngx_http_prometheus_log_handler(
     } else if (status >= 500 and status < 600) {
         metrics_requests_5xx += 1;
     }
+
+    // Calculate request duration in milliseconds
+    const start_time_ms: u64 = @as(u64, @intCast(r.*.start_sec)) * 1000 + r.*.start_msec;
+    const current_ms: u64 = ngx_current_msec;
+    const duration_ms: u64 = if (current_ms >= start_time_ms) current_ms - start_time_ms else 0;
+
+    // Update histogram buckets (cumulative)
+    for (&histogram_buckets, 0..) |*bucket, i| {
+        if (duration_ms <= HISTOGRAM_BUCKETS[i]) {
+            bucket.* += 1;
+        }
+    }
+
+    // Update +Inf bucket, sum, and count
+    histogram_inf += 1;
+    histogram_sum += duration_ms;
+    histogram_count += 1;
 
     return NGX_OK;
 }
