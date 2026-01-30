@@ -321,24 +321,35 @@ fn moduleVarStr(comptime mod_type: ModuleType) []const u8 {
     };
 }
 
-/// Generate new-style module declarations - space-separated list
-fn genModuleNames(comptime info: ModuleInfo) []const u8 {
+/// Generate new-style module declarations - each module gets its own . auto/module call
+fn genNewStyleDecls(comptime info: ModuleInfo) []const u8 {
     @setEvalBranchQuota(10000);
+    const obj_base = comptime getObjectBaseName(info.source);
+
     comptime {
         var result: []const u8 = "";
-        for (info.modules, 0..) |mod_name, i| {
-            if (i > 0) {
-                result = result ++ " ";
+        for (info.modules, info.types, 0..) |mod_name, mod_type, i| {
+            result = result ++
+                "    ngx_module_type=" ++ moduleTypeStr(mod_type) ++ "\n" ++
+                "    ngx_module_name=\"" ++ mod_name ++ "\"\n" ++
+                "    ngx_module_srcs=\"\"\n";
+
+            // Only set libs on first module to avoid duplicates
+            if (i == 0) {
+                result = result ++
+                    "    ngx_module_libs=\"$ngx_addon_dir/" ++ obj_base ++ "_module.o\"\n";
+            } else {
+                result = result ++
+                    "    ngx_module_libs=\"\"\n";
             }
-            result = result ++ mod_name;
+
+            result = result ++
+                "\n" ++
+                "    . auto/module\n" ++
+                "\n";
         }
         return result;
     }
-}
-
-/// Get the primary module type (first in list)
-fn getPrimaryType(comptime info: ModuleInfo) []const u8 {
-    return moduleTypeStr(info.types[0]);
 }
 
 /// Generate old-style module declarations
@@ -355,13 +366,13 @@ fn genOldStyleDecls(comptime info: ModuleInfo) []const u8 {
     }
 }
 
-/// Generate library dependencies for new-style
+/// Generate library dependencies for new-style (uses CORE_LIBS after module registration)
 fn genLibDeps(comptime info: ModuleInfo) []const u8 {
     @setEvalBranchQuota(10000);
     comptime {
         var result: []const u8 = "";
         for (info.libs) |lib| {
-            result = result ++ "    ngx_module_libs=\"$ngx_module_libs -l" ++ lib ++ "\"\n";
+            result = result ++ "    CORE_LIBS=\"$CORE_LIBS -l" ++ lib ++ "\"\n";
         }
         return result;
     }
@@ -385,13 +396,15 @@ fn generateConfigComptime(comptime info: ModuleInfo) []const u8 {
     const module_name = comptime getModuleName(info.source);
     const obj_base = comptime getObjectBaseName(info.source);
 
-    const cjson_new = if (info.needs_cjson)
-        "    ngx_module_libs=\"$ngx_module_libs $ngx_addon_dir/libcjson.a\"\n"
+    const cjson_old = if (info.needs_cjson)
+        "    CORE_LIBS=\"$CORE_LIBS $ngx_addon_dir/libcjson.a\"\n"
     else
         "";
 
-    const cjson_old = if (info.needs_cjson)
-        "    CORE_LIBS=\"$CORE_LIBS $ngx_addon_dir/libcjson.a\"\n"
+    // For new-style, cjson and libs are added after first module registration
+    const cjson_new = if (info.needs_cjson)
+        "    # Additional libraries for all modules in this addon\n" ++
+            "    CORE_LIBS=\"$CORE_LIBS $ngx_addon_dir/libcjson.a\"\n"
     else
         "";
 
@@ -406,14 +419,9 @@ fn generateConfigComptime(comptime info: ModuleInfo) []const u8 {
         "ngx_addon_name=\"" ++ info.modules[0] ++ "\"\n" ++
         "\n" ++
         "if test -n \"$ngx_module_link\"; then\n" ++
-        "    ngx_module_type=" ++ getPrimaryType(info) ++ "\n" ++
-        "    ngx_module_name=\"" ++ genModuleNames(info) ++ "\"\n" ++
-        "    ngx_module_srcs=\"\"\n" ++
-        "    ngx_module_libs=\"$ngx_addon_dir/" ++ obj_base ++ "_module.o\"\n" ++
+        genNewStyleDecls(info) ++
         cjson_new ++
         genLibDeps(info) ++
-        "\n" ++
-        "    . auto/module\n" ++
         "else\n" ++
         "    # Old-style module registration (nginx < 1.9.11)\n" ++
         genOldStyleDecls(info) ++
