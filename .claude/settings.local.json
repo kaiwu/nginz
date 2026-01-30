@@ -25,7 +25,11 @@
       "Bash(KEEP_LOGS=1 timeout 20 bun test tests/graphql/graphql.test.js)",
       "Bash(ZIG_OPTIMIZE=ReleaseSafe bun test:*)",
       "Bash(KEEP_LOGS=1 ZIG_OPTIMIZE=ReleaseSafe bun test:*)",
-      "Bash(xargs:*)"
+      "Bash(xargs:*)",
+      "Bash(gh issue view:*)",
+      "WebFetch(domain:github.com)",
+      "Bash(sudo pacman:*)",
+      "Bash(zig version:*)"
     ]
   }
 }

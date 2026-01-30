@@ -40,6 +40,53 @@ so far is a simplified version of `echo` and it misses some of the directives.
 
 By all means, deploy the module objects with your own binary building toolchains.
 
+## Integrating Modules with Stock Nginx
+
+nginz provides a `package` build step that creates nginx-compatible module packages. Each package
+contains the compiled object file and a `config` script for nginx's `./configure --add-module`.
+
+### Building Module Packages
+
+```bash
+zig build package
+```
+
+This creates `zig-out/modules/` with a directory for each module:
+
+```
+zig-out/modules/
+  echoz/
+    config                      # nginx configure script
+    ngx_http_echoz_module.o     # compiled module object
+  jwt/
+    config
+    libcjson.a                  # bundled dependency
+    ngx_http_jwt_module.o
+  ...
+```
+
+### Using with Nginx
+
+```bash
+cd /path/to/nginx-source
+./configure \
+  --with-http_ssl_module \
+  --add-module=/path/to/nginz/zig-out/modules/echoz \
+  --add-module=/path/to/nginz/zig-out/modules/jwt
+make
+make install
+```
+
+### Important Notes
+
+- **nginx version**: Modules are built against nginx 1.29.4. Using with other versions may cause
+  compatibility issues.
+- **Filter modules**: Modules containing filters (echoz, wechatpay, oidc, requestid, cache-tags,
+  transform) have ordering dependencies. Their position relative to nginx's built-in filters is
+  determined by `--add-module` order.
+- **Dependencies**: Some modules require system libraries (e.g., pgrest needs `-lpq`). The config
+  script handles this automatically.
+
 ## Module Status
 
 20 modules total. All modules have integration tests and individual README documentation.

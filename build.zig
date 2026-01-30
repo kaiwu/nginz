@@ -7,6 +7,7 @@ const cjson = @import("project/build_cjson.zig");
 const patch = @import("project/build_patch.zig");
 const quickjs = @import("project//build_quickjs.zig");
 const http_modules = @import("project/build_modules.zig");
+const package = @import("project/build_package.zig");
 
 const NGINX = "src/ngx/nginx.zig";
 
@@ -229,4 +230,7 @@ pub fn build(b: *std.Build) void {
         const core_unit_tests = b.addRunArtifact(t);
         test_step.dependOn(&core_unit_tests.step);
     }
+
+    // Package step - creates nginx module packages with config files
+    _ = package.createPackageSteps(b, target, optimize, nginx, cjsonlib) catch unreachable;
 }
