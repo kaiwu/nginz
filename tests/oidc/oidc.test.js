@@ -269,4 +269,100 @@ describe("oidc module", () => {
       expect(location).toContain("scope=openid");
     });
   });
+
+  describe("claim variables", () => {
+    test("$oidc_claim_* variables are populated from session", async () => {
+      // Step 1: Request protected resource, get redirect to IdP
+      const step1 = await fetch(`${TEST_URL}/claims`, {
+        redirect: "manual",
+      });
+      expect(step1.status).toBe(302);
+
+      const stateCookie = step1.headers.get("set-cookie");
+      expect(stateCookie).toBeDefined();
+      const stateCookieMatch = stateCookie.match(/oidc_state=([^;]+)/);
+      expect(stateCookieMatch).toBeDefined();
+      const stateCookieValue = stateCookieMatch[1];
+
+      // Step 2: Follow redirect to mock IdP (returns code)
+      const authUrl = step1.headers.get("location");
+      const step2 = await fetch(authUrl, { redirect: "manual" });
+      expect(step2.status).toBe(302);
+
+      const callbackUrl = step2.headers.get("location");
+      expect(callbackUrl).toContain("code=");
+
+      // Step 3: Follow callback with state cookie (triggers token exchange)
+      const step3 = await fetch(callbackUrl, {
+        redirect: "manual",
+        headers: { Cookie: `oidc_state=${stateCookieValue}` },
+      });
+
+      // Should get 302 redirect with session cookie
+      expect(step3.status).toBe(302);
+
+      const sessionCookies = step3.headers.get("set-cookie");
+      expect(sessionCookies).toBeDefined();
+      expect(sessionCookies).toContain("oidc_session=");
+
+      const sessionMatch = sessionCookies.match(/oidc_session=([^;]+)/);
+      expect(sessionMatch).toBeDefined();
+      const sessionValue = sessionMatch[1];
+
+      // Step 4: Access /claims endpoint with session cookie
+      const claimsRes = await fetch(`${TEST_URL}/claims`, {
+        headers: { Cookie: `oidc_session=${sessionValue}` },
+      });
+
+      expect(claimsRes.status).toBe(200);
+
+      // Check response headers contain claim values from mock IdP
+      // Mock IdP user: sub="user1", name="Test User", email="test@example.com"
+      const subHeader = claimsRes.headers.get("X-OIDC-Sub");
+      expect(subHeader).toBe("user1");
+
+      const emailHeader = claimsRes.headers.get("X-OIDC-Email");
+      expect(emailHeader).toBe("test@example.com");
+
+      const nameHeader = claimsRes.headers.get("X-OIDC-Name");
+      expect(nameHeader).toBe("Test User");
+    });
+
+    test("claim headers are set correctly for authenticated requests", async () => {
+      // Complete OIDC flow first
+      const step1 = await fetch(`${TEST_URL}/claims`, { redirect: "manual" });
+      const stateCookie = step1.headers.get("set-cookie");
+      const stateCookieValue = stateCookie.match(/oidc_state=([^;]+)/)[1];
+
+      const authUrl = step1.headers.get("location");
+      const step2 = await fetch(authUrl, { redirect: "manual" });
+      const callbackUrl = step2.headers.get("location");
+
+      const step3 = await fetch(callbackUrl, {
+        redirect: "manual",
+        headers: { Cookie: `oidc_state=${stateCookieValue}` },
+      });
+
+      if (step3.status === 302) {
+        const sessionCookies = step3.headers.get("set-cookie");
+        const sessionMatch = sessionCookies.match(/oidc_session=([^;]+)/);
+
+        if (sessionMatch) {
+          const sessionValue = sessionMatch[1];
+
+          // Access claims endpoint
+          const res = await fetch(`${TEST_URL}/claims`, {
+            headers: { Cookie: `oidc_session=${sessionValue}` },
+          });
+
+          expect(res.status).toBe(200);
+
+          // X-OIDC-Sub should always be present (sub is required in ID token)
+          const subHeader = res.headers.get("X-OIDC-Sub");
+          expect(subHeader).toBeDefined();
+          expect(subHeader.length).toBeGreaterThan(0);
+        }
+      }
+    });
+  });
 });

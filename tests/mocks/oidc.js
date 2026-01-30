@@ -334,6 +334,10 @@ export class OIDCMock {
 
   generateIdToken(sub, nonce) {
     const header = { alg: "HS256", typ: "JWT", kid: this.keyId };
+
+    // Get user info to include in ID token
+    const user = this.users.get(sub) || {};
+
     const payload = {
       iss: this.issuer,
       sub,
@@ -341,6 +345,10 @@ export class OIDCMock {
       exp: Math.floor(Date.now() / 1000) + 3600,
       iat: Math.floor(Date.now() / 1000),
       ...(nonce && { nonce }),
+      // Include profile claims if available
+      ...(user.email && { email: user.email }),
+      ...(user.email_verified !== undefined && { email_verified: user.email_verified }),
+      ...(user.name && { name: user.name }),
     };
 
     // Simplified JWT (not cryptographically signed for testing)
