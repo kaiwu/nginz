@@ -36,6 +36,16 @@ describe("pgrest module", () => {
       ],
     }));
 
+    // Handler for SELECT with single column (name)
+    pgMock.setQueryHandler(/^SELECT name FROM users/, (query) => ({
+      columns: ["name"],
+      rows: [
+        ["John Doe"],
+        ["Jane Smith"],
+        ["Bob Wilson"],
+      ],
+    }));
+
     // Handler for SELECT with status filter
     pgMock.setQueryHandler(/SELECT \* FROM users WHERE status = 'active'/, (query) => ({
       columns: ["id", "name", "email", "status"],
@@ -244,6 +254,68 @@ describe("pgrest module", () => {
     const body = await res.text();
     // add_them(1, 2) should return 3
     expect(body).toContain("3");
+  });
+
+  // ============================================================================
+  // Content Negotiation (Accept Header) Tests
+  // ============================================================================
+
+  test("GET /api/users with Accept: text/csv returns CSV format", async () => {
+    const res = await fetch(`${TEST_URL}/api/users`, {
+      headers: { Accept: "text/csv" },
+    });
+    expect(res.status).toBe(200);
+
+    const contentType = res.headers.get("content-type");
+    expect(contentType).toContain("text/csv");
+
+    const body = await res.text();
+    // CSV should have header row and data rows
+    const lines = body.trim().split("\n");
+    expect(lines.length).toBeGreaterThan(1);
+    // Header row should contain column names
+    expect(lines[0]).toContain("id");
+    expect(lines[0]).toContain("name");
+  });
+
+  test("GET /api/users with Accept: text/xml returns XML format", async () => {
+    const res = await fetch(`${TEST_URL}/api/users`, {
+      headers: { Accept: "text/xml" },
+    });
+    expect(res.status).toBe(200);
+
+    const contentType = res.headers.get("content-type");
+    expect(contentType).toContain("text/xml");
+
+    const body = await res.text();
+    // XML should have root element and row elements
+    expect(body).toContain("<?xml");
+    expect(body).toContain("<root>");
+    expect(body).toContain("<row>");
+    expect(body).toContain("</root>");
+  });
+
+  test("GET /api/users with Accept: text/plain returns plain text", async () => {
+    const res = await fetch(`${TEST_URL}/api/users?select=name`, {
+      headers: { Accept: "text/plain" },
+    });
+    expect(res.status).toBe(200);
+
+    const contentType = res.headers.get("content-type");
+    expect(contentType).toContain("text/plain");
+  });
+
+  test("GET /api/users with Accept: application/json returns JSON (default)", async () => {
+    const res = await fetch(`${TEST_URL}/api/users`, {
+      headers: { Accept: "application/json" },
+    });
+    expect(res.status).toBe(200);
+
+    const contentType = res.headers.get("content-type");
+    expect(contentType).toContain("application/json");
+
+    const body = await res.json();
+    expect(Array.isArray(body)).toBe(true);
   });
 
   // ============================================================================

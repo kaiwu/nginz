@@ -64,13 +64,13 @@ All modules have integration tests. Each module has its own README with detailed
 
 | Module | Description | Limitations |
 |--------|-------------|-------------|
-| **oidc** | OpenID Connect SSO with PKCE | Nginx variables (`$oidc_claim_*`) not yet implemented |
+| **oidc** | OpenID Connect SSO with PKCE | No ID token signature verification |
 | **acme** | Let's Encrypt certificate automation | Not tested with real ACME servers; single worker only |
 | **circuit-breaker** | Failure detection with half-open recovery | Per-worker state only (no shared memory) |
 | **prometheus** | Native /metrics endpoint | Per-worker counters; no histograms |
 | **healthcheck** | Health status endpoint | Passive only (no active probing) |
 | **cache-tags** | Tag-based cache invalidation | Per-worker storage; lost on restart |
-| **pgrest** | PostgreSQL REST API with JWT role-based access | Accept header ignored (JSON only) |
+| **pgrest** | PostgreSQL REST API with JWT role-based access | Binary format falls back to JSON |
 | **wechatpay** | WeChat Pay signature verification | Some error paths have TODOs |
 
 ### Reference

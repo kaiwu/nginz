@@ -242,14 +242,30 @@ fn createSession(r: *ngx_http_request_t, claims: *Claims, original_uri: []const 
 }
 ```
 
-#### nginx Variables (Phase 1)
+#### nginx Variables
+
+The following variables are available for authenticated requests:
 
 | Variable | Description |
 |----------|-------------|
-| `$oidc_claim_sub` | Subject identifier |
-| `$oidc_claim_email` | User email |
-| `$oidc_claim_name` | User display name |
-| `$oidc_access_token` | Access token (for API calls) |
+| `$oidc_claim_sub` | Subject identifier from ID token |
+| `$oidc_claim_email` | User email from ID token |
+| `$oidc_claim_name` | User display name from ID token |
+
+**Usage example:**
+```nginx
+location /api/ {
+    oidc on;
+    # ... OIDC config ...
+
+    # Pass claims to backend
+    proxy_set_header X-User-Sub $oidc_claim_sub;
+    proxy_set_header X-User-Email $oidc_claim_email;
+    proxy_set_header X-User-Name $oidc_claim_name;
+
+    proxy_pass http://backend;
+}
+```
 
 #### Handler Flow
 
@@ -329,7 +345,7 @@ server {
 
 Not in initial implementation:
 
-- [ ] **Nginx Variables** - Set `$oidc_claim_sub`, `$oidc_claim_email`, etc. for backend passthrough
+- [x] **Nginx Variables** - Set `$oidc_claim_sub`, `$oidc_claim_email`, `$oidc_claim_name` for backend passthrough
 - [ ] **ID Token Signature Verification** - RSA/ECDSA verification with JWKS
 - [ ] **Discovery Caching** - Cache .well-known response
 - [ ] **Token Refresh** - Automatic access token refresh

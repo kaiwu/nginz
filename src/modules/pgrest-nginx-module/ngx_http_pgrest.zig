@@ -1472,12 +1472,27 @@ const ResponseFormat = enum {
 };
 
 /// Parse Accept header to determine response format from request
-/// For now, defaults to JSON since headers list navigation is complex in C structs
-/// TODO: Implement full header traversal when needed
+/// Supports: application/json, text/csv, text/plain, text/xml, application/octet-stream
 fn parse_accept_header_from_request(r: [*c]ngx_http_request_t) ResponseFormat {
-    _ = r; // Currently unused - defaults to JSON
-    // Default to JSON - Accept header support can be enhanced later
-    // when full HTTP header parsing infrastructure is added
+    const accept_val = extract_header_value(r, "accept") orelse return .json;
+
+    // Check for specific content types (order matters - more specific first)
+    if (std.mem.containsAtLeast(u8, accept_val, 1, "text/csv")) {
+        return .csv;
+    }
+    if (std.mem.containsAtLeast(u8, accept_val, 1, "text/plain")) {
+        return .plain_text;
+    }
+    if (std.mem.containsAtLeast(u8, accept_val, 1, "text/xml") or
+        std.mem.containsAtLeast(u8, accept_val, 1, "application/xml"))
+    {
+        return .xml;
+    }
+    if (std.mem.containsAtLeast(u8, accept_val, 1, "application/octet-stream")) {
+        return .binary;
+    }
+
+    // Default to JSON for application/json, */*, or unrecognized types
     return .json;
 }
 
@@ -1885,6 +1900,40 @@ fn format_result_as_scalar(
     }
 }
 
+/// Format PostgreSQL result as plain text
+/// Outputs first column of each row, one value per line
+fn format_result_as_plain_text(
+    result: ?*PGresult,
+    ntuples: i32,
+    text_buf: []u8,
+) usize {
+    if (result == null or ntuples == 0) return 0;
+
+    var pos: usize = 0;
+
+    // Output first column of each row
+    var row: i32 = 0;
+    while (row < ntuples) : (row += 1) {
+        if (row > 0) {
+            text_buf[pos] = '\n';
+            pos += 1;
+        }
+
+        if (pgGetisnull(result, row, 0) == 0) {
+            const value = pgGetvalue(result, row, 0);
+            if (value != null) {
+                var i: usize = 0;
+                while (value[i] != 0) : (i += 1) {
+                    text_buf[pos] = value[i];
+                    pos += 1;
+                }
+            }
+        }
+    }
+
+    return pos;
+}
+
 /// Format PostgreSQL result as CSV
 fn format_result_as_csv(
     result: ?*PGresult,
@@ -1992,6 +2041,127 @@ fn format_result_as_csv(
         csv_buf[pos] = '\n';
         pos += 1;
     }
+
+    return pos;
+}
+
+/// Format PostgreSQL result as XML
+/// Output format: <?xml version="1.0"?><root><row><col>value</col>...</row>...</root>
+fn format_result_as_xml(
+    result: ?*PGresult,
+    ntuples: i32,
+    nfields: i32,
+    xml_buf: []u8,
+) usize {
+    if (result == null) return 0;
+
+    var pos: usize = 0;
+
+    // XML declaration and root element
+    const xml_header = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<root>\n";
+    @memcpy(xml_buf[pos..][0..xml_header.len], xml_header);
+    pos += xml_header.len;
+
+    // Write data rows
+    var row: i32 = 0;
+    while (row < ntuples) : (row += 1) {
+        // Row start
+        const row_start = "  <row>\n";
+        @memcpy(xml_buf[pos..][0..row_start.len], row_start);
+        pos += row_start.len;
+
+        var col: i32 = 0;
+        while (col < nfields) : (col += 1) {
+            const fname = pgFname(result, col);
+            if (fname == null) {
+                col += 1;
+                continue;
+            }
+
+            // Get field name length
+            var fname_len: usize = 0;
+            while (fname[fname_len] != 0) : (fname_len += 1) {}
+
+            // Opening tag: "    <fieldname>"
+            xml_buf[pos] = ' ';
+            pos += 1;
+            xml_buf[pos] = ' ';
+            pos += 1;
+            xml_buf[pos] = ' ';
+            pos += 1;
+            xml_buf[pos] = ' ';
+            pos += 1;
+            xml_buf[pos] = '<';
+            pos += 1;
+            @memcpy(xml_buf[pos..][0..fname_len], fname[0..fname_len]);
+            pos += fname_len;
+            xml_buf[pos] = '>';
+            pos += 1;
+
+            // Value (with XML escaping)
+            if (pgGetisnull(result, row, col) == 0) {
+                const value = pgGetvalue(result, row, col);
+                if (value != null) {
+                    var i: usize = 0;
+                    while (value[i] != 0) : (i += 1) {
+                        switch (value[i]) {
+                            '<' => {
+                                const esc = "&lt;";
+                                @memcpy(xml_buf[pos..][0..esc.len], esc);
+                                pos += esc.len;
+                            },
+                            '>' => {
+                                const esc = "&gt;";
+                                @memcpy(xml_buf[pos..][0..esc.len], esc);
+                                pos += esc.len;
+                            },
+                            '&' => {
+                                const esc = "&amp;";
+                                @memcpy(xml_buf[pos..][0..esc.len], esc);
+                                pos += esc.len;
+                            },
+                            '"' => {
+                                const esc = "&quot;";
+                                @memcpy(xml_buf[pos..][0..esc.len], esc);
+                                pos += esc.len;
+                            },
+                            '\'' => {
+                                const esc = "&apos;";
+                                @memcpy(xml_buf[pos..][0..esc.len], esc);
+                                pos += esc.len;
+                            },
+                            else => {
+                                xml_buf[pos] = value[i];
+                                pos += 1;
+                            },
+                        }
+                    }
+                }
+            }
+
+            // Closing tag: "</fieldname>\n"
+            xml_buf[pos] = '<';
+            pos += 1;
+            xml_buf[pos] = '/';
+            pos += 1;
+            @memcpy(xml_buf[pos..][0..fname_len], fname[0..fname_len]);
+            pos += fname_len;
+            xml_buf[pos] = '>';
+            pos += 1;
+            xml_buf[pos] = '\n';
+            pos += 1;
+        }
+
+        // Row end
+        const row_end = "  </row>\n";
+        @memcpy(xml_buf[pos..][0..row_end.len], row_end);
+        pos += row_end.len;
+    }
+
+    // Root end
+    const xml_footer = "</root>\n";
+    @memcpy(xml_buf[pos..][0..xml_footer.len], xml_footer);
+    pos += xml_footer.len;
 
     return pos;
 }
@@ -2592,22 +2762,21 @@ fn handle_rpc_call(r: [*c]ngx_http_request_t, conninfo: []const u8, loc_conf: *n
             content_type = "text/csv; charset=utf-8";
         },
         .plain_text => {
-            // For plain text, only return first field as text
-            if (pg_result.ntuples > 0 and pg_result.nfields > 0) {
-                response_len = format_result_as_scalar(pg_result.result, &response_buf);
-            }
+            response_len = format_result_as_plain_text(
+                pg_result.result,
+                pg_result.ntuples,
+                &response_buf,
+            );
             content_type = "text/plain; charset=utf-8";
         },
         .xml => {
-            content_type = "text/xml; charset=utf-8";
-            // XML would require special handling - for now return as JSON
-            response_len = format_result_as_json_smart(
-                r,
+            response_len = format_result_as_xml(
                 pg_result.result,
                 pg_result.ntuples,
                 pg_result.nfields,
                 &response_buf,
             );
+            content_type = "text/xml; charset=utf-8";
         },
         .binary => {
             content_type = "application/octet-stream";
@@ -2660,10 +2829,6 @@ fn handle_rpc_call(r: [*c]ngx_http_request_t, conninfo: []const u8, loc_conf: *n
 
 /// Content handler for pgrest_pass locations
 fn ngx_http_pgrest_handler(r: [*c]ngx_http_request_t) callconv(.c) ngx_int_t {
-    // Set response content type to JSON
-    r.*.headers_out.content_type = ngx_string("application/json");
-    r.*.headers_out.content_type_len = 16;
-
     // Get location config to retrieve connection string
     const loc_conf = core.castPtr(
         ngx_pgrest_loc_conf_t,
@@ -2817,27 +2982,71 @@ fn ngx_http_pgrest_handler(r: [*c]ngx_http_request_t) callconv(.c) ngx_int_t {
         return http.ngx_http_output_filter(r, &out);
     }
 
-    // Format query results as JSON array (or single object if requested)
-    var json_buf: [MAX_JSON_SIZE]u8 = undefined;
-    const json_len = format_result_as_json_smart(
-        r,
-        pg_result.result,
-        pg_result.ntuples,
-        pg_result.nfields,
-        &json_buf,
-    );
-    const json_data = json_buf[0..json_len];
+    // Parse Accept header to determine response format
+    const response_format = parse_accept_header_from_request(r);
 
-    const total_len = json_len;
+    // Format query results according to requested format
+    var response_buf: [MAX_JSON_SIZE]u8 = undefined;
+    var response_len: usize = 0;
+    var content_type: [*:0]const u8 = "application/json";
+
+    switch (response_format) {
+        .json => {
+            response_len = format_result_as_json_smart(
+                r,
+                pg_result.result,
+                pg_result.ntuples,
+                pg_result.nfields,
+                &response_buf,
+            );
+            content_type = "application/json";
+        },
+        .csv => {
+            response_len = format_result_as_csv(
+                pg_result.result,
+                pg_result.ntuples,
+                pg_result.nfields,
+                &response_buf,
+            );
+            content_type = "text/csv; charset=utf-8";
+        },
+        .plain_text => {
+            if (pg_result.ntuples > 0 and pg_result.nfields > 0) {
+                response_len = format_result_as_scalar(pg_result.result, &response_buf);
+            }
+            content_type = "text/plain; charset=utf-8";
+        },
+        .xml => {
+            response_len = format_result_as_xml(
+                pg_result.result,
+                pg_result.ntuples,
+                pg_result.nfields,
+                &response_buf,
+            );
+            content_type = "text/xml; charset=utf-8";
+        },
+        .binary => {
+            content_type = "application/octet-stream";
+            response_len = format_result_as_json_smart(
+                r,
+                pg_result.result,
+                pg_result.ntuples,
+                pg_result.nfields,
+                &response_buf,
+            );
+        },
+    }
+
+    const response_data = response_buf[0..response_len];
 
     // Allocate buffer
-    const b = buf.ngx_create_temp_buf(r.*.pool, total_len) orelse {
+    const b = buf.ngx_create_temp_buf(r.*.pool, response_len) orelse {
         return http.NGX_HTTP_INTERNAL_SERVER_ERROR;
     };
 
-    // Copy JSON response
-    @memcpy(b.*.last[0..json_len], json_data);
-    b.*.last += json_len;
+    // Copy response
+    @memcpy(b.*.last[0..response_len], response_data);
+    b.*.last += response_len;
 
     b.*.flags.last_buf = true;
     b.*.flags.last_in_chain = true;
@@ -2847,9 +3056,14 @@ fn ngx_http_pgrest_handler(r: [*c]ngx_http_request_t) callconv(.c) ngx_int_t {
     out.buf = b;
     out.next = null;
 
+    // Set content type from Accept header
+    const ct_len = std.mem.len(content_type);
+    r.*.headers_out.content_type = ngx_str_t{ .data = @constCast(content_type), .len = ct_len };
+    r.*.headers_out.content_type_len = ct_len;
+
     // Set content length and status
     r.*.headers_out.status = http.NGX_HTTP_OK;
-    r.*.headers_out.content_length_n = @intCast(total_len);
+    r.*.headers_out.content_length_n = @intCast(response_len);
 
     // Send headers
     const header_rc = http.ngx_http_send_header(r);

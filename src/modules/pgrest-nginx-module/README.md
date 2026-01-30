@@ -970,28 +970,21 @@ Error responses:
 - ✅ **Array parameters** - JSON arrays automatically converted to PostgreSQL ARRAY[] syntax in RPC calls
 - ✅ **JWT Authentication** - Authorization header support with JWT passed to PostgreSQL via request.jwt claim
 
-## Planned Features (High Priority)
+## Planned Features
 
-- **Array parameters in POST** - JSON arrays converted to PostgreSQL arrays
-
-## Planned Features (Medium Priority)
-
+- **Binary response format** - Full application/octet-stream support for bytea columns (currently falls back to JSON)
 - **Binary data upload** - Content-Type: application/octet-stream for bytea parameters
-- **XML data upload** - Content-Type: text/xml for xml parameters
-- **Text data upload** - Content-Type: text/plain for text parameters
-- **Array parameters** - JSON arrays converted to PostgreSQL arrays in POST requests
 - **Variadic functions** - Multiple parameter values for variadic functions
 
 ## Limitations
 
-- **No authentication** - Implement auth at nginx level or with JWT (future work)
 - **Basic SQL injection prevention** - Values are quoted but not fully parameterized
 - **Single table operations** - CRUD on single tables only (use RPC for JOINs/complex queries)
 - **Simple query building** - Complex filters use AND logic only
+- **Binary format** - application/octet-stream currently falls back to JSON
 
 ## Future Improvements
 
-- JWT authentication
 - Parameterized queries for SQL injection prevention
 - Relationship handling (embedded resources, foreign key expansion)
 - Bulk operations (multiple INSERT/UPDATE/DELETE)

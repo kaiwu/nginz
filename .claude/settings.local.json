@@ -23,7 +23,8 @@
       "Bash(cat:*)",
       "Bash(./zig-out/bin/nginz:*)",
       "Bash(KEEP_LOGS=1 timeout 20 bun test tests/graphql/graphql.test.js)",
-      "Bash(ZIG_OPTIMIZE=ReleaseSafe bun test:*)"
+      "Bash(ZIG_OPTIMIZE=ReleaseSafe bun test:*)",
+      "Bash(KEEP_LOGS=1 ZIG_OPTIMIZE=ReleaseSafe bun test:*)"
     ]
   }
 }

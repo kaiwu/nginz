@@ -28,6 +28,7 @@ const ngx_command_t = conf.ngx_command_t;
 const ngx_module_t = ngx.module.ngx_module_t;
 const ngx_http_module_t = http.ngx_http_module_t;
 const ngx_http_request_t = http.ngx_http_request_t;
+const ngx_http_variable_value_t = http.ngx_http_variable_value_t;
 
 const ngx_string = ngx.string.ngx_string;
 const ngx_null_str = ngx.string.ngx_null_str;
@@ -1432,8 +1433,7 @@ export fn ngx_http_oidc_handler(r: [*c]ngx_http_request_t) callconv(.c) ngx_int_
     // Check for valid session
     if (checkSession(r, lccf, rctx)) {
         rctx.*.done = 1;
-        // Session valid, continue to content phase
-        // TODO: Set nginx variables with claims
+        // Session valid - claims available via $oidc_claim_* variables
         return NGX_DECLINED;
     }
 
@@ -1478,6 +1478,79 @@ export fn ngx_http_oidc_header_filter(r: [*c]ngx_http_request_t) callconv(.c) ng
     if (ngx_http_oidc_next_header_filter) |next| {
         return next(r);
     }
+    return NGX_OK;
+}
+
+// ============================================================================
+// Nginx Variable Handlers
+// ============================================================================
+
+// Variable getter for $oidc_claim_sub
+fn ngx_http_oidc_variable_sub(
+    r: [*c]ngx_http_request_t,
+    v: [*c]ngx_http_variable_value_t,
+    data: core.uintptr_t,
+) callconv(.c) ngx_int_t {
+    _ = data;
+    return get_oidc_claim_variable(r, v, .sub);
+}
+
+// Variable getter for $oidc_claim_email
+fn ngx_http_oidc_variable_email(
+    r: [*c]ngx_http_request_t,
+    v: [*c]ngx_http_variable_value_t,
+    data: core.uintptr_t,
+) callconv(.c) ngx_int_t {
+    _ = data;
+    return get_oidc_claim_variable(r, v, .email);
+}
+
+// Variable getter for $oidc_claim_name
+fn ngx_http_oidc_variable_name(
+    r: [*c]ngx_http_request_t,
+    v: [*c]ngx_http_variable_value_t,
+    data: core.uintptr_t,
+) callconv(.c) ngx_int_t {
+    _ = data;
+    return get_oidc_claim_variable(r, v, .name);
+}
+
+const ClaimType = enum { sub, email, name };
+
+fn get_oidc_claim_variable(
+    r: [*c]ngx_http_request_t,
+    v: [*c]ngx_http_variable_value_t,
+    claim_type: ClaimType,
+) ngx_int_t {
+    // Get request context
+    const rctx = core.castPtr(
+        oidc_request_ctx,
+        r.*.ctx[ngx_http_oidc_module.ctx_index],
+    ) orelse {
+        v.*.flags.not_found = true;
+        return NGX_OK;
+    };
+
+    // Get the appropriate claim based on type
+    const claim = switch (claim_type) {
+        .sub => rctx.*.sub,
+        .email => rctx.*.email,
+        .name => rctx.*.name,
+    };
+
+    // Check if claim has a value
+    if (claim.len == 0 or claim.data == core.nullptr(u8)) {
+        v.*.flags.not_found = true;
+        return NGX_OK;
+    }
+
+    // Set variable value
+    v.*.data = claim.data;
+    v.*.flags.len = @intCast(claim.len);
+    v.*.flags.valid = true;
+    v.*.flags.no_cacheable = false;
+    v.*.flags.not_found = false;
+
     return NGX_OK;
 }
 
@@ -1577,6 +1650,24 @@ fn merge_loc_conf(
 }
 
 fn postconfiguration(cf: [*c]ngx_conf_t) callconv(.c) ngx_int_t {
+    // Register nginx variables for OIDC claims
+    const oidc_variables = [_]struct {
+        name: ngx_str_t,
+        handler: *const fn ([*c]ngx_http_request_t, [*c]ngx_http_variable_value_t, core.uintptr_t) callconv(.c) ngx_int_t,
+    }{
+        .{ .name = ngx_string("oidc_claim_sub"), .handler = ngx_http_oidc_variable_sub },
+        .{ .name = ngx_string("oidc_claim_email"), .handler = ngx_http_oidc_variable_email },
+        .{ .name = ngx_string("oidc_claim_name"), .handler = ngx_http_oidc_variable_name },
+    };
+
+    for (oidc_variables) |v| {
+        var name = v.name;
+        if (http.ngx_http_add_variable(cf, &name, http.NGX_HTTP_VAR_NOCACHEABLE)) |variable| {
+            variable.*.get_handler = v.handler;
+            variable.*.data = 0;
+        }
+    }
+
     // Register access phase handler
     const cmcf = core.castPtr(
         http.ngx_http_core_main_conf_t,
