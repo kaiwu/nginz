@@ -17316,7 +17316,8 @@ const struct_ngx_http_upstream_flags_s = packed struct {
     request_body_sent: bool,
     request_body_blocked: bool,
     header_sent: bool,
-    padding: u17,
+    response_received: bool,
+    padding: u16,
 };
 pub const struct_ngx_http_upstream_s = extern struct {
     read_event_handler: ngx_http_upstream_handler_pt = @import("std").mem.zeroes(ngx_http_upstream_handler_pt),
