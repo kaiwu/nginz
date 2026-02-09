@@ -276,5 +276,5 @@ export var ngx_http_healthcheck_module = ngx.module.make_module(
 const expectEqual = std.testing.expectEqual;
 
 test "healthcheck module" {
-    try expectEqual(ngx_http_healthcheck_module.version, 1027004);
+    try expectEqual(ngx_http_healthcheck_module.version, 1029005);
 }

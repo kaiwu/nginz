@@ -397,5 +397,5 @@ test "uuid4 generation" {
 }
 
 test "requestid module" {
-    try expectEqual(ngx_http_requestid_filter_module.version, 1027004);
+    try expectEqual(ngx_http_requestid_filter_module.version, 1029005);
 }

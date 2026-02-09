@@ -327,7 +327,7 @@ const expectEqual = std.testing.expectEqual;
 const expect = std.testing.expect;
 
 test "jwt module" {
-    try expectEqual(ngx_http_jwt_module.version, 1027004);
+    try expectEqual(ngx_http_jwt_module.version, 1029005);
 }
 
 test "base64url_decode" {

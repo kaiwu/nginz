@@ -445,7 +445,7 @@ const expectEqual = std.testing.expectEqual;
 const expectEqualStrings = std.testing.expectEqualStrings;
 
 test "cache_tags module" {
-    try expectEqual(ngx_http_cache_tags_filter_module.version, 1027004);
+    try expectEqual(ngx_http_cache_tags_filter_module.version, 1029005);
 }
 
 test "tag parsing" {

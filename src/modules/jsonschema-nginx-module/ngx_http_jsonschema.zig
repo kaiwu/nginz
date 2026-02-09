@@ -469,7 +469,7 @@ const ngx_create_pool = ngx.core.ngx_create_pool;
 const ngx_destroy_pool = ngx.core.ngx_destroy_pool;
 
 test "jsonschema module" {
-    try expectEqual(ngx_http_jsonschema_module.version, 1027004);
+    try expectEqual(ngx_http_jsonschema_module.version, 1029005);
 }
 
 // Helper to create a test pool for JSON operations

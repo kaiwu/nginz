@@ -3,7 +3,7 @@ const ngx = @import("ngx.zig");
 const ArrayList = std.array_list.Managed;
 const expectEqual = std.testing.expectEqual;
 
-pub const ngx_version = 1027004;
+pub const ngx_version = 1029005;
 pub const ngx_stdin = std.posix.STDIN_FILENO;
 pub const ngx_stdout = std.posix.STDOUT_FILENO;
 pub const ngx_stderr = std.posix.STDERR_FILENO;
