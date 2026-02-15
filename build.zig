@@ -183,6 +183,7 @@ pub fn build(b: *std.Build) void {
     nginz.linkSystemLibrary("z");
     nginz.linkSystemLibrary("pq");
     nginz.linkSystemLibrary("ssl");
+    nginz.linkSystemLibrary("xml2");
     nginz.linkSystemLibrary("xslt");
     nginz.linkSystemLibrary("exslt");
     nginz.linkSystemLibrary("crypt");
@@ -215,6 +216,7 @@ pub fn build(b: *std.Build) void {
         t.linkSystemLibrary("z");
         t.linkSystemLibrary("pq");
         t.linkSystemLibrary("ssl");
+        t.linkSystemLibrary("xml2");
         t.linkSystemLibrary("xslt");
         t.linkSystemLibrary("exslt");
         t.linkSystemLibrary("crypt");
