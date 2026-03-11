@@ -8,6 +8,7 @@ const patch = @import("project/build_patch.zig");
 const quickjs = @import("project//build_quickjs.zig");
 const http_modules = @import("project/build_modules.zig");
 const package = @import("project/build_package.zig");
+const check_layout = @import("project/build_check_layout.zig");
 
 const NGINX = "src/ngx/nginx.zig";
 
@@ -235,4 +236,8 @@ pub fn build(b: *std.Build) void {
 
     // Package step - creates nginx module packages with config files
     _ = package.createPackageSteps(b, target, optimize, nginx, cjsonlib) catch unreachable;
+
+    // Check layout step - compare C struct sizes against Zig bindings
+    const check_layout_step = b.step("check-layout", "Check C vs Zig struct layout compatibility");
+    check_layout_step.dependOn(check_layout.addCheckLayoutSteps(b, target, optimize, nginx, patch_step));
 }

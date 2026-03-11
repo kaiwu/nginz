@@ -27,6 +27,11 @@ A Dockerfile is provided as reference so that one can build their own dev image.
 > defaults to the configure options showed below in `main` branch. The `docker` branch configures
 > as many features as the official nginx [docker][3] debian release. Note the structs differences
 > in the test asserts.
+>
+> After upgrading the nginx submodule, run `zig build check-layout` (or `zig build check-layout
+> -Ddocker=true` for the docker config) to verify C and Zig struct layouts match. Mismatches
+> are typically caused by `spare` array sizes in `ngx.zig` not being adjusted when nginx adds
+> new conditional fields that consume `NGX_COMPAT_BEGIN` slots.
 
 To ease the development. A `nginz` binary is built as an artifact along with the module objects.
 It is a nginx wrapper, and by default built with

@@ -29,7 +29,11 @@
       "Bash(gh issue view:*)",
       "WebFetch(domain:github.com)",
       "Bash(sudo pacman:*)",
-      "Bash(zig version:*)"
+      "Bash(zig version:*)",
+      "Bash(zig zen:*)",
+      "Bash(zig 2>&1 | grep -i \"std.io\" || echo \"---\"; python3 -c \"\n# Check Zig 0.15 API for stdout\nimport subprocess\nresult = subprocess.run\\(['zig', 'run', '-'], input=b'''\nconst std = @import\\(\\\\\"std\\\\\"\\);\npub fn main\\(\\) void {\n    const w = std.io.getStdOut\\(\\);\n    _ = w;\n}\n''', capture_output=True\\)\nprint\\(result.stderr.decode\\(\\)\\)\n\" 2>&1 | head -10)",
+      "Bash(make -f project/nginz.makefile clean 2>&1 && zig build check-layout -Ddocker=true 2>&1)",
+      "Bash(make -f project/nginz.makefile clean 2>&1 && make -f project/nginz.makefile 2>&1 | tail -3)"
     ]
   }
 }
