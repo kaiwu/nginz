@@ -296,11 +296,11 @@ test "http" {
     try expectEqual(@sizeOf(ngx_http_script_regex_code_t), 72);
     try expectEqual(@sizeOf(ngx_http_script_regex_end_code_t), 16);
 
-    try expectEqual(@sizeOf(ngx_http_upstream_server_t), 120);
+    try expectEqual(@sizeOf(ngx_http_upstream_server_t), 136);
     try expectEqual(@sizeOf(ngx_http_upstream_conf_t), 536);
     try expectEqual(@sizeOf(ngx_http_upstream_headers_in_t), 312);
-    try expectEqual(@sizeOf(ngx_http_upstream_t), 1048);
-    try expectEqual(@sizeOf(ngx_http_upstream_rr_peer_t), 200);
+    try expectEqual(@sizeOf(ngx_http_upstream_t), 1064);
+    try expectEqual(@sizeOf(ngx_http_upstream_rr_peer_t), 216);
     try expectEqual(@sizeOf(ngx_http_upstream_rr_peers_t), 96);
 
     try expectEqual(@sizeOf(ngx_ssl_connection_t), 96);

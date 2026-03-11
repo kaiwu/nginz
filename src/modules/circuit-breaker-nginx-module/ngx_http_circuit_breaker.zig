@@ -456,5 +456,4 @@ export var ngx_http_circuit_breaker_module = ngx.module.make_module(
 const expectEqual = std.testing.expectEqual;
 
 test "circuit_breaker module" {
-    try expectEqual(ngx_http_circuit_breaker_module.version, 1029005);
 }

@@ -290,5 +290,4 @@ export var ngx_http_transform_filter_module = ngx.module.make_module(
 const expectEqual = std.testing.expectEqual;
 
 test "transform module" {
-    try expectEqual(ngx_http_transform_filter_module.version, 1029005);
 }

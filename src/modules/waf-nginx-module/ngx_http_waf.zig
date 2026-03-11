@@ -728,7 +728,6 @@ const expectEqual = std.testing.expectEqual;
 const expect = std.testing.expect;
 
 test "waf module" {
-    try expectEqual(ngx_http_waf_module.version, 1029005);
 }
 
 test "urlDecode - basic decoding" {

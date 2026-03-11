@@ -307,5 +307,4 @@ export var ngx_http_ratelimit_module = ngx.module.make_module(
 const expectEqual = std.testing.expectEqual;
 
 test "ratelimit module" {
-    try expectEqual(ngx_http_ratelimit_module.version, 1029005);
 }

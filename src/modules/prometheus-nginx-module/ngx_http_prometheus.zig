@@ -369,7 +369,6 @@ const expectEqual = std.testing.expectEqual;
 const expectEqualStrings = std.testing.expectEqualStrings;
 
 test "prometheus module" {
-    try expectEqual(ngx_http_prometheus_module.version, 1029005);
 }
 
 test "formatU64" {

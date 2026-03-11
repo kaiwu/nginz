@@ -3,7 +3,7 @@ const ngx = @import("ngx.zig");
 const ArrayList = std.array_list.Managed;
 const expectEqual = std.testing.expectEqual;
 
-pub const ngx_version = 1029005;
+pub const ngx_version = 1029006;
 pub const ngx_stdin = std.posix.STDIN_FILENO;
 pub const ngx_stdout = std.posix.STDOUT_FILENO;
 pub const ngx_stderr = std.posix.STDERR_FILENO;
@@ -194,7 +194,7 @@ test "core" {
     try expectEqual(@sizeOf(ngx_variable_value_t), 16);
     try expectEqual(@sizeOf(ngx_syslog_peer_t), 400);
     try expectEqual(@sizeOf(ngx_event_t), 96);
-    try expectEqual(@sizeOf(ngx_peer_connection_t), 128);
+    try expectEqual(@sizeOf(ngx_peer_connection_t), 144);
     try expectEqual(@sizeOf(ngx_event_pipe_t), 280);
 }
 

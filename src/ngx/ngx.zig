@@ -17229,6 +17229,8 @@ pub const struct_ngx_peer_connection_s = extern struct {
     type: c_int = @import("std").mem.zeroes(c_int),
     rcvbuf: c_int = @import("std").mem.zeroes(c_int),
     log: [*c]ngx_log_t = @import("std").mem.zeroes([*c]ngx_log_t),
+    hint: [*c]ngx_str_t = @import("std").mem.zeroes([*c]ngx_str_t),
+    sid: [*c]ngx_str_t = @import("std").mem.zeroes([*c]ngx_str_t),
     flags: struct_ngx_peer_connection_flags_s = @import("std").mem.zeroes(struct_ngx_peer_connection_flags_s),
 };
 pub const ngx_peer_connection_t = struct_ngx_peer_connection_s;
@@ -18079,6 +18081,7 @@ pub const ngx_http_upstream_server_t = extern struct {
     flags: ngx_http_upstream_server_flags_t = @import("std").mem.zeroes(ngx_http_upstream_server_flags_t),
     host: ngx_str_t = @import("std").mem.zeroes(ngx_str_t),
     service: ngx_str_t = @import("std").mem.zeroes(ngx_str_t),
+    sid: ngx_str_t = @import("std").mem.zeroes(ngx_str_t),
 };
 pub const ngx_http_upstream_local_t = extern struct {
     addr: [*c]ngx_addr_t = @import("std").mem.zeroes([*c]ngx_addr_t),
@@ -18238,8 +18241,9 @@ pub const ngx_http_upstream_ignore_headers_masks: [*c]ngx_conf_bitmask_t = @exte
     .name = "ngx_http_upstream_ignore_headers_masks",
 });
 const struct_ngx_http_upstream_rr_peer_flags_s = packed struct {
+    route: bool,
     zombie: bool,
-    padding: u31,
+    padding: u30,
 };
 pub const struct_ngx_http_upstream_rr_peer_s = extern struct {
     sockaddr: [*c]struct_sockaddr = @import("std").mem.zeroes([*c]struct_sockaddr),
@@ -18265,6 +18269,7 @@ pub const struct_ngx_http_upstream_rr_peer_s = extern struct {
     lock: ngx_atomic_t = @import("std").mem.zeroes(ngx_atomic_t),
     refs: ngx_uint_t = @import("std").mem.zeroes(ngx_uint_t),
     host: [*c]ngx_http_upstream_host_t = @import("std").mem.zeroes([*c]ngx_http_upstream_host_t),
+    sid: ngx_str_t = @import("std").mem.zeroes(ngx_str_t),
     next: [*c]ngx_http_upstream_rr_peer_t = @import("std").mem.zeroes([*c]ngx_http_upstream_rr_peer_t),
 };
 pub const ngx_http_upstream_rr_peer_t = struct_ngx_http_upstream_rr_peer_s;

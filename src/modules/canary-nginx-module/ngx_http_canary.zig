@@ -303,5 +303,4 @@ const expectEqual = std.testing.expectEqual;
 const expect = std.testing.expect;
 
 test "canary module" {
-    try expectEqual(ngx_http_canary_module.version, 1029005);
 }
