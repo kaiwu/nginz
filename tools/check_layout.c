@@ -11,6 +11,10 @@
 #include <ngx_http_v3_table.h>
 #include <ngx_http_v3.h>
 
+#if (NGX_STREAM)
+#include <ngx_stream.h>
+#endif
+
 #define PRINT_SIZEOF(type) \
     printf("sizeof " #type " %zu\n", sizeof(type))
 
@@ -41,6 +45,11 @@ int main(void) {
     PRINT_SIZEOF(ngx_event_t);
     PRINT_SIZEOF(ngx_peer_connection_t);
     PRINT_SIZEOF(ngx_event_pipe_t);
+    PRINT_SIZEOF(ngx_pool_cleanup_t);
+    PRINT_SIZEOF(ngx_open_file_t);
+    PRINT_SIZEOF(ngx_path_t);
+    PRINT_SIZEOF(ngx_shm_t);
+    PRINT_SIZEOF(ngx_shm_zone_t);
 
     /* === Buf / Chain structs === */
     PRINT_SIZEOF(ngx_buf_t);
@@ -81,6 +90,9 @@ int main(void) {
     PRINT_SIZEOF(ngx_http_status_t);
     PRINT_SIZEOF(ngx_http_variable_t);
     PRINT_SIZEOF(ngx_http_variable_value_t);
+    PRINT_SIZEOF(ngx_http_complex_value_t);
+    PRINT_SIZEOF(ngx_http_regex_t);
+    PRINT_SIZEOF(ngx_http_upstream_rr_peer_data_t);
 
     /* === HTTP config structs === */
     PRINT_SIZEOF(ngx_http_listen_opt_t);
@@ -148,6 +160,28 @@ int main(void) {
     PRINT_SIZEOF(ngx_http_v3_srv_conf_t);
     PRINT_SIZEOF(ngx_quic_conf_t);
 
+#if (NGX_STREAM)
+    /* === Stream core structs === */
+    PRINT_SIZEOF(ngx_stream_session_t);
+    PRINT_SIZEOF(ngx_stream_module_t);
+    PRINT_SIZEOF(ngx_stream_conf_ctx_t);
+    PRINT_SIZEOF(ngx_stream_core_srv_conf_t);
+    PRINT_SIZEOF(ngx_stream_phase_handler_t);
+    PRINT_SIZEOF(ngx_stream_upstream_main_conf_t);
+    PRINT_SIZEOF(ngx_stream_complex_value_t);
+
+    /* === Stream upstream structs === */
+    PRINT_SIZEOF(ngx_stream_upstream_t);
+    PRINT_SIZEOF(ngx_stream_upstream_server_t);
+    PRINT_SIZEOF(ngx_stream_upstream_srv_conf_t);
+    PRINT_SIZEOF(ngx_stream_upstream_state_t);
+    PRINT_SIZEOF(ngx_stream_upstream_resolved_t);
+    PRINT_SIZEOF(ngx_stream_upstream_peer_t);
+    PRINT_SIZEOF(ngx_stream_upstream_rr_peer_t);
+    PRINT_SIZEOF(ngx_stream_upstream_rr_peers_t);
+    PRINT_SIZEOF(ngx_stream_upstream_rr_peer_data_t);
+#endif
+
     /* === Key offsets: ngx_http_request_t === */
     PRINT_OFFSETOF(ngx_http_request_t, connection);
     PRINT_OFFSETOF(ngx_http_request_t, upstream);
@@ -192,6 +226,18 @@ int main(void) {
 
     /* === Key offsets: ngx_http_upstream_conf_t === */
     PRINT_OFFSETOF(ngx_http_upstream_conf_t, upstream);
+
+#if (NGX_STREAM)
+    /* === Key offsets: ngx_stream_session_t === */
+    PRINT_OFFSETOF(ngx_stream_session_t, connection);
+    PRINT_OFFSETOF(ngx_stream_session_t, upstream);
+    PRINT_OFFSETOF(ngx_stream_session_t, status);
+
+    /* === Key offsets: ngx_stream_upstream_t === */
+    PRINT_OFFSETOF(ngx_stream_upstream_t, peer);
+    PRINT_OFFSETOF(ngx_stream_upstream_t, upstream);
+    PRINT_OFFSETOF(ngx_stream_upstream_t, resolved);
+#endif
 
     return 0;
 }

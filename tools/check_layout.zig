@@ -43,6 +43,11 @@ const sizeof_table = [_]SizeEntry{
     .{ .name = "ngx_event_t", .zig_size = @sizeOf(core.ngx_event_t) },
     .{ .name = "ngx_peer_connection_t", .zig_size = @sizeOf(core.ngx_peer_connection_t) },
     .{ .name = "ngx_event_pipe_t", .zig_size = @sizeOf(core.ngx_event_pipe_t) },
+    .{ .name = "ngx_pool_cleanup_t", .zig_size = @sizeOf(core.ngx_pool_cleanup_t) },
+    .{ .name = "ngx_open_file_t", .zig_size = @sizeOf(core.ngx_open_file_t) },
+    .{ .name = "ngx_path_t", .zig_size = @sizeOf(core.ngx_path_t) },
+    .{ .name = "ngx_shm_t", .zig_size = @sizeOf(core.ngx_shm_t) },
+    .{ .name = "ngx_shm_zone_t", .zig_size = @sizeOf(core.ngx_shm_zone_t) },
 
     // Buf / Chain structs
     .{ .name = "ngx_buf_t", .zig_size = @sizeOf(buf.ngx_buf_t) },
@@ -83,6 +88,9 @@ const sizeof_table = [_]SizeEntry{
     .{ .name = "ngx_http_status_t", .zig_size = @sizeOf(http.ngx_http_status_t) },
     .{ .name = "ngx_http_variable_t", .zig_size = @sizeOf(http.ngx_http_variable_t) },
     .{ .name = "ngx_http_variable_value_t", .zig_size = @sizeOf(http.ngx_http_variable_value_t) },
+    .{ .name = "ngx_http_complex_value_t", .zig_size = @sizeOf(http.ngx_http_complex_value_t) },
+    .{ .name = "ngx_http_regex_t", .zig_size = @sizeOf(http.ngx_http_regex_t) },
+    .{ .name = "ngx_http_upstream_rr_peer_data_t", .zig_size = @sizeOf(http.ngx_http_upstream_rr_peer_data_t) },
 
     // HTTP config structs
     .{ .name = "ngx_http_listen_opt_t", .zig_size = @sizeOf(http.ngx_http_listen_opt_t) },
@@ -149,6 +157,26 @@ const sizeof_table = [_]SizeEntry{
     .{ .name = "ngx_http_v3_session_t", .zig_size = @sizeOf(vx.ngx_http_v3_session_t) },
     .{ .name = "ngx_http_v3_srv_conf_t", .zig_size = @sizeOf(vx.ngx_http_v3_srv_conf_t) },
     .{ .name = "ngx_quic_conf_t", .zig_size = @sizeOf(vx.ngx_quic_conf_t) },
+
+    // Stream core structs
+    .{ .name = "ngx_stream_session_t", .zig_size = @sizeOf(vx.ngx_stream_session_t) },
+    .{ .name = "ngx_stream_module_t", .zig_size = @sizeOf(vx.ngx_stream_module_t) },
+    .{ .name = "ngx_stream_conf_ctx_t", .zig_size = @sizeOf(vx.ngx_stream_conf_ctx_t) },
+    .{ .name = "ngx_stream_core_srv_conf_t", .zig_size = @sizeOf(vx.ngx_stream_core_srv_conf_t) },
+    .{ .name = "ngx_stream_phase_handler_t", .zig_size = @sizeOf(vx.ngx_stream_phase_handler_t) },
+    .{ .name = "ngx_stream_upstream_main_conf_t", .zig_size = @sizeOf(vx.ngx_stream_upstream_main_conf_t) },
+    .{ .name = "ngx_stream_complex_value_t", .zig_size = @sizeOf(vx.ngx_stream_complex_value_t) },
+
+    // Stream upstream structs
+    .{ .name = "ngx_stream_upstream_t", .zig_size = @sizeOf(vx.ngx_stream_upstream_t) },
+    .{ .name = "ngx_stream_upstream_server_t", .zig_size = @sizeOf(vx.ngx_stream_upstream_server_t) },
+    .{ .name = "ngx_stream_upstream_srv_conf_t", .zig_size = @sizeOf(vx.ngx_stream_upstream_srv_conf_t) },
+    .{ .name = "ngx_stream_upstream_state_t", .zig_size = @sizeOf(vx.ngx_stream_upstream_state_t) },
+    .{ .name = "ngx_stream_upstream_resolved_t", .zig_size = @sizeOf(vx.ngx_stream_upstream_resolved_t) },
+    .{ .name = "ngx_stream_upstream_peer_t", .zig_size = @sizeOf(vx.ngx_stream_upstream_peer_t) },
+    .{ .name = "ngx_stream_upstream_rr_peer_t", .zig_size = @sizeOf(vx.ngx_stream_upstream_rr_peer_t) },
+    .{ .name = "ngx_stream_upstream_rr_peers_t", .zig_size = @sizeOf(vx.ngx_stream_upstream_rr_peers_t) },
+    .{ .name = "ngx_stream_upstream_rr_peer_data_t", .zig_size = @sizeOf(vx.ngx_stream_upstream_rr_peer_data_t) },
 };
 
 const offsetof_table = [_]OffsetEntry{
@@ -196,6 +224,16 @@ const offsetof_table = [_]OffsetEntry{
 
     // ngx_http_upstream_conf_t
     .{ .name = "ngx_http_upstream_conf_t", .field = "upstream", .zig_offset = @offsetOf(http.ngx_http_upstream_conf_t, "upstream") },
+
+    // ngx_stream_session_t
+    .{ .name = "ngx_stream_session_t", .field = "connection", .zig_offset = @offsetOf(vx.ngx_stream_session_t, "connection") },
+    .{ .name = "ngx_stream_session_t", .field = "upstream", .zig_offset = @offsetOf(vx.ngx_stream_session_t, "upstream") },
+    .{ .name = "ngx_stream_session_t", .field = "status", .zig_offset = @offsetOf(vx.ngx_stream_session_t, "status") },
+
+    // ngx_stream_upstream_t
+    .{ .name = "ngx_stream_upstream_t", .field = "peer", .zig_offset = @offsetOf(vx.ngx_stream_upstream_t, "peer") },
+    .{ .name = "ngx_stream_upstream_t", .field = "upstream", .zig_offset = @offsetOf(vx.ngx_stream_upstream_t, "upstream") },
+    .{ .name = "ngx_stream_upstream_t", .field = "resolved", .zig_offset = @offsetOf(vx.ngx_stream_upstream_t, "resolved") },
 };
 
 fn lookupZigSize(name: []const u8) ?usize {
