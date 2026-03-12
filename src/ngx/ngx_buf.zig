@@ -8,6 +8,7 @@ const expectEqual = std.testing.expectEqual;
 pub const ngx_buf_t = ngx.ngx_buf_t;
 pub const ngx_chain_t = ngx.ngx_chain_t;
 pub const ngx_buf_tag_t = ngx.ngx_buf_tag_t;
+pub const ngx_chain_writer_ctx_t = ngx.ngx_chain_writer_ctx_t;
 
 const off_t = core.off_t;
 const u_char = core.u_char;

@@ -3,13 +3,25 @@ const ngx = @import("ngx");
 
 const core = ngx.core;
 const http = ngx.http;
+const buf = ngx.buf;
+const log_ = ngx.log;
+const file = ngx.file;
+const conf = ngx.conf;
+const module_ = ngx.module;
+const array = ngx.array;
+const list = ngx.list;
+const queue = ngx.queue;
+const hash = ngx.hash;
+const rbtree = ngx.rbtree;
+const string = ngx.string;
 
 const SizeEntry = struct { name: []const u8, zig_size: usize };
 const OffsetEntry = struct { name: []const u8, field: []const u8, zig_offset: usize };
 
-// Core structs from ngx_core.zig test
-// HTTP structs from ngx_http.zig test
 const sizeof_table = [_]SizeEntry{
+    // Core structs
+    .{ .name = "ngx_str_t", .zig_size = @sizeOf(core.ngx_str_t) },
+    .{ .name = "ngx_keyval_t", .zig_size = @sizeOf(string.ngx_keyval_t) },
     .{ .name = "ngx_dir_t", .zig_size = @sizeOf(core.ngx_dir_t) },
     .{ .name = "ngx_process_t", .zig_size = @sizeOf(core.ngx_process_t) },
     .{ .name = "ngx_pool_t", .zig_size = @sizeOf(core.ngx_pool_t) },
@@ -30,38 +42,130 @@ const sizeof_table = [_]SizeEntry{
     .{ .name = "ngx_event_t", .zig_size = @sizeOf(core.ngx_event_t) },
     .{ .name = "ngx_peer_connection_t", .zig_size = @sizeOf(core.ngx_peer_connection_t) },
     .{ .name = "ngx_event_pipe_t", .zig_size = @sizeOf(core.ngx_event_pipe_t) },
-    .{ .name = "ngx_http_file_cache_node_t", .zig_size = @sizeOf(http.ngx_http_file_cache_node_t) },
-    .{ .name = "ngx_http_cache_t", .zig_size = @sizeOf(http.ngx_http_cache_t) },
+
+    // Buf / Chain structs
+    .{ .name = "ngx_buf_t", .zig_size = @sizeOf(buf.ngx_buf_t) },
+    .{ .name = "ngx_chain_t", .zig_size = @sizeOf(buf.ngx_chain_t) },
+    .{ .name = "ngx_chain_writer_ctx_t", .zig_size = @sizeOf(buf.ngx_chain_writer_ctx_t) },
+
+    // Log / File structs
+    .{ .name = "ngx_log_t", .zig_size = @sizeOf(log_.ngx_log_t) },
+    .{ .name = "ngx_file_t", .zig_size = @sizeOf(file.ngx_file_t) },
+    .{ .name = "ngx_temp_file_t", .zig_size = @sizeOf(file.ngx_temp_file_t) },
+
+    // Config / Module structs
+    .{ .name = "ngx_conf_t", .zig_size = @sizeOf(conf.ngx_conf_t) },
+    .{ .name = "ngx_command_t", .zig_size = @sizeOf(conf.ngx_command_t) },
+    .{ .name = "ngx_module_t", .zig_size = @sizeOf(module_.ngx_module_t) },
+
+    // Container structs
+    .{ .name = "ngx_array_t", .zig_size = @sizeOf(array.ngx_array_t) },
+    .{ .name = "ngx_list_t", .zig_size = @sizeOf(list.ngx_list_t) },
+    .{ .name = "ngx_queue_t", .zig_size = @sizeOf(queue.ngx_queue_t) },
+    .{ .name = "ngx_hash_t", .zig_size = @sizeOf(hash.ngx_hash_t) },
+    .{ .name = "ngx_hash_init_t", .zig_size = @sizeOf(hash.ngx_hash_init_t) },
+    .{ .name = "ngx_table_elt_t", .zig_size = @sizeOf(hash.ngx_table_elt_t) },
+    .{ .name = "ngx_rbtree_t", .zig_size = @sizeOf(rbtree.ngx_rbtree_t) },
+    .{ .name = "ngx_rbtree_node_t", .zig_size = @sizeOf(rbtree.ngx_rbtree_node_t) },
+
+    // HTTP core structs
+    .{ .name = "ngx_http_module_t", .zig_size = @sizeOf(http.ngx_http_module_t) },
+    .{ .name = "ngx_http_request_t", .zig_size = @sizeOf(http.ngx_http_request_t) },
+    .{ .name = "ngx_http_request_body_t", .zig_size = @sizeOf(http.ngx_http_request_body_t) },
+    .{ .name = "ngx_http_headers_in_t", .zig_size = @sizeOf(http.ngx_http_headers_in_t) },
+    .{ .name = "ngx_http_header_out_t", .zig_size = @sizeOf(http.ngx_http_header_out_t) },
+    .{ .name = "ngx_http_connection_t", .zig_size = @sizeOf(http.ngx_http_connection_t) },
+    .{ .name = "ngx_http_cleanup_t", .zig_size = @sizeOf(http.ngx_http_cleanup_t) },
+    .{ .name = "ngx_http_log_ctx_t", .zig_size = @sizeOf(http.ngx_http_log_ctx_t) },
+    .{ .name = "ngx_http_posted_request_t", .zig_size = @sizeOf(http.ngx_http_posted_request_t) },
+    .{ .name = "ngx_http_post_subrequest_t", .zig_size = @sizeOf(http.ngx_http_post_subrequest_t) },
+    .{ .name = "ngx_http_status_t", .zig_size = @sizeOf(http.ngx_http_status_t) },
+    .{ .name = "ngx_http_variable_t", .zig_size = @sizeOf(http.ngx_http_variable_t) },
+    .{ .name = "ngx_http_variable_value_t", .zig_size = @sizeOf(http.ngx_http_variable_value_t) },
+
+    // HTTP config structs
     .{ .name = "ngx_http_listen_opt_t", .zig_size = @sizeOf(http.ngx_http_listen_opt_t) },
+    .{ .name = "ngx_http_core_main_conf_t", .zig_size = @sizeOf(http.ngx_http_core_main_conf_t) },
     .{ .name = "ngx_http_core_srv_conf_t", .zig_size = @sizeOf(http.ngx_http_core_srv_conf_t) },
+    .{ .name = "ngx_http_core_loc_conf_t", .zig_size = @sizeOf(http.ngx_http_core_loc_conf_t) },
     .{ .name = "ngx_http_addr_conf_t", .zig_size = @sizeOf(http.ngx_http_addr_conf_t) },
     .{ .name = "ngx_http_conf_addr_t", .zig_size = @sizeOf(http.ngx_http_conf_addr_t) },
-    .{ .name = "ngx_http_core_loc_conf_t", .zig_size = @sizeOf(http.ngx_http_core_loc_conf_t) },
-    .{ .name = "ngx_http_headers_in_t", .zig_size = @sizeOf(http.ngx_http_headers_in_t) },
-    .{ .name = "ngx_http_request_body_t", .zig_size = @sizeOf(http.ngx_http_request_body_t) },
-    .{ .name = "ngx_http_connection_t", .zig_size = @sizeOf(http.ngx_http_connection_t) },
-    .{ .name = "ngx_http_header_out_t", .zig_size = @sizeOf(http.ngx_http_header_out_t) },
-    .{ .name = "ngx_http_request_t", .zig_size = @sizeOf(http.ngx_http_request_t) },
+
+    // HTTP cache structs
+    .{ .name = "ngx_http_file_cache_node_t", .zig_size = @sizeOf(http.ngx_http_file_cache_node_t) },
+    .{ .name = "ngx_http_cache_t", .zig_size = @sizeOf(http.ngx_http_cache_t) },
+
+    // HTTP script structs
     .{ .name = "ngx_http_script_engine_t", .zig_size = @sizeOf(http.ngx_http_script_engine_t) },
     .{ .name = "ngx_http_script_compile_t", .zig_size = @sizeOf(http.ngx_http_script_compile_t) },
     .{ .name = "ngx_http_compile_complex_value_t", .zig_size = @sizeOf(http.ngx_http_compile_complex_value_t) },
     .{ .name = "ngx_http_script_regex_code_t", .zig_size = @sizeOf(http.ngx_http_script_regex_code_t) },
     .{ .name = "ngx_http_script_regex_end_code_t", .zig_size = @sizeOf(http.ngx_http_script_regex_end_code_t) },
-    .{ .name = "ngx_http_upstream_server_t", .zig_size = @sizeOf(http.ngx_http_upstream_server_t) },
-    .{ .name = "ngx_http_upstream_conf_t", .zig_size = @sizeOf(http.ngx_http_upstream_conf_t) },
-    .{ .name = "ngx_http_upstream_headers_in_t", .zig_size = @sizeOf(http.ngx_http_upstream_headers_in_t) },
+
+    // HTTP upstream structs
     .{ .name = "ngx_http_upstream_t", .zig_size = @sizeOf(http.ngx_http_upstream_t) },
+    .{ .name = "ngx_http_upstream_conf_t", .zig_size = @sizeOf(http.ngx_http_upstream_conf_t) },
+    .{ .name = "ngx_http_upstream_server_t", .zig_size = @sizeOf(http.ngx_http_upstream_server_t) },
+    .{ .name = "ngx_http_upstream_srv_conf_t", .zig_size = @sizeOf(http.ngx_http_upstream_srv_conf_t) },
+    .{ .name = "ngx_http_upstream_main_conf_t", .zig_size = @sizeOf(http.ngx_http_upstream_main_conf_t) },
+    .{ .name = "ngx_http_upstream_local_t", .zig_size = @sizeOf(http.ngx_http_upstream_local_t) },
+    .{ .name = "ngx_http_upstream_resolved_t", .zig_size = @sizeOf(http.ngx_http_upstream_resolved_t) },
+    .{ .name = "ngx_http_upstream_state_t", .zig_size = @sizeOf(http.ngx_http_upstream_state_t) },
+    .{ .name = "ngx_http_upstream_headers_in_t", .zig_size = @sizeOf(http.ngx_http_upstream_headers_in_t) },
+    .{ .name = "ngx_http_upstream_header_t", .zig_size = @sizeOf(http.ngx_http_upstream_header_t) },
     .{ .name = "ngx_http_upstream_rr_peer_t", .zig_size = @sizeOf(http.ngx_http_upstream_rr_peer_t) },
     .{ .name = "ngx_http_upstream_rr_peers_t", .zig_size = @sizeOf(http.ngx_http_upstream_rr_peers_t) },
+
+    // SSL structs
     .{ .name = "ngx_ssl_connection_t", .zig_size = @sizeOf(http.ngx_ssl_connection_t) },
     .{ .name = "ngx_ssl_ticket_key_t", .zig_size = @sizeOf(http.ngx_ssl_ticket_key_t) },
-    .{ .name = "ngx_http_module_t", .zig_size = @sizeOf(http.ngx_http_module_t) },
 };
 
 const offsetof_table = [_]OffsetEntry{
+    // ngx_http_request_t
     .{ .name = "ngx_http_request_t", .field = "connection", .zig_offset = @offsetOf(http.ngx_http_request_t, "connection") },
+    .{ .name = "ngx_http_request_t", .field = "upstream", .zig_offset = @offsetOf(http.ngx_http_request_t, "upstream") },
+    .{ .name = "ngx_http_request_t", .field = "pool", .zig_offset = @offsetOf(http.ngx_http_request_t, "pool") },
+    .{ .name = "ngx_http_request_t", .field = "header_in", .zig_offset = @offsetOf(http.ngx_http_request_t, "header_in") },
+    .{ .name = "ngx_http_request_t", .field = "headers_in", .zig_offset = @offsetOf(http.ngx_http_request_t, "headers_in") },
+    .{ .name = "ngx_http_request_t", .field = "headers_out", .zig_offset = @offsetOf(http.ngx_http_request_t, "headers_out") },
     .{ .name = "ngx_http_request_t", .field = "cleanup", .zig_offset = @offsetOf(http.ngx_http_request_t, "cleanup") },
     .{ .name = "ngx_http_request_t", .field = "state", .zig_offset = @offsetOf(http.ngx_http_request_t, "state") },
+
+    // ngx_http_upstream_t
+    .{ .name = "ngx_http_upstream_t", .field = "conf", .zig_offset = @offsetOf(http.ngx_http_upstream_t, "conf") },
+    .{ .name = "ngx_http_upstream_t", .field = "upstream", .zig_offset = @offsetOf(http.ngx_http_upstream_t, "upstream") },
+    .{ .name = "ngx_http_upstream_t", .field = "headers_in", .zig_offset = @offsetOf(http.ngx_http_upstream_t, "headers_in") },
+    .{ .name = "ngx_http_upstream_t", .field = "resolved", .zig_offset = @offsetOf(http.ngx_http_upstream_t, "resolved") },
+    .{ .name = "ngx_http_upstream_t", .field = "create_request", .zig_offset = @offsetOf(http.ngx_http_upstream_t, "create_request") },
+    .{ .name = "ngx_http_upstream_t", .field = "process_header", .zig_offset = @offsetOf(http.ngx_http_upstream_t, "process_header") },
+    .{ .name = "ngx_http_upstream_t", .field = "finalize_request", .zig_offset = @offsetOf(http.ngx_http_upstream_t, "finalize_request") },
+    .{ .name = "ngx_http_upstream_t", .field = "cleanup", .zig_offset = @offsetOf(http.ngx_http_upstream_t, "cleanup") },
+
+    // ngx_connection_t
+    .{ .name = "ngx_connection_t", .field = "ssl", .zig_offset = @offsetOf(core.ngx_connection_t, "ssl") },
+    .{ .name = "ngx_connection_t", .field = "fd", .zig_offset = @offsetOf(core.ngx_connection_t, "fd") },
+    .{ .name = "ngx_connection_t", .field = "log", .zig_offset = @offsetOf(core.ngx_connection_t, "log") },
+    .{ .name = "ngx_connection_t", .field = "read", .zig_offset = @offsetOf(core.ngx_connection_t, "read") },
+    .{ .name = "ngx_connection_t", .field = "write", .zig_offset = @offsetOf(core.ngx_connection_t, "write") },
+
+    // ngx_peer_connection_t
+    .{ .name = "ngx_peer_connection_t", .field = "connection", .zig_offset = @offsetOf(core.ngx_peer_connection_t, "connection") },
+    .{ .name = "ngx_peer_connection_t", .field = "local", .zig_offset = @offsetOf(core.ngx_peer_connection_t, "local") },
+    .{ .name = "ngx_peer_connection_t", .field = "log", .zig_offset = @offsetOf(core.ngx_peer_connection_t, "log") },
+
+    // ngx_event_t
+    .{ .name = "ngx_event_t", .field = "data", .zig_offset = @offsetOf(core.ngx_event_t, "data") },
+    .{ .name = "ngx_event_t", .field = "handler", .zig_offset = @offsetOf(core.ngx_event_t, "handler") },
+
+    // ngx_cycle_t
+    .{ .name = "ngx_cycle_t", .field = "conf_ctx", .zig_offset = @offsetOf(core.ngx_cycle_t, "conf_ctx") },
+    .{ .name = "ngx_cycle_t", .field = "pool", .zig_offset = @offsetOf(core.ngx_cycle_t, "pool") },
+    .{ .name = "ngx_cycle_t", .field = "log", .zig_offset = @offsetOf(core.ngx_cycle_t, "log") },
+    .{ .name = "ngx_cycle_t", .field = "modules", .zig_offset = @offsetOf(core.ngx_cycle_t, "modules") },
+
+    // ngx_http_upstream_conf_t
+    .{ .name = "ngx_http_upstream_conf_t", .field = "upstream", .zig_offset = @offsetOf(http.ngx_http_upstream_conf_t, "upstream") },
 };
 
 fn lookupZigSize(name: []const u8) ?usize {
@@ -95,17 +199,18 @@ pub fn main() !void {
         std.process.exit(1);
     }
 
-    const file = try std.fs.cwd().openFile(args[1], .{});
-    defer file.close();
-    const content = try file.readToEndAlloc(allocator, 1024 * 1024);
+    const file_ = try std.fs.cwd().openFile(args[1], .{});
+    defer file_.close();
+    const content = try file_.readToEndAlloc(allocator, 1024 * 1024);
     defer allocator.free(content);
 
     var mismatches: u32 = 0;
     var checked: u32 = 0;
     var lines = std.mem.splitSequence(u8, content, "\n");
+    var label_buf: [128]u8 = undefined;
 
-    print("\n  {s:<40} {s:>6}  {s:>6}  {s}\n", .{ "struct", "C", "Zig", "status" });
-    print("  {s:-<40} {s:->6}  {s:->6}  {s:-<10}\n", .{ "", "", "", "" });
+    print("\n  {s:<48} {s:>6}  {s:>6}  {s}\n", .{ "struct", "C", "Zig", "status" });
+    print("  {s:-<48} {s:->6}  {s:->6}  {s:-<10}\n", .{ "", "", "", "" });
 
     while (lines.next()) |line| {
         if (line.len == 0) continue;
@@ -119,13 +224,13 @@ pub fn main() !void {
                         const diff: i64 = @as(i64, @intCast(entry.size)) - @as(i64, @intCast(zig_size));
                         const abs_diff = @abs(diff);
                         if (abs_diff % 8 == 0) {
-                            print("  {s:<40} {d:>6}  {d:>6}  MISMATCH (diff={d}, {d} spare slot(s))\n", .{ entry.name, entry.size, zig_size, diff, @divExact(abs_diff, 8) });
+                            print("  {s:<48} {d:>6}  {d:>6}  MISMATCH (diff={d}, {d} spare slot(s))\n", .{ entry.name, entry.size, zig_size, diff, @divExact(abs_diff, 8) });
                         } else {
-                            print("  {s:<40} {d:>6}  {d:>6}  MISMATCH (diff={d})\n", .{ entry.name, entry.size, zig_size, diff });
+                            print("  {s:<48} {d:>6}  {d:>6}  MISMATCH (diff={d})\n", .{ entry.name, entry.size, zig_size, diff });
                         }
                         mismatches += 1;
                     } else {
-                        print("  {s:<40} {d:>6}  {d:>6}  OK\n", .{ entry.name, entry.size, zig_size });
+                        print("  {s:<48} {d:>6}  {d:>6}  OK\n", .{ entry.name, entry.size, zig_size });
                     }
                 }
             }
@@ -134,12 +239,13 @@ pub fn main() !void {
             if (parseOffsetofLine(rest)) |entry| {
                 if (lookupZigOffset(entry.struct_name, entry.field_name)) |zig_offset| {
                     checked += 1;
+                    const label = std.fmt.bufPrint(&label_buf, "{s}.{s}", .{ entry.struct_name, entry.field_name }) catch "???";
                     if (entry.offset != zig_offset) {
                         const diff: i64 = @as(i64, @intCast(entry.offset)) - @as(i64, @intCast(zig_offset));
-                        print("  {s:<40} {d:>6}  {d:>6}  MISMATCH (diff={d})\n", .{ entry.struct_name, entry.offset, zig_offset, diff });
+                        print("  {s:<48} {d:>6}  {d:>6}  MISMATCH (diff={d})\n", .{ label, entry.offset, zig_offset, diff });
                         mismatches += 1;
                     } else {
-                        print("  {s:<40} {d:>6}  {d:>6}  OK\n", .{ entry.struct_name, entry.offset, zig_offset });
+                        print("  {s:<48} {d:>6}  {d:>6}  OK\n", .{ label, entry.offset, zig_offset });
                     }
                 }
             }
