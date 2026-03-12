@@ -26,6 +26,8 @@ pub fn addCheckLayoutSteps(
         c_checker.addIncludePath(b.path(p));
     }
     c_checker.addIncludePath(b.path("submodules/nginx/src/event/quic"));
+    c_checker.addIncludePath(b.path("submodules/nginx/src/http/v2"));
+    c_checker.addIncludePath(b.path("submodules/nginx/src/http/v3"));
     c_checker.linkLibC();
     c_checker.linkSystemLibrary("ssl");
     c_checker.linkSystemLibrary("crypto");

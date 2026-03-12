@@ -52,6 +52,11 @@ pub const ngx_peer_connection_t = ngx.ngx_peer_connection_t;
 pub const ngx_ext_rename_file_t = ngx.ngx_ext_rename_file_t;
 pub const ngx_output_chain_ctx_t = ngx.ngx_output_chain_ctx_t;
 pub const ngx_cached_open_file_t = ngx.ngx_cached_open_file_t;
+pub const ngx_pool_cleanup_t = ngx.ngx_pool_cleanup_t;
+pub const ngx_open_file_t = ngx.ngx_open_file_t;
+pub const ngx_path_t = ngx.ngx_path_t;
+pub const ngx_shm_zone_t = ngx.ngx_shm_zone_t;
+pub const ngx_shm_t = ngx.ngx_shm_t;
 
 pub const ngx_pfree = ngx.ngx_pfree;
 pub const ngx_palloc = ngx.ngx_palloc;

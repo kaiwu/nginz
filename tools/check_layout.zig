@@ -14,6 +14,7 @@ const queue = ngx.queue;
 const hash = ngx.hash;
 const rbtree = ngx.rbtree;
 const string = ngx.string;
+const vx = ngx.vx;
 
 const SizeEntry = struct { name: []const u8, zig_size: usize };
 const OffsetEntry = struct { name: []const u8, field: []const u8, zig_offset: usize };
@@ -119,6 +120,35 @@ const sizeof_table = [_]SizeEntry{
     // SSL structs
     .{ .name = "ngx_ssl_connection_t", .zig_size = @sizeOf(http.ngx_ssl_connection_t) },
     .{ .name = "ngx_ssl_ticket_key_t", .zig_size = @sizeOf(http.ngx_ssl_ticket_key_t) },
+
+    // HTTP/2 structs
+    .{ .name = "ngx_http_v2_header_t", .zig_size = @sizeOf(vx.ngx_http_v2_header_t) },
+    .{ .name = "ngx_http_v2_state_t", .zig_size = @sizeOf(vx.ngx_http_v2_state_t) },
+    .{ .name = "ngx_http_v2_hpack_t", .zig_size = @sizeOf(vx.ngx_http_v2_hpack_t) },
+    .{ .name = "ngx_http_v2_connection_t", .zig_size = @sizeOf(vx.ngx_http_v2_connection_t) },
+    .{ .name = "ngx_http_v2_node_t", .zig_size = @sizeOf(vx.ngx_http_v2_node_t) },
+    .{ .name = "ngx_http_v2_stream_t", .zig_size = @sizeOf(vx.ngx_http_v2_stream_t) },
+    .{ .name = "ngx_http_v2_out_frame_t", .zig_size = @sizeOf(vx.ngx_http_v2_out_frame_t) },
+    .{ .name = "ngx_http_v2_srv_conf_t", .zig_size = @sizeOf(vx.ngx_http_v2_srv_conf_t) },
+
+    // HTTP/3 parse structs
+    .{ .name = "ngx_http_v3_parse_varlen_int_t", .zig_size = @sizeOf(vx.ngx_http_v3_parse_varlen_int_t) },
+    .{ .name = "ngx_http_v3_parse_prefix_int_t", .zig_size = @sizeOf(vx.ngx_http_v3_parse_prefix_int_t) },
+    .{ .name = "ngx_http_v3_parse_settings_t", .zig_size = @sizeOf(vx.ngx_http_v3_parse_settings_t) },
+    .{ .name = "ngx_http_v3_parse_field_section_prefix_t", .zig_size = @sizeOf(vx.ngx_http_v3_parse_field_section_prefix_t) },
+    .{ .name = "ngx_http_v3_parse_literal_t", .zig_size = @sizeOf(vx.ngx_http_v3_parse_literal_t) },
+    .{ .name = "ngx_http_v3_parse_field_t", .zig_size = @sizeOf(vx.ngx_http_v3_parse_field_t) },
+    .{ .name = "ngx_http_v3_parse_field_rep_t", .zig_size = @sizeOf(vx.ngx_http_v3_parse_field_rep_t) },
+    .{ .name = "ngx_http_v3_parse_headers_t", .zig_size = @sizeOf(vx.ngx_http_v3_parse_headers_t) },
+    .{ .name = "ngx_http_v3_parse_data_t", .zig_size = @sizeOf(vx.ngx_http_v3_parse_data_t) },
+
+    // HTTP/3 structs
+    .{ .name = "ngx_http_v3_field_t", .zig_size = @sizeOf(vx.ngx_http_v3_field_t) },
+    .{ .name = "ngx_http_v3_dynamic_table_t", .zig_size = @sizeOf(vx.ngx_http_v3_dynamic_table_t) },
+    .{ .name = "ngx_http_v3_parse_t", .zig_size = @sizeOf(vx.ngx_http_v3_parse_t) },
+    .{ .name = "ngx_http_v3_session_t", .zig_size = @sizeOf(vx.ngx_http_v3_session_t) },
+    .{ .name = "ngx_http_v3_srv_conf_t", .zig_size = @sizeOf(vx.ngx_http_v3_srv_conf_t) },
+    .{ .name = "ngx_quic_conf_t", .zig_size = @sizeOf(vx.ngx_quic_conf_t) },
 };
 
 const offsetof_table = [_]OffsetEntry{

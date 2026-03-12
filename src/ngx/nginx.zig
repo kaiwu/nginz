@@ -17,3 +17,4 @@ pub const queue = @import("ngx_queue.zig");
 pub const module = @import("ngx_module.zig");
 pub const rbtree = @import("ngx_rbtree.zig");
 pub const string = @import("ngx_string.zig");
+pub const vx = @import("ngx_vx.zig");

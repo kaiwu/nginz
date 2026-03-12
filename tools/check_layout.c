@@ -5,6 +5,11 @@
 #include <ngx_core.h>
 #include <ngx_http.h>
 #include <ngx_http_upstream_round_robin.h>
+#include <ngx_http_v2.h>
+#include <ngx_event_quic.h>
+#include <ngx_http_v3_parse.h>
+#include <ngx_http_v3_table.h>
+#include <ngx_http_v3.h>
 
 #define PRINT_SIZEOF(type) \
     printf("sizeof " #type " %zu\n", sizeof(type))
@@ -113,6 +118,35 @@ int main(void) {
     /* === SSL structs === */
     PRINT_SIZEOF(ngx_ssl_connection_t);
     PRINT_SIZEOF(ngx_ssl_ticket_key_t);
+
+    /* === HTTP/2 structs === */
+    PRINT_SIZEOF(ngx_http_v2_header_t);
+    PRINT_SIZEOF(ngx_http_v2_state_t);
+    PRINT_SIZEOF(ngx_http_v2_hpack_t);
+    PRINT_SIZEOF(ngx_http_v2_connection_t);
+    PRINT_SIZEOF(ngx_http_v2_node_t);
+    PRINT_SIZEOF(ngx_http_v2_stream_t);
+    PRINT_SIZEOF(ngx_http_v2_out_frame_t);
+    PRINT_SIZEOF(ngx_http_v2_srv_conf_t);
+
+    /* === HTTP/3 parse structs === */
+    PRINT_SIZEOF(ngx_http_v3_parse_varlen_int_t);
+    PRINT_SIZEOF(ngx_http_v3_parse_prefix_int_t);
+    PRINT_SIZEOF(ngx_http_v3_parse_settings_t);
+    PRINT_SIZEOF(ngx_http_v3_parse_field_section_prefix_t);
+    PRINT_SIZEOF(ngx_http_v3_parse_literal_t);
+    PRINT_SIZEOF(ngx_http_v3_parse_field_t);
+    PRINT_SIZEOF(ngx_http_v3_parse_field_rep_t);
+    PRINT_SIZEOF(ngx_http_v3_parse_headers_t);
+    PRINT_SIZEOF(ngx_http_v3_parse_data_t);
+
+    /* === HTTP/3 structs === */
+    PRINT_SIZEOF(ngx_http_v3_field_t);
+    PRINT_SIZEOF(ngx_http_v3_dynamic_table_t);
+    PRINT_SIZEOF(ngx_http_v3_parse_t);
+    PRINT_SIZEOF(ngx_http_v3_session_t);
+    PRINT_SIZEOF(ngx_http_v3_srv_conf_t);
+    PRINT_SIZEOF(ngx_quic_conf_t);
 
     /* === Key offsets: ngx_http_request_t === */
     PRINT_OFFSETOF(ngx_http_request_t, connection);
