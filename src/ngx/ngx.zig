@@ -3240,10 +3240,11 @@ const struct_ngx_listening_flags_s = packed struct {
     add_reuseport: bool,
     keepalive: u2,
     quic: bool,
+    change_protocol: bool,
     deferred_accept: bool,
     delete_deferred: bool,
     add_deferred: bool,
-    padding: u12,
+    padding: u11,
 };
 pub const struct_ngx_listening_s = extern struct {
     fd: ngx_socket_t = @import("std").mem.zeroes(ngx_socket_t),
@@ -3252,6 +3253,7 @@ pub const struct_ngx_listening_s = extern struct {
     addr_text_max_len: usize = @import("std").mem.zeroes(usize),
     addr_text: ngx_str_t = @import("std").mem.zeroes(ngx_str_t),
     type: c_int = @import("std").mem.zeroes(c_int),
+    protocol: c_int = @import("std").mem.zeroes(c_int),
     backlog: c_int = @import("std").mem.zeroes(c_int),
     rcvbuf: c_int = @import("std").mem.zeroes(c_int),
     sndbuf: c_int = @import("std").mem.zeroes(c_int),
@@ -17674,6 +17676,7 @@ pub const ngx_http_headers_in_t = extern struct {
     accept_encoding: [*c]ngx_table_elt_t = @import("std").mem.zeroes([*c]ngx_table_elt_t),
     via: [*c]ngx_table_elt_t = @import("std").mem.zeroes([*c]ngx_table_elt_t),
     authorization: [*c]ngx_table_elt_t = @import("std").mem.zeroes([*c]ngx_table_elt_t),
+    proxy_authorization: [*c]ngx_table_elt_t = @import("std").mem.zeroes([*c]ngx_table_elt_t),
     keep_alive: [*c]ngx_table_elt_t = @import("std").mem.zeroes([*c]ngx_table_elt_t),
     x_forwarded_for: [*c]ngx_table_elt_t = @import("std").mem.zeroes([*c]ngx_table_elt_t),
     cookie: [*c]ngx_table_elt_t = @import("std").mem.zeroes([*c]ngx_table_elt_t),
@@ -17699,6 +17702,7 @@ pub const ngx_http_headers_out_t = extern struct {
     content_range: [*c]ngx_table_elt_t = @import("std").mem.zeroes([*c]ngx_table_elt_t),
     accept_ranges: [*c]ngx_table_elt_t = @import("std").mem.zeroes([*c]ngx_table_elt_t),
     www_authenticate: [*c]ngx_table_elt_t = @import("std").mem.zeroes([*c]ngx_table_elt_t),
+    proxy_authenticate: [*c]ngx_table_elt_t = @import("std").mem.zeroes([*c]ngx_table_elt_t),
     expires: [*c]ngx_table_elt_t = @import("std").mem.zeroes([*c]ngx_table_elt_t),
     etag: [*c]ngx_table_elt_t = @import("std").mem.zeroes([*c]ngx_table_elt_t),
     cache_control: [*c]ngx_table_elt_t = @import("std").mem.zeroes([*c]ngx_table_elt_t),
@@ -18450,6 +18454,7 @@ pub const ngx_http_listen_opt_t = extern struct {
     rcvbuf: c_int = @import("std").mem.zeroes(c_int),
     sndbuf: c_int = @import("std").mem.zeroes(c_int),
     type: c_int = @import("std").mem.zeroes(c_int),
+    protocol: c_int = @import("std").mem.zeroes(c_int),
     fastopen: c_int = @import("std").mem.zeroes(c_int),
     tcp_keepidle: c_int = @import("std").mem.zeroes(c_int),
     tcp_keepintvl: c_int = @import("std").mem.zeroes(c_int),
@@ -50513,6 +50518,7 @@ pub const NGX_HTTP_UNAUTHORIZED = @as(c_int, 401);
 pub const NGX_HTTP_FORBIDDEN = @as(c_int, 403);
 pub const NGX_HTTP_NOT_FOUND = @as(c_int, 404);
 pub const NGX_HTTP_NOT_ALLOWED = @as(c_int, 405);
+pub const NGX_HTTP_PROXY_AUTH_REQUIRED = @as(c_int, 407);
 pub const NGX_HTTP_REQUEST_TIME_OUT = @as(c_int, 408);
 pub const NGX_HTTP_CONFLICT = @as(c_int, 409);
 pub const NGX_HTTP_LENGTH_REQUIRED = @as(c_int, 411);
