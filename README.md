@@ -1,7 +1,7 @@
 ## Nginz
 
 nginz is a `nginx` module writer. It allows one to write nginx modules in `zig`. so far it 
-is based on official nginx release 1.29.7 and zig 0.15. nginz is tested with linux only.
+is based on official nginx release 1.29.8 and zig 0.15. nginz is tested with linux only.
 
 A typical workflow is following: 
 
@@ -84,7 +84,7 @@ make install
 
 ### Important Notes
 
-- **nginx version**: Modules are built against nginx 1.29.7. Using with other versions may cause
+- **nginx version**: Modules are built against nginx 1.29.8. Using with other versions may cause
   compatibility issues.
 - **Filter modules**: Modules containing filters (echoz, wechatpay, oidc, requestid, cache-tags,
   transform) have ordering dependencies. Their position relative to nginx's built-in filters is

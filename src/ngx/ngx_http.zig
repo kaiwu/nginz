@@ -276,23 +276,23 @@ test "http" {
     try expectEqual(@sizeOf(ngx_http_file_cache_node_t), 120);
     try expectEqual(@sizeOf(ngx_http_cache_t), 608);
     try expectEqual(@sizeOf(ngx_http_listen_opt_t), 72);
-    try expectEqual(@sizeOf(ngx_http_core_srv_conf_t), 168);
+    try expectEqual(@sizeOf(ngx_http_core_srv_conf_t), 176);
     try expectEqual(@sizeOf(ngx_http_addr_conf_t), 24);
     try expectEqual(@sizeOf(ngx_http_conf_addr_t), 176);
     try expectEqual(@sizeOf(ngx_http_core_loc_conf_t), 720);
-    try expectEqual(@sizeOf(ngx_http_headers_in_t), 320);
+    try expectEqual(@sizeOf(ngx_http_headers_in_t), 328);
     try expectEqual(@sizeOf(ngx_http_request_body_t), 80);
     try expectEqual(@sizeOf(ngx_http_connection_t), 72);
     try expectEqual(@sizeOf(ngx_http_header_out_t), 24);
 
-    try expectEqual(@sizeOf(ngx_http_request_t), 1344);
+    try expectEqual(@sizeOf(ngx_http_request_t), 1352);
     try expectEqual(@offsetOf(ngx_http_request_t, "connection"), 8);
-    try expectEqual(@offsetOf(ngx_http_request_t, "cleanup"), 1128);
-    try expectEqual(@offsetOf(ngx_http_request_t, "flags0"), 1144);
-    try expectEqual(@offsetOf(ngx_http_request_t, "flags1"), 1152);
-    try expectEqual(@offsetOf(ngx_http_request_t, "state"), 1160);
-    try expectEqual(@offsetOf(ngx_http_request_t, "host_end"), 1328);
-    try expectEqual(@offsetOf(ngx_http_request_t, "flags2"), 1336);
+    try expectEqual(@offsetOf(ngx_http_request_t, "cleanup"), 1136);
+    try expectEqual(@offsetOf(ngx_http_request_t, "flags0"), 1152);
+    try expectEqual(@offsetOf(ngx_http_request_t, "flags1"), 1160);
+    try expectEqual(@offsetOf(ngx_http_request_t, "state"), 1168);
+    try expectEqual(@offsetOf(ngx_http_request_t, "host_end"), 1336);
+    try expectEqual(@offsetOf(ngx_http_request_t, "flags2"), 1344);
 
     try expectEqual(@sizeOf(ngx_http_script_engine_t), 88);
     try expectEqual(@sizeOf(ngx_http_script_compile_t), 88);

@@ -17656,6 +17656,7 @@ const ngx_http_headers_in_flags_t = packed struct {
 };
 pub const ngx_http_headers_in_t = extern struct {
     headers: ngx_list_t = @import("std").mem.zeroes(ngx_list_t),
+    count: ngx_uint_t = @import("std").mem.zeroes(ngx_uint_t),
     host: [*c]ngx_table_elt_t = @import("std").mem.zeroes([*c]ngx_table_elt_t),
     connection: [*c]ngx_table_elt_t = @import("std").mem.zeroes([*c]ngx_table_elt_t),
     if_modified_since: [*c]ngx_table_elt_t = @import("std").mem.zeroes([*c]ngx_table_elt_t),
@@ -18520,6 +18521,7 @@ pub const ngx_http_core_srv_conf_t = extern struct {
     client_header_buffer_size: usize = @import("std").mem.zeroes(usize),
     large_client_header_buffers: ngx_bufs_t = @import("std").mem.zeroes(ngx_bufs_t),
     client_header_timeout: ngx_msec_t = @import("std").mem.zeroes(ngx_msec_t),
+    max_headers: ngx_uint_t = @import("std").mem.zeroes(ngx_uint_t),
     ignore_invalid_headers: ngx_flag_t = @import("std").mem.zeroes(ngx_flag_t),
     merge_slashes: ngx_flag_t = @import("std").mem.zeroes(ngx_flag_t),
     underscores_in_headers: ngx_flag_t = @import("std").mem.zeroes(ngx_flag_t),
