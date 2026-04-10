@@ -80,6 +80,17 @@ describe("Redis GET Operations", () => {
     const body = await res.json();
     expect(body.value).toBe("42");
   });
+
+  test("escapes special characters in JSON string responses", async () => {
+    const rawValue = 'quote" slash\\ newline\n tab\t carriage\r';
+    redisMock.setValue("get/escaped", rawValue);
+
+    const res = await fetch(`${TEST_URL}/get/escaped`);
+    expect(res.status).toBe(200);
+
+    const body = await res.json();
+    expect(body.value).toBe(rawValue);
+  });
 });
 
 describe("Redis SET Operations", () => {
@@ -110,6 +121,20 @@ describe("Redis SET Operations", () => {
     const body = await res.json();
     expect(body.ok).toBe(true);
     expect(redisMock.getValue("set/existing")).toBe("updated-value");
+  });
+
+  test("stores request bodies with special characters intact", async () => {
+    const rawValue = 'value with "quotes", slash\\, and\nnewlines';
+
+    const res = await fetch(`${TEST_URL}/set/escaped-body`, {
+      method: "POST",
+      body: rawValue,
+    });
+    expect(res.status).toBe(200);
+
+    const body = await res.json();
+    expect(body.ok).toBe(true);
+    expect(redisMock.getValue("set/escaped-body")).toBe(rawValue);
   });
 
   test("rejects GET method for SET command", async () => {
@@ -196,6 +221,19 @@ describe("Redis INCR Operations", () => {
     const res = await fetch(`${TEST_URL}/incr/counter`);
     expect(res.status).toBe(405);
   });
+
+  test("returns redis_error for non-numeric INCR target", async () => {
+    redisMock.setValue("incr/not-a-number", "abc");
+
+    const res = await fetch(`${TEST_URL}/incr/not-a-number`, {
+      method: "POST",
+    });
+    expect(res.status).toBe(500);
+    expect(res.headers.get("content-type")).toBe("application/json");
+
+    const body = await res.json();
+    expect(body).toEqual({ error: "redis_error" });
+  });
 });
 
 describe("Redis EXPIRE Operations", () => {
@@ -236,6 +274,20 @@ describe("Redis EXPIRE Operations", () => {
     const body = await res.json();
     expect(body.value).toBe(1);
   });
+
+  test("returns redis_error for invalid TTL body", async () => {
+    redisMock.setValue("expire/badttl", "still-here");
+
+    const res = await fetch(`${TEST_URL}/expire/badttl`, {
+      method: "POST",
+      body: "not-a-number",
+    });
+    expect(res.status).toBe(500);
+    expect(res.headers.get("content-type")).toBe("application/json");
+
+    const body = await res.json();
+    expect(body).toEqual({ error: "redis_error" });
+  });
 });
 
 describe("Redis MGET Operations", () => {
@@ -272,6 +324,30 @@ describe("Redis MGET Operations", () => {
 
     const body = await res.json();
     expect(body.values).toEqual(["single-value"]);
+  });
+
+  test("stops parsing MGET keys at the next query parameter", async () => {
+    redisMock.setValue("amp1", "value-1");
+    redisMock.setValue("amp2", "value-2");
+
+    const res = await fetch(`${TEST_URL}/mget?keys=amp1,amp2&ignored=1`);
+    expect(res.status).toBe(200);
+
+    const body = await res.json();
+    expect(body.values).toEqual(["value-1", "value-2"]);
+  });
+
+  test("caps MGET to 16 keys", async () => {
+    const keys = Array.from({ length: 17 }, (_, i) => `limit-key-${i + 1}`);
+    keys.forEach((key) => redisMock.setValue(key, `value-${key}`));
+
+    const res = await fetch(`${TEST_URL}/mget?keys=${keys.join(",")}`);
+    expect(res.status).toBe(200);
+
+    const body = await res.json();
+    expect(body.values).toHaveLength(16);
+    expect(body.values[0]).toBe("value-limit-key-1");
+    expect(body.values[15]).toBe("value-limit-key-16");
   });
 });
 

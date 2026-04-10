@@ -226,7 +226,36 @@ const JsonField = struct {
     value: []const u8,
     is_null: bool,
     is_number: bool,
+    value_buf: [64]u8,
 };
+
+fn format_json_number(value: f64, buffer: []u8) []const u8 {
+    const truncated = @trunc(value);
+    if (truncated == value) {
+        const int_value: i64 = @intFromFloat(truncated);
+        return std.fmt.bufPrint(buffer, "{d}", .{int_value}) catch "0";
+    }
+    return std.fmt.bufPrint(buffer, "{d}", .{value}) catch "0";
+}
+
+fn append_sql_quoted(buf_out: []u8, pos_in: usize, value: []const u8) usize {
+    var pos = pos_in;
+    buf_out[pos] = '\'';
+    pos += 1;
+
+    for (value) |c| {
+        if (c == '\'') {
+            buf_out[pos] = '\'';
+            pos += 1;
+        }
+        buf_out[pos] = c;
+        pos += 1;
+    }
+
+    buf_out[pos] = '\'';
+    pos += 1;
+    return pos;
+}
 
 /// Parse JSON object into field array for INSERT/UPDATE
 fn parse_json_body(
@@ -272,8 +301,10 @@ fn parse_json_body(
             } else if (cjson.cJSON_IsNumber(item) == 1) {
                 fields[count].is_null = false;
                 fields[count].is_number = true;
-                // Number value will be formatted later
-                fields[count].value = "";
+                fields[count].value = format_json_number(
+                    cjson.cJSON_GetNumberValue(item),
+                    &fields[count].value_buf,
+                );
             } else if (cjson.cJSON_IsString(item) == 1) {
                 fields[count].is_null = false;
                 fields[count].is_number = false;
@@ -1004,13 +1035,7 @@ fn build_sql_query(
                         @memcpy(query_buf[pos..][0..field.value.len], field.value);
                         pos += field.value.len;
                     } else {
-                        // String value - quote it
-                        query_buf[pos] = '\'';
-                        pos += 1;
-                        @memcpy(query_buf[pos..][0..field.value.len], field.value);
-                        pos += field.value.len;
-                        query_buf[pos] = '\'';
-                        pos += 1;
+                        pos = append_sql_quoted(query_buf, pos, field.value);
                     }
                 }
 
@@ -1059,12 +1084,7 @@ fn build_sql_query(
                         @memcpy(query_buf[pos..][0..field.value.len], field.value);
                         pos += field.value.len;
                     } else {
-                        query_buf[pos] = '\'';
-                        pos += 1;
-                        @memcpy(query_buf[pos..][0..field.value.len], field.value);
-                        pos += field.value.len;
-                        query_buf[pos] = '\'';
-                        pos += 1;
+                        pos = append_sql_quoted(query_buf, pos, field.value);
                     }
                 }
             } else {
@@ -1110,13 +1130,7 @@ fn build_sql_query(
             query_buf[pos] = ' ';
             pos += 1;
 
-            // value (quoted for safety - real impl needs proper escaping)
-            query_buf[pos] = '\'';
-            pos += 1;
-            @memcpy(query_buf[pos..][0..filter.value.len], filter.value);
-            pos += filter.value.len;
-            query_buf[pos] = '\'';
-            pos += 1;
+            pos = append_filter_value(query_buf, pos, filter);
         }
     }
 
@@ -1457,6 +1471,73 @@ fn parse_single_filter(param: []const u8) ?Filter {
         .op = op,
         .value = value,
     };
+}
+
+fn append_filter_value(buf_out: []u8, pos_in: usize, filter: Filter) usize {
+    var pos = pos_in;
+
+    switch (filter.op) {
+        .is_ => {
+            if (std.ascii.eqlIgnoreCase(filter.value, "null")) {
+                const null_str = "NULL";
+                @memcpy(buf_out[pos..][0..null_str.len], null_str);
+                return pos + null_str.len;
+            }
+            if (std.ascii.eqlIgnoreCase(filter.value, "true")) {
+                const true_str = "TRUE";
+                @memcpy(buf_out[pos..][0..true_str.len], true_str);
+                return pos + true_str.len;
+            }
+            if (std.ascii.eqlIgnoreCase(filter.value, "false")) {
+                const false_str = "FALSE";
+                @memcpy(buf_out[pos..][0..false_str.len], false_str);
+                return pos + false_str.len;
+            }
+            return append_sql_quoted(buf_out, pos, filter.value);
+        },
+        .in_ => {
+            if (filter.value.len >= 2 and filter.value[0] == '(' and filter.value[filter.value.len - 1] == ')') {
+                buf_out[pos] = '(';
+                pos += 1;
+
+                const inner = filter.value[1 .. filter.value.len - 1];
+                var item_start: usize = 0;
+                var first = true;
+                var i: usize = 0;
+
+                while (i <= inner.len) : (i += 1) {
+                    if (i == inner.len or inner[i] == ',') {
+                        const item = inner[item_start..i];
+                        if (!first) {
+                            buf_out[pos] = ',';
+                            pos += 1;
+                        }
+                        first = false;
+
+                        if (std.ascii.eqlIgnoreCase(item, "null")) {
+                            const null_str = "NULL";
+                            @memcpy(buf_out[pos..][0..null_str.len], null_str);
+                            pos += null_str.len;
+                        } else if (std.ascii.eqlIgnoreCase(item, "true") or std.ascii.eqlIgnoreCase(item, "false") or is_numeric(item)) {
+                            @memcpy(buf_out[pos..][0..item.len], item);
+                            pos += item.len;
+                        } else {
+                            pos = append_sql_quoted(buf_out, pos, item);
+                        }
+
+                        item_start = i + 1;
+                    }
+                }
+
+                buf_out[pos] = ')';
+                pos += 1;
+                return pos;
+            }
+
+            return append_sql_quoted(buf_out, pos, filter.value);
+        },
+        else => return append_sql_quoted(buf_out, pos, filter.value),
+    }
 }
 
 /// ============================================================================
@@ -2255,6 +2336,11 @@ const MAX_RPC_PARAMS = 16;
 const RpcParam = struct {
     name: []const u8,
     value: []const u8,
+    is_null: bool = false,
+    is_numeric: bool = false,
+    is_boolean: bool = false,
+    is_raw: bool = false,
+    value_buf: [2048]u8 = std.mem.zeroes([2048]u8),
 };
 
 /// Parsed RPC call information
@@ -2263,6 +2349,8 @@ const RpcCall = struct {
     params: [MAX_RPC_PARAMS]RpcParam,
     param_count: usize,
     prefer_single_object: bool = false, // Wrap parameters in single JSON object
+    raw_body: [4096]u8 = std.mem.zeroes([4096]u8),
+    raw_body_len: usize = 0,
 };
 
 /// Detect if URI path points to RPC endpoint (/rpc/function_name)
@@ -2323,6 +2411,20 @@ fn parse_rpc_json_body(
 ) void {
     if (body.len == 0) return;
 
+    if (rpc_call.prefer_single_object) {
+        if (body.len >= rpc_call.raw_body.len) return;
+        @memcpy(rpc_call.raw_body[0..body.len], body);
+        rpc_call.raw_body_len = body.len;
+        rpc_call.params[0].name = "data";
+        rpc_call.params[0].value = rpc_call.raw_body[0..body.len];
+        rpc_call.params[0].is_raw = false;
+        rpc_call.params[0].is_null = false;
+        rpc_call.params[0].is_numeric = false;
+        rpc_call.params[0].is_boolean = false;
+        rpc_call.param_count = 1;
+        return;
+    }
+
     // Initialize cJSON with pool allocator
     var json_parser = cjson.CJSON.init(pool);
 
@@ -2354,15 +2456,19 @@ fn parse_rpc_json_body(
             // Get field value
             if (cjson.cJSON_IsNull(item) == 1) {
                 rpc_call.params[count].value = "NULL";
+                rpc_call.params[count].is_null = true;
+                rpc_call.params[count].is_numeric = false;
+                rpc_call.params[count].is_boolean = false;
+                rpc_call.params[count].is_raw = false;
             } else if (cjson.cJSON_IsNumber(item) == 1) {
-                // For numbers, we'll use the string representation from cJSON
-                if (cjson.cJSON_GetStringValue(item)) |str| {
-                    var str_len: usize = 0;
-                    while (str[str_len] != 0 and str_len < 1024) : (str_len += 1) {}
-                    rpc_call.params[count].value = str[0..str_len];
-                } else {
-                    rpc_call.params[count].value = "0";
-                }
+                rpc_call.params[count].value = format_json_number(
+                    cjson.cJSON_GetNumberValue(item),
+                    &rpc_call.params[count].value_buf,
+                );
+                rpc_call.params[count].is_null = false;
+                rpc_call.params[count].is_numeric = true;
+                rpc_call.params[count].is_boolean = false;
+                rpc_call.params[count].is_raw = false;
             } else if (cjson.cJSON_IsString(item) == 1) {
                 if (cjson.cJSON_GetStringValue(item)) |str| {
                     var str_len: usize = 0;
@@ -2371,13 +2477,21 @@ fn parse_rpc_json_body(
                 } else {
                     rpc_call.params[count].value = "";
                 }
+                rpc_call.params[count].is_null = false;
+                rpc_call.params[count].is_numeric = false;
+                rpc_call.params[count].is_boolean = false;
+                rpc_call.params[count].is_raw = false;
             } else if (cjson.cJSON_IsBool(item) == 1) {
                 rpc_call.params[count].value = if (cjson.cJSON_IsTrue(item) == 1) "true" else "false";
+                rpc_call.params[count].is_null = false;
+                rpc_call.params[count].is_numeric = false;
+                rpc_call.params[count].is_boolean = true;
+                rpc_call.params[count].is_raw = false;
             } else if (cjson.cJSON_IsArray(item) == 1) {
                 // Support for array parameters - store as ARRAY constructor syntax
                 // Convert array elements into ARRAY[...] format
                 var arr_pos: usize = 0;
-                var arr_buf: [2048]u8 = undefined;
+                var arr_buf = &rpc_call.params[count].value_buf;
 
                 // Start with ARRAY[
                 const arr_prefix = "ARRAY[";
@@ -2394,27 +2508,33 @@ fn parse_rpc_json_body(
                     }
 
                     if (cjson.cJSON_IsNumber(arr_item) == 1) {
-                        if (cjson.cJSON_GetStringValue(arr_item)) |str| {
-                            var s_len: usize = 0;
-                            while (str[s_len] != 0 and s_len < 64) : (s_len += 1) {}
-                            if (arr_pos + s_len < arr_buf.len) {
-                                @memcpy(arr_buf[arr_pos..][0..s_len], str[0..s_len]);
-                                arr_pos += s_len;
-                            }
+                        const num_str = format_json_number(
+                            cjson.cJSON_GetNumberValue(arr_item),
+                            arr_buf[arr_pos..],
+                        );
+                        if (arr_pos + num_str.len < arr_buf.len) {
+                            arr_pos += num_str.len;
                         }
                     } else if (cjson.cJSON_IsString(arr_item) == 1) {
-                        arr_buf[arr_pos] = '\'';
-                        arr_pos += 1;
                         if (cjson.cJSON_GetStringValue(arr_item)) |str| {
                             var s_len: usize = 0;
                             while (str[s_len] != 0 and s_len < 256) : (s_len += 1) {}
-                            if (arr_pos + s_len < arr_buf.len) {
-                                @memcpy(arr_buf[arr_pos..][0..s_len], str[0..s_len]);
-                                arr_pos += s_len;
+                            if (arr_pos + (s_len * 2) + 2 < arr_buf.len) {
+                                arr_pos = append_sql_quoted(arr_buf, arr_pos, str[0..s_len]);
                             }
                         }
-                        arr_buf[arr_pos] = '\'';
-                        arr_pos += 1;
+                    } else if (cjson.cJSON_IsBool(arr_item) == 1) {
+                        const bool_str = if (cjson.cJSON_IsTrue(arr_item) == 1) "true" else "false";
+                        if (arr_pos + bool_str.len < arr_buf.len) {
+                            @memcpy(arr_buf[arr_pos..][0..bool_str.len], bool_str);
+                            arr_pos += bool_str.len;
+                        }
+                    } else if (cjson.cJSON_IsNull(arr_item) == 1) {
+                        const null_str = "NULL";
+                        if (arr_pos + null_str.len < arr_buf.len) {
+                            @memcpy(arr_buf[arr_pos..][0..null_str.len], null_str);
+                            arr_pos += null_str.len;
+                        }
                     }
 
                     arr_item = arr_item.*.next;
@@ -2426,6 +2546,10 @@ fn parse_rpc_json_body(
                 arr_pos += 1;
 
                 rpc_call.params[count].value = arr_buf[0..arr_pos];
+                rpc_call.params[count].is_null = false;
+                rpc_call.params[count].is_numeric = false;
+                rpc_call.params[count].is_boolean = false;
+                rpc_call.params[count].is_raw = true;
             } else {
                 continue; // Skip unsupported types (nested objects)
             }
@@ -2466,6 +2590,10 @@ fn parse_rpc_params(args: ngx_str_t, rpc_call: *RpcCall) void {
         if (eq_pos > 0 and eq_pos < param.len - 1) {
             rpc_call.params[count].name = param[0..eq_pos];
             rpc_call.params[count].value = param[eq_pos + 1 ..];
+            rpc_call.params[count].is_null = false;
+            rpc_call.params[count].is_numeric = false;
+            rpc_call.params[count].is_boolean = false;
+            rpc_call.params[count].is_raw = false;
             count += 1;
         }
 
@@ -2473,20 +2601,6 @@ fn parse_rpc_params(args: ngx_str_t, rpc_call: *RpcCall) void {
     }
 
     rpc_call.param_count = count;
-}
-
-/// Check if a parameter value is a JSON array
-/// JSON arrays start with '[' and end with ']'
-fn is_json_array(value: []const u8) bool {
-    return value.len >= 2 and value[0] == '[' and value[value.len - 1] == ']';
-}
-
-/// Check if a parameter value is JSON (array or object)
-fn is_json_value(value: []const u8) bool {
-    if (value.len < 2) return false;
-    const first = value[0];
-    const last = value[value.len - 1];
-    return (first == '[' and last == ']') or (first == '{' and last == '}');
 }
 
 /// Build SQL function call from RPC parameters
@@ -2540,31 +2654,18 @@ fn build_rpc_call_query(
         // Parameter value handling
         // JSON arrays/objects are passed without quotes
         // Regular strings and other values are quoted
-        if (is_json_value(param.value)) {
-            // JSON array or object - pass as is without quotes
+        if (param.is_raw) {
             @memcpy(query_buf[pos..][0..param.value.len], param.value);
             pos += param.value.len;
-        } else if (std.mem.eql(u8, param.value, "NULL")) {
-            // NULL values - pass without quotes
+        } else if (param.is_null) {
             const null_str = "NULL";
             @memcpy(query_buf[pos..][0..null_str.len], null_str);
             pos += null_str.len;
-        } else if (std.mem.eql(u8, param.value, "true") or std.mem.eql(u8, param.value, "false")) {
-            // Boolean values - pass without quotes
-            @memcpy(query_buf[pos..][0..param.value.len], param.value);
-            pos += param.value.len;
-        } else if (is_numeric(param.value)) {
-            // Numeric values - pass without quotes
+        } else if (param.is_boolean or param.is_numeric) {
             @memcpy(query_buf[pos..][0..param.value.len], param.value);
             pos += param.value.len;
         } else {
-            // String values - quote them
-            query_buf[pos] = '\'';
-            pos += 1;
-            @memcpy(query_buf[pos..][0..param.value.len], param.value);
-            pos += param.value.len;
-            query_buf[pos] = '\'';
-            pos += 1;
+            pos = append_sql_quoted(query_buf, pos, param.value);
         }
     }
 
@@ -2603,6 +2704,23 @@ fn is_numeric(value: []const u8) bool {
     }
 
     return has_digit;
+}
+
+fn request_needs_body(r: [*c]ngx_http_request_t) bool {
+    return r.*.method == http.NGX_HTTP_POST or
+        r.*.method == http.NGX_HTTP_PATCH or
+        r.*.method == http.NGX_HTTP_PUT;
+}
+
+export fn ngx_http_pgrest_client_body_handler(r: [*c]ngx_http_request_t) callconv(.c) void {
+    http.ngx_http_finalize_request(r, ngx_http_pgrest_handler(r));
+}
+
+export fn ngx_http_pgrest_upstream_client_body_handler(r: [*c]ngx_http_request_t) callconv(.c) void {
+    const rc = ngx_http_pgrest_upstream_handler(r);
+    if (rc != NGX_AGAIN and rc != NGX_OK) {
+        http.ngx_http_finalize_request(r, rc);
+    }
 }
 
 /// Extract table name from URI path
@@ -2829,6 +2947,14 @@ fn handle_rpc_call(r: [*c]ngx_http_request_t, conninfo: []const u8, loc_conf: *n
 
 /// Content handler for pgrest_pass locations
 fn ngx_http_pgrest_handler(r: [*c]ngx_http_request_t) callconv(.c) ngx_int_t {
+    if (request_needs_body(r) and r.*.request_body == null) {
+        const rc = http.ngx_http_read_client_request_body(r, ngx_http_pgrest_client_body_handler);
+        if (rc >= http.NGX_HTTP_SPECIAL_RESPONSE) {
+            return rc;
+        }
+        return core.NGX_DONE;
+    }
+
     // Get location config to retrieve connection string
     const loc_conf = core.castPtr(
         ngx_pgrest_loc_conf_t,
@@ -3012,7 +3138,11 @@ fn ngx_http_pgrest_handler(r: [*c]ngx_http_request_t) callconv(.c) ngx_int_t {
         },
         .plain_text => {
             if (pg_result.ntuples > 0 and pg_result.nfields > 0) {
-                response_len = format_result_as_scalar(pg_result.result, &response_buf);
+                response_len = format_result_as_plain_text(
+                    pg_result.result,
+                    pg_result.ntuples,
+                    &response_buf,
+                );
             }
             content_type = "text/plain; charset=utf-8";
         },
@@ -3026,7 +3156,7 @@ fn ngx_http_pgrest_handler(r: [*c]ngx_http_request_t) callconv(.c) ngx_int_t {
             content_type = "text/xml; charset=utf-8";
         },
         .binary => {
-            content_type = "application/octet-stream";
+            content_type = "application/json";
             response_len = format_result_as_json_smart(
                 r,
                 pg_result.result,
@@ -3149,6 +3279,14 @@ fn handle_rpc_call_upstream(r: [*c]ngx_http_request_t) ngx_int_t {
 
 /// Non-blocking content handler that uses upstream mechanism with connection pooling
 fn ngx_http_pgrest_upstream_handler(r: [*c]ngx_http_request_t) callconv(.c) ngx_int_t {
+    if (request_needs_body(r) and r.*.request_body == null) {
+        const rc = http.ngx_http_read_client_request_body(r, ngx_http_pgrest_upstream_client_body_handler);
+        if (rc >= http.NGX_HTTP_SPECIAL_RESPONSE) {
+            return rc;
+        }
+        return core.NGX_DONE;
+    }
+
     // Set response content type to JSON
     r.*.headers_out.content_type = ngx_string("application/json");
     r.*.headers_out.content_type_len = 16;

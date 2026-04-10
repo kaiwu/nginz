@@ -11,6 +11,10 @@ import {
 const MODULE = "pgrest";
 let pgMock;
 
+function lastSql() {
+  return pgMock.getLastQuery();
+}
+
 describe("pgrest module", () => {
   beforeAll(async () => {
     // Start PostgreSQL mock server
@@ -27,7 +31,7 @@ describe("pgrest module", () => {
     }));
 
     // Handler for SELECT with specific columns
-    pgMock.setQueryHandler(/^SELECT id,name FROM users/, (query) => ({
+    pgMock.setQueryHandler(/^SELECT id,name FROM users$/, (query) => ({
       columns: ["id", "name"],
       rows: [
         ["1", "John Doe"],
@@ -61,6 +65,50 @@ describe("pgrest module", () => {
       rows: [["1", "John Doe", "john@example.com", "active"]],
     }));
 
+    // Handler for profile header / schema-qualified reads
+    pgMock.setQueryHandler(/SELECT \* FROM admin\.users$/, () => ({
+      columns: ["id", "name", "email", "status"],
+      rows: [["101", "Admin Jane", "admin@example.com", "active"]],
+    }));
+
+    // Handler for singular object / null stripping tests
+    pgMock.setQueryHandler(/SELECT \* FROM profiles WHERE id = '1'/, () => ({
+      columns: ["id", "name", "bio", "avatar"],
+      rows: [["1", "John Doe", null, null]],
+    }));
+
+    pgMock.setQueryHandler(/^SELECT \* FROM profiles$/, () => ({
+      columns: ["id", "name", "bio", "avatar"],
+      rows: [
+        ["1", "John Doe", null, null],
+        ["2", "Jane Smith", "Developer", null],
+      ],
+    }));
+
+    // Handlers for additional filter operators and pagination combinations
+    pgMock.setQueryHandler(/SELECT \* FROM users WHERE age > '18'/, () => ({
+      columns: ["id", "name", "age"],
+      rows: [["1", "John Doe", "29"]],
+    }));
+
+    pgMock.setQueryHandler(/SELECT \* FROM users WHERE deleted_at IS NULL/, () => ({
+      columns: ["id", "name", "deleted_at"],
+      rows: [["1", "John Doe", null]],
+    }));
+
+    pgMock.setQueryHandler(/SELECT \* FROM users WHERE status IN \('active','pending'\)/, () => ({
+      columns: ["id", "name", "status"],
+      rows: [
+        ["1", "John Doe", "active"],
+        ["4", "Pending User", "pending"],
+      ],
+    }));
+
+    pgMock.setQueryHandler(/SELECT id,name FROM users WHERE status = 'active' ORDER BY id DESC LIMIT 1 OFFSET 1/, () => ({
+      columns: ["id", "name"],
+      rows: [["1", "John Doe"]],
+    }));
+
     // Handler for SELECT with ORDER BY
     pgMock.setQueryHandler(/SELECT \* FROM users.*ORDER BY name ASC/, (query) => ({
       columns: ["id", "name", "email", "status"],
@@ -86,6 +134,31 @@ describe("pgrest module", () => {
       rows: [["4", "New User", "new@example.com", "active"]],
     }));
 
+    pgMock.setQueryHandler(/^INSERT INTO tenant_001\.users/, () => ({
+      columns: ["id", "name", "email"],
+      rows: [["55", "Tenant User", "tenant@example.com"]],
+    }));
+
+    pgMock.setQueryHandler(/^UPDATE tenant_001\.users SET/, () => ({
+      columns: ["id", "status"],
+      rows: [["5", "inactive"]],
+    }));
+
+    pgMock.setQueryHandler(/^DELETE FROM admin\.users WHERE id = '5' RETURNING \*/, () => ({
+      columns: ["id", "name"],
+      rows: [["5", "Delete Me"]],
+    }));
+
+    pgMock.setQueryHandler(/^UPDATE users SET/, (query) => ({
+      columns: ["id", "status", "email", "name"],
+      rows: [["5", "inactive", null, "Updated User"]],
+    }));
+
+    pgMock.setQueryHandler(/^DELETE FROM users WHERE id = '5' RETURNING \*/, () => ({
+      columns: ["id", "name"],
+      rows: [["5", "Delete Me"]],
+    }));
+
     // Handler for RPC: get_user_count
     pgMock.setQueryHandler(/SELECT get_user_count\(\)/, (query) => ({
       columns: ["get_user_count"],
@@ -98,6 +171,25 @@ describe("pgrest module", () => {
       rows: [["3"]],
     }));
 
+    pgMock.setQueryHandler(/SELECT get_profile\(id => 1\)/, () => ({
+      columns: ["id", "name", "bio"],
+      rows: [["1", "John Doe", null]],
+    }));
+
+    pgMock.setQueryHandler(/SELECT process_numbers\(ids => ARRAY\[1,2,3\]\)/, () => ({
+      columns: ["id", "squared"],
+      rows: [
+        ["1", "1"],
+        ["2", "4"],
+        ["3", "9"],
+      ],
+    }));
+
+    pgMock.setQueryHandler(/SELECT create_user\(/, () => ({
+      columns: ["id", "name"],
+      rows: [["9", "Wrapped User"]],
+    }));
+  
     await startNginz(`tests/${MODULE}/nginx.conf`, MODULE);
   });
 
@@ -171,6 +263,39 @@ describe("pgrest module", () => {
     expect(body[0].name).toBe("John Doe");
   });
 
+  test("GET /api/users with gt filter builds numeric comparison SQL", async () => {
+    pgMock.clearTracking();
+
+    const res = await fetch(`${TEST_URL}/api/users?age=gt.18`);
+    expect(res.status).toBe(200);
+
+    const body = await res.json();
+    expect(body).toEqual([{ id: "1", name: "John Doe", age: "29" }]);
+    expect(lastSql()).toBe("SELECT * FROM users WHERE age > '18'");
+  });
+
+  test("GET /api/users with is.null filter emits SQL NULL", async () => {
+    pgMock.clearTracking();
+
+    const res = await fetch(`${TEST_URL}/api/users?deleted_at=is.null`);
+    expect(res.status).toBe(200);
+
+    const body = await res.json();
+    expect(body).toEqual([{ id: "1", name: "John Doe", deleted_at: null }]);
+    expect(lastSql()).toBe("SELECT * FROM users WHERE deleted_at IS NULL");
+  });
+
+  test("GET /api/users with in filter emits a proper SQL list", async () => {
+    pgMock.clearTracking();
+
+    const res = await fetch(`${TEST_URL}/api/users?status=in.(active,pending)`);
+    expect(res.status).toBe(200);
+
+    const body = await res.json();
+    expect(body).toHaveLength(2);
+    expect(lastSql()).toBe("SELECT * FROM users WHERE status IN ('active','pending')");
+  });
+
   // ============================================================================
   // Ordering Tests
   // ============================================================================
@@ -200,6 +325,21 @@ describe("pgrest module", () => {
     expect(body.length).toBe(2);
   });
 
+  test("GET /api/users combines select, filter, order, limit, and offset", async () => {
+    pgMock.clearTracking();
+
+    const res = await fetch(
+      `${TEST_URL}/api/users?select=id,name&status=eq.active&order=id.desc&limit=1&offset=1`
+    );
+    expect(res.status).toBe(200);
+
+    const body = await res.json();
+    expect(body).toEqual([{ id: "1", name: "John Doe" }]);
+    expect(lastSql()).toBe(
+      "SELECT id,name FROM users WHERE status = 'active' ORDER BY id DESC LIMIT 1 OFFSET 1"
+    );
+  });
+
   // ============================================================================
   // INSERT Tests (POST)
   // ============================================================================
@@ -225,6 +365,84 @@ describe("pgrest module", () => {
     expect(body.length).toBe(1);
     expect(body[0]).toHaveProperty("id");
     expect(body[0].name).toBe("New User");
+  });
+
+  test("POST /api/users with Content-Profile writes to schema-qualified table", async () => {
+    pgMock.clearTracking();
+
+    const res = await fetch(`${TEST_URL}/api/users`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Content-Profile": "tenant_001",
+      },
+      body: JSON.stringify({
+        name: "Tenant User",
+        email: "tenant@example.com",
+      }),
+    });
+
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body[0].name).toBe("Tenant User");
+    expect(lastSql()).toBe(
+      "INSERT INTO tenant_001.users (name,email) VALUES ('Tenant User','tenant@example.com') RETURNING *"
+    );
+  });
+
+  test("PATCH /api/users with Content-Profile updates schema-qualified table", async () => {
+    pgMock.clearTracking();
+
+    const res = await fetch(`${TEST_URL}/api/users?id=eq.5`, {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+        "Content-Profile": "tenant_001",
+      },
+      body: JSON.stringify({ status: "inactive" }),
+    });
+
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body[0].status).toBe("inactive");
+    expect(lastSql()).toBe(
+      "UPDATE tenant_001.users SET status='inactive' WHERE id = '5' RETURNING *"
+    );
+  });
+
+  test("DELETE /api/users with Accept-Profile deletes from schema-qualified table", async () => {
+    pgMock.clearTracking();
+
+    const res = await fetch(`${TEST_URL}/api/users?id=eq.5`, {
+      method: "DELETE",
+      headers: {
+        "Accept-Profile": "admin",
+      },
+    });
+
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body[0].id).toBe("5");
+    expect(lastSql()).toBe("DELETE FROM admin.users WHERE id = '5' RETURNING *");
+  });
+
+  test("PATCH /api/users preserves null values in JSON body SQL", async () => {
+    pgMock.clearTracking();
+
+    const res = await fetch(`${TEST_URL}/api/users?id=eq.5`, {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ status: "inactive", email: null, name: "Updated User" }),
+    });
+
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body[0].email).toBeNull();
+    expect(lastSql()).toBe(
+      "UPDATE users SET status='inactive',email=NULL,name='Updated User' WHERE id = '5' RETURNING *"
+    );
   });
 
   // ============================================================================
@@ -254,6 +472,43 @@ describe("pgrest module", () => {
     const body = await res.text();
     // add_them(1, 2) should return 3
     expect(body).toContain("3");
+  });
+
+  test("POST /rpc/process_numbers converts JSON arrays to PostgreSQL ARRAY syntax", async () => {
+    pgMock.clearTracking();
+
+    const res = await fetch(`${TEST_URL}/rpc/process_numbers`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ ids: [1, 2, 3] }),
+    });
+
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body).toHaveLength(3);
+    expect(lastSql()).toBe("SELECT process_numbers(ids => ARRAY[1,2,3])");
+  });
+
+  test("POST /rpc/create_user with Prefer: params=single-object wraps the body into a data parameter", async () => {
+    pgMock.clearTracking();
+
+    const res = await fetch(`${TEST_URL}/rpc/create_user`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Prefer: "params=single-object",
+      },
+      body: JSON.stringify({ name: "Wrapped User", email: "wrapped@example.com" }),
+    });
+
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body[0].name).toBe("Wrapped User");
+    expect(lastSql()).toBe(
+      `SELECT create_user(data => '{"name":"Wrapped User","email":"wrapped@example.com"}')`
+    );
   });
 
   // ============================================================================
@@ -303,6 +558,9 @@ describe("pgrest module", () => {
 
     const contentType = res.headers.get("content-type");
     expect(contentType).toContain("text/plain");
+
+    const body = await res.text();
+    expect(body).toBe("John Doe\nJane Smith\nBob Wilson");
   });
 
   test("GET /api/users with Accept: application/json returns JSON (default)", async () => {
@@ -316,6 +574,92 @@ describe("pgrest module", () => {
 
     const body = await res.json();
     expect(Array.isArray(body)).toBe(true);
+  });
+
+  test("GET /api/users with Accept-Profile reads from schema-qualified table", async () => {
+    pgMock.clearTracking();
+
+    const res = await fetch(`${TEST_URL}/api/users`, {
+      headers: { "Accept-Profile": "admin" },
+    });
+    expect(res.status).toBe(200);
+
+    const body = await res.json();
+    expect(body).toEqual([
+      {
+        id: "101",
+        name: "Admin Jane",
+        email: "admin@example.com",
+        status: "active",
+      },
+    ]);
+    expect(lastSql()).toBe("SELECT * FROM admin.users");
+  });
+
+  test("GET /api/profiles with pgrst object accept returns a single object", async () => {
+    const res = await fetch(`${TEST_URL}/api/profiles?id=eq.1`, {
+      headers: { Accept: "application/vnd.pgrst.object+json" },
+    });
+    expect(res.status).toBe(200);
+
+    const body = await res.json();
+    expect(Array.isArray(body)).toBe(false);
+    expect(body).toEqual({
+      id: "1",
+      name: "John Doe",
+      bio: null,
+      avatar: null,
+    });
+  });
+
+  test("GET /api/profiles with nulls=stripped removes null fields from array results", async () => {
+    const res = await fetch(`${TEST_URL}/api/profiles`, {
+      headers: { Accept: "application/vnd.pgrst.array+json;nulls=stripped" },
+    });
+    expect(res.status).toBe(200);
+
+    const body = await res.json();
+    expect(body).toEqual([
+      { id: "1", name: "John Doe" },
+      { id: "2", name: "Jane Smith", bio: "Developer" },
+    ]);
+  });
+
+  test("GET /api/profiles with object+nulls=stripped combines both JSON options", async () => {
+    const res = await fetch(`${TEST_URL}/api/profiles?id=eq.1`, {
+      headers: { Accept: "application/vnd.pgrst.object+json;nulls=stripped" },
+    });
+    expect(res.status).toBe(200);
+
+    const body = await res.json();
+    expect(body).toEqual({ id: "1", name: "John Doe" });
+  });
+
+  test("GET /api/users with Accept: application/octet-stream falls back to JSON response semantics", async () => {
+    const res = await fetch(`${TEST_URL}/api/users`, {
+      headers: { Accept: "application/octet-stream" },
+    });
+    expect(res.status).toBe(200);
+
+    expect(res.headers.get("content-type")).toContain("application/json");
+    const body = await res.text();
+    expect(body.startsWith("[")).toBe(true);
+    expect(body).toContain('"John Doe"');
+  });
+
+  test("POST /rpc/get_profile with pgrst object accept returns a single object", async () => {
+    const res = await fetch(`${TEST_URL}/rpc/get_profile`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/vnd.pgrst.object+json;nulls=stripped",
+      },
+      body: JSON.stringify({ id: 1 }),
+    });
+    expect(res.status).toBe(200);
+
+    const body = await res.json();
+    expect(body).toEqual({ id: "1", name: "John Doe" });
   });
 
   // ============================================================================
