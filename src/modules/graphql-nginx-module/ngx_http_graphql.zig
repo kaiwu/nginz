@@ -103,9 +103,15 @@ fn parseGraphQL(query: []const u8) ParseResult {
                 max_depth = depth;
             }
         } else if (c == '}') {
-            if (depth > 0) {
-                depth -= 1;
+            if (depth == 0) {
+                return ParseResult{
+                    .max_depth = max_depth,
+                    .has_introspection = has_introspection,
+                    .is_valid = false,
+                    .error_message = "Unmatched closing brace in query",
+                };
             }
+            depth -= 1;
         }
 
         // Check for introspection queries (__schema, __type)

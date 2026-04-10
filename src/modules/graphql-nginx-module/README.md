@@ -115,4 +115,6 @@ NGX_OK (pass to proxy_pass) or 400 Bad Request
 
 - [x] Audit date: 2026-04-10
 - [x] Bun integration coverage exists at `tests/graphql/`.
+- [x] Bun integration coverage now verifies introspection keywords inside quoted strings are ignored, malformed non-string `query` fields are rejected, and unmatched closing braces are rejected.
+- [x] Gap fixed in this audit pass: the lightweight parser now rejects unmatched closing braces instead of silently accepting malformed queries whose final depth returns to zero.
 - [x] No additional documentation gaps were identified in this audit pass.

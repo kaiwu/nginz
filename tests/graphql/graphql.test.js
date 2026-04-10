@@ -216,6 +216,17 @@ describe("graphql module", () => {
       });
       expect(res.status).toBe(400);
     });
+
+    test("does not treat introspection keywords inside strings as introspection", async () => {
+      const res = await fetch(`${TEST_URL}/graphql`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          query: '{ search(term: "__schema __type") { name } }',
+        }),
+      });
+      expect(res.status).toBe(200);
+    });
   });
 
   describe("request handling", () => {
@@ -285,6 +296,34 @@ describe("graphql module", () => {
         }),
       });
       expect(res.status).toBe(200);
+    });
+
+    test("rejects query with extra closing brace", async () => {
+      const res = await fetch(`${TEST_URL}/graphql`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          query: "{ user { name } }}",
+        }),
+      });
+      expect(res.status).toBe(400);
+
+      const body = await res.json();
+      expect(body.errors[0].message).toMatch(/brace/i);
+    });
+
+    test("rejects non-string query field", async () => {
+      const res = await fetch(`${TEST_URL}/graphql`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          query: { nested: true },
+        }),
+      });
+      expect(res.status).toBe(400);
+
+      const body = await res.json();
+      expect(body.errors[0].message).toContain("Query field must be a string");
     });
   });
 
