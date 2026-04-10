@@ -69,4 +69,6 @@ Possible error messages:
 
 - [x] Audit date: 2026-04-10
 - [x] Bun integration coverage exists at `tests/jsonschema/`.
+- [x] Bun integration coverage now verifies PUT/PATCH validation, JSON content types with parameters, missing content-type passthrough, empty JSON body passthrough, and integer-specific schemas.
+- [x] Gap fixed in this audit pass: `type: "integer"` now rejects fractional numeric values instead of being treated the same as `number`.
 - [x] No additional documentation gaps were identified in this audit pass.

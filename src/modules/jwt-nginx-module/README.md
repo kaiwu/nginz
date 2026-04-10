@@ -162,4 +162,7 @@ token = jwt.encode(
 
 - [x] Audit date: 2026-04-10
 - [x] Bun integration coverage exists at `tests/jwt/`.
+- [x] Bun integration coverage now verifies nested child-location inheritance, explicit rejection of non-`HS256` header algorithms, and rejection of malformed non-JSON payloads even when the HMAC matches.
+- [x] Gap fixed in this audit pass: JWT header `alg` is now validated as `HS256` instead of trusting any HMAC-signed header value.
+- [x] Gap fixed in this audit pass: malformed payload JSON now fails closed instead of being treated like a token without time-based claims.
 - [x] No additional documentation gaps were identified in this audit pass.

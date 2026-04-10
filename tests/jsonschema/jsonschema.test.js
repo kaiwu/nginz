@@ -56,6 +56,41 @@ describe("jsonschema module", () => {
       });
       expect(res.status).toBe(200);
     });
+
+    test("accepts PUT requests when body matches schema", async () => {
+      const res = await fetch(`${TEST_URL}/api/users`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: "John",
+          email: "john@example.com",
+          age: 25,
+        }),
+      });
+      expect(res.status).toBe(200);
+    });
+
+    test("accepts PATCH requests when body matches schema", async () => {
+      const res = await fetch(`${TEST_URL}/api/users`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json; charset=utf-8" },
+        body: JSON.stringify({
+          name: "John",
+          email: "john@example.com",
+          age: 25,
+        }),
+      });
+      expect(res.status).toBe(200);
+    });
+
+    test("accepts integer values for integer schemas", async () => {
+      const res = await fetch(`${TEST_URL}/api/integer`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ count: 2 }),
+      });
+      expect(res.status).toBe(200);
+    });
   });
 
   describe("invalid JSON validation", () => {
@@ -126,6 +161,15 @@ describe("jsonschema module", () => {
       });
       expect(res.status).toBe(400);
     });
+
+    test("rejects fractional numbers for integer schemas", async () => {
+      const res = await fetch(`${TEST_URL}/api/integer`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ count: 1.5 }),
+      });
+      expect(res.status).toBe(400);
+    });
   });
 
   describe("content type handling", () => {
@@ -136,6 +180,23 @@ describe("jsonschema module", () => {
         body: "not json",
       });
       // Should pass through without validation
+      expect(res.status).toBe(200);
+    });
+
+    test("skips validation for missing content type", async () => {
+      const res = await fetch(`${TEST_URL}/api/users`, {
+        method: "POST",
+        body: JSON.stringify({ name: 123 }),
+      });
+      expect(res.status).toBe(200);
+    });
+
+    test("allows empty JSON request bodies to pass through", async () => {
+      const res = await fetch(`${TEST_URL}/api/users`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: "",
+      });
       expect(res.status).toBe(200);
     });
   });

@@ -35,6 +35,13 @@ describe("hello module", () => {
       expect(body).toBe("hello");
     });
 
+    test("works on exact-match locations", async () => {
+      const res = await fetch(`${TEST_URL}/hello-exact`);
+      expect(res.status).toBe(200);
+      const body = await res.text();
+      expect(body).toBe("hello");
+    });
+
     test("returns correct content type (none set)", async () => {
       const res = await fetch(`${TEST_URL}/hello`);
       expect(res.status).toBe(200);
@@ -46,6 +53,23 @@ describe("hello module", () => {
       expect(res.status).toBe(200);
       const body = await res.text();
       expect(body).toBe(""); // HEAD should not return body
+    });
+
+    test("returns hello body for POST requests as well", async () => {
+      const res = await fetch(`${TEST_URL}/hello`, {
+        method: "POST",
+        body: "ignored",
+      });
+      expect(res.status).toBe(200);
+      const body = await res.text();
+      expect(body).toBe("hello");
+    });
+
+    test("non-hello locations remain unaffected", async () => {
+      const res = await fetch(`${TEST_URL}/plain`);
+      expect(res.status).toBe(204);
+      const body = await res.text();
+      expect(body).toBe("");
     });
   });
 });

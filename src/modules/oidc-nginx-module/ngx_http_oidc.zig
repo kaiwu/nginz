@@ -270,6 +270,43 @@ fn isUrlSafe(c: u8) bool {
         c == '-' or c == '_' or c == '.' or c == '~';
 }
 
+fn appendJsonEscaped(out: []u8, offset: *usize, value: []const u8) bool {
+    for (value) |c| {
+        switch (c) {
+            '"', '\\' => {
+                if (offset.* + 2 > out.len) return false;
+                out[offset.*] = '\\';
+                out[offset.* + 1] = c;
+                offset.* += 2;
+            },
+            '\n' => {
+                if (offset.* + 2 > out.len) return false;
+                out[offset.*] = '\\';
+                out[offset.* + 1] = 'n';
+                offset.* += 2;
+            },
+            '\r' => {
+                if (offset.* + 2 > out.len) return false;
+                out[offset.*] = '\\';
+                out[offset.* + 1] = 'r';
+                offset.* += 2;
+            },
+            '\t' => {
+                if (offset.* + 2 > out.len) return false;
+                out[offset.*] = '\\';
+                out[offset.* + 1] = 't';
+                offset.* += 2;
+            },
+            else => {
+                if (c < 0x20 or offset.* + 1 > out.len) return false;
+                out[offset.*] = c;
+                offset.* += 1;
+            },
+        }
+    }
+    return true;
+}
+
 // Find cookie value by name
 fn findCookie(r: [*c]ngx_http_request_t, name: []const u8) ?ngx_str_t {
     // In nginx, headers_in.cookie is a single pointer to a table_elt_t
@@ -633,17 +670,33 @@ fn setStateCookie(
     code_verifier: ?ngx_str_t,
     original_uri: ngx_str_t,
 ) bool {
-    // Build state JSON
+    // Build state JSON with escaped string values
     var state_json_buf: [1024]u8 = undefined;
     const cv_slice = if (code_verifier) |cv| core.slicify(u8, cv.data, cv.len) else "";
     const state_slice = core.slicify(u8, state.data, state.len);
     const uri_slice = core.slicify(u8, original_uri.data, original_uri.len);
 
-    const state_json = std.fmt.bufPrint(&state_json_buf, "{{\"state\":\"{s}\",\"cv\":\"{s}\",\"uri\":\"{s}\"}}", .{
-        state_slice,
-        cv_slice,
-        uri_slice,
-    }) catch return false;
+    var offset: usize = 0;
+    const prefix1 = "{\"state\":\"";
+    @memcpy(state_json_buf[offset..][0..prefix1.len], prefix1);
+    offset += prefix1.len;
+    if (!appendJsonEscaped(&state_json_buf, &offset, state_slice)) return false;
+
+    const prefix2 = "\",\"cv\":\"";
+    @memcpy(state_json_buf[offset..][0..prefix2.len], prefix2);
+    offset += prefix2.len;
+    if (!appendJsonEscaped(&state_json_buf, &offset, cv_slice)) return false;
+
+    const prefix3 = "\",\"uri\":\"";
+    @memcpy(state_json_buf[offset..][0..prefix3.len], prefix3);
+    offset += prefix3.len;
+    if (!appendJsonEscaped(&state_json_buf, &offset, uri_slice)) return false;
+
+    const suffix = "\"}";
+    @memcpy(state_json_buf[offset..][0..suffix.len], suffix);
+    offset += suffix.len;
+
+    const state_json = state_json_buf[0..offset];
 
     // Encrypt
     const encrypted = encryptSession(lccf, ngx_str_t{ .len = state_json.len, .data = @constCast(state_json.ptr) }, r.*.pool) orelse return false;
@@ -1192,7 +1245,7 @@ fn parseIdToken(pool: [*c]ngx_pool_t, token: []const u8) ?JWTClaims {
 }
 
 fn createSessionFromClaims(r: [*c]ngx_http_request_t, lccf: [*c]oidc_loc_conf, rctx: [*c]oidc_request_ctx, claims: JWTClaims) bool {
-    // Build session JSON
+    // Build session JSON with escaped string values
     var session_json_buf: [2048]u8 = undefined;
 
     const sub_slice = core.slicify(u8, claims.sub.data, claims.sub.len);
@@ -1209,13 +1262,29 @@ fn createSessionFromClaims(r: [*c]ngx_http_request_t, lccf: [*c]oidc_loc_conf, r
     const exp_time: i64 = if (claims.exp > 0) claims.exp else std.time.timestamp() + SESSION_DURATION_SEC;
     const iat_time: i64 = if (claims.iat > 0) claims.iat else std.time.timestamp();
 
-    const session_json = std.fmt.bufPrint(&session_json_buf, "{{\"sub\":\"{s}\",\"email\":\"{s}\",\"name\":\"{s}\",\"exp\":{d},\"iat\":{d}}}", .{
-        sub_slice,
-        email_slice,
-        name_slice,
+    var offset: usize = 0;
+    const prefix1 = "{\"sub\":\"";
+    @memcpy(session_json_buf[offset..][0..prefix1.len], prefix1);
+    offset += prefix1.len;
+    if (!appendJsonEscaped(&session_json_buf, &offset, sub_slice)) return false;
+
+    const prefix2 = "\",\"email\":\"";
+    @memcpy(session_json_buf[offset..][0..prefix2.len], prefix2);
+    offset += prefix2.len;
+    if (!appendJsonEscaped(&session_json_buf, &offset, email_slice)) return false;
+
+    const prefix3 = "\",\"name\":\"";
+    @memcpy(session_json_buf[offset..][0..prefix3.len], prefix3);
+    offset += prefix3.len;
+    if (!appendJsonEscaped(&session_json_buf, &offset, name_slice)) return false;
+
+    const suffix = std.fmt.bufPrint(session_json_buf[offset..], "\",\"exp\":{d},\"iat\":{d}}}", .{
         exp_time,
         iat_time,
     }) catch return false;
+    offset += suffix.len;
+
+    const session_json = session_json_buf[0..offset];
 
     const encrypted_session = encryptSession(lccf, ngx_str_t{ .len = session_json.len, .data = @constCast(session_json.ptr) }, r.*.pool) orelse return false;
 
@@ -1298,6 +1367,21 @@ fn isCallbackUri(r: [*c]ngx_http_request_t, lccf: *oidc_loc_conf) bool {
 }
 
 fn handleCallback(r: [*c]ngx_http_request_t, lccf: *oidc_loc_conf, rctx: *oidc_request_ctx) ngx_int_t {
+    // Surface IdP callback errors before requiring an authorization code
+    if (getQueryParam(r, "error")) |error_param| {
+        const error_slice = core.slicify(u8, error_param.data, error_param.len);
+        if (getQueryParam(r, "error_description")) |desc_param| {
+            const desc_slice = core.slicify(u8, desc_param.data, desc_param.len);
+            var msg_buf: [256]u8 = undefined;
+            const msg = std.fmt.bufPrint(&msg_buf, "OIDC error: {s} ({s})", .{ error_slice, desc_slice }) catch "OIDC callback error";
+            return sendError(r, 400, msg);
+        }
+
+        var msg_buf: [192]u8 = undefined;
+        const msg = std.fmt.bufPrint(&msg_buf, "OIDC error: {s}", .{error_slice}) catch "OIDC callback error";
+        return sendError(r, 400, msg);
+    }
+
     // Get authorization code from query params
     const code = getQueryParam(r, "code") orelse {
         return sendError(r, 400, "Missing authorization code");

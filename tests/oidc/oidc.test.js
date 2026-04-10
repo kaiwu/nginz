@@ -126,6 +126,48 @@ describe("oidc module", () => {
       const body = await res.text();
       expect(body).toContain("Missing state cookie");
     });
+
+    test("callback with mismatched state returns error", async () => {
+      const step1 = await fetch(`${TEST_URL}/protected`, { redirect: "manual" });
+      expect(step1.status).toBe(302);
+
+      const stateCookie = step1.headers.get("set-cookie");
+      const stateCookieValue = stateCookie.match(/oidc_state=([^;]+)/)[1];
+
+      const res = await fetch(`${TEST_URL}/callback?code=abc123&state=wrong-state`, {
+        redirect: "manual",
+        headers: {
+          Cookie: `oidc_state=${stateCookieValue}`,
+        },
+      });
+      expect(res.status).toBe(400);
+      const body = await res.text();
+      expect(body).toContain("State mismatch");
+    });
+
+    test("callback with IdP error parameters does not masquerade as missing code", async () => {
+      const step1 = await fetch(`${TEST_URL}/protected`, { redirect: "manual" });
+      expect(step1.status).toBe(302);
+
+      const stateCookie = step1.headers.get("set-cookie");
+      const stateCookieValue = stateCookie.match(/oidc_state=([^;]+)/)[1];
+      const authUrl = new URL(step1.headers.get("location"));
+      const state = authUrl.searchParams.get("state");
+
+      const res = await fetch(
+        `${TEST_URL}/callback?error=access_denied&error_description=user_cancelled&state=${state}`,
+        {
+          redirect: "manual",
+          headers: {
+            Cookie: `oidc_state=${stateCookieValue}`,
+          },
+        }
+      );
+
+      expect(res.status).toBe(400);
+      const body = await res.text();
+      expect(body).not.toContain("Missing authorization code");
+    });
   });
 
   describe("full OIDC flow", () => {
@@ -179,16 +221,17 @@ describe("oidc module", () => {
 
       // Should either redirect to original URI (success) or return error
       // The mock IdP validates the request and issues tokens
-      if (step3.status === 302) {
-        // Success - redirected to original URI
-        const finalLocation = step3.headers.get("location");
-        expect(finalLocation).toBeDefined();
+        if (step3.status === 302) {
+          // Success - redirected to original URI
+          const finalLocation = step3.headers.get("location");
+          expect(finalLocation).toBeDefined();
 
-        // Should have session cookie set
-        const sessionCookie = step3.headers.get("set-cookie");
-        expect(sessionCookie).toBeDefined();
-        expect(sessionCookie).toContain("oidc_session=");
-      } else {
+          // Should have session cookie set
+          const sessionCookie = step3.headers.get("set-cookie");
+          expect(sessionCookie).toBeDefined();
+          expect(sessionCookie).toContain("oidc_session=");
+          expect(sessionCookie).toContain("oidc_state=; Path=/; Max-Age=0");
+        } else {
         // If not 302, could be error from mock IdP or module
         // For debugging, let's see what happened
         const body = await step3.text();
@@ -238,6 +281,30 @@ describe("oidc module", () => {
           }
         }
       }
+    });
+
+    test("authorization flow survives original URIs containing quotes", async () => {
+      const step1 = await fetch(`${TEST_URL}/protected-quote%22path`, {
+        redirect: "manual",
+      });
+      expect(step1.status).toBe(302);
+
+      const stateCookie = step1.headers.get("set-cookie");
+      expect(stateCookie).toContain("oidc_state=");
+      const stateCookieValue = stateCookie.match(/oidc_state=([^;]+)/)[1];
+
+      const authUrl = step1.headers.get("location");
+      const step2 = await fetch(authUrl, { redirect: "manual" });
+      expect(step2.status).toBe(302);
+
+      const callbackUrl = step2.headers.get("location");
+      const step3 = await fetch(callbackUrl, {
+        redirect: "manual",
+        headers: { Cookie: `oidc_state=${stateCookieValue}` },
+      });
+
+      expect(step3.status).toBe(302);
+      expect(step3.headers.get("location")).toBe('http://localhost:8888/protected-quote"path');
     });
   });
 

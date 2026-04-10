@@ -13,6 +13,10 @@ const MODULE_NAME = "jwt";
 // Helper to create JWT tokens
 function createJWT(payload, secret) {
   const header = { alg: "HS256", typ: "JWT" };
+  return createCustomJWT(header, payload, secret);
+}
+
+function createCustomJWT(header, payload, secret) {
   
   const base64urlEncode = (obj) => {
     const json = JSON.stringify(obj);
@@ -33,7 +37,28 @@ function createJWT(payload, secret) {
     .replace(/\+/g, "-")
     .replace(/\//g, "_")
     .replace(/=/g, "");
-  
+
+  return `${data}.${signature}`;
+}
+
+function createRawPayloadJWT(header, rawPayload, secret) {
+  const base64urlEncodeString = (value) => Buffer.from(value)
+    .toString("base64")
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=/g, "");
+
+  const headerB64 = base64urlEncodeString(JSON.stringify(header));
+  const payloadB64 = base64urlEncodeString(rawPayload);
+  const data = `${headerB64}.${payloadB64}`;
+
+  const signature = createHmac("sha256", secret)
+    .update(data)
+    .digest("base64")
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=/g, "");
+
   return `${data}.${signature}`;
 }
 
@@ -126,6 +151,16 @@ describe("JWT Authentication", () => {
     expect(text.trim()).toBe("Users list");
   });
 
+  test("inherits jwt_secret to nested child locations", async () => {
+    const token = createJWT({ sub: "admin123", exp: Math.floor(Date.now() / 1000) + 3600 }, API_SECRET);
+    const res = await fetch(`${TEST_URL}/admin/settings`, {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+    expect(res.status).toBe(200);
+    const text = await res.text();
+    expect(text.trim()).toBe("Admin settings");
+  });
+
   test("allows access without token when jwt not enabled", async () => {
     const res = await fetch(`${TEST_URL}/api/public`);
     expect(res.status).toBe(200);
@@ -140,5 +175,29 @@ describe("JWT Authentication", () => {
       headers: { Authorization: `Bearer ${token}` }
     });
     expect(res.status).toBe(200);
+  });
+
+  test("rejects token whose header algorithm is not HS256", async () => {
+    const token = createCustomJWT(
+      { alg: "none", typ: "JWT" },
+      { sub: "user123", exp: Math.floor(Date.now() / 1000) + 3600 },
+      SECRET
+    );
+    const res = await fetch(`${TEST_URL}/protected`, {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+    expect(res.status).toBe(401);
+  });
+
+  test("rejects token with non-JSON payload even if signature matches", async () => {
+    const token = createRawPayloadJWT(
+      { alg: "HS256", typ: "JWT" },
+      "not-json-payload",
+      SECRET
+    );
+    const res = await fetch(`${TEST_URL}/protected`, {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+    expect(res.status).toBe(401);
   });
 });

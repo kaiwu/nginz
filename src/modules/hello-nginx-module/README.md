@@ -25,4 +25,5 @@ Visiting `/hello` will return a response with status code 200 and body containin
 
 - [x] Audit date: 2026-04-10
 - [x] Bun integration coverage exists at `tests/hello/`.
+- [x] Bun integration coverage now verifies exact-match locations, nested locations, HEAD requests, POST requests, and neighboring non-hello locations remaining unaffected.
 - [x] No additional documentation gaps were identified in this audit pass.

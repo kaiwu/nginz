@@ -81,9 +81,19 @@ fn validateValue(
                 if (cjson.cJSON_IsString(value) != 1) {
                     return ValidationResult{ .valid = false, .error_path = path, .error_message = "must be a string" };
                 }
-            } else if (std.mem.eql(u8, type_slice, "number") or std.mem.eql(u8, type_slice, "integer")) {
+            } else if (std.mem.eql(u8, type_slice, "number")) {
                 if (cjson.cJSON_IsNumber(value) != 1) {
                     return ValidationResult{ .valid = false, .error_path = path, .error_message = "must be a number" };
+                }
+            } else if (std.mem.eql(u8, type_slice, "integer")) {
+                if (cjson.cJSON_IsNumber(value) != 1) {
+                    return ValidationResult{ .valid = false, .error_path = path, .error_message = "must be an integer" };
+                }
+                if (CJSON.floatValue(value)) |float_val| {
+                    const truncated = @trunc(float_val);
+                    if (float_val != truncated) {
+                        return ValidationResult{ .valid = false, .error_path = path, .error_message = "must be an integer" };
+                    }
                 }
             } else if (std.mem.eql(u8, type_slice, "boolean")) {
                 if (cjson.cJSON_IsBool(value) != 1) {
@@ -468,8 +478,7 @@ const ngx_log_init = ngx.core.ngx_log_init;
 const ngx_create_pool = ngx.core.ngx_create_pool;
 const ngx_destroy_pool = ngx.core.ngx_destroy_pool;
 
-test "jsonschema module" {
-}
+test "jsonschema module" {}
 
 // Helper to create a test pool for JSON operations
 fn createTestPool() [*c]core.ngx_pool_t {

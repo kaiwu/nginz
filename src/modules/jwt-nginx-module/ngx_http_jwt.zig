@@ -119,11 +119,26 @@ fn hmac_sha256(key: []const u8, data: []const u8, output: *[32]u8) bool {
 }
 
 // Validate JWT signature (HS256)
-fn validate_jwt_hs256(token: []const u8, secret: []const u8) bool {
+fn validate_jwt_hs256(token: []const u8, secret: []const u8, pool: [*c]core.ngx_pool_t) bool {
     // Find the two dots separating header.payload.signature
     const first_dot = std.mem.indexOfScalar(u8, token, '.') orelse return false;
     const rest = token[first_dot + 1 ..];
     const second_dot = std.mem.indexOfScalar(u8, rest, '.') orelse return false;
+
+    // Decode and validate header JSON / algorithm
+    const header_b64 = token[0..first_dot];
+    var header: [1024]u8 = undefined;
+    const header_len = base64url_decode(header_b64, &header) orelse return false;
+
+    var cj = CJSON.init(pool);
+    const header_json = cj.decode(ngx_str_t{ .data = header[0..header_len].ptr, .len = header_len }) catch return false;
+    defer cj.free(header_json);
+
+    const alg_node = CJSON.query(header_json, "$.alg") orelse return false;
+    const alg = CJSON.stringValue(alg_node) orelse return false;
+    if (!std.mem.eql(u8, core.slicify(u8, alg.data, alg.len), "HS256")) {
+        return false;
+    }
 
     const header_payload = token[0 .. first_dot + 1 + second_dot];
     const signature_b64 = rest[second_dot + 1 ..];
@@ -152,7 +167,7 @@ fn validate_jwt_hs256(token: []const u8, secret: []const u8) bool {
 // Check if token is expired
 fn check_expiration(payload_json: []const u8, pool: [*c]core.ngx_pool_t) bool {
     var cj = CJSON.init(pool);
-    const json = cj.decode(ngx_str_t{ .data = @constCast(payload_json.ptr), .len = payload_json.len }) catch return true;
+    const json = cj.decode(ngx_str_t{ .data = @constCast(payload_json.ptr), .len = payload_json.len }) catch return false;
     defer cj.free(json);
 
     // Check exp claim
@@ -218,7 +233,7 @@ export fn ngx_http_jwt_access_handler(r: [*c]ngx_http_request_t) callconv(.c) ng
 
     // Validate signature
     const secret = core.slicify(u8, lccf.*.secret.data, lccf.*.secret.len);
-    if (!validate_jwt_hs256(token, secret)) {
+    if (!validate_jwt_hs256(token, secret, r.*.pool)) {
         return NGX_HTTP_UNAUTHORIZED;
     }
 
@@ -326,8 +341,7 @@ export var ngx_http_jwt_module = ngx.module.make_module(
 const expectEqual = std.testing.expectEqual;
 const expect = std.testing.expect;
 
-test "jwt module" {
-}
+test "jwt module" {}
 
 test "base64url_decode" {
     var output: [256]u8 = undefined;
