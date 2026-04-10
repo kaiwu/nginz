@@ -419,6 +419,20 @@ describe("waf module", () => {
       expect(body.rule).toBe("rule");
     });
 
+    test("blocks based on ARGS selector rule", async () => {
+      const res = await fetch(`${TEST_URL}/rules-arg-selector?scoped_arg=scoped-arg-hit&other=ok`);
+      expect(res.status).toBe(403);
+      const body = await res.json();
+      expect(body.rule).toBe("rule");
+    });
+
+    test("uses per-rule status action when blocking", async () => {
+      const res = await fetch(`${TEST_URL}/rules-status/status-path`);
+      expect(res.status).toBe(406);
+      const body = await res.json();
+      expect(body.rule).toBe("rule");
+    });
+
     test("blocks based on explicit @libinjection_sqli operator", async () => {
       const res = await fetch(`${TEST_URL}/rules-libinjection?id=1'%20%7C%7C%201%20--`);
       expect(res.status).toBe(403);

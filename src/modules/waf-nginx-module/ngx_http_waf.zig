@@ -59,6 +59,7 @@ const waf_rule = extern struct {
     phase: u8,
     operator: u8,
     id: ngx_uint_t,
+    status: ngx_uint_t,
     selector: ngx_str_t,
     pattern: ngx_str_t,
     compiled_regex: ?*regex.ngx_regex_t,
@@ -112,6 +113,7 @@ const DetectionResult = struct {
     detected: bool,
     rule_type: []const u8,
     pattern: []const u8,
+    status: ngx_uint_t,
 };
 
 var ngx_http_waf_ban_zone: [*c]core.ngx_shm_zone_t = core.nullptr(core.ngx_shm_zone_t);
@@ -158,7 +160,7 @@ fn parseRuleTargetAndSelector(target_text: []const u8, rule: *waf_rule, pool: [*
         const selector = trimAscii(target_text[sep + 1 ..]);
         const target = parseBaseTarget(base) orelse return false;
         if (selector.len == 0) return false;
-        if (target != WAF_TARGET_REQUEST_HEADERS and target != WAF_TARGET_REQUEST_COOKIES) return false;
+        if (target != WAF_TARGET_REQUEST_HEADERS and target != WAF_TARGET_REQUEST_COOKIES and target != WAF_TARGET_ARGS) return false;
         rule.target = target;
         rule.selector = lowerDup(pool, selector) orelse return false;
         return true;
@@ -179,6 +181,9 @@ fn parseRuleActions(actions: []const u8, rule: *waf_rule, pool: [*c]core.ngx_poo
         if (std.mem.startsWith(u8, part, "id:")) {
             const id_text = trimAscii(part[3..]);
             rule.id = std.fmt.parseInt(ngx_uint_t, id_text, 10) catch return false;
+        } else if (std.mem.startsWith(u8, part, "status:")) {
+            const status_text = trimAscii(part[7..]);
+            rule.status = std.fmt.parseInt(ngx_uint_t, status_text, 10) catch return false;
         } else if (std.mem.startsWith(u8, part, "phase:")) {
             const phase_text = trimAscii(part[6..]);
             if (std.mem.eql(u8, phase_text, "1")) {
@@ -232,6 +237,7 @@ fn parseWafRuleLine(line_raw: []const u8, rule: *waf_rule, pool: [*c]core.ngx_po
     rule.* = std.mem.zeroes(waf_rule);
     rule.msg = ngx_str_t{ .len = 0, .data = core.nullptr(u8) };
     rule.compiled_regex = null;
+    rule.status = http.NGX_HTTP_FORBIDDEN;
 
     const target_text = trimAscii(after_prefix[0..first_space]);
     if (!parseRuleTargetAndSelector(target_text, rule, pool)) return false;
@@ -306,12 +312,12 @@ fn loadWafRules(contents: ngx_str_t, pool: [*c]core.ngx_pool_t, out_rules: *[*c]
 
 fn analyzeCustomRules(input: []const u8, target: u8, phase: u8, lccf: *waf_loc_conf, decode_buf: []u8, lower_buf: []u8) DetectionResult {
     if (lccf.rule_count == 0 or lccf.rules == null) {
-        return DetectionResult{ .detected = false, .rule_type = "", .pattern = "" };
+        return DetectionResult{ .detected = false, .rule_type = "", .pattern = "", .status = http.NGX_HTTP_FORBIDDEN };
     }
 
     const decoded_len = urlDecode(input, decode_buf);
     if (decoded_len == 0) {
-        return DetectionResult{ .detected = false, .rule_type = "", .pattern = "" };
+        return DetectionResult{ .detected = false, .rule_type = "", .pattern = "", .status = http.NGX_HTTP_FORBIDDEN };
     }
 
     const actual_len = @min(decoded_len, lower_buf.len);
@@ -330,26 +336,26 @@ fn analyzeCustomRules(input: []const u8, target: u8, phase: u8, lccf: *waf_loc_c
                 const pattern = core.slicify(u8, rule.pattern.data, rule.pattern.len);
                 if (std.mem.indexOf(u8, normalized, pattern) != null) {
                     const detail = if (rule.msg.len > 0 and rule.msg.data != null) core.slicify(u8, rule.msg.data, rule.msg.len) else pattern;
-                    return DetectionResult{ .detected = true, .rule_type = "rule", .pattern = detail };
+                    return DetectionResult{ .detected = true, .rule_type = "rule", .pattern = detail, .status = rule.status };
                 }
             },
             WAF_OPERATOR_LIBINJECTION_SQLI => {
                 if (libinjection.detectSqli(decode_buf[0..actual_len])) {
                     const detail = if (rule.msg.len > 0 and rule.msg.data != null) core.slicify(u8, rule.msg.data, rule.msg.len) else "libinjection_sqli";
-                    return DetectionResult{ .detected = true, .rule_type = "rule", .pattern = detail };
+                    return DetectionResult{ .detected = true, .rule_type = "rule", .pattern = detail, .status = rule.status };
                 }
             },
             WAF_OPERATOR_LIBINJECTION_XSS => {
                 if (libinjection.detectXss(decode_buf[0..actual_len])) {
                     const detail = if (rule.msg.len > 0 and rule.msg.data != null) core.slicify(u8, rule.msg.data, rule.msg.len) else "libinjection_xss";
-                    return DetectionResult{ .detected = true, .rule_type = "rule", .pattern = detail };
+                    return DetectionResult{ .detected = true, .rule_type = "rule", .pattern = detail, .status = rule.status };
                 }
             },
             WAF_OPERATOR_EQUALS => {
                 const pattern = core.slicify(u8, rule.pattern.data, rule.pattern.len);
                 if (std.mem.eql(u8, normalized, pattern)) {
                     const detail = if (rule.msg.len > 0 and rule.msg.data != null) core.slicify(u8, rule.msg.data, rule.msg.len) else pattern;
-                    return DetectionResult{ .detected = true, .rule_type = "rule", .pattern = detail };
+                    return DetectionResult{ .detected = true, .rule_type = "rule", .pattern = detail, .status = rule.status };
                 }
             },
             WAF_OPERATOR_REGEX => {
@@ -357,7 +363,7 @@ fn analyzeCustomRules(input: []const u8, target: u8, phase: u8, lccf: *waf_loc_c
                     const rc = regex.ngx_regex_exec(rule.compiled_regex, &decoded_str, core.nullptr(c_int), 0);
                     if (rc >= 0) {
                         const detail = if (rule.msg.len > 0 and rule.msg.data != null) core.slicify(u8, rule.msg.data, rule.msg.len) else core.slicify(u8, rule.pattern.data, rule.pattern.len);
-                        return DetectionResult{ .detected = true, .rule_type = "rule", .pattern = detail };
+                        return DetectionResult{ .detected = true, .rule_type = "rule", .pattern = detail, .status = rule.status };
                     }
                 }
             },
@@ -365,7 +371,7 @@ fn analyzeCustomRules(input: []const u8, target: u8, phase: u8, lccf: *waf_loc_c
         }
     }
 
-    return DetectionResult{ .detected = false, .rule_type = "", .pattern = "" };
+    return DetectionResult{ .detected = false, .rule_type = "", .pattern = "", .status = http.NGX_HTTP_FORBIDDEN };
 }
 
 fn hasBodyRules(lccf: *waf_loc_conf) bool {
@@ -569,7 +575,7 @@ fn analyzeHeaderSelectorRules(r: [*c]ngx_http_request_t, lccf: *waf_loc_conf, de
             if (single.detected) return single;
         }
     }
-    return DetectionResult{ .detected = false, .rule_type = "", .pattern = "" };
+    return DetectionResult{ .detected = false, .rule_type = "", .pattern = "", .status = http.NGX_HTTP_FORBIDDEN };
 }
 
 fn analyzeCookieSelectorRules(cookie_header: []const u8, lccf: *waf_loc_conf, decode_buf: []u8, lower_buf: []u8) DetectionResult {
@@ -596,12 +602,39 @@ fn analyzeCookieSelectorRules(cookie_header: []const u8, lccf: *waf_loc_conf, de
             if (single.detected) return single;
         }
     }
-    return DetectionResult{ .detected = false, .rule_type = "", .pattern = "" };
+    return DetectionResult{ .detected = false, .rule_type = "", .pattern = "", .status = http.NGX_HTTP_FORBIDDEN };
+}
+
+fn analyzeArgSelectorRules(args_text: []const u8, lccf: *waf_loc_conf, decode_buf: []u8, lower_buf: []u8) DetectionResult {
+    var args_it = std.mem.splitScalar(u8, args_text, '&');
+    while (args_it.next()) |arg_raw| {
+        const arg = trimAscii(arg_raw);
+        if (arg.len == 0) continue;
+        const eq = std.mem.indexOfScalar(u8, arg, '=') orelse continue;
+        const name = trimAscii(arg[0..eq]);
+        const value = trimAscii(arg[eq + 1 ..]);
+
+        var name_buf: [256]u8 = undefined;
+        const name_len = @min(name.len, name_buf.len);
+        @memcpy(name_buf[0..name_len], name[0..name_len]);
+        toLowerSlice(name_buf[0..name_len]);
+
+        for (0..lccf.rule_count) |i| {
+            const rule: *waf_rule = @ptrCast(&lccf.rules[i]);
+            if (rule.target != WAF_TARGET_ARGS or rule.phase != WAF_PHASE_REQUEST or rule.selector.len == 0) continue;
+            const selector = core.slicify(u8, rule.selector.data, rule.selector.len);
+            if (!std.mem.eql(u8, name_buf[0..name_len], selector)) continue;
+
+            const single = analyzeSingleRule(rule, value, decode_buf, lower_buf);
+            if (single.detected) return single;
+        }
+    }
+    return DetectionResult{ .detected = false, .rule_type = "", .pattern = "", .status = http.NGX_HTTP_FORBIDDEN };
 }
 
 fn analyzeSingleRule(rule: *waf_rule, input: []const u8, decode_buf: []u8, lower_buf: []u8) DetectionResult {
     const decoded_len = urlDecode(input, decode_buf);
-    if (decoded_len == 0) return DetectionResult{ .detected = false, .rule_type = "", .pattern = "" };
+    if (decoded_len == 0) return DetectionResult{ .detected = false, .rule_type = "", .pattern = "", .status = http.NGX_HTTP_FORBIDDEN };
     const actual_len = @min(decoded_len, lower_buf.len);
     @memcpy(lower_buf[0..actual_len], decode_buf[0..actual_len]);
     toLowerSlice(lower_buf[0..actual_len]);
@@ -613,26 +646,26 @@ fn analyzeSingleRule(rule: *waf_rule, input: []const u8, decode_buf: []u8, lower
             const pattern = core.slicify(u8, rule.pattern.data, rule.pattern.len);
             if (std.mem.indexOf(u8, normalized, pattern) != null) {
                 const detail = if (rule.msg.len > 0 and rule.msg.data != null) core.slicify(u8, rule.msg.data, rule.msg.len) else pattern;
-                return DetectionResult{ .detected = true, .rule_type = "rule", .pattern = detail };
+                return DetectionResult{ .detected = true, .rule_type = "rule", .pattern = detail, .status = rule.status };
             }
         },
         WAF_OPERATOR_LIBINJECTION_SQLI => {
             if (libinjection.detectSqli(decode_buf[0..actual_len])) {
                 const detail = if (rule.msg.len > 0 and rule.msg.data != null) core.slicify(u8, rule.msg.data, rule.msg.len) else "libinjection_sqli";
-                return DetectionResult{ .detected = true, .rule_type = "rule", .pattern = detail };
+                return DetectionResult{ .detected = true, .rule_type = "rule", .pattern = detail, .status = rule.status };
             }
         },
         WAF_OPERATOR_LIBINJECTION_XSS => {
             if (libinjection.detectXss(decode_buf[0..actual_len])) {
                 const detail = if (rule.msg.len > 0 and rule.msg.data != null) core.slicify(u8, rule.msg.data, rule.msg.len) else "libinjection_xss";
-                return DetectionResult{ .detected = true, .rule_type = "rule", .pattern = detail };
+                return DetectionResult{ .detected = true, .rule_type = "rule", .pattern = detail, .status = rule.status };
             }
         },
         WAF_OPERATOR_EQUALS => {
             const pattern = core.slicify(u8, rule.pattern.data, rule.pattern.len);
             if (std.mem.eql(u8, normalized, pattern)) {
                 const detail = if (rule.msg.len > 0 and rule.msg.data != null) core.slicify(u8, rule.msg.data, rule.msg.len) else pattern;
-                return DetectionResult{ .detected = true, .rule_type = "rule", .pattern = detail };
+                return DetectionResult{ .detected = true, .rule_type = "rule", .pattern = detail, .status = rule.status };
             }
         },
         WAF_OPERATOR_REGEX => {
@@ -640,14 +673,14 @@ fn analyzeSingleRule(rule: *waf_rule, input: []const u8, decode_buf: []u8, lower
                 const rc = regex.ngx_regex_exec(rule.compiled_regex, &decoded_str, core.nullptr(c_int), 0);
                 if (rc >= 0) {
                     const detail = if (rule.msg.len > 0 and rule.msg.data != null) core.slicify(u8, rule.msg.data, rule.msg.len) else core.slicify(u8, rule.pattern.data, rule.pattern.len);
-                    return DetectionResult{ .detected = true, .rule_type = "rule", .pattern = detail };
+                    return DetectionResult{ .detected = true, .rule_type = "rule", .pattern = detail, .status = rule.status };
                 }
             }
         },
         else => {},
     }
 
-    return DetectionResult{ .detected = false, .rule_type = "", .pattern = "" };
+    return DetectionResult{ .detected = false, .rule_type = "", .pattern = "", .status = http.NGX_HTTP_FORBIDDEN };
 }
 
 // SQL injection patterns - common attack signatures
@@ -808,7 +841,7 @@ fn analyzeInput(input: []const u8, lccf: *waf_loc_conf, decode_buf: []u8, lower_
     // First, URL decode the input
     const decoded_len = urlDecode(input, decode_buf);
     if (decoded_len == 0) {
-        return DetectionResult{ .detected = false, .rule_type = "", .pattern = "" };
+        return DetectionResult{ .detected = false, .rule_type = "", .pattern = "", .status = http.NGX_HTTP_FORBIDDEN };
     }
 
     // Convert to lowercase for case-insensitive matching
@@ -822,33 +855,33 @@ fn analyzeInput(input: []const u8, lccf: *waf_loc_conf, decode_buf: []u8, lower_
     // Check for SQL injection
     if (lccf.sqli_enabled == 1) {
         if (libinjection.detectSqli(decoded)) {
-            return DetectionResult{ .detected = true, .rule_type = "sqli", .pattern = "libinjection" };
+            return DetectionResult{ .detected = true, .rule_type = "sqli", .pattern = "libinjection", .status = http.NGX_HTTP_FORBIDDEN };
         }
         if (checkSqli(normalized)) |pattern| {
-            return DetectionResult{ .detected = true, .rule_type = "sqli", .pattern = pattern };
+            return DetectionResult{ .detected = true, .rule_type = "sqli", .pattern = pattern, .status = http.NGX_HTTP_FORBIDDEN };
         }
     }
 
     // Check for XSS
     if (lccf.xss_enabled == 1) {
         if (libinjection.detectXss(decoded)) {
-            return DetectionResult{ .detected = true, .rule_type = "xss", .pattern = "libinjection" };
+            return DetectionResult{ .detected = true, .rule_type = "xss", .pattern = "libinjection", .status = http.NGX_HTTP_FORBIDDEN };
         }
         if (checkXss(normalized)) |pattern| {
-            return DetectionResult{ .detected = true, .rule_type = "xss", .pattern = pattern };
+            return DetectionResult{ .detected = true, .rule_type = "xss", .pattern = pattern, .status = http.NGX_HTTP_FORBIDDEN };
         }
     }
 
-    return DetectionResult{ .detected = false, .rule_type = "", .pattern = "" };
+    return DetectionResult{ .detected = false, .rule_type = "", .pattern = "", .status = http.NGX_HTTP_FORBIDDEN };
 }
 
 // Send blocked response
-fn sendBlockedResponse(r: [*c]ngx_http_request_t, rule_type: []const u8) ngx_int_t {
+fn sendBlockedResponse(r: [*c]ngx_http_request_t, rule_type: []const u8, status: ngx_uint_t) ngx_int_t {
     // Set content type
     const content_type = ngx_string("application/json");
     r.*.headers_out.content_type = content_type;
     r.*.headers_out.content_type_len = content_type.len;
-    r.*.headers_out.status = http.NGX_HTTP_FORBIDDEN;
+    r.*.headers_out.status = @intCast(status);
 
     // Build error response: {"error":"waf_blocked","rule":"<type>"}
     const prefix = "{\"error\":\"waf_blocked\",\"rule\":\"";
@@ -979,7 +1012,7 @@ export fn ngx_http_waf_body_handler(r: [*c]ngx_http_request_t) callconv(.c) void
     // Analyze request body
     const result = analyzeInput(body[0..analyze_len], lccf, decode_buf, lower_buf);
     const custom_result = if (result.detected)
-        DetectionResult{ .detected = false, .rule_type = "", .pattern = "" }
+        DetectionResult{ .detected = false, .rule_type = "", .pattern = "", .status = http.NGX_HTTP_FORBIDDEN }
     else
         analyzeCustomRules(body[0..analyze_len], WAF_TARGET_REQUEST_BODY, WAF_PHASE_BODY, lccf, decode_buf, lower_buf);
     const final_result = if (result.detected) result else custom_result;
@@ -987,8 +1020,8 @@ export fn ngx_http_waf_body_handler(r: [*c]ngx_http_request_t) callconv(.c) void
     if (final_result.detected) {
         recordOffense(r, lccf);
         if (lccf.*.mode == WAF_MODE_BLOCK) {
-            _ = sendBlockedResponse(r, final_result.rule_type);
-            http.ngx_http_finalize_request(r, http.NGX_HTTP_FORBIDDEN);
+            _ = sendBlockedResponse(r, final_result.rule_type, final_result.status);
+            http.ngx_http_finalize_request(r, @intCast(final_result.status));
             return;
         } else {
             logDetection(r, final_result.rule_type, final_result.pattern);
@@ -1031,7 +1064,7 @@ export fn ngx_http_waf_handler(r: [*c]ngx_http_request_t) callconv(.c) ngx_int_t
 
     if (isClientBanned(r, lccf)) {
         rctx.*.done = 1;
-        return sendBlockedResponse(r, "ban");
+        return sendBlockedResponse(r, "ban", http.NGX_HTTP_FORBIDDEN);
     }
 
     // Allocate buffers for analysis
@@ -1047,7 +1080,7 @@ export fn ngx_http_waf_handler(r: [*c]ngx_http_request_t) callconv(.c) ngx_int_t
         const uri = core.slicify(u8, r.*.uri.data, r.*.uri.len);
         const uri_result = analyzeInput(uri, lccf, decode_buf, lower_buf);
         const uri_custom_result = if (uri_result.detected)
-            DetectionResult{ .detected = false, .rule_type = "", .pattern = "" }
+            DetectionResult{ .detected = false, .rule_type = "", .pattern = "", .status = http.NGX_HTTP_FORBIDDEN }
         else
             analyzeCustomRules(uri, WAF_TARGET_REQUEST_URI, WAF_PHASE_REQUEST, lccf, decode_buf, lower_buf);
         const final_uri_result = if (uri_result.detected) uri_result else uri_custom_result;
@@ -1056,7 +1089,7 @@ export fn ngx_http_waf_handler(r: [*c]ngx_http_request_t) callconv(.c) ngx_int_t
             recordOffense(r, lccf);
             if (lccf.*.mode == WAF_MODE_BLOCK) {
                 rctx.*.done = 1;
-                return sendBlockedResponse(r, final_uri_result.rule_type);
+                return sendBlockedResponse(r, final_uri_result.rule_type, final_uri_result.status);
             } else {
                 logDetection(r, final_uri_result.rule_type, final_uri_result.pattern);
             }
@@ -1066,9 +1099,20 @@ export fn ngx_http_waf_handler(r: [*c]ngx_http_request_t) callconv(.c) ngx_int_t
     // Check query string (args)
     if (r.*.args.len > 0 and r.*.args.data != null) {
         const args = core.slicify(u8, r.*.args.data, r.*.args.len);
+        const args_selector_result = analyzeArgSelectorRules(args, lccf, decode_buf, lower_buf);
+        if (args_selector_result.detected) {
+            recordOffense(r, lccf);
+            if (lccf.*.mode == WAF_MODE_BLOCK) {
+                rctx.*.done = 1;
+                return sendBlockedResponse(r, args_selector_result.rule_type, args_selector_result.status);
+            } else {
+                logDetection(r, args_selector_result.rule_type, args_selector_result.pattern);
+            }
+        }
+
         const args_result = analyzeInput(args, lccf, decode_buf, lower_buf);
         const args_custom_result = if (args_result.detected)
-            DetectionResult{ .detected = false, .rule_type = "", .pattern = "" }
+            DetectionResult{ .detected = false, .rule_type = "", .pattern = "", .status = http.NGX_HTTP_FORBIDDEN }
         else
             analyzeCustomRules(args, WAF_TARGET_ARGS, WAF_PHASE_REQUEST, lccf, decode_buf, lower_buf);
         const final_args_result = if (args_result.detected) args_result else args_custom_result;
@@ -1077,7 +1121,7 @@ export fn ngx_http_waf_handler(r: [*c]ngx_http_request_t) callconv(.c) ngx_int_t
             recordOffense(r, lccf);
             if (lccf.*.mode == WAF_MODE_BLOCK) {
                 rctx.*.done = 1;
-                return sendBlockedResponse(r, final_args_result.rule_type);
+                return sendBlockedResponse(r, final_args_result.rule_type, final_args_result.status);
             } else {
                 logDetection(r, final_args_result.rule_type, final_args_result.pattern);
             }
@@ -1093,7 +1137,7 @@ export fn ngx_http_waf_handler(r: [*c]ngx_http_request_t) callconv(.c) ngx_int_t
                 recordOffense(r, lccf);
                 if (lccf.*.mode == WAF_MODE_BLOCK) {
                     rctx.*.done = 1;
-                    return sendBlockedResponse(r, cookie_selector_result.rule_type);
+                    return sendBlockedResponse(r, cookie_selector_result.rule_type, cookie_selector_result.status);
                 } else {
                     logDetection(r, cookie_selector_result.rule_type, cookie_selector_result.pattern);
                 }
@@ -1103,7 +1147,7 @@ export fn ngx_http_waf_handler(r: [*c]ngx_http_request_t) callconv(.c) ngx_int_t
                 recordOffense(r, lccf);
                 if (lccf.*.mode == WAF_MODE_BLOCK) {
                     rctx.*.done = 1;
-                    return sendBlockedResponse(r, cookie_result.rule_type);
+                    return sendBlockedResponse(r, cookie_result.rule_type, cookie_result.status);
                 } else {
                     logDetection(r, cookie_result.rule_type, cookie_result.pattern);
                 }
@@ -1118,7 +1162,7 @@ export fn ngx_http_waf_handler(r: [*c]ngx_http_request_t) callconv(.c) ngx_int_t
             recordOffense(r, lccf);
             if (lccf.*.mode == WAF_MODE_BLOCK) {
                 rctx.*.done = 1;
-                return sendBlockedResponse(r, method_result.rule_type);
+                return sendBlockedResponse(r, method_result.rule_type, method_result.status);
             } else {
                 logDetection(r, method_result.rule_type, method_result.pattern);
             }
@@ -1132,7 +1176,7 @@ export fn ngx_http_waf_handler(r: [*c]ngx_http_request_t) callconv(.c) ngx_int_t
             recordOffense(r, lccf);
             if (lccf.*.mode == WAF_MODE_BLOCK) {
                 rctx.*.done = 1;
-                return sendBlockedResponse(r, addr_result.rule_type);
+                return sendBlockedResponse(r, addr_result.rule_type, addr_result.status);
             } else {
                 logDetection(r, addr_result.rule_type, addr_result.pattern);
             }
@@ -1144,7 +1188,7 @@ export fn ngx_http_waf_handler(r: [*c]ngx_http_request_t) callconv(.c) ngx_int_t
         recordOffense(r, lccf);
         if (lccf.*.mode == WAF_MODE_BLOCK) {
             rctx.*.done = 1;
-            return sendBlockedResponse(r, header_selector_result.rule_type);
+            return sendBlockedResponse(r, header_selector_result.rule_type, header_selector_result.status);
         } else {
             logDetection(r, header_selector_result.rule_type, header_selector_result.pattern);
         }
@@ -1157,7 +1201,7 @@ export fn ngx_http_waf_handler(r: [*c]ngx_http_request_t) callconv(.c) ngx_int_t
             recordOffense(r, lccf);
             if (lccf.*.mode == WAF_MODE_BLOCK) {
                 rctx.*.done = 1;
-                return sendBlockedResponse(r, headers_result.rule_type);
+                return sendBlockedResponse(r, headers_result.rule_type, headers_result.status);
             } else {
                 logDetection(r, headers_result.rule_type, headers_result.pattern);
             }

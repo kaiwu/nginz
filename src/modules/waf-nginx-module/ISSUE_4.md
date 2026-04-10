@@ -461,8 +461,11 @@ Implemented in `ngx_http_waf`:
   - `@libinjection_sqli`
   - `@libinjection_xss`
 - supported selectors:
+  - `ARGS:<name>`
   - `REQUEST_HEADERS:<name>`
   - `REQUEST_COOKIES:<name>`
+- supported action subset also includes:
+  - `status:<code>`
 - supported action subset:
   - `id:<n>`
   - `phase:1|2`
@@ -474,8 +477,10 @@ Implemented in `ngx_http_waf`:
 - `libinjection`-backed SQLi/XSS checks in the native detector path before substring fallbacks
 - explicit `@libinjection_sqli` / `@libinjection_xss` operators in `waf_rules_file`
 - explicit `@rx` and equals-style operators in `waf_rules_file`
+- explicit `ARGS:<name>` selectors for more realistic application-field targeting
 - explicit scoped header/cookie selectors in `waf_rules_file`
 - shared-memory temporary IP banning via threshold/window/duration directives
+- per-rule `status:<code>` handling for application-specific block responses
 - Bun integration coverage proving file-driven block/detect behavior
 - Bun integration coverage proving stronger detection of obfuscated SQLi/XSS payloads
 
@@ -486,13 +491,30 @@ What this means:
 
 ## Updated near-term next steps
 
-1. add more request collections / semantics:
-    - per-header / per-cookie selectors
-    - query/body collections beyond raw combined text
-2. add more target granularity:
-   - per-argument selectors
-   - richer body collections
-3. make unsupported syntax fail with clearer config-time errors
-4. decide whether per-rule disruptive actions should override `waf_mode`, or whether `waf_mode` remains the top-level enforcement switch
-5. evolve the shared-memory ban store beyond a fixed-size array into richer IP reputation / allow-deny behavior
-6. add more checked-in rule fixtures under `tests/waf/` and expand Bun coverage accordingly
+1. add richer body collections / selectors beyond raw combined text
+2. make unsupported syntax fail with clearer config-time errors
+3. decide whether per-rule disruptive actions should override `waf_mode`, or whether `waf_mode` remains the top-level enforcement switch
+4. evolve the shared-memory ban store beyond a fixed-size array into richer IP reputation behavior
+5. add more checked-in rule fixtures under `tests/waf/` and expand Bun coverage accordingly
+
+## Practical scope note
+
+Static IP allow/deny policy should continue to rely on nginx's built-in access module rather than being duplicated inside `ngx_http_waf`.
+
+That keeps the WAF focused on request inspection, dynamic bans, and rule-driven behavior where it adds unique value.
+
+## Next strongest real-world slices
+
+From a practical WAF deployment angle, the next highest-value follow-ups are:
+
+1. **Richer body collections / selectors**
+   - target individual body fields instead of treating the whole request body as one combined text blob
+   - this is especially useful for form-encoded and JSON API traffic
+
+2. **More action semantics**
+   - build beyond `status:<code>` toward richer policy behavior
+   - examples: clearer disruptive/non-disruptive action handling, tighter detect-vs-block interaction, and better logging-oriented rule actions
+
+3. **Better shared-memory reputation model**
+   - evolve beyond fixed temporary bans into stronger offender tracking
+   - examples: richer counters, longer-lived reputation state, and better escalation/expiry behavior

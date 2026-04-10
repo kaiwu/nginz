@@ -10,3 +10,5 @@ SecRule REQUEST_URI "@rx regex-path-[0-9]+" "id:1008,phase:1,msg:'regex subset r
 SecRule REQUEST_METHOD "@streq patch" "id:1009,phase:1,msg:'equals subset rule'"
 SecRule REQUEST_HEADERS:X-Scoped-Header "@contains scoped-header-hit" "id:1010,phase:1,msg:'header selector rule'"
 SecRule REQUEST_COOKIES:scoped_cookie "@contains scoped-cookie-hit" "id:1011,phase:1,msg:'cookie selector rule'"
+SecRule ARGS:scoped_arg "@contains scoped-arg-hit" "id:1012,phase:1,msg:'arg selector rule'"
+SecRule REQUEST_URI "@contains status-path" "id:1013,phase:1,status:406,msg:'status action rule'"

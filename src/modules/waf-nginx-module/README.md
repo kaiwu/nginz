@@ -86,6 +86,7 @@ Current supported subset:
 - one rule per line starting with `SecRule`
 - targets: `REQUEST_URI`, `ARGS`, `REQUEST_BODY`, `REQUEST_HEADERS`, `REQUEST_COOKIES`, `REQUEST_METHOD`, `REMOTE_ADDR`
 - scoped selectors on:
+  - `ARGS:name`
   - `REQUEST_HEADERS:Header-Name`
   - `REQUEST_COOKIES:cookie_name`
 - operators:
@@ -95,6 +96,7 @@ Current supported subset:
   - `@libinjection_sqli`
   - `@libinjection_xss`
 - actions subset: `id:<n>`, `phase:1|2`, `msg:'...'`, plus tolerated `deny`, `log`, `t:none`
+  - `status:<code>`
 
 Example:
 
@@ -117,8 +119,10 @@ SecRule REQUEST_HEADERS "@contains x-api-key: bad-value" "id:1003,phase:1,msg:'h
 SecRule ARGS "@libinjection_sqli" "id:2001,phase:1,msg:'libinjection SQLi rule'"
 SecRule REQUEST_BODY "@libinjection_xss" "id:2002,phase:2,msg:'libinjection XSS rule'"
 SecRule REQUEST_HEADERS:X-Scoped-Header "@contains secret-value" "id:2003,phase:1,msg:'scoped header rule'"
+SecRule ARGS:role "@contains admin" "id:2004,phase:1,msg:'scoped arg rule'"
 SecRule REQUEST_METHOD "@streq patch" "id:2004,phase:1,msg:'exact method rule'"
 SecRule REQUEST_URI "@rx regex-path-[0-9]+" "id:2005,phase:1,msg:'regex path rule'"
+SecRule REQUEST_URI "@contains blocked-api" "id:2006,phase:1,status:406,msg:'custom status rule'"
 ```
 
 ### Detection stack
@@ -156,6 +160,12 @@ Time window in seconds for counting repeated WAF detections toward a temporary b
 *context:* `location`
 
 Temporary ban duration in seconds once the threshold is reached.
+
+### Practical policy note
+
+Static IP allow/deny policy should continue to use nginx's built-in access controls (`allow` / `deny`).
+
+`ngx_http_waf` is now focused on dynamic inspection, rule-driven blocking, and temporary shared-memory bans rather than duplicating nginx's coarse static IP ACL layer.
 
 ### Response Format
 
@@ -246,4 +256,6 @@ http {
 - [x] `waf_rules_file` now supports explicit `@libinjection_sqli` and `@libinjection_xss` operators with Bun coverage for file-driven rule execution.
 - [x] `waf_rules_file` now supports `@rx`, equals-style operators, and scoped `REQUEST_HEADERS:<name>` / `REQUEST_COOKIES:<name>` selectors.
 - [x] Shared-memory temporary IP bans are now supported via `waf_ban_threshold`, `waf_ban_window`, and `waf_ban_duration`, with Bun coverage for threshold, active ban, and expiry behavior.
+- [x] `waf_rules_file` now supports `ARGS:name` selectors and per-rule `status:<code>` actions for more practical application-facing policies.
+- [x] Static IP allow/deny remains intentionally delegated to nginx's built-in access controls rather than being reimplemented in the WAF module.
 - [x] No additional documentation gaps were identified in this audit pass.
