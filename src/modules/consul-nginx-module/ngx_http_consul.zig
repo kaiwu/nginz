@@ -187,6 +187,52 @@ fn write_decimal(out: []u8, value: usize) usize {
     return pos;
 }
 
+fn append_json_string(out_buf: []u8, out_len: *usize, value: []const u8) bool {
+    if (out_len.* >= out_buf.len) return false;
+    out_buf[out_len.*] = '"';
+    out_len.* += 1;
+
+    for (value) |c| {
+        switch (c) {
+            '"', '\\' => {
+                if (out_len.* + 2 > out_buf.len) return false;
+                out_buf[out_len.*] = '\\';
+                out_buf[out_len.* + 1] = c;
+                out_len.* += 2;
+            },
+            '\n' => {
+                if (out_len.* + 2 > out_buf.len) return false;
+                out_buf[out_len.*] = '\\';
+                out_buf[out_len.* + 1] = 'n';
+                out_len.* += 2;
+            },
+            '\r' => {
+                if (out_len.* + 2 > out_buf.len) return false;
+                out_buf[out_len.*] = '\\';
+                out_buf[out_len.* + 1] = 'r';
+                out_len.* += 2;
+            },
+            '\t' => {
+                if (out_len.* + 2 > out_buf.len) return false;
+                out_buf[out_len.*] = '\\';
+                out_buf[out_len.* + 1] = 't';
+                out_len.* += 2;
+            },
+            else => {
+                if (c < 0x20) return false;
+                if (out_len.* + 1 > out_buf.len) return false;
+                out_buf[out_len.*] = c;
+                out_len.* += 1;
+            },
+        }
+    }
+
+    if (out_len.* >= out_buf.len) return false;
+    out_buf[out_len.*] = '"';
+    out_len.* += 1;
+    return true;
+}
+
 // Build HTTP GET request for Consul API
 fn build_consul_request(rctx: [*c]consul_request_ctx, pool: [*c]ngx_pool_t) !ngx_str_t {
     var path_buf: [512]u8 = undefined;
@@ -485,36 +531,27 @@ fn build_kv_response(json_data: ngx_str_t, pool: [*c]ngx_pool_t) ?ngx_str_t {
         const value_node = cjson.cJSON_GetObjectItem(entry, "Value");
         if (value_node != core.nullptr(cjson.cJSON)) {
             if (CJSON.stringValue(value_node)) |value_str| {
-                // Decode base64
                 const value_slice = core.slicify(u8, value_str.data, value_str.len);
                 var decoded: [2048]u8 = undefined;
-                const decoded_len = std.base64.standard.Decoder.calcSizeForSlice(value_slice) catch 0;
-                if (decoded_len > 0 and decoded_len <= 2048) {
-                    std.base64.standard.Decoder.decode(&decoded, value_slice) catch {
-                        // Return raw value on decode error
-                        const prefix = "{\"value\":\"";
-                        @memcpy(out_buf[out_len..][0..prefix.len], prefix);
-                        out_len += prefix.len;
-                        const val_len = @min(value_str.len, 1024);
-                        @memcpy(out_buf[out_len..][0..val_len], value_slice[0..val_len]);
-                        out_len += val_len;
-                        const suffix = "\"}";
-                        @memcpy(out_buf[out_len..][0..suffix.len], suffix);
-                        out_len += suffix.len;
+                const decoded_len = std.base64.standard.Decoder.calcSizeForSlice(value_slice) catch return null;
 
-                        if (core.castPtr(u8, core.ngx_pnalloc(pool, out_len))) |data| {
-                            @memcpy(core.slicify(u8, data, out_len), out_buf[0..out_len]);
-                            return ngx_str_t{ .data = data, .len = out_len };
-                        }
-                        return null;
-                    };
-
-                    const prefix = "{\"value\":\"";
+                if (decoded_len <= decoded.len) {
+                    const prefix = "{\"value\":";
                     @memcpy(out_buf[out_len..][0..prefix.len], prefix);
                     out_len += prefix.len;
-                    @memcpy(out_buf[out_len..][0..decoded_len], decoded[0..decoded_len]);
-                    out_len += decoded_len;
-                    const suffix = "\"}";
+
+                    if (std.base64.standard.Decoder.decode(&decoded, value_slice)) |_| {
+                        if (!append_json_string(&out_buf, &out_len, decoded[0..decoded_len])) {
+                            return null;
+                        }
+                    } else |_| {
+                        const raw_len = @min(value_slice.len, 1024);
+                        if (!append_json_string(&out_buf, &out_len, value_slice[0..raw_len])) {
+                            return null;
+                        }
+                    }
+
+                    const suffix = "}";
                     @memcpy(out_buf[out_len..][0..suffix.len], suffix);
                     out_len += suffix.len;
                 }

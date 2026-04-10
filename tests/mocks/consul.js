@@ -10,6 +10,7 @@ export class ConsulMock {
     this.services = new Map(); // service_name -> [instances]
     this.kv = new Map(); // key -> value
     this.health = new Map(); // service_name -> health status
+    this.requestLog = [];
   }
 
   start() {
@@ -28,12 +29,20 @@ export class ConsulMock {
     this.services.clear();
     this.kv.clear();
     this.health.clear();
+    this.requestLog = [];
   }
 
   async handleRequest(req) {
     const url = new URL(req.url);
     const path = url.pathname;
     const method = req.method;
+
+    this.requestLog.push({
+      method,
+      path,
+      query: Object.fromEntries(url.searchParams.entries()),
+      headers: Object.fromEntries(req.headers.entries()),
+    });
 
     // Agent API
     if (path === "/v1/agent/self") {
@@ -93,10 +102,14 @@ export class ConsulMock {
     if (healthServiceMatch) {
       const serviceName = healthServiceMatch[1];
       const passing = url.searchParams.get("passing") === "true";
+      const tag = url.searchParams.get("tag");
       const instances = this.services.get(serviceName) || [];
 
       const results = instances
         .filter((inst) => {
+          if (tag && !(inst.tags || []).includes(tag)) {
+            return false;
+          }
           if (!passing) return true;
           const health = this.health.get(`${serviceName}:${inst.id}`);
           return health !== "critical";
@@ -289,6 +302,18 @@ export class ConsulMock {
 
   clearKV() {
     this.kv.clear();
+  }
+
+  getRequests() {
+    return [...this.requestLog];
+  }
+
+  getLastRequest() {
+    return this.requestLog[this.requestLog.length - 1];
+  }
+
+  clearLog() {
+    this.requestLog = [];
   }
 }
 

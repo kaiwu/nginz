@@ -4,7 +4,7 @@ Automatic SSL certificate provisioning and renewal using the ACME protocol (RFC 
 
 ### Status
 
-**In Progress** - Core crypto, storage, and handlers implemented. Upstream ACME flow needs testing.
+**In Progress** - Trigger-driven HTTP-01 issuance now works end-to-end against the mock ACME server, including challenge serving and persisted certificate storage. Real ACME server validation is still pending.
 
 #### Implemented Features
 - [x] Base64url encoding/decoding (RFC 4648)
@@ -23,14 +23,15 @@ Automatic SSL certificate provisioning and renewal using the ACME protocol (RFC 
 - [x] HTTP request builder for ACME operations (`AcmeHttpRequest`)
 - [x] Trigger endpoint (`/.well-known/acme-trigger`) to initiate ACME flow
 - [x] Upstream integration skeleton (callbacks implemented)
+- [x] End-to-end mock ACME issuance through account initialization, challenge registration, authorization polling, finalization, and persisted `fullchain.pem` / `privkey.pem` output
 
 #### Current Limitations
-- Upstream ACME requests not fully tested with real ACME servers
-- Full ACME flow (directory → account → order → authz → finalize → cert) needs end-to-end testing
+- Real ACME servers (Let's Encrypt staging / Pebble) are not covered yet
+- Error recovery is still simple; repeated trigger calls advance the state machine but do not implement rich retry/backoff policy
 - Single worker process support only (global state not shared)
 
 #### Pending Features
-- [ ] End-to-end testing with Let's Encrypt staging/Pebble
+- [ ] End-to-end testing with Let's Encrypt staging / Pebble
 - [ ] Multi-worker support (shared state via shm)
 - [ ] Error recovery and retry logic
 
@@ -48,6 +49,14 @@ Renewal is handled externally via the trigger endpoint - no internal timer neede
 
 This approach is simpler, more debuggable, and follows the same pattern as certbot.
 
+#### Current Design Notes
+
+- Both `/.well-known/acme-challenge/*` and `/.well-known/acme-trigger` are intercepted in the nginx **ACCESS** phase, so they run before normal location content handlers.
+- `/.well-known/acme-trigger` advances the ACME state machine one step at a time and returns JSON statuses such as `initialized`, `started`, `complete`, or `error`.
+- ACME runtime state is currently held in worker-global variables (`global_acme_client`, `global_account_key`, `global_domain_key`, `global_storage`), which is why the module is single-worker today and why fully isolated Bun tests restart nginx.
+- Persistent storage is part of the working design: the module loads or creates `account.key`, then writes `certs/<domain>/fullchain.pem` and `certs/<domain>/privkey.pem` when issuance completes.
+- Renewal is intentionally **external-trigger driven**, not timer driven inside nginx. Repeated trigger calls resume or advance the current worker's ACME state.
+
 ### Implementation Plan
 
 #### Phase 1: HTTP-01 Challenge + Basic ACME Client
@@ -60,7 +69,7 @@ Focus on the most common use case - automatic certificates for single domains:
 4. **CSR Generation** - Create Certificate Signing Requests
 5. **JWS Signing** - Sign ACME requests with RS256
 6. **Certificate Storage** - Store certs and keys on filesystem
-7. **Auto-Renewal** - Background timer for renewal checks
+7. **External Renewal Trigger** - Renewal is driven by repeated calls to `/.well-known/acme-trigger`
 
 #### Architecture
 
@@ -77,7 +86,7 @@ Focus on the most common use case - automatic certificates for single domains:
 │  │  Handler         │    │  (upstream)      │    │  Manager             │ │
 │  │                  │    │                  │    │                      │ │
 │  │  Intercepts      │    │  Account reg     │    │  Load/store certs    │ │
-│  │  /.well-known/   │    │  Order creation  │    │  Renewal timer       │ │
+│  │  /.well-known/   │    │  Order creation  │    │  Trigger-driven flow │ │
 │  │  acme-challenge/ │    │  Challenge ready │    │  Key generation      │ │
 │  │                  │    │  Finalization    │    │                      │ │
 │  └──────────────────┘    └──────────────────┘    └──────────────────────┘ │
@@ -339,22 +348,18 @@ const CertManager = struct {
 };
 ```
 
-#### Renewal Timer
+#### Renewal Execution Model
 
 ```zig
-fn init_process(cycle: [*c]ngx_cycle_t) callconv(.c) ngx_int_t {
-    // Schedule first renewal check after startup delay
-    const ev = ngx_add_timer(...);
-    return NGX_OK;
-}
-
-fn renewal_timer_handler(ev: [*c]ngx_event_t) callconv(.c) void {
-    // 1. For each configured domain
-    // 2. Check certificate status
-    // 3. Renew if needed
-    // 4. Reschedule timer (e.g., every 12 hours)
+export fn ngx_http_acme_trigger_handler(r: [*c]ngx_http_request_t) callconv(.c) ngx_int_t {
+    // 1. Initialize worker-global ACME state on the first trigger
+    // 2. Advance the ACME state machine one step per call
+    // 3. Return JSON status for the current step or terminal state
+    // 4. Persist account/certificate material when issuance completes
 }
 ```
+
+The current implementation does **not** run an internal nginx timer for renewal checks.
 
 #### Storage Layout
 

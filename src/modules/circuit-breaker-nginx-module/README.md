@@ -113,4 +113,6 @@ server {
 
 - [x] Audit date: 2026-04-10
 - [x] Bun integration coverage exists at `tests/circuit-breaker/`.
+- [x] Bun integration coverage now verifies closed-state failure streak reset, non-5xx responses not tripping the circuit, raw-millisecond timeout parsing, and open-state reporting via `$ngz_circuit_state`.
+- [x] Hardened Bun tests restart nginx between cases because circuit state is per-worker global state, matching the documented limitation.
 - [x] No additional documentation gaps were identified in this audit pass.

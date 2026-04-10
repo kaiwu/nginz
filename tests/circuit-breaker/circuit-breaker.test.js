@@ -13,18 +13,17 @@ const MODULE = "circuit-breaker";
 let mocks;
 let upstream;
 
+function configureDefaultUpstream() {
+  upstream.get("/", { body: { status: "ok" }, status: 200 });
+  upstream.get("/*", { body: { status: "ok" }, status: 200 });
+}
+
 describe("circuit-breaker module", () => {
   beforeAll(async () => {
     mocks = createMockManager();
 
     // Create upstream server on port 19002
     upstream = mocks.add("upstream", createHTTPMock(MOCK_PORTS.HTTP_UPSTREAM_1));
-
-    // Default successful response
-    upstream.get("/", { body: { status: "ok" }, status: 200 });
-    upstream.get("/*", { body: { status: "ok" }, status: 200 });
-
-    await startNginz(`tests/${MODULE}/nginx.conf`, MODULE);
   });
 
   afterAll(async () => {
@@ -33,10 +32,11 @@ describe("circuit-breaker module", () => {
     cleanupRuntime(MODULE);
   });
 
-  beforeEach(() => {
-    // Reset failure rate before each test
-    upstream.setFailureRate(0);
-    upstream.clearLog();
+  beforeEach(async () => {
+    await stopNginz();
+    upstream.reset();
+    configureDefaultUpstream();
+    await startNginz(`tests/${MODULE}/nginx.conf`, MODULE);
   });
 
   describe("closed state", () => {
@@ -49,6 +49,53 @@ describe("circuit-breaker module", () => {
       await fetch(`${TEST_URL}/protected`);
       const requests = upstream.getRequests();
       expect(requests.length).toBeGreaterThanOrEqual(1);
+    });
+
+    test("successful requests reset the failure streak in closed state", async () => {
+      let requestNumber = 0;
+
+      upstream.get("/protected", (req, url, logEntry) => {
+        requestNumber += 1;
+
+        if (requestNumber === 1 || requestNumber === 3 || requestNumber === 4) {
+          return { status: 500, body: { status: "error", requestNumber } };
+        }
+
+        return { status: 200, body: { status: "ok", requestNumber } };
+      });
+
+      const res1 = await fetch(`${TEST_URL}/protected`);
+      expect(res1.status).toBe(500);
+
+      const res2 = await fetch(`${TEST_URL}/protected`);
+      expect(res2.status).toBe(200);
+
+      const res3 = await fetch(`${TEST_URL}/protected`);
+      expect(res3.status).toBe(500);
+
+      upstream.clearLog();
+      const res4 = await fetch(`${TEST_URL}/protected`);
+      expect(res4.status).toBe(500);
+      expect(upstream.getRequests().length).toBe(1);
+
+      upstream.clearLog();
+      const res5 = await fetch(`${TEST_URL}/protected`);
+      expect(res5.status).toBe(200);
+      expect(upstream.getRequests().length).toBe(1);
+    });
+
+    test("non-5xx upstream responses do not count as failures", async () => {
+      upstream.get("/protected", { status: 404, body: { status: "missing" } });
+
+      for (let i = 0; i < 5; i++) {
+        const res = await fetch(`${TEST_URL}/protected`);
+        expect(res.status).toBe(404);
+      }
+
+      upstream.clearLog();
+      const res = await fetch(`${TEST_URL}/protected`);
+      expect(res.status).toBe(404);
+      expect(upstream.getRequests().length).toBe(1);
     });
   });
 
@@ -158,6 +205,24 @@ describe("circuit-breaker module", () => {
       const openRes = await fetch(`${TEST_URL}/fast`);
       expect(openRes.status).toBe(503);
     });
+
+    test("raw millisecond timeout transitions to half-open", async () => {
+      upstream.setFailureRate(1.0);
+
+      const failureRes = await fetch(`${TEST_URL}/millis`);
+      expect(failureRes.status).toBe(500);
+
+      upstream.setFailureRate(0);
+      upstream.clearLog();
+
+      const openRes = await fetch(`${TEST_URL}/millis`);
+      expect(openRes.status).toBe(503);
+
+      await Bun.sleep(350);
+
+      const recoveredRes = await fetch(`${TEST_URL}/millis`);
+      expect(recoveredRes.status).toBe(200);
+    });
   });
 
   describe("circuit state variable", () => {
@@ -179,6 +244,18 @@ describe("circuit-breaker module", () => {
       const res = await fetch(`${TEST_URL}/state`);
       const state = res.headers.get("X-Circuit-State");
       expect(state).toBe("closed");
+    });
+
+    test("state variable reports open after threshold failures", async () => {
+      upstream.setFailureRate(1.0);
+
+      for (let i = 0; i < 3; i++) {
+        await fetch(`${TEST_URL}/protected`);
+      }
+
+      const res = await fetch(`${TEST_URL}/protected`);
+      expect(res.status).toBe(503);
+      expect(res.headers.get("X-Circuit-State")).toBe("open");
     });
   });
 

@@ -261,4 +261,7 @@ http {
 
 - [x] Audit date: 2026-04-10
 - [x] Bun integration coverage exists at `tests/consul/`.
+- [x] Bun integration coverage now verifies tag-filtered service discovery, datacenter query propagation, ACL token header forwarding, passing-only health filtering, empty-string KV values, and JSON-safe KV payload serialization.
+- [x] Gap fixed in this audit pass: KV responses now preserve empty decoded values instead of collapsing them to `null`.
+- [x] Gap fixed in this audit pass: KV responses now JSON-escape decoded and raw fallback values so quoted payloads remain valid JSON.
 - [x] No additional documentation gaps were identified in this audit pass.

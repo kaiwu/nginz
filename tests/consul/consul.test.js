@@ -34,6 +34,8 @@ describe("consul module", () => {
     consulMock.setKV("config/app/timeout", "30");
     consulMock.setKV("config/app/retries", "3");
     consulMock.setKV("config/db/host", "localhost");
+    consulMock.setKV("config/app/empty", "");
+    consulMock.setKV("config/app/json", '{"mode":"safe","enabled":true}');
 
     await startNginz(`tests/${MODULE}/nginx.conf`, MODULE);
   });
@@ -89,6 +91,38 @@ describe("consul module", () => {
       expect(body.services[0].address).toBe("10.0.0.1");
       expect(body.services[0].port).toBe(8080);
     });
+
+    test("applies configured tag filter and forwards dc/token query metadata", async () => {
+      consulMock.clearLog();
+
+      const res = await fetch(`${TEST_URL}/api-primary`);
+      expect(res.status).toBe(200);
+
+      const body = await res.json();
+      expect(body.services).toHaveLength(1);
+      expect(body.services[0].id).toBe("api-1");
+      expect(body.services[0].tags).toContain("primary");
+
+      const lastRequest = consulMock.getLastRequest();
+      expect(lastRequest.path).toBe("/v1/health/service/api-service");
+      expect(lastRequest.query.passing).toBe("true");
+      expect(lastRequest.query.tag).toBe("primary");
+      expect(lastRequest.query.dc).toBe("dc-west");
+      expect(lastRequest.headers["x-consul-token"]).toBe("test-token-123");
+    });
+
+    test("filters out critical instances when passing-only query is used", async () => {
+      consulMock.setServiceHealth("api-service", "api-2", "critical");
+
+      const res = await fetch(`${TEST_URL}/services/api-service`);
+      expect(res.status).toBe(200);
+
+      const body = await res.json();
+      expect(body.services).toHaveLength(1);
+      expect(body.services[0].id).toBe("api-1");
+
+      consulMock.setServiceHealth("api-service", "api-2", "passing");
+    });
   });
 
   describe("KV store", () => {
@@ -122,6 +156,25 @@ describe("consul module", () => {
 
       const body = await res.json();
       expect(body.value).toBeNull();
+    });
+
+    test("preserves empty string KV values instead of converting them to null", async () => {
+      const res = await fetch(`${TEST_URL}/config/empty`);
+      expect(res.status).toBe(200);
+
+      const body = await res.json();
+      expect(body.value).toBe("");
+    });
+
+    test("returns JSON-safe escaped KV values", async () => {
+      const res = await fetch(`${TEST_URL}/config/json`);
+      expect(res.status).toBe(200);
+
+      const text = await res.text();
+      expect(() => JSON.parse(text)).not.toThrow();
+
+      const body = JSON.parse(text);
+      expect(body.value).toBe('{"mode":"safe","enabled":true}');
     });
   });
 
