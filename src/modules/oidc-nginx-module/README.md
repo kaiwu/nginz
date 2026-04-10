@@ -399,3 +399,9 @@ Mock IdP server that:
 - [OAuth 2.0 for Browser-Based Apps (PKCE)](https://datatracker.ietf.org/doc/html/draft-ietf-oauth-browser-based-apps)
 - [RFC 7636 - PKCE](https://datatracker.ietf.org/doc/html/rfc7636)
 - [lua-resty-openidc](https://github.com/zmartzone/lua-resty-openidc)
+
+### Documentation Audit Checklist
+
+- [x] Audit date: 2026-04-10
+- [x] Bun integration coverage exists at `tests/oidc/`.
+- [x] No additional documentation gaps were identified in this audit pass.

@@ -20,3 +20,9 @@ location /hello {
 ```
 
 Visiting `/hello` will return a response with status code 200 and body containing "hello".
+
+### Documentation Audit Checklist
+
+- [x] Audit date: 2026-04-10
+- [x] Bun integration coverage exists at `tests/hello/`.
+- [x] No additional documentation gaps were identified in this audit pass.

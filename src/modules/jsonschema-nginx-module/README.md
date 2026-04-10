@@ -64,3 +64,9 @@ Possible error messages:
 - Requests without `Content-Type: application/json` header pass through without validation
 - Empty request bodies pass through without validation
 - Validation runs in the access phase before content handlers
+
+### Documentation Audit Checklist
+
+- [x] Audit date: 2026-04-10
+- [x] Bun integration coverage exists at `tests/jsonschema/`.
+- [x] No additional documentation gaps were identified in this audit pass.

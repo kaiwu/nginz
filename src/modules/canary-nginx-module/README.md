@@ -119,3 +119,9 @@ canary_percentage 50;  # 50/50 split
 
 - [Kubernetes Canary Deployments](https://kubernetes.io/docs/concepts/workloads/controllers/deployment/#canary-deployment)
 - [NGINX Canary Deployments](https://www.nginx.com/blog/dynamic-a-b-testing-with-nginx-plus/)
+
+### Documentation Audit Checklist
+
+- [x] Audit date: 2026-04-10
+- [x] Bun integration coverage exists at `tests/canary/`.
+- [x] No additional documentation gaps were identified in this audit pass.

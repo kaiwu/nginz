@@ -117,3 +117,9 @@ For production use with multiple workers, consider using a single worker or exte
 
 - [Prometheus Exposition Format](https://prometheus.io/docs/instrumenting/exposition_formats/)
 - [nginx-prometheus-exporter](https://github.com/nginxinc/nginx-prometheus-exporter)
+
+### Documentation Audit Checklist
+
+- [x] Audit date: 2026-04-10
+- [x] Bun integration coverage exists at `tests/prometheus/`.
+- [x] No additional documentation gaps were identified in this audit pass.

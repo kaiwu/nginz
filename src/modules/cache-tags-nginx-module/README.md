@@ -94,3 +94,12 @@ Current implementation has these limitations:
 
 - [Fastly Surrogate Keys](https://docs.fastly.com/en/guides/purging-api-cache-with-surrogate-keys)
 - [Varnish Cache Tags](https://varnish-cache.org/docs/trunk/users-guide/purging.html)
+
+### Documentation Audit Checklist
+
+- [x] Audit date: 2026-04-10
+- [x] Bun integration coverage exists at `tests/cache-tags/`.
+- [x] Gap recorded: the feature list says wildcard pattern purge is available, but the current limitations/future sections and code/tests only support exact-tag purge.
+- [x] Gap recorded: README documents `cache_tags on|off;`, but the current command surface and passing test config use `cache_tags;` with no argument.
+- [x] Gap recorded: README says the purge endpoint accepts POST requests, but the current purge handler allows GET or DELETE.
+- [x] No additional documentation gaps were identified in this audit pass.

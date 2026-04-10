@@ -110,4 +110,21 @@ describe("echoz module", () => {
       expect(body).toContain("after");
     });
   });
+
+  describe("additional documented directives", () => {
+    test("echoz_flush keeps response stream valid", async () => {
+      const res = await fetch(`${TEST_URL}/flush`);
+      expect(res.status).toBe(200);
+      const body = await res.text();
+      expect(body).toBe("before flush\nafter flush\n");
+    });
+
+    test("filter directives can set status, headers, and wrap body", async () => {
+      const res = await fetch(`${TEST_URL}/filtered`);
+      expect(res.status).toBe(201);
+      expect(res.headers.get("x-echoz")).toBe("filtered");
+      const body = await res.text();
+      expect(body).toBe("before|body|after");
+    });
+  });
 });

@@ -208,3 +208,10 @@ request body, decrypts and appends plaintxt for the location's content handler, 
 *Note* since the verification requires request body, the module will read entire request body in the *access* phase already.
 
 [1]: https://pay.weixin.qq.com/ "wechat pay"
+
+### Documentation Audit Checklist
+
+- [x] Audit date: 2026-04-10
+- [x] Verified the README still matches the reviewed multi-module shape and exported directive surface.
+- [x] Gap recorded: no Bun integration coverage exists under `tests/wechatpay/`, so observable proxy/access/OAEP behavior is not currently guarded by the repository integration suite.
+- [x] No additional documentation gaps were identified in this audit pass.

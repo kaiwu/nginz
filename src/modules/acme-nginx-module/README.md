@@ -497,3 +497,10 @@ ACME_SERVER=https://localhost:14000/dir bun test tests/acme/
 - [Pebble Test Server](https://github.com/letsencrypt/pebble)
 - [JWS RFC 7515](https://tools.ietf.org/html/rfc7515)
 - [lua-resty-auto-ssl](https://github.com/auto-ssl/lua-resty-auto-ssl)
+
+### Documentation Audit Checklist
+
+- [x] Audit date: 2026-04-10
+- [x] Bun integration coverage exists at `tests/acme/`.
+- [x] Gap recorded: README documents `acme_staging` and `acme_renew_before`, but the current exported command table only includes `acme`, `acme_server`, `acme_email`, `acme_storage`, and `acme_domain`.
+- [x] No additional documentation gaps were identified in this audit pass.

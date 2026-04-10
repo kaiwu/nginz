@@ -41,6 +41,24 @@ describe("Health Check Endpoints", () => {
       expect(body.success_rate).toBeGreaterThanOrEqual(0);
       expect(body.success_rate).toBeLessThanOrEqual(100);
     });
+
+    test("tracks non-health requests and failures", async () => {
+      for (let i = 0; i < 3; i++) {
+        const res = await fetch(`${TEST_URL}/`);
+        expect(res.status).toBe(200);
+      }
+
+      const failed = await fetch(`${TEST_URL}/fail`);
+      expect(failed.status).toBe(500);
+
+      const healthRes = await fetch(`${TEST_URL}/health`);
+      expect(healthRes.status).toBe(200);
+      const body = await healthRes.json();
+
+      expect(body.requests).toBeGreaterThanOrEqual(4);
+      expect(body.failed).toBeGreaterThanOrEqual(1);
+      expect(body.success_rate).toBeLessThan(100);
+    });
   });
 
   describe("health_liveness directive", () => {

@@ -993,3 +993,11 @@ Error responses:
 - Rate limiting and caching headers
 - Request/response compression
 - GraphQL support
+
+### Documentation Audit Checklist
+
+- [x] Audit date: 2026-04-10
+- [x] Bun integration coverage exists at `tests/pgrest/`.
+- [x] Gap recorded: the README does not provide directive reference coverage for `pgrest_server`, `pgrest_keepalive`, `pgrest_pooling`, and `pgrest_pass` alongside the other exported `pgrest_*` directives.
+- [x] Gap recorded: the top-level response-format sections still describe binary/octet-stream output as supported, while the planned-features and limitations sections say binary currently falls back to JSON.
+- [x] No additional documentation gaps were identified in this audit pass.

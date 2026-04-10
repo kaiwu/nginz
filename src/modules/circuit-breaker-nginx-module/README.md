@@ -108,3 +108,9 @@ server {
 
 - [Circuit Breaker Pattern](https://martinfowler.com/bliki/CircuitBreaker.html)
 - [Netflix Hystrix](https://github.com/Netflix/Hystrix)
+
+### Documentation Audit Checklist
+
+- [x] Audit date: 2026-04-10
+- [x] Bun integration coverage exists at `tests/circuit-breaker/`.
+- [x] No additional documentation gaps were identified in this audit pass.

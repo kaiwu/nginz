@@ -164,18 +164,48 @@ fn sendJsonResponse(r: [*c]ngx_http_request_t, json: []const u8, status: ngx_uin
     return http.ngx_http_output_filter(r, &out);
 }
 
-// Note: Log phase handler removed - NGX_HTTP_LOG_PHASE not exported
-// Request tracking could be added via header filter if needed
+fn ngx_http_healthcheck_log_handler(r: [*c]ngx_http_request_t) callconv(.c) ngx_int_t {
+    if (r != r.*.main) {
+        return NGX_OK;
+    }
+
+    const lccf = core.castPtr(
+        healthcheck_loc_conf,
+        conf.ngx_http_get_module_loc_conf(r, &ngx_http_healthcheck_module),
+    );
+
+    if (lccf != null and
+        (lccf.?.*.status_enabled == 1 or
+            lccf.?.*.liveness_enabled == 1 or
+            lccf.?.*.readiness_enabled == 1))
+    {
+        return NGX_OK;
+    }
+
+    total_requests += 1;
+
+    const status = r.*.headers_out.status;
+    if (status >= 400) {
+        failed_requests += 1;
+    }
+
+    return NGX_OK;
+}
 
 fn ngx_conf_set_health_status(
     cf: [*c]ngx_conf_t,
     cmd: [*c]ngx_command_t,
     loc: ?*anyopaque,
 ) callconv(.c) [*c]u8 {
-    _ = cf;
     _ = cmd;
     if (core.castPtr(healthcheck_loc_conf, loc)) |lccf| {
         lccf.*.status_enabled = 1;
+        if (core.castPtr(
+            http.ngx_http_core_loc_conf_t,
+            conf.ngx_http_conf_get_module_loc_conf(cf, &ngx_http_core_module),
+        )) |clcf| {
+            clcf.*.handler = ngx_http_healthcheck_status_handler;
+        }
     }
     return conf.NGX_CONF_OK;
 }
@@ -185,10 +215,15 @@ fn ngx_conf_set_health_liveness(
     cmd: [*c]ngx_command_t,
     loc: ?*anyopaque,
 ) callconv(.c) [*c]u8 {
-    _ = cf;
     _ = cmd;
     if (core.castPtr(healthcheck_loc_conf, loc)) |lccf| {
         lccf.*.liveness_enabled = 1;
+        if (core.castPtr(
+            http.ngx_http_core_loc_conf_t,
+            conf.ngx_http_conf_get_module_loc_conf(cf, &ngx_http_core_module),
+        )) |clcf| {
+            clcf.*.handler = ngx_http_healthcheck_liveness_handler;
+        }
     }
     return conf.NGX_CONF_OK;
 }
@@ -198,10 +233,15 @@ fn ngx_conf_set_health_readiness(
     cmd: [*c]ngx_command_t,
     loc: ?*anyopaque,
 ) callconv(.c) [*c]u8 {
-    _ = cf;
     _ = cmd;
     if (core.castPtr(healthcheck_loc_conf, loc)) |lccf| {
         lccf.*.readiness_enabled = 1;
+        if (core.castPtr(
+            http.ngx_http_core_loc_conf_t,
+            conf.ngx_http_conf_get_module_loc_conf(cf, &ngx_http_core_module),
+        )) |clcf| {
+            clcf.*.handler = ngx_http_healthcheck_readiness_handler;
+        }
     }
     return conf.NGX_CONF_OK;
 }
@@ -212,18 +252,11 @@ fn postconfiguration(cf: [*c]ngx_conf_t) callconv(.c) ngx_int_t {
         conf.ngx_http_conf_get_module_main_conf(cf, &ngx_http_core_module),
     ) orelse return NGX_ERROR;
 
-    // Register content handler
-    var content_handlers = ngx.array.NArray(http.ngx_http_handler_pt).init0(
-        &cmcf.*.phases[http.NGX_HTTP_CONTENT_PHASE].handlers,
+    var log_handlers = ngx.array.NArray(http.ngx_http_handler_pt).init0(
+        &cmcf.*.phases[10].handlers,
     );
-    const h1 = content_handlers.append() catch return NGX_ERROR;
-    h1.* = ngx_http_healthcheck_status_handler;
-
-    const h2 = content_handlers.append() catch return NGX_ERROR;
-    h2.* = ngx_http_healthcheck_liveness_handler;
-
-    const h3 = content_handlers.append() catch return NGX_ERROR;
-    h3.* = ngx_http_healthcheck_readiness_handler;
+    const h = log_handlers.append() catch return NGX_ERROR;
+    h.* = ngx_http_healthcheck_log_handler;
 
     return NGX_OK;
 }
@@ -275,5 +308,4 @@ export var ngx_http_healthcheck_module = ngx.module.make_module(
 // Tests
 const expectEqual = std.testing.expectEqual;
 
-test "healthcheck module" {
-}
+test "healthcheck module" {}

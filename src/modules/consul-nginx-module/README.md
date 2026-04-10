@@ -256,3 +256,9 @@ http {
 - [Consul HTTP API](https://www.consul.io/api-docs)
 - [Consul Health Endpoint](https://www.consul.io/api-docs/health)
 - [Consul KV Store](https://www.consul.io/api-docs/kv)
+
+### Documentation Audit Checklist
+
+- [x] Audit date: 2026-04-10
+- [x] Bun integration coverage exists at `tests/consul/`.
+- [x] No additional documentation gaps were identified in this audit pass.

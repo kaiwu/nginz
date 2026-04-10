@@ -157,3 +157,9 @@ token = jwt.encode(
 - [RFC 7519 - JSON Web Token](https://tools.ietf.org/html/rfc7519)
 - [jwt.io](https://jwt.io/) - JWT debugger and library list
 - [nginx-jwt-module](https://github.com/TeslaGov/ngx-http-auth-jwt-module)
+
+### Documentation Audit Checklist
+
+- [x] Audit date: 2026-04-10
+- [x] Bun integration coverage exists at `tests/jwt/`.
+- [x] No additional documentation gaps were identified in this audit pass.

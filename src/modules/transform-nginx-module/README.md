@@ -125,3 +125,9 @@ Current implementation has these limitations:
 
 - [JSONPath Specification](https://goessner.net/articles/JsonPath/)
 - [jq Manual](https://stedolan.github.io/jq/manual/)
+
+### Documentation Audit Checklist
+
+- [x] Audit date: 2026-04-10
+- [x] Bun integration coverage exists at `tests/transform/`.
+- [x] No additional documentation gaps were identified in this audit pass.

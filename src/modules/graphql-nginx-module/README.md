@@ -110,3 +110,9 @@ NGX_OK (pass to proxy_pass) or 400 Bad Request
 - [GraphQL Specification](https://spec.graphql.org/)
 - [GraphQL Query Syntax](https://graphql.org/learn/queries/)
 - [Why Disable Introspection](https://www.apollographql.com/blog/graphql/security/why-you-should-disable-graphql-introspection-in-production/)
+
+### Documentation Audit Checklist
+
+- [x] Audit date: 2026-04-10
+- [x] Bun integration coverage exists at `tests/graphql/`.
+- [x] No additional documentation gaps were identified in this audit pass.

@@ -142,3 +142,10 @@ Current implementation has these limitations:
 
 - [Kubernetes Probes](https://kubernetes.io/docs/tasks/configure-pod-container/configure-liveness-readiness-startup-probes/)
 - [NGINX Plus Health Checks](https://docs.nginx.com/nginx/admin-guide/load-balancer/http-health-check/)
+
+### Documentation Audit Checklist
+
+- [x] Audit date: 2026-04-10
+- [x] Bun integration coverage exists at `tests/healthcheck/`.
+- [x] Gap recorded: `requests`, `failed`, and `success_rate` were previously static in the implementation; request/failure tracking and Bun guardrails were added in this audit pass to match the documented behavior.
+- [x] No additional documentation gaps were identified in this audit pass.

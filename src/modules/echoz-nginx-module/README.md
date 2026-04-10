@@ -138,3 +138,11 @@ The module provides two nginx modules in one:
 ### References
 
 - [echo-nginx-module](https://github.com/openresty/echo-nginx-module) - Original echo module by OpenResty
+
+### Documentation Audit Checklist
+
+- [x] Audit date: 2026-04-10
+- [x] Bun integration coverage exists at `tests/echoz/`.
+- [x] Gap recorded: README documents `echoz_status <code>`, but the current command surface and passing coverage use `echoz_status <code> <reason>`.
+- [x] Gap recorded: Bun guardrails for `echoz_flush`, `echoz_status`, `echoz_header`, and body-filter wrapping were added in this audit pass because those observable behaviors were implemented but previously unasserted.
+- [x] No additional documentation gaps were identified in this audit pass.

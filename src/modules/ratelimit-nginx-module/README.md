@@ -63,3 +63,9 @@ The module uses a simple fixed window counter:
 - Each IP gets a counter that resets every second
 - Requests are allowed if `count < rate + burst`
 - When the window expires, the counter resets to 0
+
+### Documentation Audit Checklist
+
+- [x] Audit date: 2026-04-10
+- [x] Bun integration coverage exists at `tests/ratelimit/`.
+- [x] No additional documentation gaps were identified in this audit pass.

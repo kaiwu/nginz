@@ -450,6 +450,8 @@ export fn ngx_http_echoz_header_filter(
 
         if (ctx.*.header_set == 0 and lccf.*.headers.inited()) {
             echoz_header_filter(r, lccf) catch return NGX_ERROR;
+            http.ngx_http_clear_content_length(r);
+            http.ngx_http_clear_accept_ranges(r);
             ctx.*.header_set = 1;
         }
     }

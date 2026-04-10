@@ -189,3 +189,9 @@ The leading slash is stripped from the URI to form the key.
 
 - [Redis Protocol (RESP)](https://redis.io/docs/reference/protocol-spec/)
 - [ngx_http_redis Module](https://www.nginx.com/resources/wiki/modules/redis/)
+
+### Documentation Audit Checklist
+
+- [x] Audit date: 2026-04-10
+- [x] Bun integration coverage exists at `tests/redis/`.
+- [x] No additional documentation gaps were identified in this audit pass.

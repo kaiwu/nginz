@@ -114,3 +114,9 @@ Generated IDs follow RFC 4122 UUID version 4:
 
 - [OpenTelemetry Trace Context](https://www.w3.org/TR/trace-context/)
 - [RFC 4122 - UUID](https://tools.ietf.org/html/rfc4122)
+
+### Documentation Audit Checklist
+
+- [x] Audit date: 2026-04-10
+- [x] Bun integration coverage exists at `tests/requestid/`.
+- [x] No additional documentation gaps were identified in this audit pass.
