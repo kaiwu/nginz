@@ -213,5 +213,6 @@ request body, decrypts and appends plaintxt for the location's content handler, 
 
 - [x] Audit date: 2026-04-10
 - [x] Verified the README still matches the reviewed multi-module shape and exported directive surface.
-- [x] Gap recorded: no Bun integration coverage exists under `tests/wechatpay/`, so observable proxy/access/OAEP behavior is not currently guarded by the repository integration suite.
+- [x] Bun integration coverage now exists under `tests/wechatpay/` for proxy signing/verification, access-phase verification, and OAEP encrypt/decrypt flows.
+- [x] Gap recorded: this audit pass fixed real upstream/body lifecycle bugs that the new Bun suite exposed, including premature finalize-on-`NGX_DONE` handling and incorrect upstream body buffering/copying.
 - [x] No additional documentation gaps were identified in this audit pass.

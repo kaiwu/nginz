@@ -194,4 +194,5 @@ The leading slash is stripped from the URI to form the key.
 
 - [x] Audit date: 2026-04-10
 - [x] Bun integration coverage exists at `tests/redis/`.
+- [x] Gap recorded: this audit pass added Bun guardrails for JSON string escaping, invalid `INCR`/`EXPIRE` protocol errors, MGET query parsing with extra parameters, and the 16-key MGET limit.
 - [x] No additional documentation gaps were identified in this audit pass.

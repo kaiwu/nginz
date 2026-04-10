@@ -124,4 +124,5 @@ canary_percentage 50;  # 50/50 split
 
 - [x] Audit date: 2026-04-10
 - [x] Bun integration coverage exists at `tests/canary/`.
+- [x] Bun integration coverage now verifies 0% and 100% percentage boundaries, header-mismatch percentage fallback, and repeated `$ngz_canary` reads staying stable within a single request.
 - [x] No additional documentation gaps were identified in this audit pass.

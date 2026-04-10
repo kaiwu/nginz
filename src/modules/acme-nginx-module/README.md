@@ -502,5 +502,7 @@ ACME_SERVER=https://localhost:14000/dir bun test tests/acme/
 
 - [x] Audit date: 2026-04-10
 - [x] Bun integration coverage exists at `tests/acme/`.
+- [x] Gap recorded: the trigger-driven end-to-end mock ACME flow is now exercised through certificate storage; `tests/acme/` verifies account key creation, live challenge serving, repeated trigger safety, and persisted `fullchain.pem`/`privkey.pem` output.
+- [x] Gap recorded: the previously skipped certificate-storage Bun case was enabled in this audit pass after isolating ACME's worker-global state with a fresh nginx/mock restart inside that test.
 - [x] Gap recorded: README documents `acme_staging` and `acme_renew_before`, but the current exported command table only includes `acme`, `acme_server`, `acme_email`, `acme_storage`, and `acme_domain`.
 - [x] No additional documentation gaps were identified in this audit pass.

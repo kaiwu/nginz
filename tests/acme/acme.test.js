@@ -17,6 +17,22 @@ const ACME_MOCK_URL = `http://127.0.0.1:${MOCK_PORTS.ACME}`;
 
 let acmeMock;
 
+async function restartAcmeEnvironment() {
+  await stopNginz();
+  if (acmeMock) {
+    acmeMock.stop();
+  }
+
+  const acmeStoragePath = `tests/${MODULE}/runtime/acme`;
+  if (existsSync(acmeStoragePath)) {
+    rmSync(acmeStoragePath, { recursive: true });
+  }
+  mkdirSync(acmeStoragePath, { recursive: true });
+
+  acmeMock = createACMEMock(MOCK_PORTS.ACME);
+  await startNginz(`tests/${MODULE}/nginx.conf`, MODULE);
+}
+
 async function triggerAcmeFlow(url = TEST_URL) {
   const res = await fetch(`${url}/.well-known/acme-trigger`);
   expect(res.status).toBe(200);
@@ -368,12 +384,34 @@ describe("acme module", () => {
       expect(key).toContain("-----BEGIN ");
     });
 
-    test.skip("certificate is stored after successful issuance", () => {
+    test("certificate is stored after successful issuance", async () => {
+      await restartAcmeEnvironment();
+
       const certPath = `tests/${MODULE}/runtime/acme/certs/test.example.com/fullchain.pem`;
       const keyPath = `tests/${MODULE}/runtime/acme/certs/test.example.com/privkey.pem`;
 
+      if (existsSync(certPath)) {
+        rmSync(certPath);
+      }
+      if (existsSync(keyPath)) {
+        rmSync(keyPath);
+      }
+
+      const final = await triggerUntil(
+        (step) => step.status === "complete",
+        { maxSteps: 12 }
+      );
+
+      expect(final.status).toBe("complete");
+
       expect(existsSync(certPath)).toBe(true);
       expect(existsSync(keyPath)).toBe(true);
+
+      const cert = readFileSync(certPath, "utf8");
+      const key = readFileSync(keyPath, "utf8");
+
+      expect(cert).toContain("-----BEGIN CERTIFICATE-----");
+      expect(key).toContain("-----BEGIN ");
     });
   });
 });

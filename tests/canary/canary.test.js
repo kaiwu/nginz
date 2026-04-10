@@ -138,6 +138,39 @@ describe("canary module", () => {
       expect(versions.stable).toBeGreaterThan(70);
       expect(versions.canary).toBeGreaterThan(2);
     });
+
+    test("falls back to percentage when header is present but does not match", async () => {
+      const versions = { stable: 0, canary: 0 };
+
+      for (let i = 0; i < 100; i++) {
+        const res = await fetch(`${TEST_URL}/api-combined/test`, {
+          headers: { "X-Canary": "false" },
+        });
+        const body = await res.json();
+        versions[body.version]++;
+      }
+
+      expect(versions.stable).toBeGreaterThan(70);
+      expect(versions.canary).toBeGreaterThan(2);
+    });
+  });
+
+  describe("percentage boundaries", () => {
+    test("0 percent always routes to stable", async () => {
+      for (let i = 0; i < 20; i++) {
+        const res = await fetch(`${TEST_URL}/api-zero/test`);
+        const body = await res.json();
+        expect(body.version).toBe("stable");
+      }
+    });
+
+    test("100 percent always routes to canary", async () => {
+      for (let i = 0; i < 20; i++) {
+        const res = await fetch(`${TEST_URL}/api-full/test`);
+        const body = await res.json();
+        expect(body.version).toBe("canary");
+      }
+    });
   });
 
   describe("disabled location", () => {
@@ -171,6 +204,17 @@ describe("canary module", () => {
       // 50% canary, expect roughly 40-60%
       expect(canaryCount).toBeGreaterThan(30);
       expect(canaryCount).toBeLessThan(70);
+    });
+
+    test("variable decision is stable within a single request", async () => {
+      for (let i = 0; i < 20; i++) {
+        const res = await fetch(`${TEST_URL}/debug-double`);
+        const body = await res.text();
+        expect(body).toMatch(/^[01],[01]\n$/);
+
+        const [first, second] = body.trim().split(",");
+        expect(second).toBe(first);
+      }
     });
   });
 });

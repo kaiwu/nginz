@@ -998,6 +998,8 @@ Error responses:
 
 - [x] Audit date: 2026-04-10
 - [x] Bun integration coverage exists at `tests/pgrest/`.
+- [x] Gap recorded: this audit pass expanded Bun coverage for schema-profile headers, combined query shaping, PATCH/DELETE write paths, singular-object and `nulls=stripped` JSON formats, RPC array parameters, and `Prefer: params=single-object` behavior.
+- [x] Gap recorded: real bugs were fixed in request-body handling, SQL value rendering for JSON/RPC parameters, `is`/`in` filter SQL generation, text/plain formatting, and binary Accept fallback behavior.
 - [x] Gap recorded: the README does not provide directive reference coverage for `pgrest_server`, `pgrest_keepalive`, `pgrest_pooling`, and `pgrest_pass` alongside the other exported `pgrest_*` directives.
 - [x] Gap recorded: the top-level response-format sections still describe binary/octet-stream output as supported, while the planned-features and limitations sections say binary currently falls back to JSON.
 - [x] No additional documentation gaps were identified in this audit pass.
