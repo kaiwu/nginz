@@ -1,9 +1,11 @@
 const std = @import("std");
 const ngx = @import("ngx");
+const libinjection = @import("ngx_libinjection");
 
 const buf = ngx.buf;
 const core = ngx.core;
 const conf = ngx.conf;
+const file = ngx.file;
 const http = ngx.http;
 
 const NGX_OK = core.NGX_OK;
@@ -25,7 +27,28 @@ const ngx_http_module_t = http.ngx_http_module_t;
 const ngx_http_request_t = http.ngx_http_request_t;
 
 const ngx_string = ngx.string.ngx_string;
+const ngx_table_elt_t = ngx.hash.ngx_table_elt_t;
 const NArray = ngx.array.NArray;
+const NList = ngx.list.NList;
+
+const WAF_PHASE_REQUEST: u8 = 1;
+const WAF_PHASE_BODY: u8 = 2;
+
+const WAF_TARGET_REQUEST_URI: u8 = 1;
+const WAF_TARGET_ARGS: u8 = 2;
+const WAF_TARGET_REQUEST_BODY: u8 = 3;
+const WAF_TARGET_REQUEST_HEADERS: u8 = 4;
+const WAF_TARGET_REQUEST_COOKIES: u8 = 5;
+const WAF_TARGET_REQUEST_METHOD: u8 = 6;
+const WAF_TARGET_REMOTE_ADDR: u8 = 7;
+
+const waf_rule = extern struct {
+    target: u8,
+    phase: u8,
+    id: ngx_uint_t,
+    pattern: ngx_str_t,
+    msg: ngx_str_t,
+};
 
 extern var ngx_http_core_module: ngx_module_t;
 
@@ -40,6 +63,9 @@ const waf_loc_conf = extern struct {
     sqli_enabled: ngx_flag_t,
     xss_enabled: ngx_flag_t,
     check_body: ngx_flag_t,
+    rules_file: ngx_str_t,
+    rules: [*c]waf_rule,
+    rule_count: usize,
 };
 
 // Request context for tracking WAF state
@@ -55,6 +81,214 @@ const DetectionResult = struct {
     rule_type: []const u8,
     pattern: []const u8,
 };
+
+fn trimAscii(slice: []const u8) []const u8 {
+    return std.mem.trim(u8, slice, " \t\r\n");
+}
+
+fn lowerDup(pool: [*c]core.ngx_pool_t, value: []const u8) ?ngx_str_t {
+    const out_buf = core.castPtr(u8, core.ngx_pnalloc(pool, value.len)) orelse return null;
+    for (value, 0..) |c, i| {
+        out_buf[i] = toLower(c);
+    }
+    return ngx_str_t{ .data = out_buf, .len = value.len };
+}
+
+fn dupSlice(pool: [*c]core.ngx_pool_t, value: []const u8) ?ngx_str_t {
+    const out_buf = core.castPtr(u8, core.ngx_pnalloc(pool, value.len)) orelse return null;
+    @memcpy(core.slicify(u8, out_buf, value.len), value);
+    return ngx_str_t{ .data = out_buf, .len = value.len };
+}
+
+fn parseQuotedSegment(line: []const u8, start_at: usize) ?struct { value: []const u8, next: usize } {
+    if (start_at >= line.len or line[start_at] != '"') return null;
+    const rest = line[start_at + 1 ..];
+    const end_rel = std.mem.indexOfScalar(u8, rest, '"') orelse return null;
+    return .{ .value = rest[0..end_rel], .next = start_at + 1 + end_rel + 1 };
+}
+
+fn parseRuleTarget(target: []const u8) ?u8 {
+    if (std.mem.eql(u8, target, "REQUEST_URI")) return WAF_TARGET_REQUEST_URI;
+    if (std.mem.eql(u8, target, "ARGS")) return WAF_TARGET_ARGS;
+    if (std.mem.eql(u8, target, "REQUEST_BODY")) return WAF_TARGET_REQUEST_BODY;
+    if (std.mem.eql(u8, target, "REQUEST_HEADERS")) return WAF_TARGET_REQUEST_HEADERS;
+    if (std.mem.eql(u8, target, "REQUEST_COOKIES")) return WAF_TARGET_REQUEST_COOKIES;
+    if (std.mem.eql(u8, target, "REQUEST_METHOD")) return WAF_TARGET_REQUEST_METHOD;
+    if (std.mem.eql(u8, target, "REMOTE_ADDR")) return WAF_TARGET_REMOTE_ADDR;
+    return null;
+}
+
+fn parseRuleActions(actions: []const u8, rule: *waf_rule, pool: [*c]core.ngx_pool_t) bool {
+    var it = std.mem.splitScalar(u8, actions, ',');
+    var saw_phase = false;
+    while (it.next()) |part_raw| {
+        const part = trimAscii(part_raw);
+        if (part.len == 0) continue;
+
+        if (std.mem.startsWith(u8, part, "id:")) {
+            const id_text = trimAscii(part[3..]);
+            rule.id = std.fmt.parseInt(ngx_uint_t, id_text, 10) catch return false;
+        } else if (std.mem.startsWith(u8, part, "phase:")) {
+            const phase_text = trimAscii(part[6..]);
+            if (std.mem.eql(u8, phase_text, "1")) {
+                rule.phase = WAF_PHASE_REQUEST;
+            } else if (std.mem.eql(u8, phase_text, "2")) {
+                rule.phase = WAF_PHASE_BODY;
+            } else {
+                return false;
+            }
+            saw_phase = true;
+        } else if (std.mem.startsWith(u8, part, "msg:")) {
+            const msg_text = trimAscii(part[4..]);
+            if (msg_text.len >= 2 and ((msg_text[0] == '\'' and msg_text[msg_text.len - 1] == '\'') or (msg_text[0] == '"' and msg_text[msg_text.len - 1] == '"'))) {
+                rule.msg = dupSlice(pool, msg_text[1 .. msg_text.len - 1]) orelse return false;
+            } else {
+                rule.msg = dupSlice(pool, msg_text) orelse return false;
+            }
+        } else if (std.mem.eql(u8, part, "deny") or std.mem.eql(u8, part, "log") or std.mem.eql(u8, part, "t:none")) {
+            continue;
+        } else {
+            return false;
+        }
+    }
+
+    return saw_phase;
+}
+
+fn parseWafRuleLine(line_raw: []const u8, rule: *waf_rule, pool: [*c]core.ngx_pool_t) bool {
+    const line = trimAscii(line_raw);
+    if (line.len == 0 or line[0] == '#') return false;
+    if (!std.mem.startsWith(u8, line, "SecRule ")) return false;
+
+    const after_prefix = line[8..];
+    const first_space = std.mem.indexOfScalar(u8, after_prefix, ' ') orelse return false;
+    const target_text = trimAscii(after_prefix[0..first_space]);
+    const target = parseRuleTarget(target_text) orelse return false;
+
+    const op_start = 8 + first_space + 1;
+    const operator_segment = parseQuotedSegment(line, op_start) orelse return false;
+    const actions_start = std.mem.indexOfPos(u8, line, operator_segment.next, "\"") orelse return false;
+    const actions_segment = parseQuotedSegment(line, actions_start) orelse return false;
+
+    const operator_text = trimAscii(operator_segment.value);
+    if (!std.mem.startsWith(u8, operator_text, "@contains ")) return false;
+
+    const pattern_text = trimAscii(operator_text[10..]);
+    if (pattern_text.len == 0) return false;
+
+    rule.* = std.mem.zeroes(waf_rule);
+    rule.target = target;
+    rule.pattern = lowerDup(pool, pattern_text) orelse return false;
+    rule.msg = ngx_str_t{ .len = 0, .data = core.nullptr(u8) };
+
+    if (!parseRuleActions(actions_segment.value, rule, pool)) return false;
+    if (rule.target == WAF_TARGET_REQUEST_BODY and rule.phase != WAF_PHASE_BODY) return false;
+    if (rule.target != WAF_TARGET_REQUEST_BODY and rule.phase != WAF_PHASE_REQUEST) return false;
+
+    return true;
+}
+
+fn loadWafRules(contents: ngx_str_t, pool: [*c]core.ngx_pool_t, out_rules: *[*c]waf_rule, out_count: *usize) bool {
+    const text = core.slicify(u8, contents.data, contents.len);
+
+    var count: usize = 0;
+    var count_it = std.mem.splitScalar(u8, text, '\n');
+    while (count_it.next()) |line| {
+        const trimmed = trimAscii(line);
+        if (trimmed.len == 0 or trimmed[0] == '#') continue;
+        if (!std.mem.startsWith(u8, trimmed, "SecRule ")) return false;
+        count += 1;
+    }
+
+    if (count == 0) {
+        out_rules.* = core.nullptr(waf_rule);
+        out_count.* = 0;
+        return true;
+    }
+
+    const rules_mem = core.castPtr(waf_rule, core.ngx_pcalloc(pool, count * @sizeOf(waf_rule))) orelse return false;
+    var index: usize = 0;
+    var parse_it = std.mem.splitScalar(u8, text, '\n');
+    while (parse_it.next()) |line| {
+        const trimmed = trimAscii(line);
+        if (trimmed.len == 0 or trimmed[0] == '#') continue;
+        const rule_ptr: *waf_rule = @ptrCast(&rules_mem[index]);
+        if (!parseWafRuleLine(trimmed, rule_ptr, pool)) return false;
+        index += 1;
+    }
+
+    out_rules.* = rules_mem;
+    out_count.* = count;
+    return true;
+}
+
+fn analyzeCustomRules(input: []const u8, target: u8, phase: u8, lccf: *waf_loc_conf, decode_buf: []u8, lower_buf: []u8) DetectionResult {
+    if (lccf.rule_count == 0 or lccf.rules == null) {
+        return DetectionResult{ .detected = false, .rule_type = "", .pattern = "" };
+    }
+
+    const decoded_len = urlDecode(input, decode_buf);
+    if (decoded_len == 0) {
+        return DetectionResult{ .detected = false, .rule_type = "", .pattern = "" };
+    }
+
+    const actual_len = @min(decoded_len, lower_buf.len);
+    @memcpy(lower_buf[0..actual_len], decode_buf[0..actual_len]);
+    toLowerSlice(lower_buf[0..actual_len]);
+    const normalized = lower_buf[0..actual_len];
+
+    for (0..lccf.rule_count) |i| {
+        const rule = &lccf.rules[i];
+        if (rule.target != target or rule.phase != phase) continue;
+
+        const pattern = core.slicify(u8, rule.pattern.data, rule.pattern.len);
+        if (std.mem.indexOf(u8, normalized, pattern) != null) {
+            const detail = if (rule.msg.len > 0 and rule.msg.data != null) core.slicify(u8, rule.msg.data, rule.msg.len) else pattern;
+            return DetectionResult{ .detected = true, .rule_type = "rule", .pattern = detail };
+        }
+    }
+
+    return DetectionResult{ .detected = false, .rule_type = "", .pattern = "" };
+}
+
+fn hasBodyRules(lccf: *waf_loc_conf) bool {
+    for (0..lccf.rule_count) |i| {
+        if (lccf.rules[i].target == WAF_TARGET_REQUEST_BODY) return true;
+    }
+    return false;
+}
+
+fn collectRequestHeaders(r: [*c]ngx_http_request_t, pool: [*c]core.ngx_pool_t) ?ngx_str_t {
+    var headers = NList(ngx_table_elt_t).init0(&r.*.headers_in.headers);
+    var it = headers.iterator();
+
+    var total_len: usize = 0;
+    while (it.next()) |h| {
+        total_len += h.*.key.len + 2 + h.*.value.len + 1;
+    }
+    if (total_len == 0) return null;
+
+    const out = core.castPtr(u8, core.ngx_pnalloc(pool, total_len)) orelse return null;
+    var pos: usize = 0;
+
+    var headers2 = NList(ngx_table_elt_t).init0(&r.*.headers_in.headers);
+    var it2 = headers2.iterator();
+    while (it2.next()) |h| {
+        const key = core.slicify(u8, h.*.key.data, h.*.key.len);
+        const value = core.slicify(u8, h.*.value.data, h.*.value.len);
+        @memcpy(out[pos..][0..key.len], key);
+        pos += key.len;
+        out[pos] = ':';
+        out[pos + 1] = ' ';
+        pos += 2;
+        @memcpy(out[pos..][0..value.len], value);
+        pos += value.len;
+        out[pos] = '\n';
+        pos += 1;
+    }
+
+    return ngx_str_t{ .data = out, .len = pos };
+}
 
 // SQL injection patterns - common attack signatures
 const sqli_patterns = [_][]const u8{
@@ -223,9 +457,13 @@ fn analyzeInput(input: []const u8, lccf: *waf_loc_conf, decode_buf: []u8, lower_
     toLowerSlice(lower_buf[0..actual_len]);
 
     const normalized = lower_buf[0..actual_len];
+    const decoded = decode_buf[0..actual_len];
 
     // Check for SQL injection
     if (lccf.sqli_enabled == 1) {
+        if (libinjection.detectSqli(decoded)) {
+            return DetectionResult{ .detected = true, .rule_type = "sqli", .pattern = "libinjection" };
+        }
         if (checkSqli(normalized)) |pattern| {
             return DetectionResult{ .detected = true, .rule_type = "sqli", .pattern = pattern };
         }
@@ -233,6 +471,9 @@ fn analyzeInput(input: []const u8, lccf: *waf_loc_conf, decode_buf: []u8, lower_
 
     // Check for XSS
     if (lccf.xss_enabled == 1) {
+        if (libinjection.detectXss(decoded)) {
+            return DetectionResult{ .detected = true, .rule_type = "xss", .pattern = "libinjection" };
+        }
         if (checkXss(normalized)) |pattern| {
             return DetectionResult{ .detected = true, .rule_type = "xss", .pattern = pattern };
         }
@@ -377,14 +618,19 @@ export fn ngx_http_waf_body_handler(r: [*c]ngx_http_request_t) callconv(.c) void
 
     // Analyze request body
     const result = analyzeInput(body[0..analyze_len], lccf, decode_buf, lower_buf);
+    const custom_result = if (result.detected)
+        DetectionResult{ .detected = false, .rule_type = "", .pattern = "" }
+    else
+        analyzeCustomRules(body[0..analyze_len], WAF_TARGET_REQUEST_BODY, WAF_PHASE_BODY, lccf, decode_buf, lower_buf);
+    const final_result = if (result.detected) result else custom_result;
 
-    if (result.detected) {
+    if (final_result.detected) {
         if (lccf.*.mode == WAF_MODE_BLOCK) {
-            _ = sendBlockedResponse(r, result.rule_type);
+            _ = sendBlockedResponse(r, final_result.rule_type);
             http.ngx_http_finalize_request(r, http.NGX_HTTP_FORBIDDEN);
             return;
         } else {
-            logDetection(r, result.rule_type, result.pattern);
+            logDetection(r, final_result.rule_type, final_result.pattern);
         }
     }
 
@@ -405,8 +651,8 @@ export fn ngx_http_waf_handler(r: [*c]ngx_http_request_t) callconv(.c) ngx_int_t
         return NGX_DECLINED;
     }
 
-    // Skip if neither SQLi nor XSS detection is enabled
-    if (lccf.*.sqli_enabled != 1 and lccf.*.xss_enabled != 1) {
+    // Skip if neither built-in detectors nor file-driven rules are enabled
+    if (lccf.*.sqli_enabled != 1 and lccf.*.xss_enabled != 1 and lccf.*.rule_count == 0) {
         return NGX_DECLINED;
     }
 
@@ -434,13 +680,18 @@ export fn ngx_http_waf_handler(r: [*c]ngx_http_request_t) callconv(.c) ngx_int_t
     if (r.*.uri.len > 0 and r.*.uri.data != null) {
         const uri = core.slicify(u8, r.*.uri.data, r.*.uri.len);
         const uri_result = analyzeInput(uri, lccf, decode_buf, lower_buf);
+        const uri_custom_result = if (uri_result.detected)
+            DetectionResult{ .detected = false, .rule_type = "", .pattern = "" }
+        else
+            analyzeCustomRules(uri, WAF_TARGET_REQUEST_URI, WAF_PHASE_REQUEST, lccf, decode_buf, lower_buf);
+        const final_uri_result = if (uri_result.detected) uri_result else uri_custom_result;
 
-        if (uri_result.detected) {
+        if (final_uri_result.detected) {
             if (lccf.*.mode == WAF_MODE_BLOCK) {
                 rctx.*.done = 1;
-                return sendBlockedResponse(r, uri_result.rule_type);
+                return sendBlockedResponse(r, final_uri_result.rule_type);
             } else {
-                logDetection(r, uri_result.rule_type, uri_result.pattern);
+                logDetection(r, final_uri_result.rule_type, final_uri_result.pattern);
             }
         }
     }
@@ -449,19 +700,79 @@ export fn ngx_http_waf_handler(r: [*c]ngx_http_request_t) callconv(.c) ngx_int_t
     if (r.*.args.len > 0 and r.*.args.data != null) {
         const args = core.slicify(u8, r.*.args.data, r.*.args.len);
         const args_result = analyzeInput(args, lccf, decode_buf, lower_buf);
+        const args_custom_result = if (args_result.detected)
+            DetectionResult{ .detected = false, .rule_type = "", .pattern = "" }
+        else
+            analyzeCustomRules(args, WAF_TARGET_ARGS, WAF_PHASE_REQUEST, lccf, decode_buf, lower_buf);
+        const final_args_result = if (args_result.detected) args_result else args_custom_result;
 
-        if (args_result.detected) {
+        if (final_args_result.detected) {
             if (lccf.*.mode == WAF_MODE_BLOCK) {
                 rctx.*.done = 1;
-                return sendBlockedResponse(r, args_result.rule_type);
+                return sendBlockedResponse(r, final_args_result.rule_type);
             } else {
-                logDetection(r, args_result.rule_type, args_result.pattern);
+                logDetection(r, final_args_result.rule_type, final_args_result.pattern);
+            }
+        }
+    }
+
+    if (r.*.headers_in.cookie != core.nullptr(ngx_table_elt_t)) {
+        const cookie_value = r.*.headers_in.cookie.*.value;
+        if (cookie_value.len > 0 and cookie_value.data != null) {
+            const cookies = core.slicify(u8, cookie_value.data, cookie_value.len);
+            const cookie_result = analyzeCustomRules(cookies, WAF_TARGET_REQUEST_COOKIES, WAF_PHASE_REQUEST, lccf, decode_buf, lower_buf);
+            if (cookie_result.detected) {
+                if (lccf.*.mode == WAF_MODE_BLOCK) {
+                    rctx.*.done = 1;
+                    return sendBlockedResponse(r, cookie_result.rule_type);
+                } else {
+                    logDetection(r, cookie_result.rule_type, cookie_result.pattern);
+                }
+            }
+        }
+    }
+
+    if (r.*.method_name.len > 0 and r.*.method_name.data != null) {
+        const method_name = core.slicify(u8, r.*.method_name.data, r.*.method_name.len);
+        const method_result = analyzeCustomRules(method_name, WAF_TARGET_REQUEST_METHOD, WAF_PHASE_REQUEST, lccf, decode_buf, lower_buf);
+        if (method_result.detected) {
+            if (lccf.*.mode == WAF_MODE_BLOCK) {
+                rctx.*.done = 1;
+                return sendBlockedResponse(r, method_result.rule_type);
+            } else {
+                logDetection(r, method_result.rule_type, method_result.pattern);
+            }
+        }
+    }
+
+    if (r.*.connection != null and r.*.connection.*.addr_text.len > 0 and r.*.connection.*.addr_text.data != null) {
+        const remote_addr = core.slicify(u8, r.*.connection.*.addr_text.data, r.*.connection.*.addr_text.len);
+        const addr_result = analyzeCustomRules(remote_addr, WAF_TARGET_REMOTE_ADDR, WAF_PHASE_REQUEST, lccf, decode_buf, lower_buf);
+        if (addr_result.detected) {
+            if (lccf.*.mode == WAF_MODE_BLOCK) {
+                rctx.*.done = 1;
+                return sendBlockedResponse(r, addr_result.rule_type);
+            } else {
+                logDetection(r, addr_result.rule_type, addr_result.pattern);
+            }
+        }
+    }
+
+    if (collectRequestHeaders(r, r.*.pool)) |headers_text| {
+        const headers_slice = core.slicify(u8, headers_text.data, headers_text.len);
+        const headers_result = analyzeCustomRules(headers_slice, WAF_TARGET_REQUEST_HEADERS, WAF_PHASE_REQUEST, lccf, decode_buf, lower_buf);
+        if (headers_result.detected) {
+            if (lccf.*.mode == WAF_MODE_BLOCK) {
+                rctx.*.done = 1;
+                return sendBlockedResponse(r, headers_result.rule_type);
+            } else {
+                logDetection(r, headers_result.rule_type, headers_result.pattern);
             }
         }
     }
 
     // Check request body for POST/PUT/PATCH if enabled
-    if (lccf.*.check_body == 1) {
+    if (lccf.*.check_body == 1 or hasBodyRules(lccf)) {
         if (r.*.method == http.NGX_HTTP_POST or
             r.*.method == http.NGX_HTTP_PUT or
             r.*.method == http.NGX_HTTP_PATCH)
@@ -490,6 +801,9 @@ fn create_loc_conf(cf: [*c]ngx_conf_t) callconv(.c) ?*anyopaque {
         p.*.sqli_enabled = conf.NGX_CONF_UNSET;
         p.*.xss_enabled = conf.NGX_CONF_UNSET;
         p.*.check_body = conf.NGX_CONF_UNSET;
+        p.*.rules_file = ngx_str_t{ .len = 0, .data = core.nullptr(u8) };
+        p.*.rules = core.nullptr(waf_rule);
+        p.*.rule_count = 0;
         return p;
     }
     return null;
@@ -530,6 +844,42 @@ fn merge_loc_conf(
         c.*.check_body = if (prev.*.check_body == conf.NGX_CONF_UNSET) 0 else prev.*.check_body;
     }
 
+    if (c.*.rules_file.len == 0) {
+        c.*.rules_file = prev.*.rules_file;
+        c.*.rules = prev.*.rules;
+        c.*.rule_count = prev.*.rule_count;
+    }
+
+    return conf.NGX_CONF_OK;
+}
+
+fn ngx_conf_set_waf_rules_file(
+    cf: [*c]ngx_conf_t,
+    cmd: [*c]ngx_command_t,
+    loc: ?*anyopaque,
+) callconv(.c) [*c]u8 {
+    _ = cmd;
+    if (core.castPtr(waf_loc_conf, loc)) |lccf| {
+        var i: ngx_uint_t = 1;
+        if (ngx.array.ngx_array_next(ngx_str_t, cf.*.args, &i)) |arg| {
+            var path = arg.*;
+            if (conf.ngx_conf_full_name(cf.*.cycle, &path, 1) != core.NGX_OK) {
+                return conf.NGX_CONF_ERROR;
+            }
+
+            const contents = file.ngz_open_file(path, cf.*.log, cf.*.pool) catch return conf.NGX_CONF_ERROR;
+            var rules_ptr: [*c]waf_rule = core.nullptr(waf_rule);
+            var rule_count: usize = 0;
+            if (!loadWafRules(contents, cf.*.pool, &rules_ptr, &rule_count)) {
+                return conf.NGX_CONF_ERROR;
+            }
+
+            lccf.*.enabled = 1;
+            lccf.*.rules_file = path;
+            lccf.*.rules = rules_ptr;
+            lccf.*.rule_count = rule_count;
+        }
+    }
     return conf.NGX_CONF_OK;
 }
 
@@ -712,6 +1062,14 @@ export const ngx_http_waf_commands = [_]ngx_command_t{
         .name = ngx_string("waf_check_body"),
         .type = conf.NGX_HTTP_LOC_CONF | conf.NGX_CONF_TAKE1,
         .set = ngx_conf_set_waf_check_body,
+        .conf = conf.NGX_HTTP_LOC_CONF_OFFSET,
+        .offset = 0,
+        .post = null,
+    },
+    ngx_command_t{
+        .name = ngx_string("waf_rules_file"),
+        .type = conf.NGX_HTTP_LOC_CONF | conf.NGX_CONF_TAKE1,
+        .set = ngx_conf_set_waf_rules_file,
         .conf = conf.NGX_HTTP_LOC_CONF_OFFSET,
         .offset = 0,
         .post = null,

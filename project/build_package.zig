@@ -17,6 +17,8 @@ pub const ModuleInfo = struct {
     libs: []const []const u8 = &.{},
     /// Whether this module requires cjson
     needs_cjson: bool = false,
+    /// Whether this module requires vendored libinjection
+    needs_libinjection: bool = false,
 };
 
 /// Module definitions with their exported nginx modules
@@ -76,6 +78,7 @@ pub const module_infos = [_]ModuleInfo{
         .source = "src/modules/waf-nginx-module/ngx_http_waf.zig",
         .modules = &.{"ngx_http_waf_module"},
         .types = &.{.HTTP},
+        .needs_libinjection = true,
     },
     .{
         .source = "src/modules/acme-nginx-module/ngx_http_acme.zig",
@@ -245,6 +248,13 @@ pub fn generateConfig(info: ModuleInfo, writer: anytype) !void {
         );
     }
 
+    if (info.needs_libinjection) {
+        try writer.writeAll(
+            \\    ngx_module_libs="$ngx_module_libs $ngx_addon_dir/liblibinjection.a"
+            \\
+        );
+    }
+
     for (info.libs) |lib| {
         try writer.print(
             \\    ngx_module_libs="$ngx_module_libs -l{s}"
@@ -286,6 +296,13 @@ pub fn generateConfig(info: ModuleInfo, writer: anytype) !void {
     if (info.needs_cjson) {
         try writer.writeAll(
             \\    CORE_LIBS="$CORE_LIBS $ngx_addon_dir/libcjson.a"
+            \\
+        );
+    }
+
+    if (info.needs_libinjection) {
+        try writer.writeAll(
+            \\    CORE_LIBS="$CORE_LIBS $ngx_addon_dir/liblibinjection.a"
             \\
         );
     }
@@ -401,10 +418,20 @@ fn generateConfigComptime(comptime info: ModuleInfo) []const u8 {
     else
         "";
 
+    const libinjection_old = if (info.needs_libinjection)
+        "    CORE_LIBS=\"$CORE_LIBS $ngx_addon_dir/liblibinjection.a\"\n"
+    else
+        "";
+
     // For new-style, cjson and libs are added after first module registration
     const cjson_new = if (info.needs_cjson)
         "    # Additional libraries for all modules in this addon\n" ++
             "    CORE_LIBS=\"$CORE_LIBS $ngx_addon_dir/libcjson.a\"\n"
+    else
+        "";
+
+    const libinjection_new = if (info.needs_libinjection)
+        "    CORE_LIBS=\"$CORE_LIBS $ngx_addon_dir/liblibinjection.a\"\n"
     else
         "";
 
@@ -421,12 +448,14 @@ fn generateConfigComptime(comptime info: ModuleInfo) []const u8 {
         "if test -n \"$ngx_module_link\"; then\n" ++
         genNewStyleDecls(info) ++
         cjson_new ++
+        libinjection_new ++
         genLibDeps(info) ++
         "else\n" ++
         "    # Old-style module registration (nginx < 1.9.11)\n" ++
         genOldStyleDecls(info) ++
         "    NGX_ADDON_DEPS=\"$NGX_ADDON_DEPS $ngx_addon_dir/" ++ obj_base ++ "_module.o\"\n" ++
         cjson_old ++
+        libinjection_old ++
         genOldLibDeps(info) ++
         "fi\n";
 }
@@ -438,8 +467,14 @@ pub fn createPackageSteps(
     optimize: std.builtin.OptimizeMode,
     nginx: *std.Build.Module,
     cjson_lib: *std.Build.Step.Compile,
+    libinjection_lib: *std.Build.Step.Compile,
 ) !*std.Build.Step {
     const package_step = b.step("package", "Create nginx module packages");
+    const ngx_libinjection = b.createModule(.{
+        .root_source_file = b.path("src/ngx/ngx_libinjection.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
 
     inline for (module_infos) |info| {
         const module_name = comptime getModuleName(info.source);
@@ -468,6 +503,7 @@ pub fn createPackageSteps(
         });
         obj.addIncludePath(b.path(module_dir));
         obj.root_module.addImport("ngx", nginx);
+        obj.root_module.addImport("ngx_libinjection", ngx_libinjection);
         obj.bundle_compiler_rt = true;
         obj.linkLibC();
 
@@ -479,6 +515,11 @@ pub fn createPackageSteps(
         if (info.needs_cjson) {
             const install_cjson = b.addInstallFile(cjson_lib.getEmittedBin(), "modules/" ++ module_name ++ "/libcjson.a");
             package_step.dependOn(&install_cjson.step);
+        }
+
+        if (info.needs_libinjection) {
+            const install_libinjection = b.addInstallFile(libinjection_lib.getEmittedBin(), "modules/" ++ module_name ++ "/liblibinjection.a");
+            package_step.dependOn(&install_libinjection.step);
         }
 
         // Generate and install config file

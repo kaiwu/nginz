@@ -72,6 +72,41 @@ Enable or disable XSS detection.
 
 Enable request body inspection for POST/PUT/PATCH requests.
 
+#### waf_rules_file
+
+*syntax:* `waf_rules_file <path>;`
+*default:* none
+*context:* `location`
+
+Load a native ModSecurity-like rule file at config load time.
+
+Current supported subset:
+
+- one rule per line starting with `SecRule`
+- targets: `REQUEST_URI`, `ARGS`, `REQUEST_BODY`, `REQUEST_HEADERS`, `REQUEST_COOKIES`, `REQUEST_METHOD`, `REMOTE_ADDR`
+- operator: `@contains <needle>`
+- actions subset: `id:<n>`, `phase:1|2`, `msg:'...'`, plus tolerated `deny`, `log`, `t:none`
+
+Example:
+
+```nginx
+location /api {
+    waf on;
+    waf_mode block;
+    waf_sqli off;
+    waf_xss off;
+    waf_rules_file /etc/nginz/waf/basic.rules;
+}
+```
+
+Example rule file:
+
+```text
+SecRule ARGS "@contains union select" "id:1001,phase:1,msg:'basic SQLi needle'"
+SecRule REQUEST_BODY "@contains <script" "id:1002,phase:2,msg:'basic body XSS needle'"
+SecRule REQUEST_HEADERS "@contains x-api-key: bad-value" "id:1003,phase:1,msg:'header needle'"
+```
+
 ### Response Format
 
 When a request is blocked, the module returns HTTP 403 with a JSON body:
@@ -135,6 +170,7 @@ http {
 - Limited to predefined patterns (no custom regex support yet)
 - Request body inspection limited to 8KB for performance
 - No IP reputation or rate limiting integration
+- `waf_rules_file` currently supports only a small native ModSecurity-like subset, not full ModSecurity or CRS compatibility
 
 ### Future Enhancements
 
@@ -156,4 +192,5 @@ http {
 - [x] Bun integration coverage exists at `tests/waf/`.
 - [x] Bun integration coverage now verifies nested child-location inheritance of detect mode, selective SQLi/XSS toggles, URL-decoded payloads, POST/PUT/PATCH body inspection, and detect-vs-block behavior.
 - [x] Gap fixed in this audit pass: child locations under a parent `waf_mode detect` configuration now inherit detect mode correctly instead of silently falling back to block behavior.
+- [x] Initial native ModSecurity-like subset is now implemented via `waf_rules_file`, with Bun coverage for file-driven `SecRule` matches on `REQUEST_URI`, `ARGS`, `REQUEST_BODY`, `REQUEST_HEADERS`, `REQUEST_COOKIES`, `REQUEST_METHOD`, and `REMOTE_ADDR` using `@contains` plus `phase` parsing.
 - [x] No additional documentation gaps were identified in this audit pass.

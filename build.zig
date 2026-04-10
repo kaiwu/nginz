@@ -4,6 +4,7 @@ const njs = @import("project//build_njs.zig");
 const core = @import("project/build_core.zig");
 const http = @import("project/build_http.zig");
 const cjson = @import("project/build_cjson.zig");
+const libinjection = @import("project/build_libinjection.zig");
 const patch = @import("project/build_patch.zig");
 const quickjs = @import("project//build_quickjs.zig");
 const http_modules = @import("project/build_modules.zig");
@@ -125,6 +126,12 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
 
+    const ngx_libinjection = b.createModule(.{
+        .root_source_file = b.path("src/ngx/ngx_libinjection.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+
     const patch_step = patch.patchStep(b, docker);
     const nginz = exe.build_exe(b, target, optimize) catch unreachable;
     nginz.step.dependOn(patch_step);
@@ -154,6 +161,7 @@ pub fn build(b: *std.Build) void {
         });
         o.addIncludePath(b.path(pn.p));
         o.root_module.addImport("ngx", nginx);
+        o.root_module.addImport("ngx_libinjection", ngx_libinjection);
         o.bundle_compiler_rt = true;
         o.linkLibC();
         nginz.addObject(o);
@@ -162,6 +170,7 @@ pub fn build(b: *std.Build) void {
     }
 
     const cjsonlib = cjson.build_cjson(b, target, optimize);
+    const libinjectionlib = libinjection.build_libinjection(b, target, optimize);
     const quickjslib = quickjs.build_quickjs(b, target, optimize);
     quickjslib.step.dependOn(patch_step);
 
@@ -194,6 +203,7 @@ pub fn build(b: *std.Build) void {
     nginz.linkLibrary(httplib);
     nginz.linkLibrary(moduleslib);
     nginz.linkLibrary(cjsonlib);
+    nginz.linkLibrary(libinjectionlib);
     b.installArtifact(nginz);
 
     const test_step = b.step("test", "Run unit tests");
@@ -226,16 +236,18 @@ pub fn build(b: *std.Build) void {
         t.linkLibrary(corelib);
         t.linkLibrary(httplib);
         t.linkLibrary(cjsonlib);
+        t.linkLibrary(libinjectionlib);
         t.linkLibrary(test_moduleslib);
         t.addIncludePath(b.path("src/ngx/"));
         t.root_module.addImport("ngx", nginx);
+        t.root_module.addImport("ngx_libinjection", ngx_libinjection);
 
         const core_unit_tests = b.addRunArtifact(t);
         test_step.dependOn(&core_unit_tests.step);
     }
 
     // Package step - creates nginx module packages with config files
-    _ = package.createPackageSteps(b, target, optimize, nginx, cjsonlib) catch unreachable;
+    _ = package.createPackageSteps(b, target, optimize, nginx, cjsonlib, libinjectionlib) catch unreachable;
 
     // Check layout step - compare C struct sizes against Zig bindings
     const check_layout_step = b.step("check-layout", "Check C vs Zig struct layout compatibility");

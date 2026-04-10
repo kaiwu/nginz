@@ -1,0 +1,8 @@
+# Minimal native ModSecurity-like subset for nginz WAF tests
+SecRule ARGS "@contains native-subset-needle" "id:1001,phase:1,msg:'args subset rule'"
+SecRule REQUEST_URI "@contains blocked-path" "id:1002,phase:1,msg:'uri subset rule'"
+SecRule REQUEST_BODY "@contains native-body-needle" "id:1003,phase:2,msg:'body subset rule'"
+SecRule REQUEST_HEADERS "@contains x-native-header: blocked-header-value" "id:1004,phase:1,msg:'headers subset rule'"
+SecRule REQUEST_COOKIES "@contains waf_cookie=native-cookie-hit" "id:1005,phase:1,msg:'cookies subset rule'"
+SecRule REQUEST_METHOD "@contains delete" "id:1006,phase:1,msg:'method subset rule'"
+SecRule REMOTE_ADDR "@contains 127.0.0.1" "id:1007,phase:1,msg:'remote addr subset rule'"

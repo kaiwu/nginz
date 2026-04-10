@@ -1,15 +1,23 @@
 import { describe, test, expect, beforeAll, afterAll } from "bun:test";
 import { startNginz, stopNginz, cleanupRuntime, TEST_URL } from "../harness.js";
+import { existsSync, rmSync } from "fs";
 
 const MODULE = "waf";
+const RULES_FILE = `${process.cwd()}/tests/waf/native-subset.rules`;
+const GENERATED_CONFIG = `tests/${MODULE}/nginx.generated.conf`;
 
 describe("waf module", () => {
   beforeAll(async () => {
-    await startNginz(`tests/${MODULE}/nginx.conf`, MODULE);
+    const template = await Bun.file(`tests/${MODULE}/nginx.conf`).text();
+    await Bun.write(GENERATED_CONFIG, template.replaceAll("__WAF_RULES_FILE__", RULES_FILE));
+    await startNginz(GENERATED_CONFIG, MODULE);
   });
 
   afterAll(async () => {
     await stopNginz();
+    if (existsSync(GENERATED_CONFIG)) {
+      rmSync(GENERATED_CONFIG);
+    }
     cleanupRuntime(MODULE);
   });
 
@@ -128,6 +136,13 @@ describe("waf module", () => {
       expect(res.status).toBe(403);
       const body = await res.json();
       expect(body.error).toBe("waf_blocked");
+      expect(body.rule).toBe("xss");
+    });
+
+    test("blocks entity-obfuscated javascript protocol", async () => {
+      const res = await fetch(`${TEST_URL}/api?url=javas%26%23x09%3Bcript%3Aalert(1)`);
+      expect(res.status).toBe(403);
+      const body = await res.json();
       expect(body.rule).toBe("xss");
     });
   });
@@ -284,6 +299,82 @@ describe("waf module", () => {
     test("blocks mixed case XSS", async () => {
       const res = await fetch(`${TEST_URL}/api?q=<ScRiPt>alert(1)</ScRiPt>`);
       expect(res.status).toBe(403);
+    });
+
+    test("blocks concat-style SQLi missed by simple keyword rules", async () => {
+      const res = await fetch(`${TEST_URL}/api?id=1'%20%7C%7C%201%20--`);
+      expect(res.status).toBe(403);
+      const body = await res.json();
+      expect(body.rule).toBe("sqli");
+    });
+  });
+
+  describe("native rule-file subset", () => {
+    test("blocks based on ARGS rule from file", async () => {
+      const res = await fetch(`${TEST_URL}/rules?token=native-subset-needle`);
+      expect(res.status).toBe(403);
+      const body = await res.json();
+      expect(body.error).toBe("waf_blocked");
+      expect(body.rule).toBe("rule");
+    });
+
+    test("blocks based on REQUEST_URI rule from file", async () => {
+      const res = await fetch(`${TEST_URL}/rules/blocked-path`);
+      expect(res.status).toBe(403);
+      const body = await res.json();
+      expect(body.rule).toBe("rule");
+    });
+
+    test("blocks based on REQUEST_BODY rule from file", async () => {
+      const res = await fetch(`${TEST_URL}/rules-body`, {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: "comment=native-body-needle",
+      });
+      expect(res.status).toBe(403);
+      const body = await res.json();
+      expect(body.rule).toBe("rule");
+    });
+
+    test("rule-file matches respect detect mode", async () => {
+      const res = await fetch(`${TEST_URL}/rules-detect?token=native-subset-needle`);
+      expect(res.status).toBe(200);
+      const body = await res.text();
+      expect(body).toContain("rules detect response");
+    });
+
+    test("blocks based on REQUEST_HEADERS rule from file", async () => {
+      const res = await fetch(`${TEST_URL}/rules-headers`, {
+        headers: { "X-Native-Header": "blocked-header-value" },
+      });
+      expect(res.status).toBe(403);
+      const body = await res.json();
+      expect(body.rule).toBe("rule");
+    });
+
+    test("blocks based on REQUEST_COOKIES rule from file", async () => {
+      const res = await fetch(`${TEST_URL}/rules-cookies`, {
+        headers: { Cookie: "waf_cookie=native-cookie-hit" },
+      });
+      expect(res.status).toBe(403);
+      const body = await res.json();
+      expect(body.rule).toBe("rule");
+    });
+
+    test("blocks based on REQUEST_METHOD rule from file", async () => {
+      const res = await fetch(`${TEST_URL}/rules-method`, {
+        method: "DELETE",
+      });
+      expect(res.status).toBe(403);
+      const body = await res.json();
+      expect(body.rule).toBe("rule");
+    });
+
+    test("blocks based on REMOTE_ADDR rule from file", async () => {
+      const res = await fetch(`${TEST_URL}/rules-ip`);
+      expect(res.status).toBe(403);
+      const body = await res.json();
+      expect(body.rule).toBe("rule");
     });
   });
 });
