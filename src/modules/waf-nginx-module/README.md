@@ -154,4 +154,6 @@ http {
 
 - [x] Audit date: 2026-04-10
 - [x] Bun integration coverage exists at `tests/waf/`.
+- [x] Bun integration coverage now verifies nested child-location inheritance of detect mode, selective SQLi/XSS toggles, URL-decoded payloads, POST/PUT/PATCH body inspection, and detect-vs-block behavior.
+- [x] Gap fixed in this audit pass: child locations under a parent `waf_mode detect` configuration now inherit detect mode correctly instead of silently falling back to block behavior.
 - [x] No additional documentation gaps were identified in this audit pass.

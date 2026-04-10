@@ -68,4 +68,5 @@ The module uses a simple fixed window counter:
 
 - [x] Audit date: 2026-04-10
 - [x] Bun integration coverage exists at `tests/ratelimit/`.
+- [x] Bun integration coverage now verifies plain numeric `ratelimit_rate <N>` syntax, burst accounting, post-window reset behavior, and separate counters for different rate-limited locations.
 - [x] No additional documentation gaps were identified in this audit pass.

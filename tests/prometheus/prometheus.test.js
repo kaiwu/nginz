@@ -25,6 +25,15 @@ describe("prometheus module", () => {
       expect(contentType).toContain("text/plain");
     });
 
+    test("HEAD returns headers without a response body", async () => {
+      const res = await fetch(`${TEST_URL}/metrics`, { method: "HEAD" });
+      expect(res.status).toBe(200);
+      const contentType = res.headers.get("content-type");
+      expect(contentType).toContain("text/plain");
+      const body = await res.text();
+      expect(body).toBe("");
+    });
+
     test("contains nginx_up metric", async () => {
       const res = await fetch(`${TEST_URL}/metrics`);
       const body = await res.text();
@@ -175,6 +184,43 @@ describe("prometheus module", () => {
       // Count should not have increased (metrics endpoint excluded)
       expect(newCount).toBe(initialCount);
     });
+
+    test("metrics endpoint requests do not change histogram count", async () => {
+      const res1 = await fetch(`${TEST_URL}/metrics`);
+      const body1 = await res1.text();
+      const match1 = body1.match(/nginx_http_request_duration_seconds_count (\d+)/);
+      const initialCount = parseInt(match1[1]);
+
+      for (let i = 0; i < 5; i++) {
+        await fetch(`${TEST_URL}/metrics`);
+      }
+
+      const res2 = await fetch(`${TEST_URL}/metrics`);
+      const body2 = await res2.text();
+      const match2 = body2.match(/nginx_http_request_duration_seconds_count (\d+)/);
+      const newCount = parseInt(match2[1]);
+
+      expect(newCount).toBe(initialCount);
+    });
+
+    test("non-metrics requests increase histogram count cumulatively", async () => {
+      const res1 = await fetch(`${TEST_URL}/metrics`);
+      const body1 = await res1.text();
+      const match1 = body1.match(/nginx_http_request_duration_seconds_count (\d+)/);
+      const initialCount = parseInt(match1[1]);
+
+      await fetch(`${TEST_URL}/`);
+      await fetch(`${TEST_URL}/api`);
+      await fetch(`${TEST_URL}/notfound`);
+      await fetch(`${TEST_URL}/error`);
+
+      const res2 = await fetch(`${TEST_URL}/metrics`);
+      const body2 = await res2.text();
+      const match2 = body2.match(/nginx_http_request_duration_seconds_count (\d+)/);
+      const newCount = parseInt(match2[1]);
+
+      expect(newCount).toBeGreaterThanOrEqual(initialCount + 4);
+    });
   });
 
   describe("Prometheus format compliance", () => {
@@ -204,6 +250,27 @@ describe("prometheus module", () => {
         // Each metric line should end with a number (integer or decimal)
         expect(line).toMatch(/\s[\d.]+$/);
       }
+    });
+
+    test("histogram buckets stay cumulative and +Inf matches count", async () => {
+      await fetch(`${TEST_URL}/`);
+      await fetch(`${TEST_URL}/api`);
+      await fetch(`${TEST_URL}/error`);
+
+      const res = await fetch(`${TEST_URL}/metrics`);
+      const body = await res.text();
+
+      const bucketMatches = [...body.matchAll(/nginx_http_request_duration_seconds_bucket\{le="([^"]+)"\} (\d+)/g)];
+      const counts = bucketMatches.map(([, , count]) => parseInt(count));
+      for (let i = 1; i < counts.length; i++) {
+        expect(counts[i]).toBeGreaterThanOrEqual(counts[i - 1]);
+      }
+
+      const infMatch = body.match(/nginx_http_request_duration_seconds_bucket\{le="\+Inf"\} (\d+)/);
+      const countMatch = body.match(/nginx_http_request_duration_seconds_count (\d+)/);
+      expect(infMatch).not.toBeNull();
+      expect(countMatch).not.toBeNull();
+      expect(parseInt(infMatch[1])).toBe(parseInt(countMatch[1]));
     });
   });
 });

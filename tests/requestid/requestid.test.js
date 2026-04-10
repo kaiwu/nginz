@@ -100,16 +100,31 @@ describe("requestid module", () => {
       });
       expect(res2.headers.get("X-Request-ID")).toBe(incomingId);
     });
+
+    test("supports custom request ID header names", async () => {
+      const incomingId = "custom-correlation-id-123";
+      const res = await fetch(`${TEST_URL}/custom-header`, {
+        headers: { "X-Correlation-ID": incomingId },
+      });
+      expect(res.status).toBe(200);
+      expect(res.headers.get("X-Correlation-ID")).toBe(incomingId);
+      expect(res.headers.get("X-Request-ID")).toBeNull();
+    });
   });
 
   describe("proxy pass", () => {
     test("adds X-Request-ID header when proxying", async () => {
+      httpMock.requestLog = [];
       const res = await fetch(`${TEST_URL}/proxy-test`);
       expect(res.status).toBe(200);
 
       const requestId = res.headers.get("X-Request-ID");
       expect(requestId).toBeTruthy();
       expect(requestId).toMatch(UUID4_PATTERN);
+
+      const upstreamRequests = httpMock.getRequestsFor("/", "GET");
+      expect(upstreamRequests.length).toBeGreaterThan(0);
+      expect(upstreamRequests[0].headers["x-request-id"]).toBe(requestId);
     });
   });
 
@@ -143,6 +158,16 @@ describe("requestid module", () => {
 
       const body = await res.text();
       expect(body).toBe(`id:${incomingId}\n`);
+    });
+
+    test("variable still works when response header emission is disabled", async () => {
+      const res = await fetch(`${TEST_URL}/internal-variable`);
+      expect(res.status).toBe(200);
+
+      const body = await res.text();
+      const idFromBody = body.slice(3, -1);
+      expect(idFromBody).toMatch(UUID4_PATTERN);
+      expect(res.headers.get("X-Request-ID")).toBeNull();
     });
   });
 

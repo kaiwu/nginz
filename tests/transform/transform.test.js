@@ -48,6 +48,26 @@ beforeAll(async () => {
       });
     }
 
+    if (url.pathname === "/json-charset") {
+      return new Response(JSON.stringify({
+        data: { name: "charset-json", count: 7 }
+      }), {
+        headers: { "Content-Type": "application/json; charset=utf-8" }
+      });
+    }
+
+    if (url.pathname === "/string-value") {
+      return Response.json({
+        data: { greeting: "hello world" }
+      });
+    }
+
+    if (url.pathname === "/invalid-json") {
+      return new Response('{"data":', {
+        headers: { "Content-Type": "application/json" }
+      });
+    }
+
     return Response.json({ error: "not found" }, { status: 404 });
   });
 
@@ -118,5 +138,26 @@ describe("transform_response directive", () => {
     expect(res.status).toBe(200);
     const text = await res.text();
     expect(text).toBe("plain text response");
+  });
+
+  test("transforms JSON responses with charset content-type", async () => {
+    const res = await fetch(`${TEST_URL}/json-charset`);
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body).toEqual({ name: "charset-json", count: 7 });
+  });
+
+  test("extracts string values as JSON strings", async () => {
+    const res = await fetch(`${TEST_URL}/extract-string`);
+    expect(res.status).toBe(200);
+    const text = await res.text();
+    expect(text).toBe('"hello world"');
+  });
+
+  test("passes through invalid JSON bodies unchanged", async () => {
+    const res = await fetch(`${TEST_URL}/invalid-json-transform`);
+    expect(res.status).toBe(200);
+    const text = await res.text();
+    expect(text).toBe('{"data":');
   });
 });

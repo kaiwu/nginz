@@ -130,4 +130,6 @@ Current implementation has these limitations:
 
 - [x] Audit date: 2026-04-10
 - [x] Bun integration coverage exists at `tests/transform/`.
+- [x] Bun integration coverage now verifies `application/json` content types with charset parameters, scalar string extraction, invalid JSON passthrough, missing-path passthrough, and non-JSON passthrough.
+- [x] Gap fixed in this audit pass: string-scalar extraction now returns the full JSON string value instead of truncating to a single quote character.
 - [x] No additional documentation gaps were identified in this audit pass.

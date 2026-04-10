@@ -97,7 +97,7 @@ describe("ratelimit module", () => {
   });
 
   describe("rate limit isolation", () => {
-    test("different endpoints have separate limits", async () => {
+    test("different endpoints keep separate counters", async () => {
       // Wait for window to reset
       await Bun.sleep(1100);
 
@@ -109,13 +109,22 @@ describe("ratelimit module", () => {
       const strictRes = await fetch(`${TEST_URL}/strict`);
       expect(strictRes.status).toBe(429);
 
-      // /api should still work (different location, but same IP hash)
-      // Note: In our simple implementation, all rate-limited endpoints
-      // share the same IP counter, so this tests that /api has higher limit
+      // /api should still work because it has its own per-location limit window
       const apiRes = await fetch(`${TEST_URL}/api`);
-      // This might be 200 or 429 depending on implementation
-      // Since we use IP-based limiting, they share counters
-      // but each location checks against its own rate
+      expect(apiRes.status).toBe(200);
+    });
+
+    test("plain numeric ratelimit syntax is enforced", async () => {
+      await Bun.sleep(1100);
+
+      const results = [];
+      for (let i = 0; i < 6; i++) {
+        const res = await fetch(`${TEST_URL}/plain`);
+        results.push(res.status);
+      }
+
+      expect(results.filter((s) => s === 200).length).toBe(4);
+      expect(results.filter((s) => s === 429).length).toBe(2);
     });
   });
 });

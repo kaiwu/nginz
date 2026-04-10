@@ -122,4 +122,5 @@ For production use with multiple workers, consider using a single worker or exte
 
 - [x] Audit date: 2026-04-10
 - [x] Bun integration coverage exists at `tests/prometheus/`.
+- [x] Bun integration coverage now verifies HEAD handling on `/metrics`, self-scrape exclusion for both request totals and histogram counts, cumulative histogram buckets, and `+Inf` matching histogram count.
 - [x] No additional documentation gaps were identified in this audit pass.

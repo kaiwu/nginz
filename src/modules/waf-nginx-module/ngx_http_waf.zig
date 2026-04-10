@@ -505,12 +505,13 @@ fn merge_loc_conf(
     const c = core.castPtr(waf_loc_conf, child) orelse return conf.NGX_CONF_OK;
 
     // Inherit enabled flag
+    const child_enabled_unset = c.*.enabled == conf.NGX_CONF_UNSET;
     if (c.*.enabled == conf.NGX_CONF_UNSET) {
         c.*.enabled = if (prev.*.enabled == conf.NGX_CONF_UNSET) 0 else prev.*.enabled;
     }
 
-    // Inherit mode (only if child is unset and parent was explicitly set)
-    if (prev.*.enabled == 1 and c.*.enabled == conf.NGX_CONF_UNSET) {
+    // Inherit mode if child did not explicitly set waf on/off and parent was enabled
+    if (prev.*.enabled == 1 and child_enabled_unset) {
         c.*.mode = prev.*.mode;
     }
 
@@ -727,8 +728,7 @@ export var ngx_http_waf_module = ngx.module.make_module(
 const expectEqual = std.testing.expectEqual;
 const expect = std.testing.expect;
 
-test "waf module" {
-}
+test "waf module" {}
 
 test "urlDecode - basic decoding" {
     var output: [256]u8 = undefined;

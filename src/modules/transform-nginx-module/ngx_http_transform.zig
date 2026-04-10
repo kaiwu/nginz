@@ -41,6 +41,55 @@ const transform_ctx = extern struct {
     done: ngx_flag_t,
 };
 
+fn encodeJsonString(value: ngx_str_t, pool: [*c]core.ngx_pool_t) ?ngx_str_t {
+    const slice = core.slicify(u8, value.data, value.len);
+
+    var escaped_len: usize = 2; // opening + closing quote
+    for (slice) |c| {
+        escaped_len += switch (c) {
+            '"', '\\', '\n', '\r', '\t' => 2,
+            else => if (c < 0x20) return null else 1,
+        };
+    }
+
+    const out = core.castPtr(u8, core.ngx_pnalloc(pool, escaped_len)) orelse return null;
+    var pos: usize = 0;
+    out[pos] = '"';
+    pos += 1;
+
+    for (slice) |c| {
+        switch (c) {
+            '"', '\\' => {
+                out[pos] = '\\';
+                out[pos + 1] = c;
+                pos += 2;
+            },
+            '\n' => {
+                out[pos] = '\\';
+                out[pos + 1] = 'n';
+                pos += 2;
+            },
+            '\r' => {
+                out[pos] = '\\';
+                out[pos + 1] = 'r';
+                pos += 2;
+            },
+            '\t' => {
+                out[pos] = '\\';
+                out[pos + 1] = 't';
+                pos += 2;
+            },
+            else => {
+                out[pos] = c;
+                pos += 1;
+            },
+        }
+    }
+
+    out[pos] = '"';
+    return ngx_str_t{ .data = out, .len = escaped_len };
+}
+
 // Extract JSON at path and serialize result
 fn extractJsonPath(json_str: ngx_str_t, path: []const u8, pool: [*c]core.ngx_pool_t) ?ngx_str_t {
     var cj = CJSON.init(pool);
@@ -51,6 +100,10 @@ fn extractJsonPath(json_str: ngx_str_t, path: []const u8, pool: [*c]core.ngx_poo
 
     // Query the path (CJSON.query handles $. prefix and dot notation)
     const result = CJSON.query(json, path) orelse return null;
+
+    if (CJSON.stringValue(result)) |string_value| {
+        return encodeJsonString(string_value, pool);
+    }
 
     // Encode result back to string
     return cj.encode(result) catch return null;
@@ -289,5 +342,4 @@ export var ngx_http_transform_filter_module = ngx.module.make_module(
 // Tests
 const expectEqual = std.testing.expectEqual;
 
-test "transform module" {
-}
+test "transform module" {}

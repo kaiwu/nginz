@@ -404,4 +404,7 @@ Mock IdP server that:
 
 - [x] Audit date: 2026-04-10
 - [x] Bun integration coverage exists at `tests/oidc/`.
-- [x] No additional documentation gaps were identified in this audit pass.
+- [x] Bun integration coverage now verifies state mismatch handling, surfaced IdP callback errors, state-cookie clearing after successful callback, quote-containing original URIs, and authenticated claim passthrough headers.
+- [x] Gap fixed in this audit pass: callback requests with `error` / `error_description` parameters are now surfaced explicitly instead of being misreported as missing authorization codes.
+- [x] Gap fixed in this audit pass: state-cookie and session JSON assembly now escapes embedded quotes and backslashes so original URIs and claim values cannot corrupt encrypted cookie payloads.
+- [x] The README still contains plan-era material alongside the current implementation; behavior is now better covered than the surrounding narrative suggests.

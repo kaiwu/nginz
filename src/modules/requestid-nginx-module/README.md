@@ -119,4 +119,5 @@ Generated IDs follow RFC 4122 UUID version 4:
 
 - [x] Audit date: 2026-04-10
 - [x] Bun integration coverage exists at `tests/requestid/`.
+- [x] Bun integration coverage now verifies custom header names, upstream proxy forwarding via `$ngz_request_id`, case-insensitive incoming header matching, and internal-only tracking with `request_id_response off`.
 - [x] No additional documentation gaps were identified in this audit pass.

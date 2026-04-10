@@ -147,6 +147,13 @@ describe("waf module", () => {
       const body = await res.text();
       expect(body).toContain("detect response");
     });
+
+    test("nested child location inherits detect mode", async () => {
+      const res = await fetch(`${TEST_URL}/detect-parent/child?q=<script>alert(1)</script>`);
+      expect(res.status).toBe(200);
+      const body = await res.text();
+      expect(body).toContain("detect child response");
+    });
   });
 
   // WAF disabled tests
@@ -243,6 +250,17 @@ describe("waf module", () => {
       expect(res.status).toBe(403);
       const body = await res.json();
       expect(body.rule).toBe("sqli");
+    });
+
+    test("blocks XSS in PATCH body", async () => {
+      const res = await fetch(`${TEST_URL}/body`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: "bio=<svg onload=alert(1)>",
+      });
+      expect(res.status).toBe(403);
+      const body = await res.json();
+      expect(body.rule).toBe("xss");
     });
   });
 
