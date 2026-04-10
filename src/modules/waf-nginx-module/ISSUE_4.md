@@ -167,7 +167,7 @@ For `nginz`, this is much more attractive than pulling in full ModSecurity first
 That suggests:
 
 - keep current lightweight pattern-based detection as the minimal baseline,
-- add `libinjection` later for stronger SQLi/XSS confidence,
+- add `libinjection` for stronger SQLi/XSS confidence,
 - let the rule engine call those detectors as operators.
 
 ### 4. Shared memory belongs to operational controls, not basic compatibility
@@ -421,7 +421,7 @@ For issue #4, the best fit for this repo is:
 2. define the first supported rule subset,
 3. design the internal rule representation and file-loading API,
 4. add config-time parsing and a small set of file-driven Bun tests,
-5. plan `libinjection` integration after the first rule engine milestone.
+5. integrate `libinjection` after the first rule engine milestone.
 
 ## Bottom line
 
@@ -456,6 +456,13 @@ Implemented in `ngx_http_waf`:
   - `REMOTE_ADDR`
 - supported operator:
   - `@contains <needle>`
+  - `@streq <value>` / `@eq <value>`
+  - `@rx <pattern>`
+  - `@libinjection_sqli`
+  - `@libinjection_xss`
+- supported selectors:
+  - `REQUEST_HEADERS:<name>`
+  - `REQUEST_COOKIES:<name>`
 - supported action subset:
   - `id:<n>`
   - `phase:1|2`
@@ -463,7 +470,14 @@ Implemented in `ngx_http_waf`:
   - tolerated but currently non-semantic: `deny`, `log`, `t:none`
 - request-phase execution for `REQUEST_URI` and `ARGS`
 - body-phase execution for `REQUEST_BODY`
+- vendored in-tree `libinjection` build/package support
+- `libinjection`-backed SQLi/XSS checks in the native detector path before substring fallbacks
+- explicit `@libinjection_sqli` / `@libinjection_xss` operators in `waf_rules_file`
+- explicit `@rx` and equals-style operators in `waf_rules_file`
+- explicit scoped header/cookie selectors in `waf_rules_file`
+- shared-memory temporary IP banning via threshold/window/duration directives
 - Bun integration coverage proving file-driven block/detect behavior
+- Bun integration coverage proving stronger detection of obfuscated SQLi/XSS payloads
 
 What this means:
 
@@ -472,14 +486,13 @@ What this means:
 
 ## Updated near-term next steps
 
-1. add more request targets:
-2. add more operators:
-   - regex match
-   - equals
-   - libinjection-backed SQLi/XSS operators
-3. add more request collections / semantics:
-   - per-header / per-cookie selectors
-   - query/body collections beyond raw combined text
-4. make unsupported syntax fail with clearer config-time errors
-5. decide whether per-rule disruptive actions should override `waf_mode`, or whether `waf_mode` remains the top-level enforcement switch
+1. add more request collections / semantics:
+    - per-header / per-cookie selectors
+    - query/body collections beyond raw combined text
+2. add more target granularity:
+   - per-argument selectors
+   - richer body collections
+3. make unsupported syntax fail with clearer config-time errors
+4. decide whether per-rule disruptive actions should override `waf_mode`, or whether `waf_mode` remains the top-level enforcement switch
+5. evolve the shared-memory ban store beyond a fixed-size array into richer IP reputation / allow-deny behavior
 6. add more checked-in rule fixtures under `tests/waf/` and expand Bun coverage accordingly

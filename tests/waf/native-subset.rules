@@ -6,3 +6,7 @@ SecRule REQUEST_HEADERS "@contains x-native-header: blocked-header-value" "id:10
 SecRule REQUEST_COOKIES "@contains waf_cookie=native-cookie-hit" "id:1005,phase:1,msg:'cookies subset rule'"
 SecRule REQUEST_METHOD "@contains delete" "id:1006,phase:1,msg:'method subset rule'"
 SecRule REMOTE_ADDR "@contains 127.0.0.1" "id:1007,phase:1,msg:'remote addr subset rule'"
+SecRule REQUEST_URI "@rx regex-path-[0-9]+" "id:1008,phase:1,msg:'regex subset rule'"
+SecRule REQUEST_METHOD "@streq patch" "id:1009,phase:1,msg:'equals subset rule'"
+SecRule REQUEST_HEADERS:X-Scoped-Header "@contains scoped-header-hit" "id:1010,phase:1,msg:'header selector rule'"
+SecRule REQUEST_COOKIES:scoped_cookie "@contains scoped-cookie-hit" "id:1011,phase:1,msg:'cookie selector rule'"

@@ -4,7 +4,7 @@ Native web application firewall for nginx with SQL injection and XSS attack dete
 
 ### Status
 
-**Implemented** - Pattern-based SQLi and XSS detection
+**Implemented** - Native SQLi/XSS detection, libinjection-backed checks, and a small file-driven ModSecurity-like subset
 
 ### Features
 
@@ -25,6 +25,7 @@ Native web application firewall for nginx with SQL injection and XSS attack dete
 
 - **URL Decoding**: Automatically decodes URL-encoded payloads (`%27` → `'`)
 - **Case Insensitive**: Matches patterns regardless of case
+- **libinjection Integration**: Uses vendored `libinjection` for stronger SQLi and XSS detection before falling back to native substring signatures
 - **Request Body Inspection**: Optional scanning of POST/PUT/PATCH request bodies
 - **Modes**: Detection-only (log) or prevention (block) mode
 
@@ -84,7 +85,15 @@ Current supported subset:
 
 - one rule per line starting with `SecRule`
 - targets: `REQUEST_URI`, `ARGS`, `REQUEST_BODY`, `REQUEST_HEADERS`, `REQUEST_COOKIES`, `REQUEST_METHOD`, `REMOTE_ADDR`
-- operator: `@contains <needle>`
+- scoped selectors on:
+  - `REQUEST_HEADERS:Header-Name`
+  - `REQUEST_COOKIES:cookie_name`
+- operators:
+  - `@contains <needle>`
+  - `@streq <value>` / `@eq <value>`
+  - `@rx <pattern>`
+  - `@libinjection_sqli`
+  - `@libinjection_xss`
 - actions subset: `id:<n>`, `phase:1|2`, `msg:'...'`, plus tolerated `deny`, `log`, `t:none`
 
 Example:
@@ -105,7 +114,48 @@ Example rule file:
 SecRule ARGS "@contains union select" "id:1001,phase:1,msg:'basic SQLi needle'"
 SecRule REQUEST_BODY "@contains <script" "id:1002,phase:2,msg:'basic body XSS needle'"
 SecRule REQUEST_HEADERS "@contains x-api-key: bad-value" "id:1003,phase:1,msg:'header needle'"
+SecRule ARGS "@libinjection_sqli" "id:2001,phase:1,msg:'libinjection SQLi rule'"
+SecRule REQUEST_BODY "@libinjection_xss" "id:2002,phase:2,msg:'libinjection XSS rule'"
+SecRule REQUEST_HEADERS:X-Scoped-Header "@contains secret-value" "id:2003,phase:1,msg:'scoped header rule'"
+SecRule REQUEST_METHOD "@streq patch" "id:2004,phase:1,msg:'exact method rule'"
+SecRule REQUEST_URI "@rx regex-path-[0-9]+" "id:2005,phase:1,msg:'regex path rule'"
 ```
+
+### Detection stack
+
+When `waf_sqli on;` or `waf_xss on;` is enabled, the module currently applies detection in this order:
+
+1. URL-decode the inspected input
+2. Run `libinjection` on the decoded value
+3. Fall back to the module's native lowercase substring signatures
+
+This keeps the native fast-path checks while improving detection for obfuscated payloads that the original substring matcher missed.
+
+Inside `waf_rules_file`, `@libinjection_sqli` and `@libinjection_xss` can now be used explicitly as rule operators in the supported native subset.
+
+#### waf_ban_threshold
+
+*syntax:* `waf_ban_threshold <n>;`
+*default:* `0`
+*context:* `location`
+
+Enable temporary IP bans after `<n>` WAF detections within the configured ban window.
+
+#### waf_ban_window
+
+*syntax:* `waf_ban_window <seconds>;`
+*default:* `60`
+*context:* `location`
+
+Time window in seconds for counting repeated WAF detections toward a temporary ban.
+
+#### waf_ban_duration
+
+*syntax:* `waf_ban_duration <seconds>;`
+*default:* `300`
+*context:* `location`
+
+Temporary ban duration in seconds once the threshold is reached.
 
 ### Response Format
 
@@ -166,18 +216,17 @@ http {
 
 ### Limitations
 
-- Pattern-based detection may have false positives for certain legitimate inputs
-- Limited to predefined patterns (no custom regex support yet)
+- Native pattern-based detection may still have false positives for certain legitimate inputs
+- Limited to a small native subset of operators and actions; this is still far smaller than full ModSecurity syntax
 - Request body inspection limited to 8KB for performance
-- No IP reputation or rate limiting integration
+- Temporary bans are shared-memory-based fixed-size counters keyed by client IP, not a full reputation engine yet
+- `libinjection` improves SQLi/XSS coverage but does not make the module full ModSecurity or CRS compatible
 - `waf_rules_file` currently supports only a small native ModSecurity-like subset, not full ModSecurity or CRS compatibility
 
 ### Future Enhancements
 
-- Custom rule support with regex patterns
 - OWASP Core Rule Set compatibility
 - IP blocklist/allowlist integration
-- Request header inspection
 - Response body filtering
 - Anomaly scoring mode
 
@@ -193,4 +242,8 @@ http {
 - [x] Bun integration coverage now verifies nested child-location inheritance of detect mode, selective SQLi/XSS toggles, URL-decoded payloads, POST/PUT/PATCH body inspection, and detect-vs-block behavior.
 - [x] Gap fixed in this audit pass: child locations under a parent `waf_mode detect` configuration now inherit detect mode correctly instead of silently falling back to block behavior.
 - [x] Initial native ModSecurity-like subset is now implemented via `waf_rules_file`, with Bun coverage for file-driven `SecRule` matches on `REQUEST_URI`, `ARGS`, `REQUEST_BODY`, `REQUEST_HEADERS`, `REQUEST_COOKIES`, `REQUEST_METHOD`, and `REMOTE_ADDR` using `@contains` plus `phase` parsing.
+- [x] `libinjection` is now vendored and compiled in-tree, and Bun coverage verifies improved detection of obfuscated SQLi/XSS payloads beyond the original substring signatures.
+- [x] `waf_rules_file` now supports explicit `@libinjection_sqli` and `@libinjection_xss` operators with Bun coverage for file-driven rule execution.
+- [x] `waf_rules_file` now supports `@rx`, equals-style operators, and scoped `REQUEST_HEADERS:<name>` / `REQUEST_COOKIES:<name>` selectors.
+- [x] Shared-memory temporary IP bans are now supported via `waf_ban_threshold`, `waf_ban_window`, and `waf_ban_duration`, with Bun coverage for threshold, active ban, and expiry behavior.
 - [x] No additional documentation gaps were identified in this audit pass.

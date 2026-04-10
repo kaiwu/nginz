@@ -4,12 +4,20 @@ import { existsSync, rmSync } from "fs";
 
 const MODULE = "waf";
 const RULES_FILE = `${process.cwd()}/tests/waf/native-subset.rules`;
+const LIBINJECTION_RULES_FILE = `${process.cwd()}/tests/waf/libinjection.rules`;
+const BAN_RULES_FILE = `${process.cwd()}/tests/waf/ban.rules`;
 const GENERATED_CONFIG = `tests/${MODULE}/nginx.generated.conf`;
 
 describe("waf module", () => {
   beforeAll(async () => {
     const template = await Bun.file(`tests/${MODULE}/nginx.conf`).text();
-    await Bun.write(GENERATED_CONFIG, template.replaceAll("__WAF_RULES_FILE__", RULES_FILE));
+    await Bun.write(
+      GENERATED_CONFIG,
+      template
+        .replaceAll("__WAF_RULES_FILE__", RULES_FILE)
+        .replaceAll("__WAF_LIBINJECTION_RULES_FILE__", LIBINJECTION_RULES_FILE)
+        .replaceAll("__WAF_BAN_RULES_FILE__", BAN_RULES_FILE)
+    );
     await startNginz(GENERATED_CONFIG, MODULE);
   });
 
@@ -375,6 +383,79 @@ describe("waf module", () => {
       expect(res.status).toBe(403);
       const body = await res.json();
       expect(body.rule).toBe("rule");
+    });
+
+    test("blocks based on @rx operator from file", async () => {
+      const res = await fetch(`${TEST_URL}/rules-regex/regex-path-12345`);
+      expect(res.status).toBe(403);
+      const body = await res.json();
+      expect(body.rule).toBe("rule");
+    });
+
+    test("blocks based on equals-style operator from file", async () => {
+      const res = await fetch(`${TEST_URL}/rules-equals`, {
+        method: "PATCH",
+      });
+      expect(res.status).toBe(403);
+      const body = await res.json();
+      expect(body.rule).toBe("rule");
+    });
+
+    test("blocks based on REQUEST_HEADERS selector rule", async () => {
+      const res = await fetch(`${TEST_URL}/rules-header-selector`, {
+        headers: { "X-Scoped-Header": "scoped-header-hit" },
+      });
+      expect(res.status).toBe(403);
+      const body = await res.json();
+      expect(body.rule).toBe("rule");
+    });
+
+    test("blocks based on REQUEST_COOKIES selector rule", async () => {
+      const res = await fetch(`${TEST_URL}/rules-cookie-selector`, {
+        headers: { Cookie: "scoped_cookie=scoped-cookie-hit" },
+      });
+      expect(res.status).toBe(403);
+      const body = await res.json();
+      expect(body.rule).toBe("rule");
+    });
+
+    test("blocks based on explicit @libinjection_sqli operator", async () => {
+      const res = await fetch(`${TEST_URL}/rules-libinjection?id=1'%20%7C%7C%201%20--`);
+      expect(res.status).toBe(403);
+      const body = await res.json();
+      expect(body.rule).toBe("rule");
+    });
+
+    test("blocks based on explicit @libinjection_xss operator in request body", async () => {
+      const res = await fetch(`${TEST_URL}/rules-libinjection-body`, {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: "payload=<svg onload=alert(1)>",
+      });
+      expect(res.status).toBe(403);
+      const body = await res.json();
+      expect(body.rule).toBe("rule");
+    });
+
+    test("temporarily bans IP after repeated rule hits", async () => {
+      for (let i = 0; i < 2; i++) {
+        const res = await fetch(`${TEST_URL}/rules-ban?token=native-subset-needle`);
+        expect(res.status).toBe(200);
+        const text = await res.text();
+        expect(text).toContain("rules ban response");
+      }
+
+      const banned = await fetch(`${TEST_URL}/rules-ban?token=clean`);
+      expect(banned.status).toBe(403);
+      const bannedBody = await banned.json();
+      expect(bannedBody.rule).toBe("ban");
+
+      await Bun.sleep(1100);
+
+      const recovered = await fetch(`${TEST_URL}/rules-ban?token=clean`);
+      expect(recovered.status).toBe(200);
+      const recoveredText = await recovered.text();
+      expect(recoveredText).toContain("rules ban response");
     });
   });
 });

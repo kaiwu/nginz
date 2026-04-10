@@ -1,0 +1,1 @@
+SecRule ARGS "@contains native-subset-needle" "id:3001,phase:1,msg:'ban threshold rule'"

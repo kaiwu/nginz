@@ -1,0 +1,3 @@
+# Explicit libinjection-backed rule operators for nginz WAF tests
+SecRule ARGS "@libinjection_sqli" "id:2001,phase:1,msg:'libinjection sqli rule'"
+SecRule REQUEST_BODY "@libinjection_xss" "id:2002,phase:2,msg:'libinjection xss rule'"
