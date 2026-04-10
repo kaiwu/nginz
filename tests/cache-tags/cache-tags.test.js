@@ -42,6 +42,16 @@ describe("cache-tags module", () => {
       headers: { "Cache-Tag": "category,catalog" },
     }));
 
+    backend.get("/spaced/*", () => ({
+      body: { ok: true },
+      headers: { "Cache-Tag": " product , spaced-tag , catalog  " },
+    }));
+
+    backend.get("/custom/*", () => ({
+      body: { custom: true },
+      headers: { "X-Cache-Tags": "custom,secondary" },
+    }));
+
     await startNginz(`tests/${MODULE}/nginx.conf`, MODULE);
   });
 
@@ -78,6 +88,27 @@ describe("cache-tags module", () => {
       expect(json).toHaveProperty("tags");
       expect(Array.isArray(json.tags)).toBe(true);
     });
+
+    test("allows DELETE requests for purge operations", async () => {
+      await fetch(`${TEST_URL}/api/delete-method-${Date.now()}`);
+
+      const res = await fetch(`${TEST_URL}/cache/purge?tag=api`, {
+        method: "DELETE",
+      });
+
+      expect(res.status).toBe(200);
+      const json = await res.json();
+      expect(json.tag).toBe("api");
+      expect(json.purged).toBeGreaterThanOrEqual(1);
+    });
+
+    test("rejects POST requests", async () => {
+      const res = await fetch(`${TEST_URL}/cache/purge?tag=api`, {
+        method: "POST",
+      });
+
+      expect(res.status).toBe(405);
+    });
   });
 
   describe("tag capture", () => {
@@ -110,6 +141,18 @@ describe("cache-tags module", () => {
 
       expect(productTag).toBeDefined();
       expect(apiTag).toBeDefined();
+    });
+
+    test("trims surrounding whitespace around tags", async () => {
+      await fetch(`${TEST_URL}/spaced/trimmed`);
+
+      const res = await fetch(`${TEST_URL}/cache/purge`);
+      const json = await res.json();
+
+      const spacedTag = json.tags.find((t) => t.tag === "spaced-tag");
+      const productTag = json.tags.find((t) => t.tag === "product");
+      expect(spacedTag).toBeDefined();
+      expect(productTag).toBeDefined();
     });
 
     test("same URI with same tag is not duplicated", async () => {
@@ -164,6 +207,20 @@ describe("cache-tags module", () => {
       expect(json.purged).toBe(0);
     });
 
+    test("purge uses exact tag matching only", async () => {
+      await fetch(`${TEST_URL}/products/exact-match`);
+
+      const res = await fetch(`${TEST_URL}/cache/purge?tag=prod*`);
+      const json = await res.json();
+      expect(json.tag).toBe("prod*");
+      expect(json.purged).toBe(0);
+
+      const listRes = await fetch(`${TEST_URL}/cache/purge`);
+      const listJson = await listRes.json();
+      const productTag = listJson.tags.find((t) => t.tag === "product");
+      expect(productTag).toBeDefined();
+    });
+
     test("purge one tag does not affect others", async () => {
       // Populate multiple tags
       await fetch(`${TEST_URL}/api/preserve1`);
@@ -197,6 +254,27 @@ describe("cache-tags module", () => {
       const catalogTag = json.tags.find((t) => t.tag === "catalog");
       expect(catalogTag).toBeDefined();
       expect(catalogTag.uris).toBeGreaterThanOrEqual(2);
+    });
+  });
+
+  describe("custom tag header", () => {
+    test("captures tags from the configured alternate response header", async () => {
+      await stopNginz();
+      await startNginz(`tests/${MODULE}/nginx-custom-header.conf`, MODULE);
+
+      try {
+        await fetch(`${TEST_URL}/custom/example`);
+
+        const res = await fetch(`${TEST_URL}/cache/purge`);
+        const json = await res.json();
+
+        const customTag = json.tags.find((t) => t.tag === "custom");
+        const secondaryTag = json.tags.find((t) => t.tag === "secondary");
+        expect(customTag).toBeDefined();
+        expect(secondaryTag).toBeDefined();
+      } finally {
+        await stopNginz();
+      }
     });
   });
 });

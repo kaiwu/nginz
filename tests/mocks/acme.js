@@ -147,8 +147,26 @@ export class ACMEMock {
     return new Response("Not Found", { status: 404, headers });
   }
 
+  async parseAcmeBody(req) {
+    const raw = await req.text().catch(() => "");
+    if (!raw) return {};
+
+    const parsed = JSON.parse(raw);
+
+    if (parsed && typeof parsed === "object" && typeof parsed.payload === "string") {
+      if (parsed.payload.length === 0) {
+        return {};
+      }
+
+      const decoded = Buffer.from(parsed.payload, "base64url").toString("utf8");
+      return decoded ? JSON.parse(decoded) : {};
+    }
+
+    return parsed;
+  }
+
   async handleNewAccount(req, headers) {
-    const body = await req.json().catch(() => ({}));
+    const body = await this.parseAcmeBody(req).catch(() => ({}));
     const accountId = this.generateId();
     const kid = `${this.baseUrl}/account/${accountId}`;
 
@@ -194,7 +212,7 @@ export class ACMEMock {
   }
 
   async handleNewOrder(req, headers) {
-    const body = await req.json().catch(() => ({}));
+    const body = await this.parseAcmeBody(req).catch(() => ({}));
     const identifiers = body.identifiers || [];
 
     if (identifiers.length === 0) {
@@ -360,6 +378,11 @@ export class ACMEMock {
         "Order is not ready for finalization",
         headers
       );
+    }
+
+    const body = await this.parseAcmeBody(req).catch(() => ({}));
+    if (!body.csr) {
+      return this.errorResponse("malformed", "Missing CSR", headers);
     }
 
     // Generate certificate

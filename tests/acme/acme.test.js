@@ -17,6 +17,23 @@ const ACME_MOCK_URL = `http://127.0.0.1:${MOCK_PORTS.ACME}`;
 
 let acmeMock;
 
+async function triggerAcmeFlow(url = TEST_URL) {
+  const res = await fetch(`${url}/.well-known/acme-trigger`);
+  expect(res.status).toBe(200);
+  return res.json();
+}
+
+async function triggerUntil(predicate, { maxSteps = 8, url = TEST_URL } = {}) {
+  let last;
+  for (let i = 0; i < maxSteps; i++) {
+    last = await triggerAcmeFlow(url);
+    if (predicate(last, i + 1)) {
+      return last;
+    }
+  }
+  return last;
+}
+
 describe("acme module", () => {
   beforeAll(async () => {
     // Ensure clean state
@@ -284,6 +301,53 @@ describe("acme module", () => {
       const body = await res.json();
       expect(body.status).toBe("ok");
     });
+
+    test("trigger endpoint survives repeated calls and registers a live HTTP-01 challenge", async () => {
+      acmeMock.clearState();
+
+      const first = await triggerAcmeFlow();
+      expect(["initialized", "started", "pending"]).toContain(first.status);
+
+      const last = await triggerUntil(
+        () => acmeMock.challenges.size > 0,
+        { maxSteps: 8 }
+      );
+      expect(last.status).not.toBe("error");
+
+      const challenge = [...acmeMock.challenges.values()].at(-1);
+      expect(challenge).toBeDefined();
+      expect(challenge.token).toBeDefined();
+
+      const ready = await triggerUntil(
+        async () => {
+          const probe = await fetch(
+            `${TEST_URL}/.well-known/acme-challenge/${challenge.token}`
+          );
+          return probe.status === 200;
+        },
+        { maxSteps: 4 }
+      );
+      expect(ready.status).not.toBe("error");
+
+      const challengeRes = await fetch(
+        `${TEST_URL}/.well-known/acme-challenge/${challenge.token}`
+      );
+      expect(challengeRes.status).toBe(200);
+
+      const body = await challengeRes.text();
+      expect(body.startsWith(`${challenge.token}.`)).toBe(true);
+    });
+
+    test("trigger endpoint does not emit header already sent errors after repeated calls", async () => {
+      await triggerAcmeFlow();
+      await triggerAcmeFlow();
+
+      const errorLog = readFileSync(
+        join(process.cwd(), "tests", MODULE, "runtime", "logs", "error.log"),
+        "utf8"
+      );
+      expect(errorLog).not.toContain("header already sent");
+    });
   });
 
   describe("Storage", () => {
@@ -296,15 +360,12 @@ describe("acme module", () => {
       expect(existsSync(storagePath)).toBe(true);
     });
 
-    // These tests verify behavior after a full ACME flow completes
-    // They are skipped because the full async ACME flow isn't testable
-    // without more complex test infrastructure
-    test.skip("account key is stored in storage directory", () => {
+    test("account key is stored after trigger initialization", () => {
       const accountKeyPath = `tests/${MODULE}/runtime/acme/account.key`;
       expect(existsSync(accountKeyPath)).toBe(true);
 
       const key = readFileSync(accountKeyPath, "utf8");
-      expect(key).toContain("-----BEGIN RSA PRIVATE KEY-----");
+      expect(key).toContain("-----BEGIN ");
     });
 
     test.skip("certificate is stored after successful issuance", () => {

@@ -10,6 +10,7 @@ const NGX_OK = core.NGX_OK;
 const NGX_ERROR = core.NGX_ERROR;
 const NGX_DECLINED = core.NGX_DECLINED;
 const NGX_AGAIN = core.NGX_AGAIN;
+const NGX_DONE = core.NGX_DONE;
 
 const ngx_str_t = core.ngx_str_t;
 const ngx_int_t = core.ngx_int_t;
@@ -881,6 +882,23 @@ pub const AcmeState = enum {
     err, // Error state
 };
 
+fn acme_state_name(state: AcmeState) []const u8 {
+    return switch (state) {
+        .idle => "idle",
+        .need_directory => "need_directory",
+        .need_nonce => "need_nonce",
+        .need_account => "need_account",
+        .need_order => "need_order",
+        .need_authorization => "need_authorization",
+        .need_challenge_ready => "need_challenge_ready",
+        .waiting_validation => "waiting_validation",
+        .need_finalize => "need_finalize",
+        .need_certificate => "need_certificate",
+        .complete => "complete",
+        .err => "err",
+    };
+}
+
 /// ACME directory endpoints (parsed from /directory response)
 pub const AcmeDirectory = struct {
     new_nonce: ngx_str_t,
@@ -958,6 +976,12 @@ pub const AcmeOrder = struct {
         var cj = CJSON.init(pool);
         const json = try cj.decode(ngx_str_t{ .len = json_body.len, .data = @constCast(json_body.ptr) });
 
+        self.finalize_url = ngx_null_str;
+        self.certificate_url = ngx_null_str;
+        self.authorization_urls = [_]ngx_str_t{ngx_null_str} ** 8;
+        self.authorization_count = 0;
+        self.status = ngx_null_str;
+
         if (CJSON.query(json, "$.status")) |n| if (CJSON.stringValue(n)) |v| {
             self.status = v;
         };
@@ -1004,6 +1028,10 @@ pub const AcmeAuthorization = struct {
         const CJSON = ngx.cjson.CJSON;
         var cj = CJSON.init(pool);
         const json = try cj.decode(ngx_str_t{ .len = json_body.len, .data = @constCast(json_body.ptr) });
+
+        self.challenge_url = ngx_null_str;
+        self.challenge_token = ngx_null_str;
+        self.status = ngx_null_str;
 
         if (CJSON.query(json, "$.status")) |n| if (CJSON.stringValue(n)) |v| {
             self.status = v;
@@ -1056,6 +1084,7 @@ pub const AcmeClient = struct {
 
     // Error info
     last_error: ngx_str_t,
+    last_debug: ngx_str_t,
 
     pub fn init(pool: [*c]ngx_pool_t, directory_url: ngx_str_t, domain: ngx_str_t) Self {
         return Self{
@@ -1072,7 +1101,16 @@ pub const AcmeClient = struct {
             .account_key = null,
             .domain_key = null,
             .last_error = ngx_null_str,
+            .last_debug = ngx_null_str,
         };
+    }
+
+    fn setDebug(self: *Self, comptime fmt: []const u8, args: anytype) void {
+        var buf: [256]u8 = undefined;
+        const msg = std.fmt.bufPrint(&buf, fmt, args) catch return;
+        if (duplicate_bytes(self.pool, msg)) |copy| {
+            self.last_debug = ngx_str_t{ .len = copy.len, .data = @constCast(copy.ptr) };
+        }
     }
 
     /// Set account key (must be called before starting)
@@ -1339,7 +1377,9 @@ pub const AcmeClient = struct {
         try self.authorization.parse(self.pool, body);
 
         const status = core.slicify(u8, self.authorization.status.data, self.authorization.status.len);
+        const token_len = self.authorization.challenge_token.len;
         if (std.mem.eql(u8, status, "valid")) {
+            self.setDebug("auth status=valid token_len={d}", .{token_len});
             // This authorization is already valid, check next
             self.current_auth_index += 1;
             if (self.current_auth_index >= self.order.authorization_count) {
@@ -1348,9 +1388,11 @@ pub const AcmeClient = struct {
                 self.state = .need_authorization;
             }
         } else if (std.mem.eql(u8, status, "pending")) {
+            self.setDebug("auth status=pending token_len={d}", .{token_len});
             // Need to complete challenge
             self.state = .need_challenge_ready;
         } else {
+            self.setDebug("auth status=other token_len={d}", .{token_len});
             self.state = .err;
             self.last_error = self.authorization.status;
         }
@@ -1408,6 +1450,7 @@ pub const AcmeClient = struct {
 
     /// Register the challenge in the challenge storage
     pub fn registerChallenge(self: *Self) !void {
+        self.setDebug("register start token_len={d}", .{self.authorization.challenge_token.len});
         const key_auth = try self.prepareChallenge();
         const token_slice = core.slicify(u8, self.authorization.challenge_token.data, self.authorization.challenge_token.len);
 
@@ -1418,9 +1461,10 @@ pub const AcmeClient = struct {
             self.domain,
             std.math.maxInt(ngx_msec_t), // Use max for now, will be cleaned up after validation
         )) {
+            self.setDebug("register failed add_challenge token_len={d}", .{token_slice.len});
             return error.ChallengeFull;
         }
-        _ = token_slice;
+        self.setDebug("register ok token_len={d}", .{token_slice.len});
     }
 };
 
@@ -1558,11 +1602,24 @@ pub const acme_main_conf = extern struct {
 
     // Computed thumbprint (set after account key is loaded)
     account_thumbprint: ngx_str_t,
+    ups: http.ngx_http_upstream_conf_t,
 };
 
 pub const acme_srv_conf = extern struct {
     domain: ngx_str_t,
 };
+
+fn init_upstream_conf(ups: [*c]http.ngx_http_upstream_conf_t) void {
+    ups.*.buffering = 0;
+    ups.*.buffer_size = 32 * ngx_pagesize;
+    ups.*.ssl_verify = 0;
+    ups.*.connect_timeout = 60000;
+    ups.*.send_timeout = 60000;
+    ups.*.read_timeout = 60000;
+    ups.*.module = ngx_string("ngx_http_acme_module");
+    ups.*.hide_headers = conf.NGX_CONF_UNSET_PTR;
+    ups.*.pass_headers = conf.NGX_CONF_UNSET_PTR;
+}
 
 // ============================================================================
 // Challenge Storage
@@ -1581,6 +1638,26 @@ const MAX_CHALLENGES = 32;
 var challenges: [MAX_CHALLENGES]?acme_challenge_t = [_]?acme_challenge_t{null} ** MAX_CHALLENGES;
 var challenge_count: usize = 0;
 
+fn duplicate_ngx_str(pool: [*c]ngx_pool_t, value: ngx_str_t) ?ngx_str_t {
+    if (value.len == 0 or value.data == core.nullptr(u8)) {
+        return ngx_null_str;
+    }
+
+    const buf = core.castPtr(u8, core.ngx_pnalloc(pool, value.len)) orelse return null;
+    @memcpy(buf[0..value.len], core.slicify(u8, value.data, value.len));
+    return ngx_str_t{ .len = value.len, .data = buf };
+}
+
+fn duplicate_bytes(pool: [*c]ngx_pool_t, value: []const u8) ?[]const u8 {
+    if (value.len == 0) {
+        return &.{};
+    }
+
+    const buf = core.castPtr(u8, core.ngx_pnalloc(pool, value.len)) orelse return null;
+    @memcpy(buf[0..value.len], value);
+    return buf[0..value.len];
+}
+
 pub fn add_challenge(token: ngx_str_t, key_auth: ngx_str_t, domain: ngx_str_t, expires: ngx_msec_t) bool {
     if (challenge_count >= MAX_CHALLENGES) {
         // Try to remove expired challenges first
@@ -1592,10 +1669,20 @@ pub fn add_challenge(token: ngx_str_t, key_auth: ngx_str_t, domain: ngx_str_t, e
 
     for (&challenges) |*slot| {
         if (slot.* == null) {
+            var stored_token = token;
+            var stored_key_auth = key_auth;
+            var stored_domain = domain;
+
+            if (worker_pool()) |pool| {
+                stored_token = duplicate_ngx_str(pool, token) orelse return false;
+                stored_key_auth = duplicate_ngx_str(pool, key_auth) orelse return false;
+                stored_domain = duplicate_ngx_str(pool, domain) orelse return false;
+            }
+
             slot.* = acme_challenge_t{
-                .token = token,
-                .key_authorization = key_auth,
-                .domain = domain,
+                .token = stored_token,
+                .key_authorization = stored_key_auth,
+                .domain = stored_domain,
                 .expires = expires,
             };
             challenge_count += 1;
@@ -1657,6 +1744,7 @@ fn create_main_conf(cf: [*c]ngx_conf_t) callconv(.c) ?*anyopaque {
     const p = core.ngz_pcalloc_c(acme_main_conf, cf.*.pool) orelse return null;
     p.*.enabled = conf.NGX_CONF_UNSET;
     p.*.renew_before_days = conf.NGX_CONF_UNSET_UINT;
+    init_upstream_conf(&p.*.ups);
     return p;
 }
 
@@ -1772,7 +1860,6 @@ fn send_challenge_response(r: [*c]ngx_http_request_t, key_auth: ngx_str_t) ngx_i
     r.*.headers_out.content_type_len = 10;
     r.*.headers_out.content_length_n = @intCast(key_auth.len);
 
-    // Send header
     const rc = http.ngx_http_send_header(r);
     if (rc == NGX_ERROR or rc > NGX_OK or r.*.flags1.header_only) {
         return rc;
@@ -1795,7 +1882,38 @@ fn send_challenge_response(r: [*c]ngx_http_request_t, key_auth: ngx_str_t) ngx_i
         out.next.*.buf.*.flags.last_in_chain = true;
     }
 
-    return http.ngx_http_output_filter(r, out.next);
+    const out_rc = http.ngx_http_output_filter(r, out.next);
+    if (out_rc == NGX_ERROR or out_rc >= http.NGX_HTTP_SPECIAL_RESPONSE) {
+        return out_rc;
+    }
+    http.ngx_http_finalize_request(r, out_rc);
+    return NGX_DONE;
+}
+
+fn build_acme_status_json(pool: [*c]ngx_pool_t, status: []const u8, message: []const u8) ?ngx_str_t {
+    const response_template = "{{\"status\":\"{s}\",\"message\":\"{s}\"}}";
+    var response_buf: [256]u8 = undefined;
+    const response = std.fmt.bufPrint(&response_buf, response_template, .{ status, message }) catch return null;
+
+    const buf = core.castPtr(u8, core.ngx_pnalloc(pool, response.len)) orelse return null;
+    @memcpy(buf[0..response.len], response);
+
+    return ngx_str_t{ .len = response.len, .data = buf };
+}
+
+fn challenge_progress_message(pool: [*c]ngx_pool_t, client: *AcmeClient) ?ngx_str_t {
+    if (client.last_debug.len > 0 and client.last_debug.data != core.nullptr(u8)) {
+        return build_acme_status_json(pool, "started", core.slicify(u8, client.last_debug.data, client.last_debug.len));
+    }
+
+    if (client.authorization.challenge_token.len == 0 or client.authorization.challenge_token.data == core.nullptr(u8)) {
+        return build_acme_status_json(pool, "started", "ACME step completed, call trigger again to continue");
+    }
+
+    var message_buf: [256]u8 = undefined;
+    const token = core.slicify(u8, client.authorization.challenge_token.data, client.authorization.challenge_token.len);
+    const message = std.fmt.bufPrint(&message_buf, "ACME step completed; challenge_token={s}", .{token}) catch return null;
+    return build_acme_status_json(pool, "started", message);
 }
 
 // ============================================================================
@@ -2000,6 +2118,31 @@ fn ngx_http_acme_upstream_process_header(r: [*c]ngx_http_request_t) callconv(.c)
         }
 
         if (rc == http.NGX_HTTP_PARSE_HEADER_DONE) {
+            const body_len = @intFromPtr(u.*.buffer.last) - @intFromPtr(u.*.buffer.pos);
+            if (body_len > 0) {
+                const body_copy = core.castPtr(u8, core.ngx_pnalloc(r.*.pool, body_len)) orelse return NGX_ERROR;
+                @memcpy(body_copy[0..body_len], core.slicify(u8, u.*.buffer.pos, body_len));
+                rctx.response_body = ngx_str_t{ .len = body_len, .data = body_copy };
+            } else {
+                rctx.response_body = ngx_null_str;
+            }
+
+            const local_response = (if (rctx.status.code >= 400)
+                build_acme_status_json(r.*.pool, "error", "ACME upstream step failed")
+            else
+                challenge_progress_message(r.*.pool, rctx.getClient()) orelse build_acme_status_json(r.*.pool, "started", "ACME step completed, call trigger again to continue")) orelse return NGX_ERROR;
+
+            u.*.buffer.pos = local_response.data;
+            u.*.buffer.last = local_response.data + local_response.len;
+            u.*.headers_in.status_n = 200;
+            u.*.headers_in.content_length_n = @intCast(local_response.len);
+            u.*.length = 0;
+
+            r.*.headers_out.status = 200;
+            r.*.headers_out.content_type = ngx_string("application/json");
+            r.*.headers_out.content_type_len = 16;
+            r.*.headers_out.content_type_lowcase = null;
+
             return NGX_OK;
         }
 
@@ -2013,32 +2156,46 @@ fn ngx_http_acme_upstream_process_header(r: [*c]ngx_http_request_t) callconv(.c)
 
 /// Initialize input filter
 fn ngx_http_acme_upstream_input_filter_init(ctx: ?*anyopaque) callconv(.c) ngx_int_t {
-    _ = ctx;
+    if (core.castPtr(ngx_http_request_t, ctx)) |r| {
+        const u = r.*.upstream;
+        u.*.length = u.*.headers_in.content_length_n;
+    }
     return NGX_OK;
 }
 
 /// Input filter for response body
 fn ngx_http_acme_upstream_input_filter(ctx: ?*anyopaque, bytes: isize) callconv(.c) ngx_int_t {
     const r = core.castPtr(ngx_http_request_t, ctx) orelse return NGX_ERROR;
-    const rctx_c = core.castPtr(acme_request_context, r.*.ctx[ngx_http_acme_module.ctx_index]) orelse {
-        return NGX_ERROR;
-    };
-    const rctx: *acme_request_context = @ptrCast(rctx_c);
-
     const u = r.*.upstream;
+    const b = &u.*.buffer;
 
     if (bytes > 0) {
-        // Accumulate response body
-        const new_len = rctx.response_body.len + @as(usize, @intCast(bytes));
-        const buf = core.castPtr(u8, core.ngx_pnalloc(r.*.pool, new_len)) orelse return NGX_ERROR;
-
-        if (rctx.response_body.len > 0) {
-            @memcpy(buf[0..rctx.response_body.len], core.slicify(u8, rctx.response_body.data, rctx.response_body.len));
+        var ll: [*c][*c]ngx_chain_t = &u.*.out_bufs;
+        while (ll.* != core.nullptr(ngx_chain_t)) {
+            ll = &ll.*.*.next;
         }
-        @memcpy(buf[rctx.response_body.len..new_len], core.slicify(u8, u.*.buffer.pos, @intCast(bytes)));
-        rctx.response_body = ngx_str_t{ .len = new_len, .data = buf };
 
-        u.*.buffer.pos = u.*.buffer.last;
+        if (ngx.buf.ngx_chain_get_free_buf(r.*.pool, &u.*.free_bufs)) |cl| {
+            cl.*.buf.*.flags.flush = true;
+            cl.*.buf.*.flags.memory = true;
+
+            const last = b.*.last;
+            cl.*.buf.*.pos = last;
+            b.*.last += @intCast(bytes);
+            cl.*.buf.*.last = b.*.last;
+            cl.*.buf.*.tag = u.*.output.tag;
+
+            ll.* = cl;
+            u.*.length -= bytes;
+
+            if (u.*.length == 0) {
+                u.*.flags.keepalive = true;
+            }
+
+            return NGX_OK;
+        }
+
+        return NGX_ERROR;
     }
 
     return NGX_OK;
@@ -2046,23 +2203,41 @@ fn ngx_http_acme_upstream_input_filter(ctx: ?*anyopaque, bytes: isize) callconv(
 
 /// Finalize upstream request
 fn ngx_http_acme_upstream_finalize_request(r: [*c]ngx_http_request_t, rc: ngx_int_t) callconv(.c) void {
-    _ = rc;
-
     const rctx_c = core.castPtr(acme_request_context, r.*.ctx[ngx_http_acme_module.ctx_index]) orelse return;
     const rctx: *acme_request_context = @ptrCast(rctx_c);
     const acme_client = rctx.getClient();
+    const client_pool = acme_client.pool;
+
+    if (rc != NGX_OK and rc != NGX_DONE) {
+        acme_client.setDebug("finalize rc={d}", .{rc});
+        acme_client.state = .err;
+        return;
+    }
 
     // Process response based on current state
-    const status = r.*.upstream.*.headers_in.status_n;
-    const body = core.slicify(u8, rctx.response_body.data, rctx.response_body.len);
+    const status = rctx.status.code;
+    const body: []const u8 = if (rctx.response_body.data != core.nullptr(u8) and rctx.response_body.len > 0)
+        core.slicify(u8, rctx.response_body.data, rctx.response_body.len)
+    else
+        &.{};
+    const stable_body = if (body.len > 0)
+        (duplicate_bytes(client_pool, body) orelse {
+            acme_client.setDebug("duplicate body failed len={d}", .{body.len});
+            acme_client.state = .err;
+            return;
+        })
+    else
+        body;
 
     switch (acme_client.state) {
         .need_directory => {
             if (status == 200) {
-                acme_client.handleDirectoryResponse(body) catch {
+                acme_client.handleDirectoryResponse(stable_body) catch {
+                    acme_client.setDebug("need_directory parse failed", .{});
                     acme_client.state = .err;
                 };
             } else {
+                acme_client.setDebug("need_directory status={d}", .{status});
                 acme_client.state = .err;
             }
         },
@@ -2074,31 +2249,37 @@ fn ngx_http_acme_upstream_finalize_request(r: [*c]ngx_http_request_t, rc: ngx_in
             if (status == 200 or status == 201) {
                 acme_client.handleAccountResponse(rctx.response_location);
             } else {
+                acme_client.setDebug("need_account status={d}", .{status});
                 acme_client.state = .err;
             }
         },
         .need_order => {
             if (status == 201) {
-                acme_client.handleOrderResponse(rctx.response_location, body) catch {
+                acme_client.handleOrderResponse(rctx.response_location, stable_body) catch {
+                    acme_client.setDebug("need_order parse failed", .{});
                     acme_client.state = .err;
                 };
             } else {
+                acme_client.setDebug("need_order status={d}", .{status});
                 acme_client.state = .err;
             }
         },
         .need_authorization => {
             if (status == 200) {
-                acme_client.handleAuthorizationResponse(body) catch {
+                acme_client.handleAuthorizationResponse(stable_body) catch {
+                    acme_client.setDebug("need_authorization parse failed", .{});
                     acme_client.state = .err;
                 };
 
                 // If we need to do a challenge, register it
                 if (acme_client.state == .need_challenge_ready) {
                     acme_client.registerChallenge() catch {
+                        acme_client.setDebug("registerChallenge failed", .{});
                         acme_client.state = .err;
                     };
                 }
             } else {
+                acme_client.setDebug("need_authorization status={d}", .{status});
                 acme_client.state = .err;
             }
         },
@@ -2106,41 +2287,48 @@ fn ngx_http_acme_upstream_finalize_request(r: [*c]ngx_http_request_t, rc: ngx_in
             if (status == 200) {
                 acme_client.handleChallengeReadyResponse();
             } else {
+                acme_client.setDebug("need_challenge_ready status={d}", .{status});
                 acme_client.state = .err;
             }
         },
         .need_finalize => {
             if (status == 200) {
-                acme_client.handleFinalizeResponse(body) catch {
+                acme_client.handleFinalizeResponse(stable_body) catch {
+                    acme_client.setDebug("need_finalize parse failed", .{});
                     acme_client.state = .err;
                 };
             } else {
+                acme_client.setDebug("need_finalize status={d}", .{status});
                 acme_client.state = .err;
             }
         },
         .need_certificate => {
             if (status == 200) {
                 // Save the certificate!
-                const cert_pem = acme_client.handleCertificateResponse(body);
+                const cert_pem = acme_client.handleCertificateResponse(stable_body);
 
                 // Save to storage
                 const domain_slice = core.slicify(u8, rctx.domain.data, rctx.domain.len);
                 const storage = rctx.getStorage();
                 storage.saveCertificate(domain_slice, cert_pem) catch {
+                    acme_client.setDebug("saveCertificate failed", .{});
                     acme_client.state = .err;
                 };
 
                 // Save domain key if we have it
                 if (rctx.getDomainKey()) |dk| {
                     const pem = dk.toPem(r.*.pool) catch {
+                        acme_client.setDebug("domainKey toPem failed", .{});
                         acme_client.state = .err;
                         return;
                     };
                     storage.saveDomainKey(domain_slice, core.slicify(u8, pem.data, pem.len)) catch {
+                        acme_client.setDebug("saveDomainKey failed", .{});
                         acme_client.state = .err;
                     };
                 }
             } else {
+                acme_client.setDebug("need_certificate status={d}", .{status});
                 acme_client.state = .err;
             }
         },
@@ -2153,6 +2341,10 @@ fn create_acme_upstream(r: [*c]ngx_http_request_t, rctx: *acme_request_context) 
     if (http.ngx_http_upstream_create(r) != NGX_OK) {
         return error.UpstreamCreateFailed;
     }
+
+    const mcf = core.castPtr(acme_main_conf, conf.ngx_http_get_module_main_conf(r, &ngx_http_acme_module)) orelse {
+        return error.UpstreamCreateFailed;
+    };
 
     // Get URL for current state
     const acme_client = rctx.getClient();
@@ -2171,6 +2363,7 @@ fn create_acme_upstream(r: [*c]ngx_http_request_t, rctx: *acme_request_context) 
     const url_info = parse_acme_url(url);
 
     // Configure upstream
+    r.*.upstream.*.conf = &mcf.*.ups;
     r.*.upstream.*.flags.buffering = false;
     r.*.upstream.*.create_request = ngx_http_acme_upstream_create_request;
     r.*.upstream.*.process_header = ngx_http_acme_upstream_process_status;
@@ -2220,6 +2413,13 @@ var global_storage_path_buf: [512]u8 = undefined;
 var global_storage_instance: AcmeStorage = undefined;
 var global_storage: ?*AcmeStorage = null;
 
+fn worker_pool() ?[*c]ngx_pool_t {
+    if (http.ngx_cycle == core.nullptr(core.ngx_cycle_t)) {
+        return null;
+    }
+    return http.ngx_cycle.*.pool;
+}
+
 /// ACME trigger handler - advances the ACME state machine
 export fn ngx_http_acme_trigger_handler(r: [*c]ngx_http_request_t) callconv(.c) ngx_int_t {
     // Check if this is an ACME trigger request
@@ -2252,51 +2452,54 @@ export fn ngx_http_acme_trigger_handler(r: [*c]ngx_http_request_t) callconv(.c) 
         // Initialize storage
         const storage_path = core.slicify(u8, mcf.*.storage_path.data, mcf.*.storage_path.len);
         if (storage_path.len >= global_storage_path_buf.len) {
-            return send_acme_status(r, "error", "Storage path too long");
+            return send_acme_status_and_finalize(r, "error", "Storage path too long");
         }
         @memcpy(global_storage_path_buf[0..storage_path.len], storage_path);
         global_storage_instance = AcmeStorage.init(global_storage_path_buf[0..storage_path.len]);
         global_storage_instance.ensureDirectories() catch {
-            return send_acme_status(r, "error", "Failed to create storage directories");
+            return send_acme_status_and_finalize(r, "error", "Failed to create storage directories");
         };
         global_storage = &global_storage_instance;
 
         // Load or generate account key
-        const account_key_ptr = core.ngz_pcalloc(AcmeAccountKey, r.*.pool) orelse {
-            return send_acme_status(r, "error", "Failed to allocate account key");
+        const pool = worker_pool() orelse {
+            return send_acme_status_and_finalize(r, "error", "Worker pool unavailable");
+        };
+        const account_key_ptr = core.ngz_pcalloc(AcmeAccountKey, pool) orelse {
+            return send_acme_status_and_finalize(r, "error", "Failed to allocate account key");
         };
         if (global_storage.?.accountKeyExists()) {
             var key_buf: [8192]u8 = undefined;
             const pem = global_storage.?.loadAccountKey(&key_buf) catch {
-                return send_acme_status(r, "error", "Failed to load account key");
+                return send_acme_status_and_finalize(r, "error", "Failed to load account key");
             };
-            account_key_ptr.* = AcmeAccountKey.loadFromPem(ngx_str_t{ .len = pem.len, .data = @constCast(pem.ptr) }, r.*.pool) catch {
-                return send_acme_status(r, "error", "Failed to parse account key");
+            account_key_ptr.* = AcmeAccountKey.loadFromPem(ngx_str_t{ .len = pem.len, .data = @constCast(pem.ptr) }, pool) catch {
+                return send_acme_status_and_finalize(r, "error", "Failed to parse account key");
             };
         } else {
-            account_key_ptr.* = AcmeAccountKey.generate(r.*.pool) catch {
-                return send_acme_status(r, "error", "Failed to generate account key");
+            account_key_ptr.* = AcmeAccountKey.generate(pool) catch {
+                return send_acme_status_and_finalize(r, "error", "Failed to generate account key");
             };
             // Save account key
-            const pem = account_key_ptr.toPem(r.*.pool) catch {
-                return send_acme_status(r, "error", "Failed to export account key");
+            const pem = account_key_ptr.toPem(pool) catch {
+                return send_acme_status_and_finalize(r, "error", "Failed to export account key");
             };
             global_storage.?.saveAccountKey(core.slicify(u8, pem.data, pem.len)) catch {
-                return send_acme_status(r, "error", "Failed to save account key");
+                return send_acme_status_and_finalize(r, "error", "Failed to save account key");
             };
         }
         global_account_key = account_key_ptr;
 
         // Create ACME client
-        const client_ptr = core.ngz_pcalloc(AcmeClient, r.*.pool) orelse {
-            return send_acme_status(r, "error", "Failed to allocate ACME client");
+        const client_ptr = core.ngz_pcalloc(AcmeClient, pool) orelse {
+            return send_acme_status_and_finalize(r, "error", "Failed to allocate ACME client");
         };
-        client_ptr.* = AcmeClient.init(r.*.pool, mcf.*.directory_url, scf.*.domain);
+        client_ptr.* = AcmeClient.init(pool, mcf.*.directory_url, scf.*.domain);
         client_ptr.setAccountKey(account_key_ptr);
         client_ptr.start();
         global_acme_client = client_ptr;
 
-        return send_acme_status(r, "initialized", "ACME client initialized, call again to start flow");
+        return send_acme_status_and_finalize(r, "initialized", "ACME client initialized, call again to start flow");
     }
 
     const client = global_acme_client.?;
@@ -2305,16 +2508,22 @@ export fn ngx_http_acme_trigger_handler(r: [*c]ngx_http_request_t) callconv(.c) 
 
     // Check current state and respond appropriately
     if (client.state == .complete) {
-        return send_acme_status(r, "complete", "Certificate obtained successfully");
+        return send_acme_status_and_finalize(r, "complete", "Certificate obtained successfully");
     }
 
     if (client.state == .err) {
-        return send_acme_status(r, "error", "ACME error occurred");
+        if (client.last_debug.len > 0 and client.last_debug.data != core.nullptr(u8)) {
+            return send_acme_status_and_finalize(r, "error", core.slicify(u8, client.last_debug.data, client.last_debug.len));
+        }
+        if (client.last_error.len > 0 and client.last_error.data != core.nullptr(u8)) {
+            return send_acme_status_and_finalize(r, "error", core.slicify(u8, client.last_error.data, client.last_error.len));
+        }
+        return send_acme_status_and_finalize(r, "error", "ACME error occurred");
     }
 
     if (client.state == .idle) {
         client.start();
-        return send_acme_status(r, "started", "ACME flow started");
+        return send_acme_status_and_finalize(r, "started", "ACME flow started");
     }
 
     if (client.state == .waiting_validation) {
@@ -2324,11 +2533,14 @@ export fn ngx_http_acme_trigger_handler(r: [*c]ngx_http_request_t) callconv(.c) 
 
     // Generate domain key if needed for finalization
     if (client.state == .need_finalize and global_domain_key == null) {
-        const domain_key_ptr = core.ngz_pcalloc(AcmeDomainKey, r.*.pool) orelse {
-            return send_acme_status(r, "error", "Failed to allocate domain key");
+        const pool = worker_pool() orelse {
+            return send_acme_status_and_finalize(r, "error", "Worker pool unavailable");
         };
-        domain_key_ptr.* = AcmeDomainKey.generate(r.*.pool) catch {
-            return send_acme_status(r, "error", "Failed to generate domain key");
+        const domain_key_ptr = core.ngz_pcalloc(AcmeDomainKey, pool) orelse {
+            return send_acme_status_and_finalize(r, "error", "Failed to allocate domain key");
+        };
+        domain_key_ptr.* = AcmeDomainKey.generate(pool) catch {
+            return send_acme_status_and_finalize(r, "error", "Failed to generate domain key");
         };
         client.setDomainKey(domain_key_ptr);
         global_domain_key = domain_key_ptr;
@@ -2336,7 +2548,7 @@ export fn ngx_http_acme_trigger_handler(r: [*c]ngx_http_request_t) callconv(.c) 
 
     // Create request context for upstream
     const rctx = core.ngz_pcalloc(acme_request_context, r.*.pool) orelse {
-        return send_acme_status(r, "error", "Failed to allocate request context");
+        return send_acme_status_and_finalize(r, "error", "Failed to allocate request context");
     };
     rctx.* = acme_request_context{
         .client = @ptrCast(client),
@@ -2355,17 +2567,14 @@ export fn ngx_http_acme_trigger_handler(r: [*c]ngx_http_request_t) callconv(.c) 
 
     // Create upstream and initiate request
     const rc = create_acme_upstream(r, rctx) catch {
-        return send_acme_status(r, "error", "Failed to create upstream");
+        return send_acme_status_and_finalize(r, "error", "Failed to create upstream");
     };
 
     return rc;
 }
 
 fn send_acme_status(r: [*c]ngx_http_request_t, status: []const u8, message: []const u8) ngx_int_t {
-    // Build JSON response
-    const response_template = "{{\"status\":\"{s}\",\"message\":\"{s}\"}}";
-    var response_buf: [256]u8 = undefined;
-    const response = std.fmt.bufPrint(&response_buf, response_template, .{ status, message }) catch return http.NGX_HTTP_INTERNAL_SERVER_ERROR;
+    const response = build_acme_status_json(r.*.pool, status, message) orelse return http.NGX_HTTP_INTERNAL_SERVER_ERROR;
 
     // Set headers
     r.*.headers_out.status = 200;
@@ -2379,16 +2588,13 @@ fn send_acme_status(r: [*c]ngx_http_request_t, status: []const u8, message: []co
     }
 
     // Allocate response buffer
-    const buf = core.castPtr(u8, core.ngx_pnalloc(r.*.pool, response.len)) orelse return http.NGX_HTTP_INTERNAL_SERVER_ERROR;
-    @memcpy(buf[0..response.len], response);
-
     var chain = NChain.init(r.*.pool);
     var out = ngx_chain_t{
         .buf = core.nullptr(ngx_buf_t),
         .next = core.nullptr(ngx_chain_t),
     };
 
-    _ = chain.allocStr(ngx_str_t{ .len = response.len, .data = buf }, &out) catch {
+    _ = chain.allocStr(response, &out) catch {
         return http.NGX_HTTP_INTERNAL_SERVER_ERROR;
     };
 
@@ -2398,6 +2604,15 @@ fn send_acme_status(r: [*c]ngx_http_request_t, status: []const u8, message: []co
     }
 
     return http.ngx_http_output_filter(r, out.next);
+}
+
+fn send_acme_status_and_finalize(r: [*c]ngx_http_request_t, status: []const u8, message: []const u8) ngx_int_t {
+    const rc = send_acme_status(r, status, message);
+    if (rc == NGX_ERROR or rc >= http.NGX_HTTP_SPECIAL_RESPONSE) {
+        return rc;
+    }
+    http.ngx_http_finalize_request(r, rc);
+    return NGX_DONE;
 }
 
 // ============================================================================

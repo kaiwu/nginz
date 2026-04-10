@@ -59,6 +59,16 @@ export class PostgresMock {
     return this.lastSetJwt;
   }
 
+  // Get all queries received so far
+  getQueryLog() {
+    return [...this.queryLog];
+  }
+
+  // Get the last query received
+  getLastQuery() {
+    return this.queryLog[this.queryLog.length - 1] ?? null;
+  }
+
   handleData(socket, data) {
     const buf = Buffer.from(data);
 
