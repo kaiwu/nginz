@@ -221,6 +221,25 @@ describe("prometheus module", () => {
 
       expect(newCount).toBeGreaterThanOrEqual(initialCount + 4);
     });
+
+    test("aggregates request counts across multiple workers", async () => {
+      const beforeRes = await fetch(`${TEST_URL}/metrics`);
+      const beforeBody = await beforeRes.text();
+      const beforeMatch = beforeBody.match(/nginx_http_requests_total (\d+)/);
+      const initialCount = parseInt(beforeMatch[1]);
+
+      const requestCount = 40;
+      await Promise.all(
+        Array.from({ length: requestCount }, () => fetch(`${TEST_URL}/api`))
+      );
+
+      const afterRes = await fetch(`${TEST_URL}/metrics`);
+      const afterBody = await afterRes.text();
+      const afterMatch = afterBody.match(/nginx_http_requests_total (\d+)/);
+      const newCount = parseInt(afterMatch[1]);
+
+      expect(newCount).toBeGreaterThanOrEqual(initialCount + requestCount);
+    });
   });
 
   describe("Prometheus format compliance", () => {

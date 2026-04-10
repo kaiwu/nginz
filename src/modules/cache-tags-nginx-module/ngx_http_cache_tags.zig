@@ -5,6 +5,7 @@ const buf = ngx.buf;
 const core = ngx.core;
 const conf = ngx.conf;
 const http = ngx.http;
+const shm = ngx.shm;
 
 const NGX_OK = core.NGX_OK;
 const NGX_ERROR = core.NGX_ERROR;
@@ -36,6 +37,8 @@ const cache_tags_loc_conf = extern struct {
     purge_enabled: ngx_flag_t,
 };
 
+const CACHE_TAGS_ZONE_SIZE: usize = 8 * 1024 * 1024;
+
 // Per-worker storage for tag → URI mappings
 // Simple implementation: fixed arrays for demo purposes
 const MAX_TAGS = 256;
@@ -43,7 +46,7 @@ const MAX_URIS_PER_TAG = 64;
 const MAX_TAG_LEN = 64;
 const MAX_URI_LEN = 256;
 
-const TagEntry = struct {
+const TagEntry = extern struct {
     tag: [MAX_TAG_LEN]u8,
     tag_len: usize,
     uris: [MAX_URIS_PER_TAG][MAX_URI_LEN]u8,
@@ -51,51 +54,83 @@ const TagEntry = struct {
     uri_count: usize,
 };
 
-var tag_store: [MAX_TAGS]?TagEntry = [_]?TagEntry{null} ** MAX_TAGS;
-var tag_count: usize = 0;
+const cache_tags_store = extern struct {
+    initialized: ngx_flag_t,
+    tag_count: usize,
+    tags: [MAX_TAGS]TagEntry,
+    tag_used: [MAX_TAGS]u8,
+};
+
+var ngx_http_cache_tags_zone: [*c]core.ngx_shm_zone_t = core.nullptr(core.ngx_shm_zone_t);
 
 // Default header name
 const default_tag_header = ngx_string("Cache-Tag");
 
+fn getTagStore() ?[*c]cache_tags_store {
+    if (ngx_http_cache_tags_zone == core.nullptr(core.ngx_shm_zone_t)) return null;
+    return core.castPtr(cache_tags_store, ngx_http_cache_tags_zone.*.data);
+}
+
+fn getTagShpool() ?[*c]core.ngx_slab_pool_t {
+    const zone = ngx_http_cache_tags_zone;
+    if (zone == core.nullptr(core.ngx_shm_zone_t) or zone.*.shm.addr == null or zone.*.data == null) {
+        return null;
+    }
+    return core.castPtr(core.ngx_slab_pool_t, zone.*.shm.addr);
+}
+
+fn ngx_http_cache_tags_zone_init(zone: [*c]core.ngx_shm_zone_t, data: ?*anyopaque) callconv(.c) ngx_int_t {
+    if (data != null) {
+        zone.*.data = data;
+        return NGX_OK;
+    }
+
+    const shpool = core.castPtr(core.ngx_slab_pool_t, zone.*.shm.addr) orelse return NGX_ERROR;
+    if (shpool.*.data != null) {
+        zone.*.data = shpool.*.data;
+        return NGX_OK;
+    }
+
+    const store_mem = shm.ngx_slab_calloc(shpool, @sizeOf(cache_tags_store)) orelse return NGX_ERROR;
+    const store = core.castPtr(cache_tags_store, store_mem) orelse return NGX_ERROR;
+    store.* = std.mem.zeroes(cache_tags_store);
+    store.*.initialized = 1;
+    shpool.*.data = store;
+    zone.*.data = store;
+    return NGX_OK;
+}
+
 // Find or create a tag entry
-fn findOrCreateTag(tag: []const u8) ?*TagEntry {
+fn findOrCreateTag(store: [*c]cache_tags_store, tag: []const u8) ?*TagEntry {
     // First, look for existing tag
-    for (&tag_store) |*entry| {
-        if (entry.*) |*e| {
-            if (e.tag_len == tag.len and std.mem.eql(u8, e.tag[0..e.tag_len], tag)) {
-                return e;
-            }
+    for (&store.*.tags, 0..) |*entry, i| {
+        if (store.*.tag_used[i] == 1 and entry.tag_len == tag.len and std.mem.eql(u8, entry.tag[0..entry.tag_len], tag)) {
+            return entry;
         }
     }
 
     // Create new tag entry
-    if (tag_count >= MAX_TAGS) return null;
+    if (store.*.tag_count >= MAX_TAGS) return null;
 
-    for (&tag_store) |*entry| {
-        if (entry.* == null) {
-            entry.* = TagEntry{
-                .tag = undefined,
-                .tag_len = @min(tag.len, MAX_TAG_LEN),
-                .uris = undefined,
-                .uri_lens = [_]usize{0} ** MAX_URIS_PER_TAG,
-                .uri_count = 0,
-            };
+    for (&store.*.tags, 0..) |*entry, i| {
+        if (store.*.tag_used[i] == 0) {
+            entry.* = std.mem.zeroes(TagEntry);
             const len = @min(tag.len, MAX_TAG_LEN);
-            @memcpy(entry.*.?.tag[0..len], tag[0..len]);
-            tag_count += 1;
-            return &entry.*.?;
+            entry.tag_len = len;
+            @memcpy(entry.tag[0..len], tag[0..len]);
+            store.*.tag_used[i] = 1;
+            store.*.tag_count += 1;
+            return entry;
         }
     }
     return null;
 }
 
 // Find a tag entry (read-only)
-fn findTag(tag: []const u8) ?*TagEntry {
-    for (&tag_store) |*entry| {
-        if (entry.*) |*e| {
-            if (e.tag_len == tag.len and std.mem.eql(u8, e.tag[0..e.tag_len], tag)) {
-                return e;
-            }
+fn findTag(store: [*c]cache_tags_store, tag: []const u8) ?*TagEntry {
+    for (&store.*.tags, 0..) |*entry, i| {
+        if (store.*.tag_used[i] == 1 and entry.tag_len == tag.len and std.mem.eql(u8, entry.tag[0..entry.tag_len], tag)) {
+            return entry;
         }
     }
     return null;
@@ -122,13 +157,13 @@ fn addUriToTag(tag_entry: *TagEntry, uri: []const u8) void {
 }
 
 // Parse comma-separated tags and associate with URI
-fn associateTagsWithUri(tags_str: []const u8, uri: []const u8) void {
+fn associateTagsWithUri(store: [*c]cache_tags_store, tags_str: []const u8, uri: []const u8) void {
     var start: usize = 0;
     for (tags_str, 0..) |c, i| {
         if (c == ',') {
             const tag = std.mem.trim(u8, tags_str[start..i], " \t");
             if (tag.len > 0) {
-                if (findOrCreateTag(tag)) |entry| {
+                if (findOrCreateTag(store, tag)) |entry| {
                     addUriToTag(entry, uri);
                 }
             }
@@ -138,23 +173,21 @@ fn associateTagsWithUri(tags_str: []const u8, uri: []const u8) void {
     // Handle last tag
     const tag = std.mem.trim(u8, tags_str[start..], " \t");
     if (tag.len > 0) {
-        if (findOrCreateTag(tag)) |entry| {
+        if (findOrCreateTag(store, tag)) |entry| {
             addUriToTag(entry, uri);
         }
     }
 }
 
 // Purge all URIs associated with a tag, returns count
-fn purgeByTag(tag: []const u8) usize {
-    for (&tag_store, 0..) |*entry, i| {
-        if (entry.*) |*e| {
-            if (e.tag_len == tag.len and std.mem.eql(u8, e.tag[0..e.tag_len], tag)) {
-                const count = e.uri_count;
-                entry.* = null;
-                tag_count -= 1;
-                _ = i;
-                return count;
-            }
+fn purgeByTag(store: [*c]cache_tags_store, tag: []const u8) usize {
+    for (&store.*.tags, 0..) |*entry, i| {
+        if (store.*.tag_used[i] == 1 and entry.tag_len == tag.len and std.mem.eql(u8, entry.tag[0..entry.tag_len], tag)) {
+            const count = entry.uri_count;
+            entry.* = std.mem.zeroes(TagEntry);
+            store.*.tag_used[i] = 0;
+            store.*.tag_count -= 1;
+            return count;
         }
     }
     return 0;
@@ -208,8 +241,13 @@ export fn ngx_http_cache_tags_header_filter(r: [*c]ngx_http_request_t) callconv(
 
     // Look for Cache-Tag header in response
     if (getResponseHeader(r, header_name)) |tags_value| {
-        // Associate tags with this URI
-        associateTagsWithUri(tags_value, uri);
+        if (getTagStore()) |store| {
+            if (getTagShpool()) |shpool| {
+                shm.ngx_shmtx_lock(&shpool.*.mutex);
+                associateTagsWithUri(store, tags_value, uri);
+                shm.ngx_shmtx_unlock(&shpool.*.mutex);
+            }
+        }
     }
 
     if (ngx_http_cache_tags_next_header_filter) |next| {
@@ -244,8 +282,14 @@ export fn ngx_http_cache_tags_purge_handler(r: [*c]ngx_http_request_t) callconv(
     var response_buf: [1024]u8 = undefined;
     var response_len: usize = 0;
 
+    const store = getTagStore() orelse return NGX_ERROR;
+    const shpool = getTagShpool() orelse return NGX_ERROR;
+
+    shm.ngx_shmtx_lock(&shpool.*.mutex);
+    defer shm.ngx_shmtx_unlock(&shpool.*.mutex);
+
     if (tag_to_purge) |tag| {
-        const purged = purgeByTag(tag);
+        const purged = purgeByTag(store, tag);
         const result = std.fmt.bufPrint(&response_buf, "{{\"tag\":\"{s}\",\"purged\":{d}}}\n", .{ tag, purged }) catch {
             return NGX_ERROR;
         };
@@ -256,14 +300,14 @@ export fn ngx_http_cache_tags_purge_handler(r: [*c]ngx_http_request_t) callconv(
         written += (std.fmt.bufPrint(response_buf[written..], "{{\"tags\":[", .{}) catch return NGX_ERROR).len;
 
         var first = true;
-        for (&tag_store) |*entry| {
-            if (entry.*) |*e| {
+        for (&store.*.tags, 0..) |*entry, i| {
+            if (store.*.tag_used[i] == 1) {
                 if (!first) {
                     written += (std.fmt.bufPrint(response_buf[written..], ",", .{}) catch return NGX_ERROR).len;
                 }
                 written += (std.fmt.bufPrint(response_buf[written..], "{{\"tag\":\"{s}\",\"uris\":{d}}}", .{
-                    e.tag[0..e.tag_len],
-                    e.uri_count,
+                    entry.tag[0..entry.tag_len],
+                    entry.uri_count,
                 }) catch return NGX_ERROR).len;
                 first = false;
             }
@@ -389,7 +433,14 @@ fn ngx_conf_set_cache_tags_header(
 }
 
 fn postconfiguration(cf: [*c]ngx_conf_t) callconv(.c) ngx_int_t {
-    _ = cf;
+    if (ngx_http_cache_tags_zone == core.nullptr(core.ngx_shm_zone_t)) {
+        var zone_name = ngx_string("cache_tags_zone");
+        const zone = shm.ngx_shared_memory_add(cf, &zone_name, CACHE_TAGS_ZONE_SIZE, @constCast(&ngx_http_cache_tags_filter_module));
+        if (zone == core.nullptr(core.ngx_shm_zone_t)) return NGX_ERROR;
+        zone.*.init = ngx_http_cache_tags_zone_init;
+        ngx_http_cache_tags_zone = zone;
+    }
+
     // Install header filter
     ngx_http_cache_tags_next_header_filter = http.ngx_http_top_header_filter;
     http.ngx_http_top_header_filter = ngx_http_cache_tags_header_filter;
@@ -444,30 +495,27 @@ export var ngx_http_cache_tags_filter_module = ngx.module.make_module(
 const expectEqual = std.testing.expectEqual;
 const expectEqualStrings = std.testing.expectEqualStrings;
 
-test "cache_tags module" {
-}
+test "cache_tags module" {}
 
 test "tag parsing" {
-    // Reset state
-    tag_store = [_]?TagEntry{null} ** MAX_TAGS;
-    tag_count = 0;
+    var store = std.mem.zeroes(cache_tags_store);
 
-    associateTagsWithUri("product, category, featured", "/api/products/123");
-    associateTagsWithUri("category", "/api/products/456");
+    associateTagsWithUri(&store, "product, category, featured", "/api/products/123");
+    associateTagsWithUri(&store, "category", "/api/products/456");
 
-    try expectEqual(tag_count, 3);
+    try expectEqual(store.tag_count, 3);
 
-    const product_tag = findTag("product");
+    const product_tag = findTag(&store, "product");
     try expectEqual(product_tag != null, true);
     try expectEqual(product_tag.?.uri_count, 1);
 
-    const category_tag = findTag("category");
+    const category_tag = findTag(&store, "category");
     try expectEqual(category_tag != null, true);
     try expectEqual(category_tag.?.uri_count, 2);
 
     // Test purge
-    const purged = purgeByTag("category");
+    const purged = purgeByTag(&store, "category");
     try expectEqual(purged, 2);
-    try expectEqual(tag_count, 2);
-    try expectEqual(findTag("category") == null, true);
+    try expectEqual(store.tag_count, 2);
+    try expectEqual(findTag(&store, "category") == null, true);
 }

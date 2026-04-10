@@ -255,6 +255,28 @@ describe("cache-tags module", () => {
       expect(catalogTag).toBeDefined();
       expect(catalogTag.uris).toBeGreaterThanOrEqual(2);
     });
+
+    test("captured tags are visible and purgeable across workers", async () => {
+      const sharedPrefix = `shared-${Date.now()}`;
+      const uris = Array.from({ length: 24 }, (_, i) =>
+        `/products/${sharedPrefix}-${i}`
+      );
+
+      await Promise.all(uris.map((uri) => fetch(`${TEST_URL}${uri}`)));
+
+      const listRes = await fetch(`${TEST_URL}/cache/purge`);
+      const listJson = await listRes.json();
+      const productTag = listJson.tags.find((t) => t.tag === "product");
+      expect(productTag).toBeDefined();
+      expect(productTag.uris).toBeGreaterThanOrEqual(uris.length);
+
+      const purgeRes = await fetch(`${TEST_URL}/cache/purge?tag=product`, {
+        method: "DELETE",
+      });
+      const purgeJson = await purgeRes.json();
+      expect(purgeJson.tag).toBe("product");
+      expect(purgeJson.purged).toBeGreaterThanOrEqual(uris.length);
+    });
   });
 
   describe("custom tag header", () => {

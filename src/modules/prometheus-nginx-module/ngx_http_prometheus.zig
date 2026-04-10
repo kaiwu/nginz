@@ -4,6 +4,7 @@ const ngx = @import("ngx");
 const core = ngx.core;
 const conf = ngx.conf;
 const http = ngx.http;
+const shm = ngx.shm;
 
 const NGX_OK = core.NGX_OK;
 const NGX_ERROR = core.NGX_ERROR;
@@ -29,24 +30,28 @@ const NArray = ngx.array.NArray;
 // External nginx core module
 extern var ngx_http_core_module: ngx_module_t;
 
-// Per-worker metrics (simple counters, no shared memory)
-var metrics_requests_total: u64 = 0;
-var metrics_requests_1xx: u64 = 0;
-var metrics_requests_2xx: u64 = 0;
-var metrics_requests_3xx: u64 = 0;
-var metrics_requests_4xx: u64 = 0;
-var metrics_requests_5xx: u64 = 0;
+const PROMETHEUS_ZONE_SIZE: usize = 64 * 1024;
 
 // Histogram buckets for request duration (in milliseconds)
 // Standard buckets: 5ms, 10ms, 25ms, 50ms, 100ms, 250ms, 500ms, 1s, 2.5s, 5s, 10s
 const HISTOGRAM_BUCKETS = [_]u64{ 5, 10, 25, 50, 100, 250, 500, 1000, 2500, 5000, 10000 };
 const HISTOGRAM_BUCKET_LABELS = [_][]const u8{ "0.005", "0.01", "0.025", "0.05", "0.1", "0.25", "0.5", "1", "2.5", "5", "10" };
 
-// Histogram bucket counts (cumulative)
-var histogram_buckets: [HISTOGRAM_BUCKETS.len]u64 = [_]u64{0} ** HISTOGRAM_BUCKETS.len;
-var histogram_inf: u64 = 0; // +Inf bucket (all requests)
-var histogram_sum: u64 = 0; // Sum of all durations in milliseconds
-var histogram_count: u64 = 0; // Total count
+const prometheus_metrics_store = extern struct {
+    initialized: ngx_flag_t,
+    requests_total: u64,
+    requests_1xx: u64,
+    requests_2xx: u64,
+    requests_3xx: u64,
+    requests_4xx: u64,
+    requests_5xx: u64,
+    histogram_buckets: [HISTOGRAM_BUCKETS.len]u64,
+    histogram_inf: u64,
+    histogram_sum: u64,
+    histogram_count: u64,
+};
+
+var ngx_http_prometheus_zone: [*c]core.ngx_shm_zone_t = core.nullptr(core.ngx_shm_zone_t);
 
 // External nginx timing
 extern var ngx_current_msec: ngx_msec_t;
@@ -54,6 +59,40 @@ extern var ngx_current_msec: ngx_msec_t;
 const prometheus_loc_conf = extern struct {
     metrics_endpoint: ngx_flag_t,
 };
+
+fn getMetricsStore() ?[*c]prometheus_metrics_store {
+    if (ngx_http_prometheus_zone == core.nullptr(core.ngx_shm_zone_t)) return null;
+    return core.castPtr(prometheus_metrics_store, ngx_http_prometheus_zone.*.data);
+}
+
+fn getMetricsShpool() ?[*c]core.ngx_slab_pool_t {
+    const zone = ngx_http_prometheus_zone;
+    if (zone == core.nullptr(core.ngx_shm_zone_t) or zone.*.shm.addr == null or zone.*.data == null) {
+        return null;
+    }
+    return core.castPtr(core.ngx_slab_pool_t, zone.*.shm.addr);
+}
+
+fn ngx_http_prometheus_zone_init(zone: [*c]core.ngx_shm_zone_t, data: ?*anyopaque) callconv(.c) ngx_int_t {
+    if (data != null) {
+        zone.*.data = data;
+        return NGX_OK;
+    }
+
+    const shpool = core.castPtr(core.ngx_slab_pool_t, zone.*.shm.addr) orelse return NGX_ERROR;
+    if (shpool.*.data != null) {
+        zone.*.data = shpool.*.data;
+        return NGX_OK;
+    }
+
+    const store_mem = shm.ngx_slab_calloc(shpool, @sizeOf(prometheus_metrics_store)) orelse return NGX_ERROR;
+    const store = core.castPtr(prometheus_metrics_store, store_mem) orelse return NGX_ERROR;
+    store.* = std.mem.zeroes(prometheus_metrics_store);
+    store.*.initialized = 1;
+    shpool.*.data = store;
+    zone.*.data = store;
+    return NGX_OK;
+}
 
 fn create_loc_conf(cf: [*c]ngx_conf_t) callconv(.c) ?*anyopaque {
     if (core.ngz_pcalloc_c(prometheus_loc_conf, cf.*.pool)) |p| {
@@ -171,6 +210,13 @@ export fn ngx_http_prometheus_handler(
         }
     }.f;
 
+    const store = getMetricsStore() orelse return NGX_ERROR;
+    const shpool = getMetricsShpool() orelse return NGX_ERROR;
+
+    shm.ngx_shmtx_lock(&shpool.*.mutex);
+    const snapshot = store.*;
+    shm.ngx_shmtx_unlock(&shpool.*.mutex);
+
     // nginx_up gauge
     appendStr(buf_ptr, &pos, "# HELP nginx_up Whether nginx is up\n");
     appendStr(buf_ptr, &pos, "# TYPE nginx_up gauge\n");
@@ -180,26 +226,26 @@ export fn ngx_http_prometheus_handler(
     appendStr(buf_ptr, &pos, "# HELP nginx_http_requests_total Total number of HTTP requests\n");
     appendStr(buf_ptr, &pos, "# TYPE nginx_http_requests_total counter\n");
     appendStr(buf_ptr, &pos, "nginx_http_requests_total ");
-    appendNum(buf_ptr, &pos, metrics_requests_total);
+    appendNum(buf_ptr, &pos, snapshot.requests_total);
     appendStr(buf_ptr, &pos, "\n\n");
 
     // nginx_http_requests_by_status counter
     appendStr(buf_ptr, &pos, "# HELP nginx_http_requests_by_status HTTP requests by status code class\n");
     appendStr(buf_ptr, &pos, "# TYPE nginx_http_requests_by_status counter\n");
     appendStr(buf_ptr, &pos, "nginx_http_requests_by_status{status=\"1xx\"} ");
-    appendNum(buf_ptr, &pos, metrics_requests_1xx);
+    appendNum(buf_ptr, &pos, snapshot.requests_1xx);
     appendStr(buf_ptr, &pos, "\n");
     appendStr(buf_ptr, &pos, "nginx_http_requests_by_status{status=\"2xx\"} ");
-    appendNum(buf_ptr, &pos, metrics_requests_2xx);
+    appendNum(buf_ptr, &pos, snapshot.requests_2xx);
     appendStr(buf_ptr, &pos, "\n");
     appendStr(buf_ptr, &pos, "nginx_http_requests_by_status{status=\"3xx\"} ");
-    appendNum(buf_ptr, &pos, metrics_requests_3xx);
+    appendNum(buf_ptr, &pos, snapshot.requests_3xx);
     appendStr(buf_ptr, &pos, "\n");
     appendStr(buf_ptr, &pos, "nginx_http_requests_by_status{status=\"4xx\"} ");
-    appendNum(buf_ptr, &pos, metrics_requests_4xx);
+    appendNum(buf_ptr, &pos, snapshot.requests_4xx);
     appendStr(buf_ptr, &pos, "\n");
     appendStr(buf_ptr, &pos, "nginx_http_requests_by_status{status=\"5xx\"} ");
-    appendNum(buf_ptr, &pos, metrics_requests_5xx);
+    appendNum(buf_ptr, &pos, snapshot.requests_5xx);
     appendStr(buf_ptr, &pos, "\n\n");
 
     // nginx_http_request_duration_seconds histogram
@@ -211,19 +257,19 @@ export fn ngx_http_prometheus_handler(
         appendStr(buf_ptr, &pos, "nginx_http_request_duration_seconds_bucket{le=\"");
         appendStr(buf_ptr, &pos, label);
         appendStr(buf_ptr, &pos, "\"} ");
-        appendNum(buf_ptr, &pos, histogram_buckets[i]);
+        appendNum(buf_ptr, &pos, snapshot.histogram_buckets[i]);
         appendStr(buf_ptr, &pos, "\n");
     }
 
     // +Inf bucket
     appendStr(buf_ptr, &pos, "nginx_http_request_duration_seconds_bucket{le=\"+Inf\"} ");
-    appendNum(buf_ptr, &pos, histogram_inf);
+    appendNum(buf_ptr, &pos, snapshot.histogram_inf);
     appendStr(buf_ptr, &pos, "\n");
 
     // Sum (convert ms to seconds with 3 decimal places)
     appendStr(buf_ptr, &pos, "nginx_http_request_duration_seconds_sum ");
-    const sum_secs = histogram_sum / 1000;
-    const sum_ms = histogram_sum % 1000;
+    const sum_secs = snapshot.histogram_sum / 1000;
+    const sum_ms = snapshot.histogram_sum % 1000;
     appendNum(buf_ptr, &pos, sum_secs);
     appendStr(buf_ptr, &pos, ".");
     // Pad milliseconds with leading zeros
@@ -234,7 +280,7 @@ export fn ngx_http_prometheus_handler(
 
     // Count
     appendStr(buf_ptr, &pos, "nginx_http_request_duration_seconds_count ");
-    appendNum(buf_ptr, &pos, histogram_count);
+    appendNum(buf_ptr, &pos, snapshot.histogram_count);
     appendStr(buf_ptr, &pos, "\n");
 
     // Set content length
@@ -282,21 +328,27 @@ fn ngx_http_prometheus_log_handler(
         return NGX_OK;
     }
 
+    const store = getMetricsStore() orelse return NGX_OK;
+    const shpool = getMetricsShpool() orelse return NGX_OK;
+
+    shm.ngx_shmtx_lock(&shpool.*.mutex);
+    defer shm.ngx_shmtx_unlock(&shpool.*.mutex);
+
     // Increment total counter
-    metrics_requests_total += 1;
+    store.*.requests_total += 1;
 
     // Increment status-specific counter
     const status = r.*.headers_out.status;
     if (status >= 100 and status < 200) {
-        metrics_requests_1xx += 1;
+        store.*.requests_1xx += 1;
     } else if (status >= 200 and status < 300) {
-        metrics_requests_2xx += 1;
+        store.*.requests_2xx += 1;
     } else if (status >= 300 and status < 400) {
-        metrics_requests_3xx += 1;
+        store.*.requests_3xx += 1;
     } else if (status >= 400 and status < 500) {
-        metrics_requests_4xx += 1;
+        store.*.requests_4xx += 1;
     } else if (status >= 500 and status < 600) {
-        metrics_requests_5xx += 1;
+        store.*.requests_5xx += 1;
     }
 
     // Calculate request duration in milliseconds
@@ -305,21 +357,29 @@ fn ngx_http_prometheus_log_handler(
     const duration_ms: u64 = if (current_ms >= start_time_ms) current_ms - start_time_ms else 0;
 
     // Update histogram buckets (cumulative)
-    for (&histogram_buckets, 0..) |*bucket, i| {
+    for (&store.*.histogram_buckets, 0..) |*bucket, i| {
         if (duration_ms <= HISTOGRAM_BUCKETS[i]) {
             bucket.* += 1;
         }
     }
 
     // Update +Inf bucket, sum, and count
-    histogram_inf += 1;
-    histogram_sum += duration_ms;
-    histogram_count += 1;
+    store.*.histogram_inf += 1;
+    store.*.histogram_sum += duration_ms;
+    store.*.histogram_count += 1;
 
     return NGX_OK;
 }
 
 fn postconfiguration(cf: [*c]ngx_conf_t) callconv(.c) ngx_int_t {
+    if (ngx_http_prometheus_zone == core.nullptr(core.ngx_shm_zone_t)) {
+        var zone_name = ngx_string("prometheus_metrics_zone");
+        const zone = shm.ngx_shared_memory_add(cf, &zone_name, PROMETHEUS_ZONE_SIZE, @constCast(&ngx_http_prometheus_module));
+        if (zone == core.nullptr(core.ngx_shm_zone_t)) return NGX_ERROR;
+        zone.*.init = ngx_http_prometheus_zone_init;
+        ngx_http_prometheus_zone = zone;
+    }
+
     // Register log phase handler
     const cmcf = core.castPtr(
         http.ngx_http_core_main_conf_t,
@@ -368,8 +428,7 @@ export var ngx_http_prometheus_module = ngx.module.make_module(
 const expectEqual = std.testing.expectEqual;
 const expectEqualStrings = std.testing.expectEqualStrings;
 
-test "prometheus module" {
-}
+test "prometheus module" {}
 
 test "formatU64" {
     var buf: [20]u8 = undefined;

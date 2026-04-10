@@ -134,6 +134,28 @@ describe("circuit-breaker module", () => {
       const res = await fetch(`${TEST_URL}/fast`);
       expect(res.status).toBe(503);
     });
+
+    test("open circuit state is enforced across workers", async () => {
+      upstream.setFailureRate(1.0);
+
+      await Promise.all(
+        Array.from({ length: 8 }, () => fetch(`${TEST_URL}/protected`))
+      );
+
+      upstream.setFailureRate(0);
+      upstream.clearLog();
+
+      const blockedResponses = await Promise.all(
+        Array.from({ length: 12 }, () => fetch(`${TEST_URL}/protected`))
+      );
+
+      for (const res of blockedResponses) {
+        expect(res.status).toBe(503);
+        expect(res.headers.get("X-Circuit-State")).toBe("open");
+      }
+
+      expect(upstream.getRequests().length).toBe(0);
+    });
   });
 
   describe("half-open state", () => {

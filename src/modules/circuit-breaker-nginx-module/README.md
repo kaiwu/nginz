@@ -4,7 +4,7 @@ Circuit breaker pattern implementation for nginx to protect backends from cascad
 
 ### Status
 
-**Implemented** - Basic functionality complete
+**Implemented** - Basic functionality complete with shared-memory circuit state
 
 ### Features
 
@@ -13,6 +13,7 @@ Circuit breaker pattern implementation for nginx to protect backends from cascad
 - **Timeout Recovery**: Automatic transition to half-open after timeout
 - **5xx Detection**: Counts 5xx responses as failures
 - **State Variable**: Circuit state exposed via `$ngz_circuit_state`
+- **Shared Memory State**: Open, closed, and half-open transitions are coordinated across workers
 
 ### Directives
 
@@ -93,13 +94,12 @@ server {
 
 ### Limitations
 
-- **Per-Worker State**: Circuit state is per-worker process and not shared across workers
 - **Location-Based**: Each location has its own circuit state
 - **5xx Only**: Only 5xx status codes are counted as failures
+- **Reload/Restart Reset**: Circuit state is stored in nginx shared memory and resets when the shared zone is recreated
 
 ### Future Enhancements
 
-- **Shared Memory**: Cross-worker circuit state via nginx shared zones
 - **Per-Upstream Circuits**: Independent circuit per upstream server
 - **Custom Failure Criteria**: Configure which status codes count as failures
 - **Metrics Export**: Prometheus-compatible metrics
@@ -114,5 +114,6 @@ server {
 - [x] Audit date: 2026-04-10
 - [x] Bun integration coverage exists at `tests/circuit-breaker/`.
 - [x] Bun integration coverage now verifies closed-state failure streak reset, non-5xx responses not tripping the circuit, raw-millisecond timeout parsing, and open-state reporting via `$ngz_circuit_state`.
-- [x] Hardened Bun tests restart nginx between cases because circuit state is per-worker global state, matching the documented limitation.
+- [x] Circuit state is now stored in an nginx shared-memory zone keyed by configured location identity instead of per-worker globals.
+- [x] Bun integration coverage now runs with `worker_processes 2` and verifies that an open circuit is enforced across workers.
 - [x] No additional documentation gaps were identified in this audit pass.

@@ -4,7 +4,7 @@ Native Prometheus metrics exporter for nginx.
 
 ### Status
 
-**Implemented** - Core functionality complete with histograms
+**Implemented** - Core functionality complete with histograms and shared-memory cross-worker aggregation
 
 ### Features
 
@@ -12,6 +12,7 @@ Native Prometheus metrics exporter for nginx.
 - **Latency Histogram**: Request duration with standard buckets (5ms to 10s)
 - **Metrics Endpoint**: Exposes `/metrics` in Prometheus exposition format
 - **Self-Exclusion**: Metrics endpoint requests are not counted
+- **Shared Memory Aggregation**: Counters and histograms are aggregated across nginx workers
 
 ### Metrics Exposed
 
@@ -100,14 +101,10 @@ scrape_configs:
 
 Current implementation has these limitations:
 
-- **Per-Worker Counters**: Metrics are per-worker process and reset on reload/restart
-- **No Shared Memory**: Counters are not aggregated across workers
-
-For production use with multiple workers, consider using a single worker or external aggregation.
+- **Reload/Restart Reset**: Metrics live in nginx shared memory and still reset when the shared zone is recreated on full restart
 
 ### Future Enhancements
 
-- **Shared Memory**: Cross-worker metrics aggregation using nginx shared zones
 - **Connection Metrics**: Active connections, accepted, handled
 - **Upstream Metrics**: Upstream response times, failures
 - **Custom Labels**: Add labels from nginx variables
@@ -123,4 +120,6 @@ For production use with multiple workers, consider using a single worker or exte
 - [x] Audit date: 2026-04-10
 - [x] Bun integration coverage exists at `tests/prometheus/`.
 - [x] Bun integration coverage now verifies HEAD handling on `/metrics`, self-scrape exclusion for both request totals and histogram counts, cumulative histogram buckets, and `+Inf` matching histogram count.
+- [x] Metrics are now stored in an nginx shared-memory zone so `/metrics` aggregates traffic across multiple workers.
+- [x] Bun integration coverage now runs with `worker_processes 2` and verifies cross-worker request aggregation.
 - [x] No additional documentation gaps were identified in this audit pass.

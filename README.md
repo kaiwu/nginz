@@ -96,7 +96,7 @@ make install
 
 20 modules total. All modules have integration tests and individual README documentation.
 
-### Feature Ready (13)
+### Feature Ready (16)
 
 | Module | Description |
 |--------|-------------|
@@ -111,19 +111,19 @@ make install
 | **redis** | Redis commands via RESP protocol |
 | **requestid** | UUID4 generation and X-Request-ID propagation |
 | **ratelimit** | Fixed window rate limiting per IP |
+| **circuit-breaker** | Failure detection with half-open recovery |
+| **prometheus** | Native /metrics endpoint with histograms |
+| **cache-tags** | Tag-based cache invalidation |
 | **pgrest** | PostgreSQL REST API with JWT auth, content negotiation (JSON/CSV/XML) |
 | **wechatpay** | WeChat Pay signature verification |
 
-### Working with Limitations (6)
+### Working with Limitations (3)
 
 | Module | Description | Limitations |
 |--------|-------------|-------------|
 | **oidc** | OpenID Connect SSO with PKCE | No ID token signature verification |
 | **acme** | Let's Encrypt certificate automation | Not tested with real ACME servers; single worker only |
-| **circuit-breaker** | Failure detection with half-open recovery | Per-worker state only (no shared memory) |
-| **prometheus** | Native /metrics endpoint with histograms | Per-worker metrics (no shared memory) |
 | **healthcheck** | Health status endpoint | Passive only (no active probing) |
-| **cache-tags** | Tag-based cache invalidation | Per-worker storage; lost on restart |
 
 ### Reference (1)
 
