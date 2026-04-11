@@ -1,0 +1,6 @@
+SecRule QUERY_STRING "@contains collections-query-hit" "id:7001,phase:1,msg:'collections query string rule'"
+SecRule REQUEST_LINE "@contains GET /rules-collections-line/collections-line-hit HTTP/1.1" "id:7002,phase:1,msg:'collections request line rule'"
+SecRule REQUEST_HEADERS:X-Collections-Header "@contains collections-header-hit" "id:7003,phase:1,msg:'collections header selector rule'"
+SecRule REQUEST_COOKIES:collections_cookie "@contains collections-cookie-hit" "id:7004,phase:1,msg:'collections cookie selector rule'"
+SecRule ARGS:collections_arg "@contains collections-arg-hit" "id:7005,phase:1,msg:'collections arg selector rule'"
+SecRule REQUEST_BODY:comment "@contains collections-body-hit" "id:7006,phase:2,msg:'collections body selector rule'"

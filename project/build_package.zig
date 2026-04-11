@@ -76,8 +76,8 @@ pub const module_infos = [_]ModuleInfo{
     },
     .{
         .source = "src/modules/waf-nginx-module/ngx_http_waf.zig",
-        .modules = &.{"ngx_http_waf_module"},
-        .types = &.{.HTTP},
+        .modules = &.{ "ngx_http_waf_module", "ngx_http_waf_filter_module" },
+        .types = &.{ .HTTP, .HTTP_FILTER },
         .needs_libinjection = true,
     },
     .{

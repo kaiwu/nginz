@@ -1,0 +1,2 @@
+# line 2 should fail with a clearer config-time parser error
+SecRule REQUEST_URI "@unknown_operator blocked" "id:9001,phase:1,msg:'unsupported operator rule'"

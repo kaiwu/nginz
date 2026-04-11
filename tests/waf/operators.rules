@@ -1,0 +1,5 @@
+SecRule REQUEST_URI "@rx operators-regex-[0-9]+" "id:6001,phase:1,msg:'operators regex rule'"
+SecRule REQUEST_METHOD "@streq patch" "id:6002,phase:1,msg:'operators equals rule'"
+SecRule REQUEST_URI "@beginsWith /rules-operators-prefix/rules-operators-prefix-hit" "id:6003,phase:1,msg:'operators beginsWith rule'"
+SecRule REQUEST_URI "@endsWith /operators-suffix-hit" "id:6004,phase:1,msg:'operators endsWith rule'"
+SecRule REQUEST_HEADERS "@pm x-operators-header phrase-hit" "id:6005,phase:1,msg:'operators pm rule'"

@@ -98,6 +98,7 @@ extern var ngx_http_consul_module: ngx_module_t;
 extern var ngx_http_jwt_module: ngx_module_t;
 extern var ngx_http_oidc_module: ngx_module_t;
 extern var ngx_http_waf_module: ngx_module_t;
+extern var ngx_http_waf_filter_module: ngx_module_t;
 extern var ngx_http_acme_module: ngx_module_t;
 extern var ngx_http_jsonschema_module: ngx_module_t;
 
@@ -227,6 +228,7 @@ export const ngx_modules = [_][*c]ngx_module_t{
     &ngx_http_requestid_filter_module,
     &ngx_http_cache_tags_filter_module,
     &ngx_http_transform_filter_module,
+    &ngx_http_waf_filter_module,
 
     &ngx_http_headers_filter_module,
 
@@ -317,6 +319,7 @@ export const ngx_module_names = [_][*c]const u8{
     "ngx_http_requestid_filter_module",
     "ngx_http_cache_tags_filter_module",
     "ngx_http_transform_filter_module",
+    "ngx_http_waf_filter_module",
 
     "ngx_http_headers_filter_module",
     "ngx_http_copy_filter_module",

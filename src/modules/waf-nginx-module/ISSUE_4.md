@@ -449,13 +449,20 @@ Implemented in `ngx_http_waf`:
 - supported targets:
   - `REQUEST_URI`
   - `ARGS`
+  - `QUERY_STRING`
+  - `REQUEST_LINE`
   - `REQUEST_BODY`
   - `REQUEST_HEADERS`
   - `REQUEST_COOKIES`
   - `REQUEST_METHOD`
   - `REMOTE_ADDR`
+  - `RESPONSE_STATUS`
+  - `RESPONSE_HEADERS`
 - supported operator:
   - `@contains <needle>`
+  - `@pm <space-delimited phrases>`
+  - `@beginsWith <value>`
+  - `@endsWith <value>`
   - `@streq <value>` / `@eq <value>`
   - `@rx <pattern>`
   - `@libinjection_sqli`
@@ -468,9 +475,9 @@ Implemented in `ngx_http_waf`:
   - `status:<code>`
 - supported action subset:
   - `id:<n>`
-  - `phase:1|2`
+  - `phase:1|2|3`
   - `msg:'...'`
-  - tolerated but currently non-semantic: `deny`, `log`, `t:none`
+  - supported compatibility subset: `deny`, `log`, `tag:'...'`, `logdata:'...'`, `t:none`, `t:lowercase`, `t:urlDecode`, `t:urlDecodeUni`
 - request-phase execution for `REQUEST_URI` and `ARGS`
 - body-phase execution for `REQUEST_BODY`
 - vendored in-tree `libinjection` build/package support
@@ -479,8 +486,21 @@ Implemented in `ngx_http_waf`:
 - explicit `@rx` and equals-style operators in `waf_rules_file`
 - explicit `ARGS:<name>` selectors for more realistic application-field targeting
 - explicit scoped header/cookie selectors in `waf_rules_file`
+- explicit `REQUEST_BODY:<name>` selectors for form-encoded and top-level JSON request fields
 - shared-memory temporary IP banning via threshold/window/duration directives
 - per-rule `status:<code>` handling for application-specific block responses
+- explicit `deny` / `pass` per-rule action semantics while keeping `waf_mode` as the default policy
+- line-specific config-time parser errors for unsupported native subset syntax
+- escalating shared-memory repeat-offender bans with short-term strike retention
+- explicit `@beginsWith` / `@endsWith` string operators in `waf_rules_file`
+- explicit `QUERY_STRING` / `REQUEST_LINE` request metadata collections in `waf_rules_file`
+- explicit native `@pm` multi-phrase matching subset in `waf_rules_file`
+- richer warning-log output for detect-mode and `pass,log` rule matches
+- explicit per-rule transform subset via `t:none`, `t:lowercase`, `t:urlDecode`, and `t:urlDecodeUni`
+- broader checked-in WAF fixture coverage split across dedicated files for operators, collections, actions, transforms, bans, libinjection, and parser failures
+- metadata-oriented `tag:'...'` / `logdata:'...'` actions for richer non-blocking rule logs
+- broader `REQUEST_BODY` selector coverage for form fields, nested JSON selector paths, and multipart form-data fields
+- response-phase inspection for `RESPONSE_STATUS` and `RESPONSE_HEADERS`
 - Bun integration coverage proving file-driven block/detect behavior
 - Bun integration coverage proving stronger detection of obfuscated SQLi/XSS payloads
 
@@ -491,11 +511,39 @@ What this means:
 
 ## Updated near-term next steps
 
-1. add richer body collections / selectors beyond raw combined text
-2. make unsupported syntax fail with clearer config-time errors
-3. decide whether per-rule disruptive actions should override `waf_mode`, or whether `waf_mode` remains the top-level enforcement switch
-4. evolve the shared-memory ban store beyond a fixed-size array into richer IP reputation behavior
-5. add more checked-in rule fixtures under `tests/waf/` and expand Bun coverage accordingly
+1. add more checked-in rule fixtures under `tests/waf/` and expand Bun coverage accordingly
+2. extend the parser and execution model toward a broader ModSecurity-compatible subset
+3. evolve the shared-memory reputation model further toward richer scoring / escalation behavior
+
+## Living gap checklist
+
+This section is the durable implementation checklist. Update it in batches whenever a coherent feature slice lands and is verified.
+
+Covered recently:
+
+- [x] `REQUEST_BODY:<name>` selectors for form-encoded and top-level JSON request fields
+- [x] explicit per-rule `deny` / `pass` semantics
+- [x] line-specific config-time parser errors for unsupported native subset syntax
+- [x] escalating repeat-offender bans with short-term strike retention
+- [x] `@beginsWith` / `@endsWith` string operators
+- [x] `QUERY_STRING` / `REQUEST_LINE` request metadata collections
+- [x] native `@pm` multi-phrase matching subset
+- [x] richer warning-log output for detect-mode and `pass,log` matches
+- [x] explicit per-rule transform subset via `t:none`, `t:lowercase`, `t:urlDecode`, and `t:urlDecodeUni`
+- [x] broader checked-in WAF fixture coverage split across dedicated files instead of one overloaded subset fixture
+- [x] metadata-oriented `tag:'...'` / `logdata:'...'` actions for richer non-blocking rule logs
+- [x] broader `REQUEST_BODY` selector coverage for form fields, nested JSON selector paths, and multipart form-data fields
+- [x] response-phase inspection for `RESPONSE_STATUS` and `RESPONSE_HEADERS`
+
+Remaining gaps / todos:
+
+- [ ] add more string / set operators that map cleanly to the native engine (for example `@pm`, `@within`, and closely related low-risk subsets)
+- [ ] add more request collections beyond the newly covered `QUERY_STRING` / `REQUEST_LINE`, especially header-name collections and other safe request metadata targets
+- [ ] add broader action support beyond `deny` / `pass` / `log` / `status`, starting with the safest native subsets
+- [ ] evolve the shared-memory reputation model toward richer scoring, expiry tuning, and stronger escalation controls
+- [ ] evaluate safe native integration points for static IP reputation / allowlist-blocklist style policy without duplicating nginx access controls
+- [ ] evaluate which high-value ModSecurity-compatible parser slices are worth adding next versus intentionally rejecting with clear startup errors
+- [ ] keep README and this issue checklist synchronized whenever a new verified slice lands
 
 ## Practical scope note
 
@@ -507,14 +555,11 @@ That keeps the WAF focused on request inspection, dynamic bans, and rule-driven 
 
 From a practical WAF deployment angle, the next highest-value follow-ups are:
 
-1. **Richer body collections / selectors**
-   - target individual body fields instead of treating the whole request body as one combined text blob
-   - this is especially useful for form-encoded and JSON API traffic
+1. **Broader checked-in rule fixtures**
+   - keep expanding representative rule files and Bun coverage so the supported subset stays concrete and reproducible
 
-2. **More action semantics**
-   - build beyond `status:<code>` toward richer policy behavior
-   - examples: clearer disruptive/non-disruptive action handling, tighter detect-vs-block interaction, and better logging-oriented rule actions
+2. **Broader compatibility subset**
+   - keep adding carefully chosen operators, actions, and collections that map cleanly to a native Zig rule engine
 
-3. **Better shared-memory reputation model**
-   - evolve beyond fixed temporary bans into stronger offender tracking
-   - examples: richer counters, longer-lived reputation state, and better escalation/expiry behavior
+3. **Richer shared-memory reputation model**
+   - keep pushing beyond basic escalating bans toward scoring, expiry tuning, and stronger operational controls

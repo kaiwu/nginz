@@ -1,0 +1,2 @@
+SecRule REQUEST_URI "@contains deny-path" "id:4001,phase:1,deny,status:418,msg:'deny override rule'"
+SecRule REQUEST_URI "@contains pass-path" "id:4002,phase:1,pass,log,msg:'pass override rule',tag:'monitor',logdata:'pass-path-observed'"

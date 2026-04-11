@@ -1,0 +1,4 @@
+SecRule REQUEST_URI "@contains transform-hit" "id:5001,phase:1,t:lowercase,msg:'lowercase transform rule'"
+SecRule QUERY_STRING "@contains url decoded" "id:5002,phase:1,t:urlDecode,msg:'url decode transform rule'"
+SecRule QUERY_STRING "@contains unicode path" "id:5003,phase:1,t:urlDecodeUni,msg:'url decode uni transform rule'"
+SecRule REQUEST_URI "@contains casesensitive-hit" "id:5004,phase:1,t:none,msg:'no transform rule'"

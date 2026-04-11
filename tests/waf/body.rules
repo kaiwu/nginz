@@ -1,0 +1,3 @@
+SecRule REQUEST_BODY:comment "@contains body-form-hit" "id:8001,phase:2,msg:'body form selector rule'"
+SecRule REQUEST_BODY:profile.comment "@contains nested-json-hit" "id:8002,phase:2,msg:'body nested json selector rule'"
+SecRule REQUEST_BODY:comment "@contains multipart-hit" "id:8003,phase:2,msg:'body multipart selector rule'"
