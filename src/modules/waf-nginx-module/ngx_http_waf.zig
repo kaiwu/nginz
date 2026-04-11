@@ -1929,15 +1929,7 @@ export fn ngx_http_waf_handler(r: [*c]ngx_http_request_t) callconv(.c) ngx_int_t
         {
             rctx.*.waiting_body = 1;
             const rc = http.ngx_http_read_client_request_body(r, ngx_http_waf_body_handler);
-            if (rc == NGX_AGAIN) {
-                return NGX_DONE;
-            }
-            if (rc >= http.NGX_HTTP_SPECIAL_RESPONSE) {
-                return rc;
-            }
-            // Body was read synchronously. If the body handler already finalized
-            // or advanced the request, do not re-enter the body-read state machine.
-            return if (rctx.*.done == 1) NGX_DECLINED else rc;
+            return if (rc == NGX_AGAIN) NGX_DONE else rc;
         }
     }
 
