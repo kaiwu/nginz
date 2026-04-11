@@ -1,2 +1,3 @@
 SecRule RESPONSE_STATUS "@streq 204" "id:9001,phase:3,status:451,msg:'response status rule'"
 SecRule RESPONSE_HEADERS "@contains x-response-waf: response-header-hit" "id:9002,phase:3,status:452,msg:'response header rule'"
+SecRule RESPONSE_HEADERS:X-Response-Scoped "@contains scoped-response-hit" "id:9003,phase:3,status:453,msg:'response header selector rule'"

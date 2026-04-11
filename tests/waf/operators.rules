@@ -3,3 +3,4 @@ SecRule REQUEST_METHOD "@streq patch" "id:6002,phase:1,msg:'operators equals rul
 SecRule REQUEST_URI "@beginsWith /rules-operators-prefix/rules-operators-prefix-hit" "id:6003,phase:1,msg:'operators beginsWith rule'"
 SecRule REQUEST_URI "@endsWith /operators-suffix-hit" "id:6004,phase:1,msg:'operators endsWith rule'"
 SecRule REQUEST_HEADERS "@pm x-operators-header phrase-hit" "id:6005,phase:1,msg:'operators pm rule'"
+SecRule REQUEST_METHOD "@within patch delete" "id:6006,phase:1,msg:'operators within rule'"

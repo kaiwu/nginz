@@ -572,6 +572,28 @@ describe("waf module", () => {
       expect(logText).toContain("logdata=pass-path-observed");
     });
 
+    test("block action aliases deny semantics", async () => {
+      const res = await fetchNoKeepAlive(`${TEST_URL}/rules-block/block-path`);
+      expect(res.status).toBe(419);
+      const body = await res.json();
+      expect(body.rule).toBe("rule");
+    });
+
+    test("nolog suppresses detect-mode match logging", async () => {
+      const before = await Bun.file(ERROR_LOG).text().catch(() => "");
+      const beforeCount = (before.match(/nolog-path-hidden/g) ?? []).length;
+
+      const res = await fetchNoKeepAlive(`${TEST_URL}/rules-nolog/nolog-path`);
+      expect(res.status).toBe(200);
+      const body = await res.text();
+      expect(body).toContain("rules nolog response");
+
+      await Bun.sleep(100);
+      const after = await Bun.file(ERROR_LOG).text().catch(() => "");
+      const afterCount = (after.match(/nolog-path-hidden/g) ?? []).length;
+      expect(afterCount).toBe(beforeCount);
+    });
+
     test("blocks based on explicit @libinjection_sqli operator", async () => {
       const res = await fetch(`${TEST_URL}/rules-libinjection?id=1'%20%7C%7C%201%20--`);
       expect(res.status).toBe(403);
@@ -752,6 +774,21 @@ describe("waf module", () => {
       const body = await res.json();
       expect(body.rule).toBe("rule");
     });
+
+    test("keeps within coverage concrete in operators.rules", async () => {
+      const res = await fetch(`${TEST_URL}/rules-operators-within`, { method: "DELETE" });
+      expect(res.status).toBe(403);
+      const body = await res.json();
+      expect(body.rule).toBe("rule");
+    });
+
+    test("within requires exact token membership rather than substring matches", async () => {
+      const res = await fetch(`${TEST_URL}/rules-operators-within`, { method: "GET" });
+      expect(res.status).toBe(200);
+      const body = await res.text();
+      expect(body).toContain("rules operators within response");
+    });
+
   });
 
   describe("dedicated collection fixtures", () => {
@@ -804,6 +841,36 @@ describe("waf module", () => {
       const body = await res.json();
       expect(body.rule).toBe("rule");
     });
+
+    test("keeps request header-name coverage concrete in collections.rules", async () => {
+      const res = await fetch(`${TEST_URL}/rules-collections-header-name`, {
+        headers: { "X-Collections-Name-Hit": "present" },
+      });
+      expect(res.status).toBe(403);
+      const body = await res.json();
+      expect(body.rule).toBe("rule");
+    });
+
+    test("keeps request protocol coverage concrete in collections.rules", async () => {
+      const res = await fetch(`${TEST_URL}/rules-collections-protocol`);
+      expect(res.status).toBe(403);
+      const body = await res.json();
+      expect(body.rule).toBe("rule");
+    });
+
+    test("keeps request scheme coverage concrete in collections.rules", async () => {
+      const res = await fetch(`${TEST_URL}/rules-collections-scheme`);
+      expect(res.status).toBe(403);
+      const body = await res.json();
+      expect(body.rule).toBe("rule");
+    });
+
+    test("keeps request basename coverage concrete in collections.rules", async () => {
+      const res = await fetch(`${TEST_URL}/rules-collections-basename/foo/basename-hit`);
+      expect(res.status).toBe(403);
+      const body = await res.json();
+      expect(body.rule).toBe("rule");
+    });
   });
 
   describe("broader body processors", () => {
@@ -851,6 +918,11 @@ describe("waf module", () => {
     test("blocks based on RESPONSE_HEADERS rules", async () => {
       const res = await fetch(`${TEST_URL}/rules-response-header`);
       expect(res.status).toBe(452);
+    });
+
+    test("blocks based on RESPONSE_HEADERS selector rules", async () => {
+      const res = await fetch(`${TEST_URL}/rules-response-header-selector`);
+      expect(res.status).toBe(453);
     });
   });
 });

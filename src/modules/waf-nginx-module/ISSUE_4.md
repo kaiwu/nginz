@@ -451,8 +451,12 @@ Implemented in `ngx_http_waf`:
   - `ARGS`
   - `QUERY_STRING`
   - `REQUEST_LINE`
+  - `REQUEST_PROTOCOL`
+  - `REQUEST_SCHEME`
+  - `REQUEST_BASENAME`
   - `REQUEST_BODY`
   - `REQUEST_HEADERS`
+  - `REQUEST_HEADER_NAMES`
   - `REQUEST_COOKIES`
   - `REQUEST_METHOD`
   - `REMOTE_ADDR`
@@ -461,6 +465,7 @@ Implemented in `ngx_http_waf`:
 - supported operator:
   - `@contains <needle>`
   - `@pm <space-delimited phrases>`
+  - `@within <space-delimited values>`
   - `@beginsWith <value>`
   - `@endsWith <value>`
   - `@streq <value>` / `@eq <value>`
@@ -471,13 +476,14 @@ Implemented in `ngx_http_waf`:
   - `ARGS:<name>`
   - `REQUEST_HEADERS:<name>`
   - `REQUEST_COOKIES:<name>`
+  - `RESPONSE_HEADERS:<name>`
 - supported action subset also includes:
   - `status:<code>`
 - supported action subset:
   - `id:<n>`
   - `phase:1|2|3`
   - `msg:'...'`
-  - supported compatibility subset: `deny`, `log`, `tag:'...'`, `logdata:'...'`, `t:none`, `t:lowercase`, `t:urlDecode`, `t:urlDecodeUni`
+  - supported compatibility subset: `deny`, `block`, `pass`, `log`, `nolog`, `tag:'...'`, `logdata:'...'`, `t:none`, `t:lowercase`, `t:urlDecode`, `t:urlDecodeUni`
 - request-phase execution for `REQUEST_URI` and `ARGS`
 - body-phase execution for `REQUEST_BODY`
 - vendored in-tree `libinjection` build/package support
@@ -503,6 +509,13 @@ Implemented in `ngx_http_waf`:
 - response-phase inspection for `RESPONSE_STATUS` and `RESPONSE_HEADERS`
 - lightweight score-based shared-memory banning with decay controls
 - verified clean body-phase disruptive handling that no longer leaks preread request-body bytes into later request parsing
+- native request header-name collection support via `REQUEST_HEADER_NAMES`
+- safe action-slice additions via `block` (deny alias) and `nolog` log suppression
+- scoped response-header selectors via `RESPONSE_HEADERS:<name>`
+- low-risk `@within` operator support for exact token-set membership
+- safe request metadata collection support for `REQUEST_PROTOCOL`
+- safe request metadata collection support for `REQUEST_SCHEME`
+- safe path-derived request metadata collection support for `REQUEST_BASENAME`
 - Bun integration coverage proving file-driven block/detect behavior
 - Bun integration coverage proving stronger detection of obfuscated SQLi/XSS payloads
 
@@ -543,6 +556,7 @@ Remaining gaps / todos:
 
 - [ ] add more string / set operators that map cleanly to the native engine (for example `@pm`, `@within`, and closely related low-risk subsets)
 - [ ] add more request collections beyond the newly covered `QUERY_STRING` / `REQUEST_LINE`, especially header-name collections and other safe request metadata targets
+- [ ] continue to reject or very carefully evaluate path-mapped targets like `REQUEST_FILENAME` unless nginx-native resolution semantics can be preserved without misleading access-phase behavior
 - [ ] add broader action support beyond `deny` / `pass` / `log` / `status`, starting with the safest native subsets
 - [ ] evolve the shared-memory reputation model toward richer scoring, expiry tuning, and stronger escalation controls
 - [ ] evaluate safe native integration points for static IP reputation / allowlist-blocklist style policy without duplicating nginx access controls

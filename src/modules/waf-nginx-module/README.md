@@ -84,22 +84,24 @@ Load a native ModSecurity-like rule file at config load time.
 Current supported subset:
 
 - one rule per line starting with `SecRule`
-- targets: `REQUEST_URI`, `ARGS`, `QUERY_STRING`, `REQUEST_LINE`, `REQUEST_BODY`, `REQUEST_HEADERS`, `REQUEST_COOKIES`, `REQUEST_METHOD`, `REMOTE_ADDR`, `RESPONSE_STATUS`, `RESPONSE_HEADERS`
+- targets: `REQUEST_URI`, `ARGS`, `QUERY_STRING`, `REQUEST_LINE`, `REQUEST_PROTOCOL`, `REQUEST_SCHEME`, `REQUEST_BASENAME`, `REQUEST_BODY`, `REQUEST_HEADERS`, `REQUEST_HEADER_NAMES`, `REQUEST_COOKIES`, `REQUEST_METHOD`, `REMOTE_ADDR`, `RESPONSE_STATUS`, `RESPONSE_HEADERS`
 - scoped selectors on:
   - `ARGS:name`
   - `REQUEST_BODY:name`
   - `REQUEST_HEADERS:Header-Name`
   - `REQUEST_COOKIES:cookie_name`
+  - `RESPONSE_HEADERS:Header-Name`
 - operators:
   - `@contains <needle>`
   - `@pm <space-delimited phrases>`
+  - `@within <space-delimited values>`
   - `@beginsWith <value>`
   - `@endsWith <value>`
   - `@streq <value>` / `@eq <value>`
   - `@rx <pattern>`
   - `@libinjection_sqli`
   - `@libinjection_xss`
-- actions subset: `id:<n>`, `phase:1|2|3`, `msg:'...'`, `tag:'...'`, `logdata:'...'`, `deny`, `pass`, `log`, `t:none`, `t:lowercase`, `t:urlDecode`, `t:urlDecodeUni`
+- actions subset: `id:<n>`, `phase:1|2|3`, `msg:'...'`, `tag:'...'`, `logdata:'...'`, `deny`, `block`, `pass`, `log`, `nolog`, `t:none`, `t:lowercase`, `t:urlDecode`, `t:urlDecodeUni`
   - `status:<code>`
 
 Example:
@@ -132,11 +134,17 @@ SecRule REQUEST_URI "@endsWith .php" "id:2009,phase:1,msg:'suffix rule'"
 SecRule QUERY_STRING "@contains token=blocked" "id:2010,phase:1,msg:'query string rule'"
 SecRule REQUEST_LINE "@contains GET /admin HTTP/1.1" "id:2011,phase:1,msg:'request line rule'"
 SecRule REQUEST_HEADERS "@pm x-api-key bad-token" "id:2012,phase:1,msg:'phrase match rule'"
-SecRule RESPONSE_STATUS "@streq 204" "id:2013,phase:3,status:451,msg:'response status rule'"
-SecRule RESPONSE_HEADERS "@contains x-response-waf: response-header-hit" "id:2014,phase:3,status:452,msg:'response header rule'"
-SecRule REQUEST_URI "@contains blocked-api" "id:2015,phase:1,status:406,msg:'custom status rule'"
-SecRule REQUEST_URI "@contains high-risk-path" "id:2016,phase:1,deny,status:418,msg:'deny override rule'"
-SecRule REQUEST_URI "@contains monitor-only-path" "id:2017,phase:1,pass,log,msg:'pass override rule'"
+SecRule REQUEST_METHOD "@within patch delete" "id:2013,phase:1,msg:'within set-membership rule'"
+SecRule REQUEST_PROTOCOL "@streq http/1.1" "id:2014,phase:1,msg:'request protocol rule'"
+SecRule REQUEST_SCHEME "@streq http" "id:2015,phase:1,msg:'request scheme rule'"
+SecRule REQUEST_BASENAME "@streq admin.php" "id:2016,phase:1,msg:'request basename rule'"
+SecRule RESPONSE_STATUS "@streq 204" "id:2017,phase:3,status:451,msg:'response status rule'"
+SecRule RESPONSE_HEADERS "@contains x-response-waf: response-header-hit" "id:2018,phase:3,status:452,msg:'response header rule'"
+SecRule RESPONSE_HEADERS:X-Response-Scoped "@contains scoped-response-hit" "id:2019,phase:3,status:453,msg:'response header selector rule'"
+SecRule REQUEST_HEADER_NAMES "@contains x-api-key" "id:2020,phase:1,msg:'header name collection rule'"
+SecRule REQUEST_URI "@contains blocked-api" "id:2021,phase:1,status:406,msg:'custom status rule'"
+SecRule REQUEST_URI "@contains high-risk-path" "id:2022,phase:1,deny,status:418,msg:'deny override rule'"
+SecRule REQUEST_URI "@contains monitor-only-path" "id:2023,phase:1,pass,log,msg:'pass override rule'"
 ```
 
 ### Detection stack
@@ -160,8 +168,10 @@ Inside `waf_rules_file`, `@libinjection_sqli` and `@libinjection_xss` can now be
 Per-rule actions now have explicit semantics:
 
 - `deny` forces a disruptive block for that rule, even if `waf_mode detect;` is set
+- `block` is a native compatibility alias for `deny`
 - `pass` forces a non-disruptive match for that rule, even if `waf_mode block;` is set
 - `log` requests a warning log entry when the rule matches
+- `nolog` suppresses warning-log output for that rule even when detect mode would normally log the match
 - if neither `deny` nor `pass` is present, `waf_mode` remains the default enforcement switch
 
 Detect-mode and `pass,log` matches now emit a more informative warning log line that includes both the matched rule type and the rule message / matched pattern detail when available.
@@ -174,6 +184,8 @@ The native subset now also supports metadata-oriented rule actions:
 These do not alter disruption flow, but they are emitted into warning-log output for non-blocking matches.
 
 `@pm` is currently implemented as a practical native subset: it accepts a space-delimited phrase list and matches when any phrase appears in the normalized input.
+
+`@within` is implemented as a small native set-membership subset: it accepts a space-delimited value list and matches only when the normalized input equals one of those candidate values.
 
 The native subset now also supports a small explicit transformation set:
 
@@ -322,11 +334,20 @@ http {
 - [x] `libinjection` is now vendored and compiled in-tree, and Bun coverage verifies improved detection of obfuscated SQLi/XSS payloads beyond the original substring signatures.
 - [x] `waf_rules_file` now supports explicit `@libinjection_sqli` and `@libinjection_xss` operators with Bun coverage for file-driven rule execution.
 - [x] `waf_rules_file` now supports `@rx`, equals-style operators, and scoped `REQUEST_HEADERS:<name>` / `REQUEST_COOKIES:<name>` selectors.
+- [x] `waf_rules_file` now supports the `REQUEST_HEADER_NAMES` request collection for matching on normalized incoming header names.
+- [x] `waf_rules_file` now supports scoped `RESPONSE_HEADERS:<name>` selectors for response-phase header matching.
+- [x] `waf_rules_file` now supports the low-risk `@within` operator for exact token-set membership checks.
+- [x] `waf_rules_file` now supports the safe request metadata collection `REQUEST_PROTOCOL`.
+- [x] `waf_rules_file` now supports the safe request metadata collection `REQUEST_SCHEME`, derived from nginx connection TLS state.
+- [x] `waf_rules_file` now supports the safe path-derived request metadata collection `REQUEST_BASENAME`.
+
+`REQUEST_FILENAME` is still intentionally not supported. In this module it would require path mapping through nginx location/root resolution (`ngx_http_map_uri_to_path`) and that is not a clean access-phase metadata slice to emulate casually.
 - [x] Shared-memory temporary IP bans are now supported via `waf_ban_threshold`, `waf_ban_window`, and `waf_ban_duration`, with Bun coverage for threshold, active ban, and expiry behavior.
 - [x] `waf_rules_file` now supports `ARGS:name` selectors and per-rule `status:<code>` actions for more practical application-facing policies.
 - [x] `waf_rules_file` now supports `REQUEST_BODY:name` selectors for form-encoded and top-level JSON request bodies.
 - [x] Supported native-compatibility coverage is now spread across multiple checked-in fixtures under `tests/waf/` (`native-subset.rules`, `operators.rules`, `collections.rules`, `action.rules`, `transform.rules`, `ban.rules`, `libinjection.rules`, `unsupported.rules`) instead of relying on one monolithic example file.
 - [x] `waf_rules_file` now gives `deny` and `pass` explicit per-rule semantics while keeping `waf_mode` as the default enforcement policy when neither override is present.
+- [x] `waf_rules_file` now supports safe action-slice additions `block` (alias of `deny`) and `nolog` for suppressing match logging.
 - [x] `waf_rules_file` now emits line-specific config-time parser errors for unsupported native subset syntax.
 - [x] Shared-memory bans now retain short-term offender reputation and escalate repeat-ban duration instead of always resetting to the same flat penalty.
 - [x] `waf_rules_file` now supports prefix/suffix string operators via `@beginsWith` and `@endsWith`.
