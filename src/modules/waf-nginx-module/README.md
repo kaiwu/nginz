@@ -210,6 +210,24 @@ Temporary ban duration in seconds once the threshold is reached.
 
 Repeated offenders now escalate beyond a flat first ban: the module keeps per-IP shared-memory strike state and increases later ban durations when the same client keeps tripping WAF rules again after recovery. Quiet periods decay that strike history over time.
 
+#### waf_score_threshold
+
+*syntax:* `waf_score_threshold <n>;`
+*default:* `0`
+*context:* `location`
+
+Enable lightweight shared-memory score-based banning. Each WAF detection increments the client's score, and the client is temporarily banned once the score reaches `<n>`.
+
+This is intended as a small native reputation layer rather than a full anomaly-scoring engine.
+
+#### waf_score_decay_window
+
+*syntax:* `waf_score_decay_window <seconds>;`
+*default:* `60`
+*context:* `location`
+
+Controls how quickly accumulated client score decays during quiet periods. Larger values keep score history longer; smaller values let clients recover more quickly after isolated hits.
+
 ### Practical policy note
 
 Static IP allow/deny policy should continue to use nginx's built-in access controls (`allow` / `deny`).
@@ -278,7 +296,7 @@ http {
 - Native pattern-based detection may still have false positives for certain legitimate inputs
 - Limited to a small native subset of operators and actions; this is still far smaller than full ModSecurity syntax
 - Request body inspection limited to 8KB for performance
-- Temporary bans now keep shared-memory strike history with escalating durations, but they are still a lightweight native reputation model rather than a full WAF reputation engine
+- Temporary bans now keep shared-memory strike history, score-based banning, and escalating durations, but they are still a lightweight native reputation model rather than a full WAF reputation engine
 - `libinjection` improves SQLi/XSS coverage but does not make the module full ModSecurity or CRS compatible
 - `waf_rules_file` currently supports only a small native ModSecurity-like subset, not full ModSecurity or CRS compatibility
 
@@ -296,7 +314,7 @@ http {
 
 ### Documentation Audit Checklist
 
-- [x] Audit date: 2026-04-10
+- [x] Audit date: 2026-04-11
 - [x] Bun integration coverage exists at `tests/waf/`.
 - [x] Bun integration coverage now verifies nested child-location inheritance of detect mode, selective SQLi/XSS toggles, URL-decoded payloads, POST/PUT/PATCH body inspection, and detect-vs-block behavior.
 - [x] Gap fixed in this audit pass: child locations under a parent `waf_mode detect` configuration now inherit detect mode correctly instead of silently falling back to block behavior.
@@ -318,5 +336,7 @@ http {
 - [x] `waf_rules_file` now supports metadata-oriented `tag:'...'` and `logdata:'...'` actions for richer non-blocking logs.
 - [x] `waf_rules_file` now applies a small explicit transformation subset via `t:none`, `t:lowercase`, `t:urlDecode`, and `t:urlDecodeUni`.
 - [x] `REQUEST_BODY:name` selectors now cover form-encoded fields, nested JSON selector paths, and multipart form-data fields via dedicated `body.rules` coverage.
+- [x] Shared-memory reputation now also supports score-based banning via `waf_score_threshold` and `waf_score_decay_window`, with Bun coverage for thresholding and quiet-period decay.
+- [x] Body-phase blocking now preserves clean request lifecycle behavior for blocked form, nested JSON, multipart, and libinjection-backed body matches instead of leaking preread body bytes into later request parsing.
 - [x] Static IP allow/deny remains intentionally delegated to nginx's built-in access controls rather than being reimplemented in the WAF module.
 - [x] No additional documentation gaps were identified in this audit pass.

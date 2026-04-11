@@ -501,6 +501,8 @@ Implemented in `ngx_http_waf`:
 - metadata-oriented `tag:'...'` / `logdata:'...'` actions for richer non-blocking rule logs
 - broader `REQUEST_BODY` selector coverage for form fields, nested JSON selector paths, and multipart form-data fields
 - response-phase inspection for `RESPONSE_STATUS` and `RESPONSE_HEADERS`
+- lightweight score-based shared-memory banning with decay controls
+- verified clean body-phase disruptive handling that no longer leaks preread request-body bytes into later request parsing
 - Bun integration coverage proving file-driven block/detect behavior
 - Bun integration coverage proving stronger detection of obfuscated SQLi/XSS payloads
 
@@ -534,6 +536,8 @@ Covered recently:
 - [x] metadata-oriented `tag:'...'` / `logdata:'...'` actions for richer non-blocking rule logs
 - [x] broader `REQUEST_BODY` selector coverage for form fields, nested JSON selector paths, and multipart form-data fields
 - [x] response-phase inspection for `RESPONSE_STATUS` and `RESPONSE_HEADERS`
+- [x] score-based shared-memory banning with quiet-period decay controls
+- [x] clean body-phase disruptive handling for blocked form, JSON, multipart, and libinjection-backed body matches
 
 Remaining gaps / todos:
 

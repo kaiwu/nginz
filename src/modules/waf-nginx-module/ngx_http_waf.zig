@@ -137,6 +137,7 @@ const waf_loc_conf = extern struct {
 const waf_ctx = extern struct {
     done: ngx_flag_t,
     waiting_body: ngx_flag_t,
+    finalized: ngx_flag_t,
     lccf: [*c]waf_loc_conf,
 };
 
@@ -771,6 +772,23 @@ fn getBanStore() ?[*c]waf_ban_store {
     return null;
 }
 
+fn getBanStoreFromZone(zone: [*c]core.ngx_shm_zone_t) ?[*c]waf_ban_store {
+    if (zone == core.nullptr(core.ngx_shm_zone_t) or zone.*.shm.addr == null) return null;
+
+    const shpool = core.castPtr(core.ngx_slab_pool_t, zone.*.shm.addr) orelse return null;
+    if (shpool.*.data != null) {
+        const store = core.castPtr(waf_ban_store, shpool.*.data) orelse return null;
+        zone.*.data = store;
+        return store;
+    }
+
+    if (zone.*.data != null) {
+        return core.castPtr(waf_ban_store, zone.*.data);
+    }
+
+    return null;
+}
+
 fn ensureBanStore(zone: [*c]core.ngx_shm_zone_t, shpool: [*c]core.ngx_slab_pool_t) ?[*c]waf_ban_store {
     if (zone == core.nullptr(core.ngx_shm_zone_t) or shpool == null) return null;
 
@@ -867,6 +885,11 @@ fn applyOffenseToEntry(entry: *waf_ban_entry, now: ngx_uint_t, lccf: *waf_loc_co
         return;
     }
 
+    if (lccf.ban_threshold == 0) {
+        entry.*.last_seen = now;
+        return;
+    }
+
     if (entry.*.first_seen == 0 or now - entry.*.first_seen > lccf.ban_window) {
         entry.*.first_seen = now;
         entry.*.count = 1;
@@ -950,7 +973,7 @@ fn isClientBanned(r: [*c]ngx_http_request_t, lccf: *waf_loc_conf) bool {
     shm.ngx_shmtx_lock(&shpool.?.*.mutex);
     defer shm.ngx_shmtx_unlock(&shpool.?.*.mutex);
 
-    const store = if (getBanStore()) |existing| existing else ensureBanStore(zone, shpool.?) orelse return false;
+    const store = if (getBanStoreFromZone(zone)) |existing| existing else ensureBanStore(zone, shpool.?) orelse return false;
 
     if (findBanEntry(store, ip)) |entry| {
         const now = nowSeconds();
@@ -975,8 +998,7 @@ fn recordOffense(r: [*c]ngx_http_request_t, lccf: *waf_loc_conf) void {
     shm.ngx_shmtx_lock(&shpool.?.*.mutex);
     defer shm.ngx_shmtx_unlock(&shpool.?.*.mutex);
 
-    const store = if (getBanStore()) |existing| existing else ensureBanStore(zone, shpool.?) orelse return;
-
+    const store = if (getBanStoreFromZone(zone)) |existing| existing else ensureBanStore(zone, shpool.?) orelse return;
     const entry = getOrCreateBanEntry(shpool.?, store, ip, lccf) orelse return;
     const now = nowSeconds();
     applyOffenseToEntry(entry, now, lccf);
@@ -1507,6 +1529,23 @@ fn logDetection(r: [*c]ngx_http_request_t, rule_type: []const u8, pattern: []con
     ngx.log.ngz_log_error(ngx.log.NGX_LOG_WARN, r.*.connection.*.log, 0, message.ptr, .{});
 }
 
+fn finalizeBlockedRequest(r: [*c]ngx_http_request_t, rctx: *waf_ctx, rule_type: []const u8, status: ngx_uint_t) ngx_int_t {
+    rctx.*.done = 1;
+    rctx.*.finalized = 1;
+
+    if (rctx.*.waiting_body == 1) {
+        if (r.*.header_in != null) {
+            r.*.header_in.*.pos = r.*.header_in.*.last;
+        }
+        r.*.flags1.keepalive = false;
+        r.*.flags1.lingering_close = true;
+    }
+
+    const rc = sendBlockedResponse(r, rule_type, status);
+    http.ngx_http_finalize_request(r, rc);
+    return NGX_DONE;
+}
+
 export fn ngx_http_waf_header_filter(r: [*c]ngx_http_request_t) callconv(.c) ngx_int_t {
     const lccf = core.castPtr(
         waf_loc_conf,
@@ -1563,12 +1602,12 @@ export fn ngx_http_waf_body_handler(r: [*c]ngx_http_request_t) callconv(.c) void
         http.ngx_http_finalize_request(r, NGX_ERROR);
         return;
     };
-    rctx.*.waiting_body = 0;
 
     const lccf = rctx.*.lccf;
 
     // Check if request body exists
     if (r.*.request_body == null or r.*.request_body.*.bufs == null) {
+        rctx.*.waiting_body = 0;
         rctx.*.done = 1;
         r.*.write_event_handler = http.ngx_http_core_run_phases;
         http.ngx_http_core_run_phases(r);
@@ -1586,6 +1625,7 @@ export fn ngx_http_waf_body_handler(r: [*c]ngx_http_request_t) callconv(.c) void
     }
 
     if (body_len == 0) {
+        rctx.*.waiting_body = 0;
         rctx.*.done = 1;
         r.*.write_event_handler = http.ngx_http_core_run_phases;
         http.ngx_http_core_run_phases(r);
@@ -1645,8 +1685,7 @@ export fn ngx_http_waf_body_handler(r: [*c]ngx_http_request_t) callconv(.c) void
         const disposition = resolveMatchDisposition(body_selector_result, lccf);
         recordOffense(r, lccf);
         if (disposition.block) {
-            _ = sendBlockedResponse(r, body_selector_result.rule_type, body_selector_result.status);
-            http.ngx_http_finalize_request(r, @intCast(body_selector_result.status));
+            _ = finalizeBlockedRequest(r, rctx, body_selector_result.rule_type, body_selector_result.status);
             return;
         }
 
@@ -1667,8 +1706,7 @@ export fn ngx_http_waf_body_handler(r: [*c]ngx_http_request_t) callconv(.c) void
         const disposition = resolveMatchDisposition(final_result, lccf);
         recordOffense(r, lccf);
         if (disposition.block) {
-            _ = sendBlockedResponse(r, final_result.rule_type, final_result.status);
-            http.ngx_http_finalize_request(r, @intCast(final_result.status));
+            _ = finalizeBlockedRequest(r, rctx, final_result.rule_type, final_result.status);
             return;
         } else if (disposition.log) {
             logDetection(r, final_result.rule_type, final_result.pattern, final_result.tag, final_result.logdata);
@@ -1676,6 +1714,7 @@ export fn ngx_http_waf_body_handler(r: [*c]ngx_http_request_t) callconv(.c) void
     }
 
     // Continue to next phase
+    rctx.*.waiting_body = 0;
     rctx.*.done = 1;
     r.*.write_event_handler = http.ngx_http_core_run_phases;
     http.ngx_http_core_run_phases(r);
@@ -1710,8 +1749,7 @@ export fn ngx_http_waf_handler(r: [*c]ngx_http_request_t) callconv(.c) ngx_int_t
     rctx.*.lccf = lccf;
 
     if (isClientBanned(r, lccf)) {
-        rctx.*.done = 1;
-        return sendBlockedResponse(r, "ban", http.NGX_HTTP_FORBIDDEN);
+        return finalizeBlockedRequest(r, rctx, "ban", http.NGX_HTTP_FORBIDDEN);
     }
 
     // Allocate buffers for analysis
@@ -1736,8 +1774,7 @@ export fn ngx_http_waf_handler(r: [*c]ngx_http_request_t) callconv(.c) ngx_int_t
             const disposition = resolveMatchDisposition(final_uri_result, lccf);
             recordOffense(r, lccf);
             if (disposition.block) {
-                rctx.*.done = 1;
-                return sendBlockedResponse(r, final_uri_result.rule_type, final_uri_result.status);
+                return finalizeBlockedRequest(r, rctx, final_uri_result.rule_type, final_uri_result.status);
             } else if (disposition.log) {
                 logDetection(r, final_uri_result.rule_type, final_uri_result.pattern, final_uri_result.tag, final_uri_result.logdata);
             }
@@ -1752,8 +1789,7 @@ export fn ngx_http_waf_handler(r: [*c]ngx_http_request_t) callconv(.c) ngx_int_t
             const disposition = resolveMatchDisposition(args_selector_result, lccf);
             recordOffense(r, lccf);
             if (disposition.block) {
-                rctx.*.done = 1;
-                return sendBlockedResponse(r, args_selector_result.rule_type, args_selector_result.status);
+                return finalizeBlockedRequest(r, rctx, args_selector_result.rule_type, args_selector_result.status);
             } else if (disposition.log) {
                 logDetection(r, args_selector_result.rule_type, args_selector_result.pattern, args_selector_result.tag, args_selector_result.logdata);
             }
@@ -1770,8 +1806,7 @@ export fn ngx_http_waf_handler(r: [*c]ngx_http_request_t) callconv(.c) ngx_int_t
             const disposition = resolveMatchDisposition(final_args_result, lccf);
             recordOffense(r, lccf);
             if (disposition.block) {
-                rctx.*.done = 1;
-                return sendBlockedResponse(r, final_args_result.rule_type, final_args_result.status);
+                return finalizeBlockedRequest(r, rctx, final_args_result.rule_type, final_args_result.status);
             } else if (disposition.log) {
                 logDetection(r, final_args_result.rule_type, final_args_result.pattern, final_args_result.tag, final_args_result.logdata);
             }
@@ -1787,8 +1822,7 @@ export fn ngx_http_waf_handler(r: [*c]ngx_http_request_t) callconv(.c) ngx_int_t
                 const disposition = resolveMatchDisposition(cookie_selector_result, lccf);
                 recordOffense(r, lccf);
                 if (disposition.block) {
-                    rctx.*.done = 1;
-                    return sendBlockedResponse(r, cookie_selector_result.rule_type, cookie_selector_result.status);
+                    return finalizeBlockedRequest(r, rctx, cookie_selector_result.rule_type, cookie_selector_result.status);
                 } else if (disposition.log) {
                     logDetection(r, cookie_selector_result.rule_type, cookie_selector_result.pattern, cookie_selector_result.tag, cookie_selector_result.logdata);
                 }
@@ -1798,8 +1832,7 @@ export fn ngx_http_waf_handler(r: [*c]ngx_http_request_t) callconv(.c) ngx_int_t
                 const disposition = resolveMatchDisposition(cookie_result, lccf);
                 recordOffense(r, lccf);
                 if (disposition.block) {
-                    rctx.*.done = 1;
-                    return sendBlockedResponse(r, cookie_result.rule_type, cookie_result.status);
+                    return finalizeBlockedRequest(r, rctx, cookie_result.rule_type, cookie_result.status);
                 } else if (disposition.log) {
                     logDetection(r, cookie_result.rule_type, cookie_result.pattern, cookie_result.tag, cookie_result.logdata);
                 }
@@ -1814,8 +1847,7 @@ export fn ngx_http_waf_handler(r: [*c]ngx_http_request_t) callconv(.c) ngx_int_t
             const disposition = resolveMatchDisposition(method_result, lccf);
             recordOffense(r, lccf);
             if (disposition.block) {
-                rctx.*.done = 1;
-                return sendBlockedResponse(r, method_result.rule_type, method_result.status);
+                return finalizeBlockedRequest(r, rctx, method_result.rule_type, method_result.status);
             } else if (disposition.log) {
                 logDetection(r, method_result.rule_type, method_result.pattern, method_result.tag, method_result.logdata);
             }
@@ -1829,8 +1861,7 @@ export fn ngx_http_waf_handler(r: [*c]ngx_http_request_t) callconv(.c) ngx_int_t
             const disposition = resolveMatchDisposition(addr_result, lccf);
             recordOffense(r, lccf);
             if (disposition.block) {
-                rctx.*.done = 1;
-                return sendBlockedResponse(r, addr_result.rule_type, addr_result.status);
+                return finalizeBlockedRequest(r, rctx, addr_result.rule_type, addr_result.status);
             } else if (disposition.log) {
                 logDetection(r, addr_result.rule_type, addr_result.pattern, addr_result.tag, addr_result.logdata);
             }
@@ -1844,8 +1875,7 @@ export fn ngx_http_waf_handler(r: [*c]ngx_http_request_t) callconv(.c) ngx_int_t
             const disposition = resolveMatchDisposition(query_result, lccf);
             recordOffense(r, lccf);
             if (disposition.block) {
-                rctx.*.done = 1;
-                return sendBlockedResponse(r, query_result.rule_type, query_result.status);
+                return finalizeBlockedRequest(r, rctx, query_result.rule_type, query_result.status);
             } else if (disposition.log) {
                 logDetection(r, query_result.rule_type, query_result.pattern, query_result.tag, query_result.logdata);
             }
@@ -1859,8 +1889,7 @@ export fn ngx_http_waf_handler(r: [*c]ngx_http_request_t) callconv(.c) ngx_int_t
             const disposition = resolveMatchDisposition(request_line_result, lccf);
             recordOffense(r, lccf);
             if (disposition.block) {
-                rctx.*.done = 1;
-                return sendBlockedResponse(r, request_line_result.rule_type, request_line_result.status);
+                return finalizeBlockedRequest(r, rctx, request_line_result.rule_type, request_line_result.status);
             } else if (disposition.log) {
                 logDetection(r, request_line_result.rule_type, request_line_result.pattern, request_line_result.tag, request_line_result.logdata);
             }
@@ -1872,8 +1901,7 @@ export fn ngx_http_waf_handler(r: [*c]ngx_http_request_t) callconv(.c) ngx_int_t
         const disposition = resolveMatchDisposition(header_selector_result, lccf);
         recordOffense(r, lccf);
         if (disposition.block) {
-            rctx.*.done = 1;
-            return sendBlockedResponse(r, header_selector_result.rule_type, header_selector_result.status);
+            return finalizeBlockedRequest(r, rctx, header_selector_result.rule_type, header_selector_result.status);
         } else if (disposition.log) {
             logDetection(r, header_selector_result.rule_type, header_selector_result.pattern, header_selector_result.tag, header_selector_result.logdata);
         }
@@ -1886,8 +1914,7 @@ export fn ngx_http_waf_handler(r: [*c]ngx_http_request_t) callconv(.c) ngx_int_t
             const disposition = resolveMatchDisposition(headers_result, lccf);
             recordOffense(r, lccf);
             if (disposition.block) {
-                rctx.*.done = 1;
-                return sendBlockedResponse(r, headers_result.rule_type, headers_result.status);
+                return finalizeBlockedRequest(r, rctx, headers_result.rule_type, headers_result.status);
             } else if (disposition.log) {
                 logDetection(r, headers_result.rule_type, headers_result.pattern, headers_result.tag, headers_result.logdata);
             }
@@ -1908,7 +1935,8 @@ export fn ngx_http_waf_handler(r: [*c]ngx_http_request_t) callconv(.c) ngx_int_t
             if (rc >= http.NGX_HTTP_SPECIAL_RESPONSE) {
                 return rc;
             }
-            // Body was read synchronously, check has already been done in body handler
+            // Body was read synchronously. If the body handler already finalized
+            // or advanced the request, do not re-enter the body-read state machine.
             return if (rctx.*.done == 1) NGX_DECLINED else rc;
         }
     }

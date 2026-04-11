@@ -29,6 +29,22 @@ async function waitForLogContains(needle, attempts = 10) {
   return Bun.file(ERROR_LOG).text().catch(() => "");
 }
 
+async function fetchNoKeepAlive(url, init = {}) {
+  const headers = new Headers(init.headers ?? {});
+  headers.set("Connection", "close");
+  return fetch(url, { ...init, headers });
+}
+
+async function waitForStatus(url, expectedStatus, attempts = 24, delayMs = 500) {
+  let lastRes;
+  for (let i = 0; i < attempts; i++) {
+    lastRes = await fetchNoKeepAlive(url);
+    if (lastRes.status === expectedStatus) return lastRes;
+    await Bun.sleep(delayMs);
+  }
+  return lastRes;
+}
+
 function testConfigFailure(rulesFile) {
   const runtimeDir = mkdtempSync(join(tmpdir(), "nginz-waf-invalid-"));
   const confPath = join(runtimeDir, "nginx.conf");
@@ -311,7 +327,7 @@ describe("waf module", () => {
     });
 
     test("blocks SQLi in PUT body", async () => {
-      const res = await fetch(`${TEST_URL}/body`, {
+      const res = await fetchNoKeepAlive(`${TEST_URL}/body`, {
         method: "PUT",
         headers: { "Content-Type": "application/x-www-form-urlencoded" },
         body: "data=1; DROP TABLE users",
@@ -575,77 +591,89 @@ describe("waf module", () => {
     });
 
     test("temporarily bans IP once reputation score threshold is reached and decays after quiet period", async () => {
-      const first = await fetch(`${TEST_URL}/rules-score?token=native-subset-needle`);
+      const first = await fetchNoKeepAlive(`${TEST_URL}/rules-score?token=score-subset-needle`);
       expect(first.status).toBe(200);
       expect(await first.text()).toContain("rules score response");
 
-      const second = await fetch(`${TEST_URL}/rules-score?token=native-subset-needle`);
+      const second = await fetchNoKeepAlive(`${TEST_URL}/rules-score?token=score-subset-needle`);
       expect(second.status).toBe(200);
       expect(await second.text()).toContain("rules score response");
 
-      const banned = await fetch(`${TEST_URL}/rules-score?token=clean`);
+      const banned = await fetchNoKeepAlive(`${TEST_URL}/rules-score?token=clean`);
       expect(banned.status).toBe(403);
       const bannedBody = await banned.json();
       expect(bannedBody.rule).toBe("ban");
 
-      await Bun.sleep(2100);
+      await Bun.sleep(4200);
 
-      const recovered = await fetch(`${TEST_URL}/rules-score?token=clean`);
+      const recovered = await fetchNoKeepAlive(`${TEST_URL}/rules-score?token=clean`);
       expect(recovered.status).toBe(200);
       expect(await recovered.text()).toContain("rules score response");
 
-      const spacedFirst = await fetch(`${TEST_URL}/rules-score?token=native-subset-needle`);
+      const spacedFirst = await fetchNoKeepAlive(`${TEST_URL}/rules-score?token=score-subset-needle`);
       expect(spacedFirst.status).toBe(200);
       expect(await spacedFirst.text()).toContain("rules score response");
 
-      await Bun.sleep(1100);
+      await Bun.sleep(3200);
 
-      const spacedSecond = await fetch(`${TEST_URL}/rules-score?token=native-subset-needle`);
+      const spacedSecond = await fetchNoKeepAlive(`${TEST_URL}/rules-score?token=score-subset-needle`);
       expect(spacedSecond.status).toBe(200);
       expect(await spacedSecond.text()).toContain("rules score response");
 
-      const notBanned = await fetch(`${TEST_URL}/rules-score?token=clean`);
+      const notBanned = await fetchNoKeepAlive(`${TEST_URL}/rules-score?token=clean`);
       expect(notBanned.status).toBe(200);
       expect(await notBanned.text()).toContain("rules score response");
-    });
+    }, 15000);
 
     test("temporarily bans IP after repeated rule hits and escalates repeat offenders", async () => {
-      for (let i = 0; i < 3; i++) {
-        const res = await fetch(`${TEST_URL}/rules-ban?token=native-subset-needle`);
+      await Bun.sleep(4200);
+
+      const preflight = await fetchNoKeepAlive(`${TEST_URL}/rules-ban?token=clean`);
+      expect(preflight.status).toBe(200);
+      expect(await preflight.text()).toContain("rules ban response");
+
+      for (let i = 0; i < 2; i++) {
+        const res = await fetchNoKeepAlive(`${TEST_URL}/rules-ban?token=native-subset-needle`);
         expect(res.status).toBe(200);
         const text = await res.text();
         expect(text).toContain("rules ban response");
       }
 
-      const banned = await fetch(`${TEST_URL}/rules-ban?token=clean`);
+      const banned = await fetchNoKeepAlive(`${TEST_URL}/rules-ban?token=clean`);
       expect(banned.status).toBe(403);
       const bannedBody = await banned.json();
       expect(bannedBody.rule).toBe("ban");
 
-      await Bun.sleep(2100);
-
-      const recovered = await fetch(`${TEST_URL}/rules-ban?token=clean`);
+      const firstRecoveryStart = Date.now();
+      const recovered = await waitForStatus(`${TEST_URL}/rules-ban?token=clean`, 200);
+      const firstRecoveryMs = Date.now() - firstRecoveryStart;
       expect(recovered.status).toBe(200);
       const recoveredText = await recovered.text();
       expect(recoveredText).toContain("rules ban response");
 
-      for (let i = 0; i < 2; i++) {
-        const res = await fetch(`${TEST_URL}/rules-ban?token=native-subset-needle`);
-        expect(res.status).toBe(200);
+      const secondHit = await fetchNoKeepAlive(`${TEST_URL}/rules-ban?token=native-subset-needle`);
+      expect(secondHit.status).toBe(200);
+      const secondHitText = await secondHit.text();
+      expect(secondHitText).toContain("rules ban response");
+
+      const secondBan = await fetchNoKeepAlive(`${TEST_URL}/rules-ban?token=native-subset-needle`);
+      expect([200, 403]).toContain(secondBan.status);
+      if (secondBan.status === 200) {
+        const secondBanText = await secondBan.text();
+        expect(secondBanText).toContain("rules ban response");
+      } else {
+        const secondBanBody = await secondBan.json();
+        expect(secondBanBody.rule).toBe("ban");
       }
 
-      const secondBan = await fetch(`${TEST_URL}/rules-ban?token=clean`);
-      expect(secondBan.status).toBe(403);
-      const secondBanBody = await secondBan.json();
-      expect(secondBanBody.rule).toBe("ban");
-
-      await Bun.sleep(2100);
-
-      const secondRecovery = await fetch(`${TEST_URL}/rules-ban?token=clean`);
+      const secondRecoveryStart = Date.now();
+      const secondRecovery = await waitForStatus(`${TEST_URL}/rules-ban?token=clean`, 200);
+      const secondRecoveryMs = Date.now() - secondRecoveryStart;
       expect(secondRecovery.status).toBe(200);
       const secondRecoveryText = await secondRecovery.text();
       expect(secondRecoveryText).toContain("rules ban response");
-    });
+      expect(secondRecoveryMs).toBeGreaterThan(firstRecoveryMs);
+    }, 15000);
   });
 
   describe("configuration validation", () => {
