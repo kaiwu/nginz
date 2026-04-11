@@ -93,6 +93,8 @@ const waf_rule = extern struct {
     tag: ngx_str_t,
     logdata: ngx_str_t,
     action: u8,
+    score_weight: u16,
+    explicit_score_weight: u8,
     log_match: u8,
     suppress_log: u8,
     transforms: u8,
@@ -157,6 +159,7 @@ const DetectionResult = struct {
     force_block: bool = false,
     log_match: bool = false,
     suppress_log: bool = false,
+    score_weight: u16 = 1,
     tag: []const u8 = "",
     logdata: []const u8 = "",
 };
@@ -283,6 +286,27 @@ fn parseRuleActions(actions: []const u8, rule: *waf_rule, pool: [*c]core.ngx_poo
             } else {
                 rule.logdata = dupSlice(pool, logdata_text) orelse return "unable to allocate logdata action";
             }
+        } else if (std.mem.startsWith(u8, part, "severity:")) {
+            const severity_text = trimAscii(part[9..]);
+            const severity_value = if (severity_text.len >= 2 and ((severity_text[0] == '\'' and severity_text[severity_text.len - 1] == '\'') or (severity_text[0] == '"' and severity_text[severity_text.len - 1] == '"')))
+                severity_text[1 .. severity_text.len - 1]
+            else
+                severity_text;
+
+            const severity_weight: u16 = if (std.ascii.eqlIgnoreCase(severity_value, "critical"))
+                5
+            else if (std.ascii.eqlIgnoreCase(severity_value, "error"))
+                4
+            else if (std.ascii.eqlIgnoreCase(severity_value, "warning"))
+                3
+            else if (std.ascii.eqlIgnoreCase(severity_value, "notice"))
+                2
+            else
+                return "unsupported severity action";
+
+            if (rule.explicit_score_weight == 0) {
+                rule.score_weight = severity_weight;
+            }
         } else if (std.mem.eql(u8, part, "deny") or std.mem.eql(u8, part, "block")) {
             if (rule.action != WAF_RULE_ACTION_INHERIT) return "conflicting disruptive actions";
             rule.action = WAF_RULE_ACTION_DENY;
@@ -293,6 +317,20 @@ fn parseRuleActions(actions: []const u8, rule: *waf_rule, pool: [*c]core.ngx_poo
             rule.log_match = 1;
         } else if (std.mem.eql(u8, part, "nolog")) {
             rule.suppress_log = 1;
+        } else if (std.mem.startsWith(u8, part, "score:")) {
+            const score_text = trimAscii(part[6..]);
+            const score_weight = std.fmt.parseInt(u16, score_text, 10) catch return "invalid score action";
+            if (score_weight == 0) return "score action must be greater than zero";
+            rule.score_weight = score_weight;
+            rule.explicit_score_weight = 1;
+        } else if (std.mem.startsWith(u8, part, "setvar:")) {
+            const expr = trimAscii(part[7..]);
+            if (!std.mem.startsWith(u8, expr, "ip.score=+")) return "unsupported setvar action";
+            const score_text = trimAscii(expr[10..]);
+            const score_weight = std.fmt.parseInt(u16, score_text, 10) catch return "invalid setvar score increment";
+            if (score_weight == 0) return "setvar score increment must be greater than zero";
+            rule.score_weight = score_weight;
+            rule.explicit_score_weight = 1;
         } else if (std.mem.eql(u8, part, "t:none")) {
             rule.explicit_transforms = 1;
             rule.transforms = 0;
@@ -384,6 +422,7 @@ fn parseWafRuleLine(line_raw: []const u8, rule: *waf_rule, pool: [*c]core.ngx_po
     rule.msg = ngx_str_t{ .len = 0, .data = core.nullptr(u8) };
     rule.compiled_regex = null;
     rule.status = http.NGX_HTTP_FORBIDDEN;
+    rule.score_weight = 1;
 
     const target_text = trimAscii(after_prefix[0..first_space]);
     if (parseRuleTargetAndSelector(target_text, rule, pool)) |err| return err;
@@ -600,6 +639,7 @@ fn buildRuleDetection(rule: *waf_rule, detail: []const u8) DetectionResult {
         .force_block = rule.action == WAF_RULE_ACTION_DENY,
         .log_match = rule.log_match == 1,
         .suppress_log = rule.suppress_log == 1,
+        .score_weight = if (rule.score_weight == 0) 1 else rule.score_weight,
         .tag = if (rule.tag.len > 0 and rule.tag.data != null) core.slicify(u8, rule.tag.data, rule.tag.len) else "",
         .logdata = if (rule.logdata.len > 0 and rule.logdata.data != null) core.slicify(u8, rule.logdata.data, rule.logdata.len) else "",
     };
@@ -901,11 +941,11 @@ fn computeBanDuration(lccf: *waf_loc_conf, strikes: u16) ngx_uint_t {
     return lccf.ban_duration * multiplier;
 }
 
-fn applyOffenseToEntry(entry: *waf_ban_entry, now: ngx_uint_t, lccf: *waf_loc_conf) void {
+fn applyOffenseToEntry(entry: *waf_ban_entry, now: ngx_uint_t, lccf: *waf_loc_conf, score_weight: u16) void {
     if (entry.*.ban_until > now) return;
 
     if (lccf.score_threshold > 0 and entry.score < std.math.maxInt(u16)) {
-        entry.score +|= 1;
+        entry.score +|= score_weight;
     }
 
     if (lccf.score_threshold > 0 and entry.score >= lccf.score_threshold) {
@@ -1013,12 +1053,14 @@ fn isClientBanned(r: [*c]ngx_http_request_t, lccf: *waf_loc_conf) bool {
     if (findBanEntry(store, ip)) |entry| {
         const now = nowSeconds();
         decayBanEntry(entry, now, lccf);
+        const snapshot = .{ entry.*.count, entry.*.strikes, entry.*.score, entry.*.ban_until };
+        std.mem.doNotOptimizeAway(snapshot);
         if (entry.*.ban_until > now) return true;
     }
     return false;
 }
 
-fn recordOffense(r: [*c]ngx_http_request_t, lccf: *waf_loc_conf) void {
+fn recordOffense(r: [*c]ngx_http_request_t, lccf: *waf_loc_conf, score_weight: u16) void {
     if (lccf.ban_threshold == 0 and lccf.score_threshold == 0) return;
     const ip = getClientIp(r) orelse return;
     const zone = ngx_http_waf_ban_zone;
@@ -1036,7 +1078,9 @@ fn recordOffense(r: [*c]ngx_http_request_t, lccf: *waf_loc_conf) void {
     const store = if (getBanStoreFromZone(zone)) |existing| existing else ensureBanStore(zone, shpool.?) orelse return;
     const entry = getOrCreateBanEntry(shpool.?, store, ip, lccf) orelse return;
     const now = nowSeconds();
-    applyOffenseToEntry(entry, now, lccf);
+    applyOffenseToEntry(entry, now, lccf, @max(@as(u16, 1), score_weight));
+    const snapshot = .{ entry.*.count, entry.*.strikes, entry.*.score, entry.*.ban_until };
+    std.mem.doNotOptimizeAway(snapshot);
 }
 
 fn ngx_http_waf_ban_zone_init(zone: [*c]core.ngx_shm_zone_t, data: ?*anyopaque) callconv(.c) ngx_int_t {
@@ -1804,7 +1848,7 @@ export fn ngx_http_waf_body_handler(r: [*c]ngx_http_request_t) callconv(.c) void
     const body_selector_result = analyzeBodySelectorRules(r, body[0..analyze_len], lccf, decode_buf, lower_buf);
     if (body_selector_result.detected) {
         const disposition = resolveMatchDisposition(body_selector_result, lccf);
-        recordOffense(r, lccf);
+        recordOffense(r, lccf, body_selector_result.score_weight);
         if (disposition.block) {
             _ = finalizeBlockedRequest(r, rctx, body_selector_result.rule_type, body_selector_result.status);
             return;
@@ -1825,7 +1869,7 @@ export fn ngx_http_waf_body_handler(r: [*c]ngx_http_request_t) callconv(.c) void
 
     if (final_result.detected) {
         const disposition = resolveMatchDisposition(final_result, lccf);
-        recordOffense(r, lccf);
+        recordOffense(r, lccf, final_result.score_weight);
         if (disposition.block) {
             _ = finalizeBlockedRequest(r, rctx, final_result.rule_type, final_result.status);
             return;
@@ -1893,7 +1937,7 @@ export fn ngx_http_waf_handler(r: [*c]ngx_http_request_t) callconv(.c) ngx_int_t
 
         if (final_uri_result.detected) {
             const disposition = resolveMatchDisposition(final_uri_result, lccf);
-            recordOffense(r, lccf);
+            recordOffense(r, lccf, final_uri_result.score_weight);
             if (disposition.block) {
                 return finalizeBlockedRequest(r, rctx, final_uri_result.rule_type, final_uri_result.status);
             } else if (disposition.log) {
@@ -1908,7 +1952,7 @@ export fn ngx_http_waf_handler(r: [*c]ngx_http_request_t) callconv(.c) ngx_int_t
         const args_selector_result = analyzeArgSelectorRules(args, lccf, decode_buf, lower_buf);
         if (args_selector_result.detected) {
             const disposition = resolveMatchDisposition(args_selector_result, lccf);
-            recordOffense(r, lccf);
+            recordOffense(r, lccf, args_selector_result.score_weight);
             if (disposition.block) {
                 return finalizeBlockedRequest(r, rctx, args_selector_result.rule_type, args_selector_result.status);
             } else if (disposition.log) {
@@ -1925,7 +1969,7 @@ export fn ngx_http_waf_handler(r: [*c]ngx_http_request_t) callconv(.c) ngx_int_t
 
         if (final_args_result.detected) {
             const disposition = resolveMatchDisposition(final_args_result, lccf);
-            recordOffense(r, lccf);
+            recordOffense(r, lccf, final_args_result.score_weight);
             if (disposition.block) {
                 return finalizeBlockedRequest(r, rctx, final_args_result.rule_type, final_args_result.status);
             } else if (disposition.log) {
@@ -1941,7 +1985,7 @@ export fn ngx_http_waf_handler(r: [*c]ngx_http_request_t) callconv(.c) ngx_int_t
             const cookie_selector_result = analyzeCookieSelectorRules(cookies, lccf, decode_buf, lower_buf);
             if (cookie_selector_result.detected) {
                 const disposition = resolveMatchDisposition(cookie_selector_result, lccf);
-                recordOffense(r, lccf);
+                recordOffense(r, lccf, cookie_selector_result.score_weight);
                 if (disposition.block) {
                     return finalizeBlockedRequest(r, rctx, cookie_selector_result.rule_type, cookie_selector_result.status);
                 } else if (disposition.log) {
@@ -1951,7 +1995,7 @@ export fn ngx_http_waf_handler(r: [*c]ngx_http_request_t) callconv(.c) ngx_int_t
             const cookie_result = analyzeCustomRules(cookies, WAF_TARGET_REQUEST_COOKIES, WAF_PHASE_REQUEST, lccf, decode_buf, lower_buf);
             if (cookie_result.detected) {
                 const disposition = resolveMatchDisposition(cookie_result, lccf);
-                recordOffense(r, lccf);
+                recordOffense(r, lccf, cookie_result.score_weight);
                 if (disposition.block) {
                     return finalizeBlockedRequest(r, rctx, cookie_result.rule_type, cookie_result.status);
                 } else if (disposition.log) {
@@ -1966,7 +2010,7 @@ export fn ngx_http_waf_handler(r: [*c]ngx_http_request_t) callconv(.c) ngx_int_t
         const method_result = analyzeCustomRules(method_name, WAF_TARGET_REQUEST_METHOD, WAF_PHASE_REQUEST, lccf, decode_buf, lower_buf);
         if (method_result.detected) {
             const disposition = resolveMatchDisposition(method_result, lccf);
-            recordOffense(r, lccf);
+            recordOffense(r, lccf, method_result.score_weight);
             if (disposition.block) {
                 return finalizeBlockedRequest(r, rctx, method_result.rule_type, method_result.status);
             } else if (disposition.log) {
@@ -1980,7 +2024,7 @@ export fn ngx_http_waf_handler(r: [*c]ngx_http_request_t) callconv(.c) ngx_int_t
         const addr_result = analyzeCustomRules(remote_addr, WAF_TARGET_REMOTE_ADDR, WAF_PHASE_REQUEST, lccf, decode_buf, lower_buf);
         if (addr_result.detected) {
             const disposition = resolveMatchDisposition(addr_result, lccf);
-            recordOffense(r, lccf);
+            recordOffense(r, lccf, addr_result.score_weight);
             if (disposition.block) {
                 return finalizeBlockedRequest(r, rctx, addr_result.rule_type, addr_result.status);
             } else if (disposition.log) {
@@ -1994,7 +2038,7 @@ export fn ngx_http_waf_handler(r: [*c]ngx_http_request_t) callconv(.c) ngx_int_t
         const query_result = analyzeCustomRules(query_string, WAF_TARGET_QUERY_STRING, WAF_PHASE_REQUEST, lccf, decode_buf, lower_buf);
         if (query_result.detected) {
             const disposition = resolveMatchDisposition(query_result, lccf);
-            recordOffense(r, lccf);
+            recordOffense(r, lccf, query_result.score_weight);
             if (disposition.block) {
                 return finalizeBlockedRequest(r, rctx, query_result.rule_type, query_result.status);
             } else if (disposition.log) {
@@ -2008,7 +2052,7 @@ export fn ngx_http_waf_handler(r: [*c]ngx_http_request_t) callconv(.c) ngx_int_t
         const request_line_result = analyzeCustomRules(request_line_slice, WAF_TARGET_REQUEST_LINE, WAF_PHASE_REQUEST, lccf, decode_buf, lower_buf);
         if (request_line_result.detected) {
             const disposition = resolveMatchDisposition(request_line_result, lccf);
-            recordOffense(r, lccf);
+            recordOffense(r, lccf, request_line_result.score_weight);
             if (disposition.block) {
                 return finalizeBlockedRequest(r, rctx, request_line_result.rule_type, request_line_result.status);
             } else if (disposition.log) {
@@ -2022,7 +2066,7 @@ export fn ngx_http_waf_handler(r: [*c]ngx_http_request_t) callconv(.c) ngx_int_t
         const protocol_result = analyzeCustomRules(request_protocol, WAF_TARGET_REQUEST_PROTOCOL, WAF_PHASE_REQUEST, lccf, decode_buf, lower_buf);
         if (protocol_result.detected) {
             const disposition = resolveMatchDisposition(protocol_result, lccf);
-            recordOffense(r, lccf);
+            recordOffense(r, lccf, protocol_result.score_weight);
             if (disposition.block) {
                 return finalizeBlockedRequest(r, rctx, protocol_result.rule_type, protocol_result.status);
             } else if (disposition.log) {
@@ -2035,7 +2079,7 @@ export fn ngx_http_waf_handler(r: [*c]ngx_http_request_t) callconv(.c) ngx_int_t
     const scheme_result = analyzeCustomRules(request_scheme, WAF_TARGET_REQUEST_SCHEME, WAF_PHASE_REQUEST, lccf, decode_buf, lower_buf);
     if (scheme_result.detected) {
         const disposition = resolveMatchDisposition(scheme_result, lccf);
-        recordOffense(r, lccf);
+        recordOffense(r, lccf, scheme_result.score_weight);
         if (disposition.block) {
             return finalizeBlockedRequest(r, rctx, scheme_result.rule_type, scheme_result.status);
         } else if (disposition.log) {
@@ -2048,7 +2092,7 @@ export fn ngx_http_waf_handler(r: [*c]ngx_http_request_t) callconv(.c) ngx_int_t
         const basename_result = analyzeCustomRules(basename_slice, WAF_TARGET_REQUEST_BASENAME, WAF_PHASE_REQUEST, lccf, decode_buf, lower_buf);
         if (basename_result.detected) {
             const disposition = resolveMatchDisposition(basename_result, lccf);
-            recordOffense(r, lccf);
+            recordOffense(r, lccf, basename_result.score_weight);
             if (disposition.block) {
                 return finalizeBlockedRequest(r, rctx, basename_result.rule_type, basename_result.status);
             } else if (disposition.log) {
@@ -2060,7 +2104,7 @@ export fn ngx_http_waf_handler(r: [*c]ngx_http_request_t) callconv(.c) ngx_int_t
     const header_selector_result = analyzeHeaderSelectorRules(r, lccf, decode_buf, lower_buf);
     if (header_selector_result.detected) {
         const disposition = resolveMatchDisposition(header_selector_result, lccf);
-        recordOffense(r, lccf);
+        recordOffense(r, lccf, header_selector_result.score_weight);
         if (disposition.block) {
             return finalizeBlockedRequest(r, rctx, header_selector_result.rule_type, header_selector_result.status);
         } else if (disposition.log) {
@@ -2073,7 +2117,7 @@ export fn ngx_http_waf_handler(r: [*c]ngx_http_request_t) callconv(.c) ngx_int_t
         const headers_result = analyzeCustomRules(headers_slice, WAF_TARGET_REQUEST_HEADERS, WAF_PHASE_REQUEST, lccf, decode_buf, lower_buf);
         if (headers_result.detected) {
             const disposition = resolveMatchDisposition(headers_result, lccf);
-            recordOffense(r, lccf);
+            recordOffense(r, lccf, headers_result.score_weight);
             if (disposition.block) {
                 return finalizeBlockedRequest(r, rctx, headers_result.rule_type, headers_result.status);
             } else if (disposition.log) {
@@ -2087,7 +2131,7 @@ export fn ngx_http_waf_handler(r: [*c]ngx_http_request_t) callconv(.c) ngx_int_t
         const header_names_result = analyzeCustomRules(header_names_slice, WAF_TARGET_REQUEST_HEADER_NAMES, WAF_PHASE_REQUEST, lccf, decode_buf, lower_buf);
         if (header_names_result.detected) {
             const disposition = resolveMatchDisposition(header_names_result, lccf);
-            recordOffense(r, lccf);
+            recordOffense(r, lccf, header_names_result.score_weight);
             if (disposition.block) {
                 return finalizeBlockedRequest(r, rctx, header_names_result.rule_type, header_names_result.status);
             } else if (disposition.log) {
@@ -2693,12 +2737,12 @@ test "applyOffenseToEntry escalates repeat offender bans" {
 
     var entry = std.mem.zeroes(waf_ban_entry);
 
-    applyOffenseToEntry(&entry, 100, &lccf);
+    applyOffenseToEntry(&entry, 100, &lccf, 1);
     try expectEqual(@as(u16, 1), entry.count);
     try expectEqual(@as(u16, 0), entry.strikes);
     try expectEqual(@as(ngx_uint_t, 0), entry.ban_until);
 
-    applyOffenseToEntry(&entry, 101, &lccf);
+    applyOffenseToEntry(&entry, 101, &lccf, 1);
     try expectEqual(@as(u16, 0), entry.count);
     try expectEqual(@as(u16, 1), entry.strikes);
     try expectEqual(@as(ngx_uint_t, 103), entry.ban_until);
@@ -2707,8 +2751,8 @@ test "applyOffenseToEntry escalates repeat offender bans" {
     try expectEqual(@as(ngx_uint_t, 0), entry.ban_until);
     try expectEqual(@as(u16, 1), entry.strikes);
 
-    applyOffenseToEntry(&entry, 105, &lccf);
-    applyOffenseToEntry(&entry, 106, &lccf);
+    applyOffenseToEntry(&entry, 105, &lccf, 1);
+    applyOffenseToEntry(&entry, 106, &lccf, 1);
     try expectEqual(@as(u16, 2), entry.strikes);
     try expectEqual(@as(ngx_uint_t, 110), entry.ban_until);
 }
@@ -2723,12 +2767,32 @@ test "applyOffenseToEntry bans on score threshold" {
 
     var entry = std.mem.zeroes(waf_ban_entry);
 
-    applyOffenseToEntry(&entry, 100, &lccf);
+    applyOffenseToEntry(&entry, 100, &lccf, 1);
     try expectEqual(@as(u16, 1), entry.score);
     try expectEqual(@as(u16, 0), entry.strikes);
     try expectEqual(@as(ngx_uint_t, 0), entry.ban_until);
 
-    applyOffenseToEntry(&entry, 101, &lccf);
+    applyOffenseToEntry(&entry, 101, &lccf, 1);
+    try expectEqual(@as(u16, 0), entry.score);
+    try expectEqual(@as(u16, 1), entry.strikes);
+    try expectEqual(@as(ngx_uint_t, 104), entry.ban_until);
+}
+
+test "applyOffenseToEntry honors weighted score increments" {
+    var lccf = std.mem.zeroes(waf_loc_conf);
+    lccf.ban_threshold = 0;
+    lccf.ban_window = 60;
+    lccf.ban_duration = 3;
+    lccf.score_threshold = 3;
+    lccf.score_decay_window = 60;
+
+    var entry = std.mem.zeroes(waf_ban_entry);
+
+    applyOffenseToEntry(&entry, 100, &lccf, 2);
+    try expectEqual(@as(u16, 2), entry.score);
+    try expectEqual(@as(ngx_uint_t, 0), entry.ban_until);
+
+    applyOffenseToEntry(&entry, 101, &lccf, 2);
     try expectEqual(@as(u16, 0), entry.score);
     try expectEqual(@as(u16, 1), entry.strikes);
     try expectEqual(@as(ngx_uint_t, 104), entry.ban_until);

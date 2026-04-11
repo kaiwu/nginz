@@ -1,2 +1,6 @@
 SecRule ARGS "@contains native-subset-needle" "id:3001,phase:1,msg:'ban threshold rule'"
 SecRule ARGS "@contains score-subset-needle" "id:3002,phase:1,msg:'score threshold rule'"
+SecRule ARGS "@contains weighted-score-needle" "id:3003,phase:1,score:2,msg:'weighted score threshold rule'"
+SecRule ARGS "@contains setvar-score-needle" "id:3004,phase:1,setvar:ip.score=+2,msg:'setvar score threshold rule'"
+SecRule ARGS "@contains severity-score-needle" "id:3005,phase:1,severity:'error',msg:'severity score threshold rule'"
+SecRule ARGS "@contains severity-override-needle" "id:3006,phase:1,severity:'critical',score:2,msg:'severity override rule'"

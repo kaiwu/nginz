@@ -35,6 +35,11 @@ async function fetchNoKeepAlive(url, init = {}) {
   return fetch(url, { ...init, headers });
 }
 
+async function restartWafServer() {
+  await stopNginz();
+  await startNginz(GENERATED_CONFIG, MODULE);
+}
+
 async function waitForStatus(url, expectedStatus, attempts = 24, delayMs = 500) {
   let lastRes;
   for (let i = 0; i < attempts; i++) {
@@ -613,6 +618,8 @@ describe("waf module", () => {
     });
 
     test("temporarily bans IP once reputation score threshold is reached and decays after quiet period", async () => {
+      await restartWafServer();
+
       const first = await fetchNoKeepAlive(`${TEST_URL}/rules-score?token=score-subset-needle`);
       expect(first.status).toBe(200);
       expect(await first.text()).toContain("rules score response");
@@ -647,8 +654,109 @@ describe("waf module", () => {
       expect(await notBanned.text()).toContain("rules score response");
     }, 15000);
 
-    test("temporarily bans IP after repeated rule hits and escalates repeat offenders", async () => {
+    test("weighted score rules trip reputation bans faster than default-weight rules", async () => {
+      await restartWafServer();
+
+      const first = await fetchNoKeepAlive(`${TEST_URL}/rules-score-weighted?token=weighted-score-needle`);
+      expect(first.status).toBe(200);
+      expect(await first.text()).toContain("rules score weighted response");
+
+      const stillClean = await fetchNoKeepAlive(`${TEST_URL}/rules-score-weighted?token=clean`);
+      expect(stillClean.status).toBe(200);
+      expect(await stillClean.text()).toContain("rules score weighted response");
+
+      const second = await fetchNoKeepAlive(`${TEST_URL}/rules-score-weighted?token=weighted-score-needle`);
+      expect(second.status).toBe(200);
+      expect(await second.text()).toContain("rules score weighted response");
+
+      const banned = await fetchNoKeepAlive(`${TEST_URL}/rules-score-weighted?token=clean`);
+      expect(banned.status).toBe(403);
+      const bannedBody = await banned.json();
+      expect(bannedBody.rule).toBe("ban");
+
       await Bun.sleep(4200);
+
+      const recovered = await fetchNoKeepAlive(`${TEST_URL}/rules-score-weighted?token=clean`);
+      expect(recovered.status).toBe(200);
+      expect(await recovered.text()).toContain("rules score weighted response");
+    }, 15000);
+
+    test("setvar ip.score alias maps to the same weighted reputation behavior", async () => {
+      await restartWafServer();
+
+      const first = await fetchNoKeepAlive(`${TEST_URL}/rules-score-setvar?token=setvar-score-needle`);
+      expect(first.status).toBe(200);
+      expect(await first.text()).toContain("rules score setvar response");
+
+      const stillClean = await fetchNoKeepAlive(`${TEST_URL}/rules-score-setvar?token=clean`);
+      expect(stillClean.status).toBe(200);
+      expect(await stillClean.text()).toContain("rules score setvar response");
+
+      const second = await fetchNoKeepAlive(`${TEST_URL}/rules-score-setvar?token=setvar-score-needle`);
+      expect(second.status).toBe(200);
+      expect(await second.text()).toContain("rules score setvar response");
+
+      const banned = await fetchNoKeepAlive(`${TEST_URL}/rules-score-setvar?token=clean`);
+      expect(banned.status).toBe(403);
+      const bannedBody = await banned.json();
+      expect(bannedBody.rule).toBe("ban");
+
+      await Bun.sleep(4200);
+
+      const recovered = await fetchNoKeepAlive(`${TEST_URL}/rules-score-setvar?token=clean`);
+      expect(recovered.status).toBe(200);
+      expect(await recovered.text()).toContain("rules score setvar response");
+    }, 15000);
+
+    test("severity action maps onto native weighted reputation scoring", async () => {
+      await restartWafServer();
+
+      const first = await fetchNoKeepAlive(`${TEST_URL}/rules-score-severity?token=severity-score-needle`);
+      expect(first.status).toBe(200);
+      expect(await first.text()).toContain("rules score severity response");
+
+      const stillClean = await fetchNoKeepAlive(`${TEST_URL}/rules-score-severity?token=clean`);
+      expect(stillClean.status).toBe(200);
+      expect(await stillClean.text()).toContain("rules score severity response");
+
+      const second = await fetchNoKeepAlive(`${TEST_URL}/rules-score-severity?token=severity-score-needle`);
+      expect(second.status).toBe(200);
+      expect(await second.text()).toContain("rules score severity response");
+
+      const banned = await fetchNoKeepAlive(`${TEST_URL}/rules-score-severity?token=clean`);
+      expect(banned.status).toBe(403);
+      const bannedBody = await banned.json();
+      expect(bannedBody.rule).toBe("ban");
+
+      await Bun.sleep(4200);
+
+      const recovered = await fetchNoKeepAlive(`${TEST_URL}/rules-score-severity?token=clean`);
+      expect(recovered.status).toBe(200);
+      expect(await recovered.text()).toContain("rules score severity response");
+    }, 15000);
+
+    test("explicit score actions override severity-derived weighting", async () => {
+      await restartWafServer();
+
+      const first = await fetchNoKeepAlive(`${TEST_URL}/rules-score-severity?token=severity-override-needle`);
+      expect(first.status).toBe(200);
+      expect(await first.text()).toContain("rules score severity response");
+
+      const stillClean = await fetchNoKeepAlive(`${TEST_URL}/rules-score-severity?token=clean`);
+      expect(stillClean.status).toBe(200);
+      expect(await stillClean.text()).toContain("rules score severity response");
+
+      const second = await fetchNoKeepAlive(`${TEST_URL}/rules-score-severity?token=severity-override-needle`);
+      expect(second.status).toBe(200);
+      expect(await second.text()).toContain("rules score severity response");
+
+      const banned = await fetchNoKeepAlive(`${TEST_URL}/rules-score-severity?token=clean`);
+      expect(banned.status).toBe(200);
+      expect(await banned.text()).toContain("rules score severity response");
+    }, 15000);
+
+    test("temporarily bans IP after repeated rule hits and escalates repeat offenders", async () => {
+      await restartWafServer();
 
       const preflight = await fetchNoKeepAlive(`${TEST_URL}/rules-ban?token=clean`);
       expect(preflight.status).toBe(200);

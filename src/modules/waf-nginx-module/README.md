@@ -101,7 +101,7 @@ Current supported subset:
   - `@rx <pattern>`
   - `@libinjection_sqli`
   - `@libinjection_xss`
-- actions subset: `id:<n>`, `phase:1|2|3`, `msg:'...'`, `tag:'...'`, `logdata:'...'`, `deny`, `block`, `pass`, `log`, `nolog`, `t:none`, `t:lowercase`, `t:urlDecode`, `t:urlDecodeUni`
+- actions subset: `id:<n>`, `phase:1|2|3`, `msg:'...'`, `tag:'...'`, `logdata:'...'`, `severity:'critical|error|warning|notice'`, `score:<n>`, `setvar:ip.score=+<n>`, `deny`, `block`, `pass`, `log`, `nolog`, `t:none`, `t:lowercase`, `t:urlDecode`, `t:urlDecodeUni`
   - `status:<code>`
 
 Example:
@@ -138,13 +138,16 @@ SecRule REQUEST_METHOD "@within patch delete" "id:2013,phase:1,msg:'within set-m
 SecRule REQUEST_PROTOCOL "@streq http/1.1" "id:2014,phase:1,msg:'request protocol rule'"
 SecRule REQUEST_SCHEME "@streq http" "id:2015,phase:1,msg:'request scheme rule'"
 SecRule REQUEST_BASENAME "@streq admin.php" "id:2016,phase:1,msg:'request basename rule'"
-SecRule RESPONSE_STATUS "@streq 204" "id:2017,phase:3,status:451,msg:'response status rule'"
-SecRule RESPONSE_HEADERS "@contains x-response-waf: response-header-hit" "id:2018,phase:3,status:452,msg:'response header rule'"
-SecRule RESPONSE_HEADERS:X-Response-Scoped "@contains scoped-response-hit" "id:2019,phase:3,status:453,msg:'response header selector rule'"
-SecRule REQUEST_HEADER_NAMES "@contains x-api-key" "id:2020,phase:1,msg:'header name collection rule'"
-SecRule REQUEST_URI "@contains blocked-api" "id:2021,phase:1,status:406,msg:'custom status rule'"
-SecRule REQUEST_URI "@contains high-risk-path" "id:2022,phase:1,deny,status:418,msg:'deny override rule'"
-SecRule REQUEST_URI "@contains monitor-only-path" "id:2023,phase:1,pass,log,msg:'pass override rule'"
+SecRule ARGS "@contains weighted-score-needle" "id:2017,phase:1,score:2,msg:'weighted score rule'"
+SecRule ARGS "@contains setvar-score-needle" "id:2018,phase:1,setvar:ip.score=+2,msg:'setvar score rule'"
+SecRule ARGS "@contains severity-score-needle" "id:2019,phase:1,severity:'error',msg:'severity score rule'"
+SecRule RESPONSE_STATUS "@streq 204" "id:2020,phase:3,status:451,msg:'response status rule'"
+SecRule RESPONSE_HEADERS "@contains x-response-waf: response-header-hit" "id:2021,phase:3,status:452,msg:'response header rule'"
+SecRule RESPONSE_HEADERS:X-Response-Scoped "@contains scoped-response-hit" "id:2022,phase:3,status:453,msg:'response header selector rule'"
+SecRule REQUEST_HEADER_NAMES "@contains x-api-key" "id:2023,phase:1,msg:'header name collection rule'"
+SecRule REQUEST_URI "@contains blocked-api" "id:2024,phase:1,status:406,msg:'custom status rule'"
+SecRule REQUEST_URI "@contains high-risk-path" "id:2025,phase:1,deny,status:418,msg:'deny override rule'"
+SecRule REQUEST_URI "@contains monitor-only-path" "id:2026,phase:1,pass,log,msg:'pass override rule'"
 ```
 
 ### Detection stack
@@ -172,6 +175,9 @@ Per-rule actions now have explicit semantics:
 - `pass` forces a non-disruptive match for that rule, even if `waf_mode block;` is set
 - `log` requests a warning log entry when the rule matches
 - `nolog` suppresses warning-log output for that rule even when detect mode would normally log the match
+- `score:<n>` increases how much that rule contributes to shared-memory reputation scoring; omitted rules keep the default weight of `1`
+- `setvar:ip.score=+<n>` is supported as a narrow compatibility alias for weighted reputation contribution; it maps to the same native score weighting as `score:<n>`
+- `severity:'critical|error|warning|notice'` maps to native reputation weights (`5/4/3/2` respectively); explicit `score:<n>` and `setvar:ip.score=+<n>` still take precedence when both are present
 - if neither `deny` nor `pass` is present, `waf_mode` remains the default enforcement switch
 
 Detect-mode and `pass,log` matches now emit a more informative warning log line that includes both the matched rule type and the rule message / matched pattern detail when available.
@@ -340,6 +346,9 @@ http {
 - [x] `waf_rules_file` now supports the safe request metadata collection `REQUEST_PROTOCOL`.
 - [x] `waf_rules_file` now supports the safe request metadata collection `REQUEST_SCHEME`, derived from nginx connection TLS state.
 - [x] `waf_rules_file` now supports the safe path-derived request metadata collection `REQUEST_BASENAME`.
+- [x] `waf_rules_file` now supports per-rule `score:<n>` weighting for shared-memory reputation escalation.
+- [x] `waf_rules_file` now supports a narrow `setvar:ip.score=+<n>` compatibility alias that maps to native reputation weighting.
+- [x] `waf_rules_file` now supports a narrow `severity:'...'` subset mapped onto native reputation weighting.
 
 `REQUEST_FILENAME` is still intentionally not supported. In this module it would require path mapping through nginx location/root resolution (`ngx_http_map_uri_to_path`) and that is not a clean access-phase metadata slice to emulate casually.
 - [x] Shared-memory temporary IP bans are now supported via `waf_ban_threshold`, `waf_ban_window`, and `waf_ban_duration`, with Bun coverage for threshold, active ban, and expiry behavior.

@@ -484,6 +484,9 @@ Implemented in `ngx_http_waf`:
   - `phase:1|2|3`
   - `msg:'...'`
   - supported compatibility subset: `deny`, `block`, `pass`, `log`, `nolog`, `tag:'...'`, `logdata:'...'`, `t:none`, `t:lowercase`, `t:urlDecode`, `t:urlDecodeUni`
+  - supported score action subset: `score:<n>`
+  - supported `setvar` compatibility subset: `setvar:ip.score=+<n>`
+  - supported severity subset: `severity:'critical|error|warning|notice'`
 - request-phase execution for `REQUEST_URI` and `ARGS`
 - body-phase execution for `REQUEST_BODY`
 - vendored in-tree `libinjection` build/package support
@@ -516,6 +519,9 @@ Implemented in `ngx_http_waf`:
 - safe request metadata collection support for `REQUEST_PROTOCOL`
 - safe request metadata collection support for `REQUEST_SCHEME`
 - safe path-derived request metadata collection support for `REQUEST_BASENAME`
+- per-rule score weighting via `score:<n>` for richer shared-memory reputation escalation
+- narrow `setvar:ip.score=+<n>` compatibility support mapped onto native reputation weighting
+- narrow severity compatibility support mapped onto native reputation weighting, with explicit score actions taking precedence
 - Bun integration coverage proving file-driven block/detect behavior
 - Bun integration coverage proving stronger detection of obfuscated SQLi/XSS payloads
 
