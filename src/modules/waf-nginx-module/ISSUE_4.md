@@ -454,6 +454,7 @@ Implemented in `ngx_http_waf`:
   - `REQUEST_PROTOCOL`
   - `REQUEST_SCHEME`
   - `REQUEST_BASENAME`
+  - `REQUEST_EXT`
   - `REQUEST_BODY`
   - `REQUEST_HEADERS`
   - `REQUEST_HEADER_NAMES`
@@ -465,9 +466,11 @@ Implemented in `ngx_http_waf`:
 - supported operator:
   - `@contains <needle>`
   - `@pm <space-delimited phrases>`
+  - `@strmatch <needle>`
   - `@within <space-delimited values>`
   - `@lt <number>` / `@le <number>` / `@gt <number>` / `@ge <number>`
   - `@ipMatch <ip-or-cidr ...>`
+  - `@ipMatchFromFile <local-files...>`
   - `@containsWord <needle>`
   - `@noMatch` / `@unconditionalMatch`
   - `@validateUrlEncoding`
@@ -490,7 +493,7 @@ Implemented in `ngx_http_waf`:
   - `id:<n>`
   - `phase:1|2|3`
   - `msg:'...'`
-  - supported compatibility subset: `deny`, `block`, `pass`, `log`, `nolog`, `tag:'...'`, `logdata:'...'`, `t:none`, `t:lowercase`, `t:urlDecode`, `t:urlDecodeUni`
+  - supported compatibility subset: `deny`, `block`, `pass`, `allow`, `log`, `nolog`, `tag:'...'`, `logdata:'...'`, `t:none`, `t:lowercase`, `t:urlDecode`, `t:urlDecodeUni`
   - supported score action subset: `score:<n>`
   - supported `setvar` compatibility subset: `setvar:ip.score=+<n>`
   - supported severity subset: `severity:'critical|error|warning|notice'`
@@ -521,16 +524,20 @@ Implemented in `ngx_http_waf`:
 - verified clean body-phase disruptive handling that no longer leaks preread request-body bytes into later request parsing
 - native request header-name collection support via `REQUEST_HEADER_NAMES`
 - safe action-slice additions via `block` (deny alias) and `nolog` log suppression
+- narrow compatibility action support via `allow` mapped onto native `pass` behavior
 - scoped response-header selectors via `RESPONSE_HEADERS:<name>`
 - low-risk `@within` operator support for exact token-set membership
 - safe request metadata collection support for `REQUEST_PROTOCOL`
 - safe request metadata collection support for `REQUEST_SCHEME`
 - safe path-derived request metadata collection support for `REQUEST_BASENAME`
+- safe path-derived request metadata collection support for `REQUEST_EXT`
 - per-rule score weighting via `score:<n>` for richer shared-memory reputation escalation
 - narrow `setvar:ip.score=+<n>` compatibility support mapped onto native reputation weighting
 - narrow severity compatibility support mapped onto native reputation weighting, with explicit score actions taking precedence
 - low-risk numeric comparison operator support via `@lt`, `@le`, `@gt`, and `@ge`
 - native `@ipMatch` support for exact-IP and CIDR membership using nginx CIDR parsing semantics
+- bounded local-file IP/CIDR operator support via `@ipMatchFromFile`
+- bounded single-pattern string operator support via `@strmatch`
 - low-risk word-boundary operator support via `@containsWord`
 - utility operator support via `@noMatch` and `@unconditionalMatch`
 - strict malformed-encoding detection support via `@validateUrlEncoding`
@@ -583,6 +590,12 @@ Remaining gaps / todos:
 - [ ] evaluate which high-value ModSecurity-compatible parser slices are worth adding next versus intentionally rejecting with clear startup errors
 - [x] revisit remaining file-backed operators like `@pmFromFile` only with dedicated config-time loading semantics
 - [ ] keep README and this issue checklist synchronized whenever a new verified slice lands
+
+Current explicit rejections / deferrals:
+
+- `REQUEST_FILENAME` remains intentionally rejected with a line-specific config-time error instead of a misleading path-mapped implementation.
+- short aliases like `@pmf` and `@ipMatchF` remain intentionally rejected; the native subset currently supports only the explicit forms `@pmFromFile` and `@ipMatchFromFile`.
+- richer shared-memory reputation tuning beyond the current proven model remains intentionally deferred after a reverted decay-tuning attempt destabilized score-ban behavior.
 
 ## Practical scope note
 

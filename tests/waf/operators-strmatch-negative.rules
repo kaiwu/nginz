@@ -1,0 +1,1 @@
+SecRule REQUEST_HEADERS:User-Agent "@strmatch webzip" "id:6181,phase:1,msg:'operators strmatch miss rule'"

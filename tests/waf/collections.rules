@@ -8,3 +8,4 @@ SecRule REQUEST_HEADER_NAMES "@contains x-collections-name-hit" "id:7007,phase:1
 SecRule REQUEST_PROTOCOL "@streq http/1.1" "id:7008,phase:1,msg:'collections request protocol rule'"
 SecRule REQUEST_SCHEME "@streq http" "id:7009,phase:1,msg:'collections request scheme rule'"
 SecRule REQUEST_BASENAME "@streq basename-hit" "id:7010,phase:1,msg:'collections request basename rule'"
+SecRule REQUEST_EXT "@streq php" "id:7011,phase:1,msg:'collections request ext rule'"

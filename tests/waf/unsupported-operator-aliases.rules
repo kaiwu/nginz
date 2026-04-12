@@ -1,0 +1,2 @@
+# line 2 should fail because pmf alias is intentionally unsupported
+SecRule REQUEST_HEADERS:User-Agent "@pmf blacklist.txt" "id:9003,phase:1,msg:'unsupported pmf alias'"

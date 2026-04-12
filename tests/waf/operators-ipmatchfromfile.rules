@@ -1,0 +1,1 @@
+SecRule REMOTE_ADDR "@ipMatchFromFile /home/kaiwu/Documents/gitea/nginz/tests/waf/ipmatchfromfile-ips.txt" "id:6170,phase:1,msg:'operators ipMatchFromFile rule'"

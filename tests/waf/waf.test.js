@@ -12,10 +12,14 @@ const BAN_RULES_FILE = `${process.cwd()}/tests/waf/ban.rules`;
 const SCORE_RULES_FILE = `${process.cwd()}/tests/waf/ban.rules`;
 const ACTION_RULES_FILE = `${process.cwd()}/tests/waf/action.rules`;
 const UNSUPPORTED_RULES_FILE = `${process.cwd()}/tests/waf/unsupported.rules`;
+const UNSUPPORTED_REQUEST_FILENAME_RULES_FILE = `${process.cwd()}/tests/waf/unsupported-request-filename.rules`;
+const UNSUPPORTED_OPERATOR_ALIASES_RULES_FILE = `${process.cwd()}/tests/waf/unsupported-operator-aliases.rules`;
 const TRANSFORM_RULES_FILE = `${process.cwd()}/tests/waf/transform.rules`;
 const OPERATORS_RULES_FILE = `${process.cwd()}/tests/waf/operators.rules`;
 const OPERATORS_IPMATCH_RULES_FILE = `${process.cwd()}/tests/waf/operators-ipmatch.rules`;
 const OPERATORS_IPMATCH_NEGATIVE_RULES_FILE = `${process.cwd()}/tests/waf/operators-ipmatch-negative.rules`;
+const OPERATORS_IPMATCH_FROM_FILE_RULES_FILE = `${process.cwd()}/tests/waf/operators-ipmatchfromfile.rules`;
+const OPERATORS_STRMATCH_NEGATIVE_RULES_FILE = `${process.cwd()}/tests/waf/operators-strmatch-negative.rules`;
 const OPERATORS_CONTAINS_WORD_NEGATIVE_RULES_FILE = `${process.cwd()}/tests/waf/operators-contains-word-negative.rules`;
 const OPERATORS_NO_MATCH_RULES_FILE = `${process.cwd()}/tests/waf/operators-no-match.rules`;
 const OPERATORS_UNCONDITIONAL_RULES_FILE = `${process.cwd()}/tests/waf/operators-unconditional.rules`;
@@ -94,6 +98,8 @@ describe("waf module", () => {
         .replaceAll("__WAF_OPERATORS_RULES_FILE__", OPERATORS_RULES_FILE)
         .replaceAll("__WAF_OPERATORS_IPMATCH_RULES_FILE__", OPERATORS_IPMATCH_RULES_FILE)
         .replaceAll("__WAF_OPERATORS_IPMATCH_NEGATIVE_RULES_FILE__", OPERATORS_IPMATCH_NEGATIVE_RULES_FILE)
+        .replaceAll("__WAF_OPERATORS_IPMATCH_FROM_FILE_RULES_FILE__", OPERATORS_IPMATCH_FROM_FILE_RULES_FILE)
+        .replaceAll("__WAF_OPERATORS_STRMATCH_NEGATIVE_RULES_FILE__", OPERATORS_STRMATCH_NEGATIVE_RULES_FILE)
         .replaceAll("__WAF_OPERATORS_CONTAINS_WORD_NEGATIVE_RULES_FILE__", OPERATORS_CONTAINS_WORD_NEGATIVE_RULES_FILE)
         .replaceAll("__WAF_OPERATORS_NO_MATCH_RULES_FILE__", OPERATORS_NO_MATCH_RULES_FILE)
         .replaceAll("__WAF_OPERATORS_UNCONDITIONAL_RULES_FILE__", OPERATORS_UNCONDITIONAL_RULES_FILE)
@@ -598,6 +604,17 @@ describe("waf module", () => {
       expect(logText).toContain("logdata=pass-path-observed");
     });
 
+    test("allow alias maps to pass-style non-disruptive behavior", async () => {
+      const res = await fetchNoKeepAlive(`${TEST_URL}/rules-allow/allow-path`);
+      expect(res.status).toBe(200);
+      const body = await res.text();
+      expect(body).toContain("rules allow response");
+
+      const logText = await waitForLogContains("logdata=allow-path-observed");
+      expect(logText).toContain("tag=compat");
+      expect(logText).toContain("logdata=allow-path-observed");
+    });
+
     test("block action aliases deny semantics", async () => {
       const res = await fetchNoKeepAlive(`${TEST_URL}/rules-block/block-path`);
       expect(res.status).toBe(419);
@@ -834,6 +851,20 @@ describe("waf module", () => {
       expect(result.stderr).toContain("configuration file");
       expect(result.stderr).toContain("test failed");
     });
+
+    test("rejects path-mapped REQUEST_FILENAME targets explicitly", () => {
+      const result = testConfigFailure(UNSUPPORTED_REQUEST_FILENAME_RULES_FILE);
+      expect(result.stderr).toContain("line 2: unsupported rule target");
+      expect(result.stderr).toContain("configuration file");
+      expect(result.stderr).toContain("test failed");
+    });
+
+    test("rejects unsupported operator aliases explicitly", () => {
+      const result = testConfigFailure(UNSUPPORTED_OPERATOR_ALIASES_RULES_FILE);
+      expect(result.stderr).toContain("line 2: unsupported rule operator");
+      expect(result.stderr).toContain("configuration file");
+      expect(result.stderr).toContain("test failed");
+    });
   });
 
   describe("transform compatibility subset", () => {
@@ -953,6 +984,24 @@ describe("waf module", () => {
       expect(body).toContain("rules operators lt response");
     });
 
+    test("keeps strmatch coverage concrete in operators.rules", async () => {
+      const res = await fetchNoKeepAlive(`${TEST_URL}/rules-operators-strmatch`, {
+        headers: { "User-Agent": "Friendly WebZIP Downloader" },
+      });
+      expect(res.status).toBe(403);
+      const body = await res.json();
+      expect(body.rule).toBe("rule");
+    });
+
+    test("strmatch does not match when the needle is absent", async () => {
+      const res = await fetchNoKeepAlive(`${TEST_URL}/rules-operators-strmatch-miss`, {
+        headers: { "User-Agent": "curl/8.0" },
+      });
+      expect(res.status).toBe(200);
+      const body = await res.text();
+      expect(body).toContain("rules operators strmatch miss response");
+    });
+
     test("keeps ipMatch coverage concrete in operators.rules", async () => {
       const res = await fetch(`${TEST_URL}/rules-operators-ipmatch`);
       expect(res.status).toBe(403);
@@ -965,6 +1014,13 @@ describe("waf module", () => {
       expect(res.status).toBe(200);
       const body = await res.text();
       expect(body).toContain("rules operators ipmatch miss response");
+    });
+
+    test("ipMatchFromFile loads local CIDR files and matches client IPs", async () => {
+      const res = await fetch(`${TEST_URL}/rules-operators-ipmatchfromfile`);
+      expect(res.status).toBe(403);
+      const body = await res.json();
+      expect(body.rule).toBe("rule");
     });
 
     test("keeps containsWord coverage concrete in operators.rules", async () => {
@@ -1008,6 +1064,15 @@ describe("waf module", () => {
       expect(body.rule).toBe("rule");
     });
 
+    test("validateUrlEncoding also matches incomplete trailing escapes", async () => {
+      const res = await fetch(`${TEST_URL}/rules-operators-validate-url-encoding`, {
+        headers: { "X-Encoded-Header": "bad%" },
+      });
+      expect(res.status).toBe(403);
+      const body = await res.json();
+      expect(body.rule).toBe("rule");
+    });
+
     test("validateUrlEncoding does not match valid percent-encoding", async () => {
       const res = await fetch(`${TEST_URL}/rules-operators-validate-url-encoding-miss`, {
         headers: { "X-Encoded-Header": "good%20value" },
@@ -1022,6 +1087,17 @@ describe("waf module", () => {
         method: "POST",
         headers: { "Content-Type": "application/octet-stream" },
         body: new Uint8Array([0x61, 0xc0, 0xaf, 0x62]),
+      });
+      expect(res.status).toBe(403);
+      const body = await res.json();
+      expect(body.rule).toBe("rule");
+    });
+
+    test("validateUtf8Encoding also matches truncated multibyte sequences", async () => {
+      const res = await fetch(`${TEST_URL}/rules-operators-validate-utf8`, {
+        method: "POST",
+        headers: { "Content-Type": "application/octet-stream" },
+        body: new Uint8Array([0xe2, 0x82]),
       });
       expect(res.status).toBe(403);
       const body = await res.json();
@@ -1048,6 +1124,15 @@ describe("waf module", () => {
       expect(body.rule).toBe("rule");
     });
 
+    test("pmFromFile ignores blank lines and comments while loading later phrases", async () => {
+      const res = await fetch(`${TEST_URL}/rules-operators-pmfromfile`, {
+        headers: { "User-Agent": "agent another-needle present" },
+      });
+      expect(res.status).toBe(403);
+      const body = await res.json();
+      expect(body.rule).toBe("rule");
+    });
+
   });
 
   test("fails config test when pmFromFile cannot load a referenced local file", () => {
@@ -1065,6 +1150,23 @@ describe("waf module", () => {
     expect(stderr).toContain("configuration file");
     expect(stderr).toContain("test failed");
     expect(stderr).toContain("unable to load pmFromFile phrase list");
+  });
+
+  test("fails config test when ipMatchFromFile cannot load a referenced local file", () => {
+    const runtimeDir = mkdtempSync(join(tmpdir(), "nginz-waf-invalid-ipmf-"));
+    const rulesPath = join(runtimeDir, "unsupported-ipmatchfromfile.rules");
+    writeFileSync(
+      rulesPath,
+      `SecRule REMOTE_ADDR "@ipMatchFromFile ${join(runtimeDir, "does-not-exist.txt")}" "id:9201,phase:1,msg:'unsupported ipMatchFromFile rule'"\n`,
+    );
+
+    const result = testConfigFailure(rulesPath);
+    rmSync(runtimeDir, { recursive: true, force: true });
+
+    const stderr = `${result.stderr ?? ""}${result.stdout ?? ""}`;
+    expect(stderr).toContain("configuration file");
+    expect(stderr).toContain("test failed");
+    expect(stderr).toContain("unable to load ipMatchFromFile entries");
   });
 
   describe("dedicated collection fixtures", () => {
@@ -1143,6 +1245,13 @@ describe("waf module", () => {
 
     test("keeps request basename coverage concrete in collections.rules", async () => {
       const res = await fetch(`${TEST_URL}/rules-collections-basename/foo/basename-hit`);
+      expect(res.status).toBe(403);
+      const body = await res.json();
+      expect(body.rule).toBe("rule");
+    });
+
+    test("keeps request ext coverage concrete in collections.rules", async () => {
+      const res = await fetch(`${TEST_URL}/rules-collections-ext/test.php`);
       expect(res.status).toBe(403);
       const body = await res.json();
       expect(body.rule).toBe("rule");

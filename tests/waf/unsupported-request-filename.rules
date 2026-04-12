@@ -1,0 +1,2 @@
+# line 2 should fail because REQUEST_FILENAME is intentionally unsupported
+SecRule REQUEST_FILENAME "@contains admin.php" "id:9002,phase:1,msg:'unsupported request filename target'"

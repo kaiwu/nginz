@@ -84,7 +84,7 @@ Load a native ModSecurity-like rule file at config load time.
 Current supported subset:
 
 - one rule per line starting with `SecRule`
-- targets: `REQUEST_URI`, `ARGS`, `QUERY_STRING`, `REQUEST_LINE`, `REQUEST_PROTOCOL`, `REQUEST_SCHEME`, `REQUEST_BASENAME`, `REQUEST_BODY`, `REQUEST_HEADERS`, `REQUEST_HEADER_NAMES`, `REQUEST_COOKIES`, `REQUEST_METHOD`, `REMOTE_ADDR`, `RESPONSE_STATUS`, `RESPONSE_HEADERS`
+- targets: `REQUEST_URI`, `ARGS`, `QUERY_STRING`, `REQUEST_LINE`, `REQUEST_PROTOCOL`, `REQUEST_SCHEME`, `REQUEST_BASENAME`, `REQUEST_EXT`, `REQUEST_BODY`, `REQUEST_HEADERS`, `REQUEST_HEADER_NAMES`, `REQUEST_COOKIES`, `REQUEST_METHOD`, `REMOTE_ADDR`, `RESPONSE_STATUS`, `RESPONSE_HEADERS`
 - scoped selectors on:
   - `ARGS:name`
   - `REQUEST_BODY:name`
@@ -94,9 +94,11 @@ Current supported subset:
 - operators:
   - `@contains <needle>`
   - `@pm <space-delimited phrases>`
+  - `@strmatch <needle>`
   - `@within <space-delimited values>`
   - `@lt <number>` / `@le <number>` / `@gt <number>` / `@ge <number>`
   - `@ipMatch <ip-or-cidr ...>`
+  - `@ipMatchFromFile <local-files...>`
   - `@containsWord <needle>`
   - `@noMatch` / `@unconditionalMatch`
   - `@validateUrlEncoding`
@@ -108,7 +110,7 @@ Current supported subset:
   - `@rx <pattern>`
   - `@libinjection_sqli`
   - `@libinjection_xss`
-- actions subset: `id:<n>`, `phase:1|2|3`, `msg:'...'`, `tag:'...'`, `logdata:'...'`, `severity:'critical|error|warning|notice'`, `score:<n>`, `setvar:ip.score=+<n>`, `deny`, `block`, `pass`, `log`, `nolog`, `t:none`, `t:lowercase`, `t:urlDecode`, `t:urlDecodeUni`
+- actions subset: `id:<n>`, `phase:1|2|3`, `msg:'...'`, `tag:'...'`, `logdata:'...'`, `severity:'critical|error|warning|notice'`, `score:<n>`, `setvar:ip.score=+<n>`, `deny`, `block`, `pass`, `allow`, `log`, `nolog`, `t:none`, `t:lowercase`, `t:urlDecode`, `t:urlDecodeUni`
   - `status:<code>`
 
 Example:
@@ -145,23 +147,26 @@ SecRule REQUEST_METHOD "@within patch delete" "id:2013,phase:1,msg:'within set-m
 SecRule REQUEST_PROTOCOL "@streq http/1.1" "id:2014,phase:1,msg:'request protocol rule'"
 SecRule REQUEST_SCHEME "@streq http" "id:2015,phase:1,msg:'request scheme rule'"
 SecRule REQUEST_BASENAME "@streq admin.php" "id:2016,phase:1,msg:'request basename rule'"
-SecRule ARGS "@contains weighted-score-needle" "id:2017,phase:1,score:2,msg:'weighted score rule'"
-SecRule ARGS "@contains setvar-score-needle" "id:2018,phase:1,setvar:ip.score=+2,msg:'setvar score rule'"
-SecRule ARGS "@contains severity-score-needle" "id:2019,phase:1,severity:'error',msg:'severity score rule'"
-SecRule ARGS:attempts "@ge 5" "id:2020,phase:1,msg:'numeric comparison rule'"
-SecRule REMOTE_ADDR "@ipMatch 127.0.0.1/32 ::1/128" "id:2021,phase:1,msg:'ip cidr rule'"
-SecRule REQUEST_HEADERS:X-Word-Header "@containsWord token" "id:2022,phase:1,msg:'word boundary rule'"
-SecRule REQUEST_URI "@unconditionalMatch" "id:2023,phase:1,msg:'utility always-match rule'"
-SecRule REQUEST_HEADERS:X-Encoded-Header "@validateUrlEncoding" "id:2024,phase:1,msg:'invalid url encoding rule'"
-SecRule REQUEST_BODY "@validateUtf8Encoding" "id:2025,phase:2,msg:'invalid utf8 rule'"
-SecRule REQUEST_HEADERS:User-Agent "@pmFromFile /etc/nginz/waf-phrases.txt" "id:2026,phase:1,msg:'phrase file rule'"
-SecRule RESPONSE_STATUS "@streq 204" "id:2027,phase:3,status:451,msg:'response status rule'"
-SecRule RESPONSE_HEADERS "@contains x-response-waf: response-header-hit" "id:2028,phase:3,status:452,msg:'response header rule'"
-SecRule RESPONSE_HEADERS:X-Response-Scoped "@contains scoped-response-hit" "id:2029,phase:3,status:453,msg:'response header selector rule'"
-SecRule REQUEST_HEADER_NAMES "@contains x-api-key" "id:2030,phase:1,msg:'header name collection rule'"
-SecRule REQUEST_URI "@contains blocked-api" "id:2031,phase:1,status:406,msg:'custom status rule'"
-SecRule REQUEST_URI "@contains high-risk-path" "id:2032,phase:1,deny,status:418,msg:'deny override rule'"
-SecRule REQUEST_URI "@contains monitor-only-path" "id:2033,phase:1,pass,log,msg:'pass override rule'"
+SecRule REQUEST_EXT "@streq php" "id:2017,phase:1,msg:'request ext rule'"
+SecRule ARGS "@contains weighted-score-needle" "id:2018,phase:1,score:2,msg:'weighted score rule'"
+SecRule ARGS "@contains setvar-score-needle" "id:2019,phase:1,setvar:ip.score=+2,msg:'setvar score rule'"
+SecRule ARGS "@contains severity-score-needle" "id:2020,phase:1,severity:'error',msg:'severity score rule'"
+SecRule ARGS:attempts "@ge 5" "id:2021,phase:1,msg:'numeric comparison rule'"
+SecRule REMOTE_ADDR "@ipMatch 127.0.0.1/32 ::1/128" "id:2022,phase:1,msg:'ip cidr rule'"
+SecRule REMOTE_ADDR "@ipMatchFromFile /etc/nginz/waf-ip-cidrs.txt" "id:2023,phase:1,msg:'ip file rule'"
+SecRule REQUEST_HEADERS:User-Agent "@strmatch webzip" "id:2024,phase:1,msg:'single-pattern rule'"
+SecRule REQUEST_HEADERS:X-Word-Header "@containsWord token" "id:2025,phase:1,msg:'word boundary rule'"
+SecRule REQUEST_URI "@unconditionalMatch" "id:2026,phase:1,msg:'utility always-match rule'"
+SecRule REQUEST_HEADERS:X-Encoded-Header "@validateUrlEncoding" "id:2027,phase:1,msg:'invalid url encoding rule'"
+SecRule REQUEST_BODY "@validateUtf8Encoding" "id:2028,phase:2,msg:'invalid utf8 rule'"
+SecRule REQUEST_HEADERS:User-Agent "@pmFromFile /etc/nginz/waf-phrases.txt" "id:2029,phase:1,msg:'phrase file rule'"
+SecRule RESPONSE_STATUS "@streq 204" "id:2030,phase:3,status:451,msg:'response status rule'"
+SecRule RESPONSE_HEADERS "@contains x-response-waf: response-header-hit" "id:2031,phase:3,status:452,msg:'response header rule'"
+SecRule RESPONSE_HEADERS:X-Response-Scoped "@contains scoped-response-hit" "id:2032,phase:3,status:453,msg:'response header selector rule'"
+SecRule REQUEST_HEADER_NAMES "@contains x-api-key" "id:2033,phase:1,msg:'header name collection rule'"
+SecRule REQUEST_URI "@contains blocked-api" "id:2034,phase:1,status:406,msg:'custom status rule'"
+SecRule REQUEST_URI "@contains high-risk-path" "id:2035,phase:1,deny,status:418,msg:'deny override rule'"
+SecRule REQUEST_URI "@contains monitor-only-path" "id:2036,phase:1,pass,log,msg:'pass override rule'"
 ```
 
 ### Detection stack
@@ -187,6 +192,7 @@ Per-rule actions now have explicit semantics:
 - `deny` forces a disruptive block for that rule, even if `waf_mode detect;` is set
 - `block` is a native compatibility alias for `deny`
 - `pass` forces a non-disruptive match for that rule, even if `waf_mode block;` is set
+- `allow` is a narrow compatibility alias for `pass` in the native engine
 - `log` requests a warning log entry when the rule matches
 - `nolog` suppresses warning-log output for that rule even when detect mode would normally log the match
 - `score:<n>` increases how much that rule contributes to shared-memory reputation scoring; omitted rules keep the default weight of `1`
@@ -207,9 +213,13 @@ These do not alter disruption flow, but they are emitted into warning-log output
 
 `@within` is implemented as a small native set-membership subset: it accepts a space-delimited value list and matches only when the normalized input equals one of those candidate values.
 
+`@strmatch` is implemented as a bounded single-pattern string matcher over the same normalized input path as `@contains`.
+
 `@lt`, `@le`, `@gt`, and `@ge` are implemented as a small numeric comparison subset: both the inspected value and the rule pattern must parse as base-10 integers or the operator does not match.
 
 `@ipMatch` is implemented as a CIDR/IP membership subset for address targets such as `REMOTE_ADDR`; rule-side CIDR parsing reuses nginx's native `ngx_ptocidr` helper.
+
+`@ipMatchFromFile` is implemented as a bounded local-file subset: IP/CIDR files are loaded from the local filesystem only, one entry per line, with blank lines and `#` comments ignored, and runtime matching reuses the native `@ipMatch` matcher.
 
 `@containsWord` is implemented as a word-boundary subset: letters, digits, and underscore count as word characters, and the needle only matches when both sides are bounded by non-word characters or string edges.
 
@@ -374,24 +384,32 @@ http {
 - [x] `waf_rules_file` now supports the safe request metadata collection `REQUEST_PROTOCOL`.
 - [x] `waf_rules_file` now supports the safe request metadata collection `REQUEST_SCHEME`, derived from nginx connection TLS state.
 - [x] `waf_rules_file` now supports the safe path-derived request metadata collection `REQUEST_BASENAME`.
+- [x] `waf_rules_file` now supports the safe path-derived request metadata collection `REQUEST_EXT`.
 - [x] `waf_rules_file` now supports per-rule `score:<n>` weighting for shared-memory reputation escalation.
 - [x] `waf_rules_file` now supports a narrow `setvar:ip.score=+<n>` compatibility alias that maps to native reputation weighting.
 - [x] `waf_rules_file` now supports a narrow `severity:'...'` subset mapped onto native reputation weighting.
 - [x] `waf_rules_file` now supports low-risk numeric comparison operators `@lt`, `@le`, `@gt`, and `@ge`.
 - [x] `waf_rules_file` now supports `@ipMatch` for exact-IP and CIDR matching on address-style targets.
+- [x] `waf_rules_file` now supports a bounded local-file `@ipMatchFromFile` subset for config-loaded IP/CIDR lists.
 - [x] `waf_rules_file` now supports `@containsWord` for low-risk word-boundary string matching.
+- [x] `waf_rules_file` now supports `@strmatch` as a bounded single-pattern string matcher.
 - [x] `waf_rules_file` now supports utility operators `@noMatch` and `@unconditionalMatch`.
 - [x] `waf_rules_file` now supports `@validateUrlEncoding` for strict malformed percent-encoding detection.
 - [x] `waf_rules_file` now supports `@validateUtf8Encoding` for strict malformed UTF-8 detection.
 - [x] `waf_rules_file` now supports a bounded local-file `@pmFromFile` subset with config-time phrase loading.
 
-`REQUEST_FILENAME` is still intentionally not supported. In this module it would require path mapping through nginx location/root resolution (`ngx_http_map_uri_to_path`) and that is not a clean access-phase metadata slice to emulate casually.
+`REQUEST_FILENAME` is still intentionally not supported. In this module it would require path mapping through nginx location/root resolution (`ngx_http_map_uri_to_path`) and that is not a clean access-phase metadata slice to emulate casually. The config parser now rejects it explicitly with a line-specific startup error.
+
+Short aliases such as `@pmf` and `@ipMatchF` are also intentionally not supported right now. The native subset accepts the explicit forms `@pmFromFile` and `@ipMatchFromFile` only, and rejects unsupported aliases with line-specific startup errors.
+
+The next reputation-model step remains intentionally deferred. A first attempt at configurable score-decay step sizing was reverted because it destabilized existing score-ban behavior, so richer expiry/escalation tuning still needs a more careful design pass.
 - [x] Shared-memory temporary IP bans are now supported via `waf_ban_threshold`, `waf_ban_window`, and `waf_ban_duration`, with Bun coverage for threshold, active ban, and expiry behavior.
 - [x] `waf_rules_file` now supports `ARGS:name` selectors and per-rule `status:<code>` actions for more practical application-facing policies.
 - [x] `waf_rules_file` now supports `REQUEST_BODY:name` selectors for form-encoded and top-level JSON request bodies.
 - [x] Supported native-compatibility coverage is now spread across multiple checked-in fixtures under `tests/waf/` (`native-subset.rules`, `operators.rules`, `collections.rules`, `action.rules`, `transform.rules`, `ban.rules`, `libinjection.rules`, `unsupported.rules`) instead of relying on one monolithic example file.
 - [x] `waf_rules_file` now gives `deny` and `pass` explicit per-rule semantics while keeping `waf_mode` as the default enforcement policy when neither override is present.
 - [x] `waf_rules_file` now supports safe action-slice additions `block` (alias of `deny`) and `nolog` for suppressing match logging.
+- [x] `waf_rules_file` now supports `allow` as a narrow compatibility alias for `pass`.
 - [x] `waf_rules_file` now emits line-specific config-time parser errors for unsupported native subset syntax.
 - [x] Shared-memory bans now retain short-term offender reputation and escalate repeat-ban duration instead of always resetting to the same flat penalty.
 - [x] `waf_rules_file` now supports prefix/suffix string operators via `@beginsWith` and `@endsWith`.

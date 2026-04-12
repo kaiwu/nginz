@@ -2,3 +2,4 @@ SecRule REQUEST_URI "@contains deny-path" "id:4001,phase:1,deny,status:418,msg:'
 SecRule REQUEST_URI "@contains pass-path" "id:4002,phase:1,pass,log,msg:'pass override rule',tag:'monitor',logdata:'pass-path-observed'"
 SecRule REQUEST_URI "@contains block-path" "id:4003,phase:1,block,status:419,msg:'block alias rule'"
 SecRule REQUEST_URI "@contains nolog-path" "id:4004,phase:1,nolog,msg:'nolog detect rule',logdata:'nolog-path-hidden'"
+SecRule REQUEST_URI "@contains allow-path" "id:4005,phase:1,allow,log,msg:'allow alias rule',tag:'compat',logdata:'allow-path-observed'"
