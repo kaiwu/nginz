@@ -40,6 +40,8 @@ It is a nginx wrapper, and by default built with
 
 nginz also has built-in `ngx_http_js_module` with quickjs engine.
 
+For the higher-level product and module direction, see [ROADMAP.md](ROADMAP.md).
+
 A module `echoz` is provided as an example, it is a tribute to @[agentzh][2] and his [echo][1] module. `echoz`
 so far is a simplified version of `echo` and it misses some of the directives.
 
