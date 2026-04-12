@@ -1,7 +1,7 @@
 import { describe, test, expect, beforeAll, afterAll } from "bun:test";
 import { startNginz, stopNginz, cleanupRuntime, TEST_URL } from "../harness.js";
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdtempSync, rmSync, writeFileSync } from "fs";
+import { existsSync, mkdtempSync, mkdirSync, rmSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 
@@ -63,6 +63,7 @@ async function waitForStatus(url, expectedStatus, attempts = 24, delayMs = 500) 
 function testConfigFailure(rulesFile) {
   const runtimeDir = mkdtempSync(join(tmpdir(), "nginz-waf-invalid-"));
   const confPath = join(runtimeDir, "nginx.conf");
+  mkdirSync(join(runtimeDir, "logs"), { recursive: true });
 
   const config = `daemon off;\nerror_log stderr notice;\npid logs/nginx.pid;\n\nevents {\n    worker_connections 16;\n}\n\nhttp {\n    server {\n        listen 8899;\n\n        location / {\n            waf on;\n            waf_mode block;\n            waf_sqli off;\n            waf_xss off;\n            waf_rules_file ${rulesFile};\n            echozn \"invalid config response\";\n        }\n    }\n}\n`;
 
@@ -1047,6 +1048,23 @@ describe("waf module", () => {
       expect(body.rule).toBe("rule");
     });
 
+  });
+
+  test("fails config test when pmFromFile cannot load a referenced local file", () => {
+    const runtimeDir = mkdtempSync(join(tmpdir(), "nginz-waf-invalid-pmf-"));
+    const rulesPath = join(runtimeDir, "unsupported-pmfromfile.rules");
+    writeFileSync(
+      rulesPath,
+      `SecRule REQUEST_HEADERS:User-Agent "@pmFromFile ${join(runtimeDir, "does-not-exist.txt")}" "id:9200,phase:1,msg:'unsupported pmFromFile rule'"\n`,
+    );
+
+    const result = testConfigFailure(rulesPath);
+    rmSync(runtimeDir, { recursive: true, force: true });
+
+    const stderr = `${result.stderr ?? ""}${result.stdout ?? ""}`;
+    expect(stderr).toContain("configuration file");
+    expect(stderr).toContain("test failed");
+    expect(stderr).toContain("unable to load pmFromFile phrase list");
   });
 
   describe("dedicated collection fixtures", () => {
