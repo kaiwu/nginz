@@ -99,6 +99,8 @@ Current supported subset:
   - `@ipMatch <ip-or-cidr ...>`
   - `@containsWord <needle>`
   - `@noMatch` / `@unconditionalMatch`
+  - `@validateUrlEncoding`
+  - `@validateUtf8Encoding`
   - `@beginsWith <value>`
   - `@endsWith <value>`
   - `@streq <value>` / `@eq <value>`
@@ -149,13 +151,15 @@ SecRule ARGS:attempts "@ge 5" "id:2020,phase:1,msg:'numeric comparison rule'"
 SecRule REMOTE_ADDR "@ipMatch 127.0.0.1/32 ::1/128" "id:2021,phase:1,msg:'ip cidr rule'"
 SecRule REQUEST_HEADERS:X-Word-Header "@containsWord token" "id:2022,phase:1,msg:'word boundary rule'"
 SecRule REQUEST_URI "@unconditionalMatch" "id:2023,phase:1,msg:'utility always-match rule'"
-SecRule RESPONSE_STATUS "@streq 204" "id:2024,phase:3,status:451,msg:'response status rule'"
-SecRule RESPONSE_HEADERS "@contains x-response-waf: response-header-hit" "id:2025,phase:3,status:452,msg:'response header rule'"
-SecRule RESPONSE_HEADERS:X-Response-Scoped "@contains scoped-response-hit" "id:2026,phase:3,status:453,msg:'response header selector rule'"
-SecRule REQUEST_HEADER_NAMES "@contains x-api-key" "id:2027,phase:1,msg:'header name collection rule'"
-SecRule REQUEST_URI "@contains blocked-api" "id:2028,phase:1,status:406,msg:'custom status rule'"
-SecRule REQUEST_URI "@contains high-risk-path" "id:2029,phase:1,deny,status:418,msg:'deny override rule'"
-SecRule REQUEST_URI "@contains monitor-only-path" "id:2030,phase:1,pass,log,msg:'pass override rule'"
+SecRule REQUEST_HEADERS:X-Encoded-Header "@validateUrlEncoding" "id:2024,phase:1,msg:'invalid url encoding rule'"
+SecRule REQUEST_BODY "@validateUtf8Encoding" "id:2025,phase:2,msg:'invalid utf8 rule'"
+SecRule RESPONSE_STATUS "@streq 204" "id:2026,phase:3,status:451,msg:'response status rule'"
+SecRule RESPONSE_HEADERS "@contains x-response-waf: response-header-hit" "id:2027,phase:3,status:452,msg:'response header rule'"
+SecRule RESPONSE_HEADERS:X-Response-Scoped "@contains scoped-response-hit" "id:2028,phase:3,status:453,msg:'response header selector rule'"
+SecRule REQUEST_HEADER_NAMES "@contains x-api-key" "id:2029,phase:1,msg:'header name collection rule'"
+SecRule REQUEST_URI "@contains blocked-api" "id:2030,phase:1,status:406,msg:'custom status rule'"
+SecRule REQUEST_URI "@contains high-risk-path" "id:2031,phase:1,deny,status:418,msg:'deny override rule'"
+SecRule REQUEST_URI "@contains monitor-only-path" "id:2032,phase:1,pass,log,msg:'pass override rule'"
 ```
 
 ### Detection stack
@@ -209,7 +213,11 @@ These do not alter disruption flow, but they are emitted into warning-log output
 
 `@noMatch` and `@unconditionalMatch` are implemented as utility operators with literal semantics: the former never matches, and the latter always matches.
 
-`@validateUrlEncoding`, `@validateUtf8Encoding`, and `@pmFromFile` are still intentionally deferred. They need stricter validation / file-loading semantics than the current native operator path provides, so they should only land as a dedicated slice rather than as parser-only compatibility sugar.
+`@validateUrlEncoding` is implemented as a strict malformed-encoding detector: it matches when the inspected value contains a `%` escape that is incomplete or not followed by two hexadecimal digits.
+
+`@validateUtf8Encoding` is implemented as a strict malformed-UTF-8 detector: it matches when the inspected raw bytes are not valid UTF-8 according to Zig's standard Unicode validator.
+
+`@pmFromFile` is still intentionally deferred. It needs config-time file-loading semantics rather than a parser-only compatibility shim.
 
 The native subset now also supports a small explicit transformation set:
 
@@ -371,7 +379,9 @@ http {
 - [x] `waf_rules_file` now supports `@ipMatch` for exact-IP and CIDR matching on address-style targets.
 - [x] `waf_rules_file` now supports `@containsWord` for low-risk word-boundary string matching.
 - [x] `waf_rules_file` now supports utility operators `@noMatch` and `@unconditionalMatch`.
-- [x] evaluated `@validateUrlEncoding`, `@validateUtf8Encoding`, and `@pmFromFile`; kept them deferred until a dedicated validation / file-loading slice is implemented.
+- [x] `waf_rules_file` now supports `@validateUrlEncoding` for strict malformed percent-encoding detection.
+- [x] `waf_rules_file` now supports `@validateUtf8Encoding` for strict malformed UTF-8 detection.
+- [x] evaluated `@pmFromFile`; kept it deferred until a dedicated file-loading slice is implemented.
 
 `REQUEST_FILENAME` is still intentionally not supported. In this module it would require path mapping through nginx location/root resolution (`ngx_http_map_uri_to_path`) and that is not a clean access-phase metadata slice to emulate casually.
 - [x] Shared-memory temporary IP bans are now supported via `waf_ban_threshold`, `waf_ban_window`, and `waf_ban_duration`, with Bun coverage for threshold, active ban, and expiry behavior.

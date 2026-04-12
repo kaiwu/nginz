@@ -19,6 +19,10 @@ const OPERATORS_IPMATCH_NEGATIVE_RULES_FILE = `${process.cwd()}/tests/waf/operat
 const OPERATORS_CONTAINS_WORD_NEGATIVE_RULES_FILE = `${process.cwd()}/tests/waf/operators-contains-word-negative.rules`;
 const OPERATORS_NO_MATCH_RULES_FILE = `${process.cwd()}/tests/waf/operators-no-match.rules`;
 const OPERATORS_UNCONDITIONAL_RULES_FILE = `${process.cwd()}/tests/waf/operators-unconditional.rules`;
+const OPERATORS_VALIDATE_URL_ENCODING_RULES_FILE = `${process.cwd()}/tests/waf/operators-validate-url-encoding.rules`;
+const OPERATORS_VALIDATE_URL_ENCODING_NEGATIVE_RULES_FILE = `${process.cwd()}/tests/waf/operators-validate-url-encoding-negative.rules`;
+const OPERATORS_VALIDATE_UTF8_RULES_FILE = `${process.cwd()}/tests/waf/operators-validate-utf8.rules`;
+const OPERATORS_VALIDATE_UTF8_NEGATIVE_RULES_FILE = `${process.cwd()}/tests/waf/operators-validate-utf8-negative.rules`;
 const COLLECTIONS_RULES_FILE = `${process.cwd()}/tests/waf/collections.rules`;
 const BODY_RULES_FILE = `${process.cwd()}/tests/waf/body.rules`;
 const RESPONSE_RULES_FILE = `${process.cwd()}/tests/waf/response.rules`;
@@ -91,6 +95,10 @@ describe("waf module", () => {
         .replaceAll("__WAF_OPERATORS_CONTAINS_WORD_NEGATIVE_RULES_FILE__", OPERATORS_CONTAINS_WORD_NEGATIVE_RULES_FILE)
         .replaceAll("__WAF_OPERATORS_NO_MATCH_RULES_FILE__", OPERATORS_NO_MATCH_RULES_FILE)
         .replaceAll("__WAF_OPERATORS_UNCONDITIONAL_RULES_FILE__", OPERATORS_UNCONDITIONAL_RULES_FILE)
+        .replaceAll("__WAF_OPERATORS_VALIDATE_URL_ENCODING_RULES_FILE__", OPERATORS_VALIDATE_URL_ENCODING_RULES_FILE)
+        .replaceAll("__WAF_OPERATORS_VALIDATE_URL_ENCODING_NEGATIVE_RULES_FILE__", OPERATORS_VALIDATE_URL_ENCODING_NEGATIVE_RULES_FILE)
+        .replaceAll("__WAF_OPERATORS_VALIDATE_UTF8_RULES_FILE__", OPERATORS_VALIDATE_UTF8_RULES_FILE)
+        .replaceAll("__WAF_OPERATORS_VALIDATE_UTF8_NEGATIVE_RULES_FILE__", OPERATORS_VALIDATE_UTF8_NEGATIVE_RULES_FILE)
         .replaceAll("__WAF_COLLECTIONS_RULES_FILE__", COLLECTIONS_RULES_FILE)
         .replaceAll("__WAF_BODY_RULES_FILE__", BODY_RULES_FILE)
         .replaceAll("__WAF_RESPONSE_RULES_FILE__", RESPONSE_RULES_FILE)
@@ -986,6 +994,46 @@ describe("waf module", () => {
       expect(res.status).toBe(403);
       const body = await res.json();
       expect(body.rule).toBe("rule");
+    });
+
+    test("validateUrlEncoding matches malformed percent-encoding", async () => {
+      const res = await fetch(`${TEST_URL}/rules-operators-validate-url-encoding`, {
+        headers: { "X-Encoded-Header": "bad%2Gvalue" },
+      });
+      expect(res.status).toBe(403);
+      const body = await res.json();
+      expect(body.rule).toBe("rule");
+    });
+
+    test("validateUrlEncoding does not match valid percent-encoding", async () => {
+      const res = await fetch(`${TEST_URL}/rules-operators-validate-url-encoding-miss`, {
+        headers: { "X-Encoded-Header": "good%20value" },
+      });
+      expect(res.status).toBe(200);
+      const body = await res.text();
+      expect(body).toContain("rules operators validate url encoding miss response");
+    });
+
+    test("validateUtf8Encoding matches malformed UTF-8 bytes", async () => {
+      const res = await fetch(`${TEST_URL}/rules-operators-validate-utf8`, {
+        method: "POST",
+        headers: { "Content-Type": "application/octet-stream" },
+        body: new Uint8Array([0x61, 0xc0, 0xaf, 0x62]),
+      });
+      expect(res.status).toBe(403);
+      const body = await res.json();
+      expect(body.rule).toBe("rule");
+    });
+
+    test("validateUtf8Encoding does not match valid UTF-8 bytes", async () => {
+      const res = await fetch(`${TEST_URL}/rules-operators-validate-utf8-miss`, {
+        method: "POST",
+        headers: { "Content-Type": "application/octet-stream" },
+        body: new TextEncoder().encode("héllo"),
+      });
+      expect(res.status).toBe(200);
+      const body = await res.text();
+      expect(body).toContain("rules operators validate utf8 miss response");
     });
 
   });

@@ -74,6 +74,8 @@ const WAF_OPERATOR_IP_MATCH: u8 = 14;
 const WAF_OPERATOR_CONTAINS_WORD: u8 = 15;
 const WAF_OPERATOR_NO_MATCH: u8 = 16;
 const WAF_OPERATOR_UNCONDITIONAL_MATCH: u8 = 17;
+const WAF_OPERATOR_VALIDATE_URL_ENCODING: u8 = 18;
+const WAF_OPERATOR_VALIDATE_UTF8_ENCODING: u8 = 19;
 
 const WAF_RULE_ACTION_INHERIT: u8 = 0;
 const WAF_RULE_ACTION_PASS: u8 = 1;
@@ -400,6 +402,17 @@ fn containsWord(normalized: []const u8, needle: []const u8) bool {
     return false;
 }
 
+fn hasInvalidUrlEncoding(input: []const u8) bool {
+    var i: usize = 0;
+    while (i < input.len) : (i += 1) {
+        if (input[i] != '%') continue;
+        if (i + 2 >= input.len) return true;
+        if (hexCharToValue(input[i + 1]) == null or hexCharToValue(input[i + 2]) == null) return true;
+        i += 2;
+    }
+    return false;
+}
+
 fn tokenSetContains(normalized: []const u8, pattern_text: []const u8) bool {
     var it = std.mem.tokenizeAny(u8, pattern_text, " \t\r\n");
     while (it.next()) |token| {
@@ -570,6 +583,12 @@ fn parseWafRuleLine(line_raw: []const u8, rule: *waf_rule, pool: [*c]core.ngx_po
     } else if (std.mem.eql(u8, operator_text, "@unconditionalMatch")) {
         rule.operator = WAF_OPERATOR_UNCONDITIONAL_MATCH;
         rule.pattern = ngx_str_t{ .len = 0, .data = core.nullptr(u8) };
+    } else if (std.mem.eql(u8, operator_text, "@validateUrlEncoding")) {
+        rule.operator = WAF_OPERATOR_VALIDATE_URL_ENCODING;
+        rule.pattern = ngx_str_t{ .len = 0, .data = core.nullptr(u8) };
+    } else if (std.mem.eql(u8, operator_text, "@validateUtf8Encoding")) {
+        rule.operator = WAF_OPERATOR_VALIDATE_UTF8_ENCODING;
+        rule.pattern = ngx_str_t{ .len = 0, .data = core.nullptr(u8) };
     } else if (std.mem.startsWith(u8, operator_text, "@ipMatch ")) {
         const pattern_text = trimAscii(operator_text[9..]);
         if (pattern_text.len == 0) return "@ipMatch requires at least one IP or CIDR";
@@ -720,6 +739,18 @@ fn analyzeCustomRules(input: []const u8, target: u8, phase: u8, lccf: *waf_loc_c
             WAF_OPERATOR_UNCONDITIONAL_MATCH => {
                 const detail = if (rule.msg.len > 0 and rule.msg.data != null) core.slicify(u8, rule.msg.data, rule.msg.len) else "unconditionalMatch";
                 return buildRuleDetection(rule, detail);
+            },
+            WAF_OPERATOR_VALIDATE_URL_ENCODING => {
+                if (hasInvalidUrlEncoding(input)) {
+                    const detail = if (rule.msg.len > 0 and rule.msg.data != null) core.slicify(u8, rule.msg.data, rule.msg.len) else "validateUrlEncoding";
+                    return buildRuleDetection(rule, detail);
+                }
+            },
+            WAF_OPERATOR_VALIDATE_UTF8_ENCODING => {
+                if (!std.unicode.utf8ValidateSlice(input)) {
+                    const detail = if (rule.msg.len > 0 and rule.msg.data != null) core.slicify(u8, rule.msg.data, rule.msg.len) else "validateUtf8Encoding";
+                    return buildRuleDetection(rule, detail);
+                }
             },
             WAF_OPERATOR_IP_MATCH => {
                 const pattern = core.slicify(u8, rule.pattern.data, rule.pattern.len);
@@ -1568,6 +1599,18 @@ fn analyzeSingleRule(rule: *waf_rule, input: []const u8, decode_buf: []u8, lower
         WAF_OPERATOR_UNCONDITIONAL_MATCH => {
             const detail = if (rule.msg.len > 0 and rule.msg.data != null) core.slicify(u8, rule.msg.data, rule.msg.len) else "unconditionalMatch";
             return buildRuleDetection(rule, detail);
+        },
+        WAF_OPERATOR_VALIDATE_URL_ENCODING => {
+            if (hasInvalidUrlEncoding(input)) {
+                const detail = if (rule.msg.len > 0 and rule.msg.data != null) core.slicify(u8, rule.msg.data, rule.msg.len) else "validateUrlEncoding";
+                return buildRuleDetection(rule, detail);
+            }
+        },
+        WAF_OPERATOR_VALIDATE_UTF8_ENCODING => {
+            if (!std.unicode.utf8ValidateSlice(input)) {
+                const detail = if (rule.msg.len > 0 and rule.msg.data != null) core.slicify(u8, rule.msg.data, rule.msg.len) else "validateUtf8Encoding";
+                return buildRuleDetection(rule, detail);
+            }
         },
         WAF_OPERATOR_IP_MATCH => {
             const pattern = core.slicify(u8, rule.pattern.data, rule.pattern.len);

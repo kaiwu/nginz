@@ -1,0 +1,1 @@
+SecRule REQUEST_BODY "@validateUtf8Encoding" "id:6151,phase:2,msg:'operators validateUtf8Encoding miss rule'"

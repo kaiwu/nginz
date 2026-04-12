@@ -1,0 +1,1 @@
+SecRule REQUEST_HEADERS:X-Encoded-Header "@validateUrlEncoding" "id:6140,phase:1,msg:'operators validateUrlEncoding rule'"
