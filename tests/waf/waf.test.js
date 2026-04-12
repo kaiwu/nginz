@@ -23,6 +23,7 @@ const OPERATORS_VALIDATE_URL_ENCODING_RULES_FILE = `${process.cwd()}/tests/waf/o
 const OPERATORS_VALIDATE_URL_ENCODING_NEGATIVE_RULES_FILE = `${process.cwd()}/tests/waf/operators-validate-url-encoding-negative.rules`;
 const OPERATORS_VALIDATE_UTF8_RULES_FILE = `${process.cwd()}/tests/waf/operators-validate-utf8.rules`;
 const OPERATORS_VALIDATE_UTF8_NEGATIVE_RULES_FILE = `${process.cwd()}/tests/waf/operators-validate-utf8-negative.rules`;
+const OPERATORS_PMF_RULES_FILE = `${process.cwd()}/tests/waf/operators-pmfromfile.rules`;
 const COLLECTIONS_RULES_FILE = `${process.cwd()}/tests/waf/collections.rules`;
 const BODY_RULES_FILE = `${process.cwd()}/tests/waf/body.rules`;
 const RESPONSE_RULES_FILE = `${process.cwd()}/tests/waf/response.rules`;
@@ -99,6 +100,7 @@ describe("waf module", () => {
         .replaceAll("__WAF_OPERATORS_VALIDATE_URL_ENCODING_NEGATIVE_RULES_FILE__", OPERATORS_VALIDATE_URL_ENCODING_NEGATIVE_RULES_FILE)
         .replaceAll("__WAF_OPERATORS_VALIDATE_UTF8_RULES_FILE__", OPERATORS_VALIDATE_UTF8_RULES_FILE)
         .replaceAll("__WAF_OPERATORS_VALIDATE_UTF8_NEGATIVE_RULES_FILE__", OPERATORS_VALIDATE_UTF8_NEGATIVE_RULES_FILE)
+        .replaceAll("__WAF_OPERATORS_PMF_RULES_FILE__", OPERATORS_PMF_RULES_FILE)
         .replaceAll("__WAF_COLLECTIONS_RULES_FILE__", COLLECTIONS_RULES_FILE)
         .replaceAll("__WAF_BODY_RULES_FILE__", BODY_RULES_FILE)
         .replaceAll("__WAF_RESPONSE_RULES_FILE__", RESPONSE_RULES_FILE)
@@ -1034,6 +1036,15 @@ describe("waf module", () => {
       expect(res.status).toBe(200);
       const body = await res.text();
       expect(body).toContain("rules operators validate utf8 miss response");
+    });
+
+    test("pmFromFile loads local phrase files at config time and reuses pm semantics", async () => {
+      const res = await fetch(`${TEST_URL}/rules-operators-pmfromfile`, {
+        headers: { "User-Agent": "harmless phrase-hit client" },
+      });
+      expect(res.status).toBe(403);
+      const body = await res.json();
+      expect(body.rule).toBe("rule");
     });
 
   });

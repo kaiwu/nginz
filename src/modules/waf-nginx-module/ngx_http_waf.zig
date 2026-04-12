@@ -185,6 +185,8 @@ const RuleLoadError = struct {
     reason: [:0]const u8,
 };
 
+const PM_FROM_FILE_MAX_BYTES: usize = 64 * 1024;
+
 var ngx_http_waf_ban_zone: [*c]core.ngx_shm_zone_t = core.nullptr(core.ngx_shm_zone_t);
 var ngx_http_waf_next_header_filter: http.ngx_http_output_header_filter_pt = null;
 
@@ -204,6 +206,47 @@ fn dupSlice(pool: [*c]core.ngx_pool_t, value: []const u8) ?ngx_str_t {
     const out_buf = core.castPtr(u8, core.ngx_pnalloc(pool, value.len)) orelse return null;
     @memcpy(core.slicify(u8, out_buf, value.len), value);
     return ngx_str_t{ .data = out_buf, .len = value.len };
+}
+
+fn appendPmPhrase(out: *std.ArrayList(u8), allocator: std.mem.Allocator, phrase_raw: []const u8) bool {
+    const phrase = trimAscii(phrase_raw);
+    if (phrase.len == 0 or phrase[0] == '#') return true;
+
+    if (out.items.len > 0) {
+        out.append(allocator, ' ') catch return false;
+    }
+
+    for (phrase) |c| {
+        out.append(allocator, toLower(c)) catch return false;
+    }
+    return true;
+}
+
+fn loadPmFromFiles(arg_text: []const u8, pool: [*c]core.ngx_pool_t, cf: [*c]ngx_conf_t) ?ngx_str_t {
+    const allocator = std.heap.page_allocator;
+    var tokens = std.mem.tokenizeAny(u8, arg_text, " \t\r\n");
+    var combined = std.ArrayList(u8){};
+    defer combined.deinit(allocator);
+
+    var saw_any_file = false;
+    while (tokens.next()) |file_path_raw| {
+        if (file_path_raw.len == 0) continue;
+        saw_any_file = true;
+
+        var path = dupSlice(pool, file_path_raw) orelse return null;
+        if (conf.ngx_conf_full_name(cf.*.cycle, &path, 1) != core.NGX_OK) return null;
+
+        const file_contents_str = file.ngz_open_file(path, cf.*.log, pool) catch return null;
+        const file_contents = core.slicify(u8, file_contents_str.data, file_contents_str.len);
+
+        var lines = std.mem.splitScalar(u8, file_contents, '\n');
+        while (lines.next()) |line| {
+            if (!appendPmPhrase(&combined, allocator, line)) return null;
+        }
+    }
+
+    if (!saw_any_file or combined.items.len == 0) return null;
+    return dupSlice(pool, combined.items);
 }
 
 fn parseQuotedSegment(line: []const u8, start_at: usize) ?struct { value: []const u8, next: usize } {
@@ -500,7 +543,7 @@ fn applyRuleTransforms(rule: *waf_rule, input: []const u8, decode_buf: []u8, low
     return current;
 }
 
-fn parseWafRuleLine(line_raw: []const u8, rule: *waf_rule, pool: [*c]core.ngx_pool_t) ?[:0]const u8 {
+fn parseWafRuleLine(line_raw: []const u8, rule: *waf_rule, pool: [*c]core.ngx_pool_t, cf: [*c]ngx_conf_t) ?[:0]const u8 {
     const line = trimAscii(line_raw);
     if (line.len == 0 or line[0] == '#') return "empty rule line";
     if (!std.mem.startsWith(u8, line, "SecRule ")) return "only SecRule lines are supported";
@@ -543,6 +586,11 @@ fn parseWafRuleLine(line_raw: []const u8, rule: *waf_rule, pool: [*c]core.ngx_po
         if (pattern_text.len == 0) return "@pm requires at least one phrase";
         rule.operator = WAF_OPERATOR_PM;
         rule.pattern = lowerDup(pool, pattern_text) orelse return "unable to allocate pm phrase list";
+    } else if (std.mem.startsWith(u8, operator_text, "@pmFromFile ")) {
+        const pattern_text = trimAscii(operator_text[12..]);
+        if (pattern_text.len == 0) return "@pmFromFile requires at least one file path";
+        rule.operator = WAF_OPERATOR_PM;
+        rule.pattern = loadPmFromFiles(pattern_text, pool, cf) orelse return "unable to load pmFromFile phrase list";
     } else if (std.mem.startsWith(u8, operator_text, "@within ")) {
         const pattern_text = trimAscii(operator_text[8..]);
         if (pattern_text.len == 0) return "@within requires at least one candidate value";
@@ -628,7 +676,7 @@ fn parseWafRuleLine(line_raw: []const u8, rule: *waf_rule, pool: [*c]core.ngx_po
     return null;
 }
 
-fn loadWafRules(contents: ngx_str_t, pool: [*c]core.ngx_pool_t, out_rules: *[*c]waf_rule, out_count: *usize, out_error: *?RuleLoadError) bool {
+fn loadWafRules(contents: ngx_str_t, pool: [*c]core.ngx_pool_t, cf: [*c]ngx_conf_t, out_rules: *[*c]waf_rule, out_count: *usize, out_error: *?RuleLoadError) bool {
     const text = core.slicify(u8, contents.data, contents.len);
 
     var count: usize = 0;
@@ -660,7 +708,7 @@ fn loadWafRules(contents: ngx_str_t, pool: [*c]core.ngx_pool_t, out_rules: *[*c]
         const trimmed = trimAscii(line);
         if (trimmed.len == 0 or trimmed[0] == '#') continue;
         const rule_ptr: *waf_rule = @ptrCast(&rules_mem[index]);
-        if (parseWafRuleLine(trimmed, rule_ptr, pool)) |err| {
+        if (parseWafRuleLine(trimmed, rule_ptr, pool, cf)) |err| {
             out_error.* = RuleLoadError{ .line_no = line_no, .reason = err };
             return false;
         }
@@ -2479,7 +2527,7 @@ fn ngx_conf_set_waf_rules_file(
             var rules_ptr: [*c]waf_rule = core.nullptr(waf_rule);
             var rule_count: usize = 0;
             var load_error: ?RuleLoadError = null;
-            if (!loadWafRules(contents, cf.*.pool, &rules_ptr, &rule_count, &load_error)) {
+            if (!loadWafRules(contents, cf.*.pool, cf, &rules_ptr, &rule_count, &load_error)) {
                 if (load_error) |err| {
                     var err_buf: [512]u8 = undefined;
                     const path_slice = core.slicify(u8, path.data, path.len);

@@ -472,6 +472,7 @@ Implemented in `ngx_http_waf`:
   - `@noMatch` / `@unconditionalMatch`
   - `@validateUrlEncoding`
   - `@validateUtf8Encoding`
+  - `@pmFromFile <local-files...>`
   - `@beginsWith <value>`
   - `@endsWith <value>`
   - `@streq <value>` / `@eq <value>`
@@ -534,7 +535,7 @@ Implemented in `ngx_http_waf`:
 - utility operator support via `@noMatch` and `@unconditionalMatch`
 - strict malformed-encoding detection support via `@validateUrlEncoding`
 - strict malformed-UTF-8 detection support via `@validateUtf8Encoding`
-- evaluated `@pmFromFile`; intentionally deferred it pending a dedicated file-backed operator slice
+- bounded local-file phrase operator support via `@pmFromFile`
 - Bun integration coverage proving file-driven block/detect behavior
 - Bun integration coverage proving stronger detection of obfuscated SQLi/XSS payloads
 
@@ -580,7 +581,7 @@ Remaining gaps / todos:
 - [ ] evolve the shared-memory reputation model toward richer scoring, expiry tuning, and stronger escalation controls
 - [ ] evaluate safe native integration points for static IP reputation / allowlist-blocklist style policy without duplicating nginx access controls
 - [ ] evaluate which high-value ModSecurity-compatible parser slices are worth adding next versus intentionally rejecting with clear startup errors
-- [ ] revisit remaining file-backed operators like `@pmFromFile` only with dedicated config-time loading semantics
+- [x] revisit remaining file-backed operators like `@pmFromFile` only with dedicated config-time loading semantics
 - [ ] keep README and this issue checklist synchronized whenever a new verified slice lands
 
 ## Practical scope note
