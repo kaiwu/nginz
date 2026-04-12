@@ -37,6 +37,7 @@ pub const ngx_msec_t = ngx.ngx_msec_t;
 pub const ngx_cycle_t = ngx.ngx_cycle_t;
 
 pub const ngx_url_t = ngx.ngx_url_t;
+pub const ngx_cidr_t = ngx.ngx_cidr_t;
 pub const ngx_event_t = ngx.ngx_event_t;
 pub const ngx_resolver_t = ngx.ngx_resolver_t;
 pub const ngx_slab_pool_t = ngx.ngx_slab_pool_t;
@@ -67,6 +68,7 @@ pub const ngx_pmemalign = ngx.ngx_pmemalign;
 pub const ngx_time = ngx.ngx_time;
 pub const ngx_random = ngx.ngx_random;
 pub const ngx_timeofday = ngx.ngx_timeofday;
+pub const ngx_ptocidr = ngx.ngx_ptocidr;
 
 pub const ngx_log_init = ngx.ngx_log_init;
 pub const ngx_time_init = ngx.ngx_time_init;

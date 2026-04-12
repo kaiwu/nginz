@@ -95,6 +95,10 @@ Current supported subset:
   - `@contains <needle>`
   - `@pm <space-delimited phrases>`
   - `@within <space-delimited values>`
+  - `@lt <number>` / `@le <number>` / `@gt <number>` / `@ge <number>`
+  - `@ipMatch <ip-or-cidr ...>`
+  - `@containsWord <needle>`
+  - `@noMatch` / `@unconditionalMatch`
   - `@beginsWith <value>`
   - `@endsWith <value>`
   - `@streq <value>` / `@eq <value>`
@@ -141,13 +145,17 @@ SecRule REQUEST_BASENAME "@streq admin.php" "id:2016,phase:1,msg:'request basena
 SecRule ARGS "@contains weighted-score-needle" "id:2017,phase:1,score:2,msg:'weighted score rule'"
 SecRule ARGS "@contains setvar-score-needle" "id:2018,phase:1,setvar:ip.score=+2,msg:'setvar score rule'"
 SecRule ARGS "@contains severity-score-needle" "id:2019,phase:1,severity:'error',msg:'severity score rule'"
-SecRule RESPONSE_STATUS "@streq 204" "id:2020,phase:3,status:451,msg:'response status rule'"
-SecRule RESPONSE_HEADERS "@contains x-response-waf: response-header-hit" "id:2021,phase:3,status:452,msg:'response header rule'"
-SecRule RESPONSE_HEADERS:X-Response-Scoped "@contains scoped-response-hit" "id:2022,phase:3,status:453,msg:'response header selector rule'"
-SecRule REQUEST_HEADER_NAMES "@contains x-api-key" "id:2023,phase:1,msg:'header name collection rule'"
-SecRule REQUEST_URI "@contains blocked-api" "id:2024,phase:1,status:406,msg:'custom status rule'"
-SecRule REQUEST_URI "@contains high-risk-path" "id:2025,phase:1,deny,status:418,msg:'deny override rule'"
-SecRule REQUEST_URI "@contains monitor-only-path" "id:2026,phase:1,pass,log,msg:'pass override rule'"
+SecRule ARGS:attempts "@ge 5" "id:2020,phase:1,msg:'numeric comparison rule'"
+SecRule REMOTE_ADDR "@ipMatch 127.0.0.1/32 ::1/128" "id:2021,phase:1,msg:'ip cidr rule'"
+SecRule REQUEST_HEADERS:X-Word-Header "@containsWord token" "id:2022,phase:1,msg:'word boundary rule'"
+SecRule REQUEST_URI "@unconditionalMatch" "id:2023,phase:1,msg:'utility always-match rule'"
+SecRule RESPONSE_STATUS "@streq 204" "id:2024,phase:3,status:451,msg:'response status rule'"
+SecRule RESPONSE_HEADERS "@contains x-response-waf: response-header-hit" "id:2025,phase:3,status:452,msg:'response header rule'"
+SecRule RESPONSE_HEADERS:X-Response-Scoped "@contains scoped-response-hit" "id:2026,phase:3,status:453,msg:'response header selector rule'"
+SecRule REQUEST_HEADER_NAMES "@contains x-api-key" "id:2027,phase:1,msg:'header name collection rule'"
+SecRule REQUEST_URI "@contains blocked-api" "id:2028,phase:1,status:406,msg:'custom status rule'"
+SecRule REQUEST_URI "@contains high-risk-path" "id:2029,phase:1,deny,status:418,msg:'deny override rule'"
+SecRule REQUEST_URI "@contains monitor-only-path" "id:2030,phase:1,pass,log,msg:'pass override rule'"
 ```
 
 ### Detection stack
@@ -192,6 +200,16 @@ These do not alter disruption flow, but they are emitted into warning-log output
 `@pm` is currently implemented as a practical native subset: it accepts a space-delimited phrase list and matches when any phrase appears in the normalized input.
 
 `@within` is implemented as a small native set-membership subset: it accepts a space-delimited value list and matches only when the normalized input equals one of those candidate values.
+
+`@lt`, `@le`, `@gt`, and `@ge` are implemented as a small numeric comparison subset: both the inspected value and the rule pattern must parse as base-10 integers or the operator does not match.
+
+`@ipMatch` is implemented as a CIDR/IP membership subset for address targets such as `REMOTE_ADDR`; rule-side CIDR parsing reuses nginx's native `ngx_ptocidr` helper.
+
+`@containsWord` is implemented as a word-boundary subset: letters, digits, and underscore count as word characters, and the needle only matches when both sides are bounded by non-word characters or string edges.
+
+`@noMatch` and `@unconditionalMatch` are implemented as utility operators with literal semantics: the former never matches, and the latter always matches.
+
+`@validateUrlEncoding`, `@validateUtf8Encoding`, and `@pmFromFile` are still intentionally deferred. They need stricter validation / file-loading semantics than the current native operator path provides, so they should only land as a dedicated slice rather than as parser-only compatibility sugar.
 
 The native subset now also supports a small explicit transformation set:
 
@@ -349,6 +367,11 @@ http {
 - [x] `waf_rules_file` now supports per-rule `score:<n>` weighting for shared-memory reputation escalation.
 - [x] `waf_rules_file` now supports a narrow `setvar:ip.score=+<n>` compatibility alias that maps to native reputation weighting.
 - [x] `waf_rules_file` now supports a narrow `severity:'...'` subset mapped onto native reputation weighting.
+- [x] `waf_rules_file` now supports low-risk numeric comparison operators `@lt`, `@le`, `@gt`, and `@ge`.
+- [x] `waf_rules_file` now supports `@ipMatch` for exact-IP and CIDR matching on address-style targets.
+- [x] `waf_rules_file` now supports `@containsWord` for low-risk word-boundary string matching.
+- [x] `waf_rules_file` now supports utility operators `@noMatch` and `@unconditionalMatch`.
+- [x] evaluated `@validateUrlEncoding`, `@validateUtf8Encoding`, and `@pmFromFile`; kept them deferred until a dedicated validation / file-loading slice is implemented.
 
 `REQUEST_FILENAME` is still intentionally not supported. In this module it would require path mapping through nginx location/root resolution (`ngx_http_map_uri_to_path`) and that is not a clean access-phase metadata slice to emulate casually.
 - [x] Shared-memory temporary IP bans are now supported via `waf_ban_threshold`, `waf_ban_window`, and `waf_ban_duration`, with Bun coverage for threshold, active ban, and expiry behavior.

@@ -466,6 +466,10 @@ Implemented in `ngx_http_waf`:
   - `@contains <needle>`
   - `@pm <space-delimited phrases>`
   - `@within <space-delimited values>`
+  - `@lt <number>` / `@le <number>` / `@gt <number>` / `@ge <number>`
+  - `@ipMatch <ip-or-cidr ...>`
+  - `@containsWord <needle>`
+  - `@noMatch` / `@unconditionalMatch`
   - `@beginsWith <value>`
   - `@endsWith <value>`
   - `@streq <value>` / `@eq <value>`
@@ -522,6 +526,11 @@ Implemented in `ngx_http_waf`:
 - per-rule score weighting via `score:<n>` for richer shared-memory reputation escalation
 - narrow `setvar:ip.score=+<n>` compatibility support mapped onto native reputation weighting
 - narrow severity compatibility support mapped onto native reputation weighting, with explicit score actions taking precedence
+- low-risk numeric comparison operator support via `@lt`, `@le`, `@gt`, and `@ge`
+- native `@ipMatch` support for exact-IP and CIDR membership using nginx CIDR parsing semantics
+- low-risk word-boundary operator support via `@containsWord`
+- utility operator support via `@noMatch` and `@unconditionalMatch`
+- evaluated `@validateUrlEncoding`, `@validateUtf8Encoding`, and `@pmFromFile`; intentionally deferred them pending a dedicated validation / file-backed operator slice
 - Bun integration coverage proving file-driven block/detect behavior
 - Bun integration coverage proving stronger detection of obfuscated SQLi/XSS payloads
 
@@ -567,6 +576,7 @@ Remaining gaps / todos:
 - [ ] evolve the shared-memory reputation model toward richer scoring, expiry tuning, and stronger escalation controls
 - [ ] evaluate safe native integration points for static IP reputation / allowlist-blocklist style policy without duplicating nginx access controls
 - [ ] evaluate which high-value ModSecurity-compatible parser slices are worth adding next versus intentionally rejecting with clear startup errors
+- [ ] revisit validation/file-backed operators like `@validateUrlEncoding`, `@validateUtf8Encoding`, and `@pmFromFile` only with dedicated semantics for strict validation and config-time file loading
 - [ ] keep README and this issue checklist synchronized whenever a new verified slice lands
 
 ## Practical scope note

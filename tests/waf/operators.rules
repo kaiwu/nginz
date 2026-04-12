@@ -4,3 +4,8 @@ SecRule REQUEST_URI "@beginsWith /rules-operators-prefix/rules-operators-prefix-
 SecRule REQUEST_URI "@endsWith /operators-suffix-hit" "id:6004,phase:1,msg:'operators endsWith rule'"
 SecRule REQUEST_HEADERS "@pm x-operators-header phrase-hit" "id:6005,phase:1,msg:'operators pm rule'"
 SecRule REQUEST_METHOD "@within patch delete" "id:6006,phase:1,msg:'operators within rule'"
+SecRule ARGS:ge_arg "@ge 10" "id:6007,phase:1,msg:'operators ge rule'"
+SecRule ARGS:gt_arg "@gt 10" "id:6008,phase:1,msg:'operators gt rule'"
+SecRule ARGS:le_arg "@le 10" "id:6009,phase:1,msg:'operators le rule'"
+SecRule ARGS:lt_arg "@lt 10" "id:6010,phase:1,msg:'operators lt rule'"
+SecRule REQUEST_HEADERS:X-Word-Header "@containsWord token" "id:6012,phase:1,msg:'operators containsWord rule'"

@@ -1,0 +1,1 @@
+SecRule REQUEST_HEADERS:X-Word-Header "@containsWord token" "id:6121,phase:1,msg:'operators containsWord miss rule'"

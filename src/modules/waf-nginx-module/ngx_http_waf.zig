@@ -1,4 +1,5 @@
 const std = @import("std");
+const posix = std.posix;
 const ngx = @import("ngx");
 const libinjection = @import("ngx_libinjection");
 
@@ -65,6 +66,14 @@ const WAF_OPERATOR_BEGINS_WITH: u8 = 6;
 const WAF_OPERATOR_ENDS_WITH: u8 = 7;
 const WAF_OPERATOR_PM: u8 = 8;
 const WAF_OPERATOR_WITHIN: u8 = 9;
+const WAF_OPERATOR_LT: u8 = 10;
+const WAF_OPERATOR_LE: u8 = 11;
+const WAF_OPERATOR_GT: u8 = 12;
+const WAF_OPERATOR_GE: u8 = 13;
+const WAF_OPERATOR_IP_MATCH: u8 = 14;
+const WAF_OPERATOR_CONTAINS_WORD: u8 = 15;
+const WAF_OPERATOR_NO_MATCH: u8 = 16;
+const WAF_OPERATOR_UNCONDITIONAL_MATCH: u8 = 17;
 
 const WAF_RULE_ACTION_INHERIT: u8 = 0;
 const WAF_RULE_ACTION_PASS: u8 = 1;
@@ -325,12 +334,15 @@ fn parseRuleActions(actions: []const u8, rule: *waf_rule, pool: [*c]core.ngx_poo
             rule.explicit_score_weight = 1;
         } else if (std.mem.startsWith(u8, part, "setvar:")) {
             const expr = trimAscii(part[7..]);
-            if (!std.mem.startsWith(u8, expr, "ip.score=+")) return "unsupported setvar action";
-            const score_text = trimAscii(expr[10..]);
-            const score_weight = std.fmt.parseInt(u16, score_text, 10) catch return "invalid setvar score increment";
-            if (score_weight == 0) return "setvar score increment must be greater than zero";
-            rule.score_weight = score_weight;
-            rule.explicit_score_weight = 1;
+            if (std.mem.startsWith(u8, expr, "ip.score=+")) {
+                const score_text = trimAscii(expr[10..]);
+                const score_weight = std.fmt.parseInt(u16, score_text, 10) catch return "invalid setvar score increment";
+                if (score_weight == 0) return "setvar score increment must be greater than zero";
+                rule.score_weight = score_weight;
+                rule.explicit_score_weight = 1;
+            } else {
+                return "unsupported setvar action";
+            }
         } else if (std.mem.eql(u8, part, "t:none")) {
             rule.explicit_transforms = 1;
             rule.transforms = 0;
@@ -370,11 +382,82 @@ fn phraseListMatches(normalized: []const u8, pattern_text: []const u8) bool {
     return false;
 }
 
+fn isWordChar(c: u8) bool {
+    return std.ascii.isAlphanumeric(c) or c == '_';
+}
+
+fn containsWord(normalized: []const u8, needle: []const u8) bool {
+    if (needle.len == 0) return false;
+
+    var search_start: usize = 0;
+    while (std.mem.indexOfPos(u8, normalized, search_start, needle)) |idx| {
+        const before_ok = idx == 0 or !isWordChar(normalized[idx - 1]);
+        const end = idx + needle.len;
+        const after_ok = end == normalized.len or !isWordChar(normalized[end]);
+        if (before_ok and after_ok) return true;
+        search_start = idx + 1;
+    }
+    return false;
+}
+
 fn tokenSetContains(normalized: []const u8, pattern_text: []const u8) bool {
     var it = std.mem.tokenizeAny(u8, pattern_text, " \t\r\n");
     while (it.next()) |token| {
         if (token.len == 0) continue;
         if (std.mem.eql(u8, normalized, token)) return true;
+    }
+    return false;
+}
+
+fn parseI64Strict(value: []const u8) ?i64 {
+    const trimmed = trimAscii(value);
+    if (trimmed.len == 0) return null;
+    return std.fmt.parseInt(i64, trimmed, 10) catch null;
+}
+
+fn numericCompare(normalized: []const u8, pattern_text: []const u8, operator: u8) bool {
+    const input_value = parseI64Strict(normalized) orelse return false;
+    const pattern_value = parseI64Strict(pattern_text) orelse return false;
+
+    return switch (operator) {
+        WAF_OPERATOR_LT => input_value < pattern_value,
+        WAF_OPERATOR_LE => input_value <= pattern_value,
+        WAF_OPERATOR_GT => input_value > pattern_value,
+        WAF_OPERATOR_GE => input_value >= pattern_value,
+        else => false,
+    };
+}
+
+fn cidrContains(input_addr: std.net.Address, cidr: core.ngx_cidr_t) bool {
+    if (input_addr.any.family != cidr.family) return false;
+
+    return switch (cidr.family) {
+        posix.AF.INET => (input_addr.in.sa.addr & cidr.u.in.mask) == cidr.u.in.addr,
+        posix.AF.INET6 => blk: {
+            const input_bytes = input_addr.in6.sa.addr[0..];
+            const cidr_addr = cidr.u.in6.addr.__in6_u.__u6_addr8[0..];
+            const cidr_mask = cidr.u.in6.mask.__in6_u.__u6_addr8[0..];
+            for (0..16) |i| {
+                if ((input_bytes[i] & cidr_mask[i]) != cidr_addr[i]) break :blk false;
+            }
+            break :blk true;
+        },
+        else => false,
+    };
+}
+
+fn ipMatchListContains(normalized: []const u8, pattern_text: []const u8) bool {
+    const input_addr = std.net.Address.parseIp(trimAscii(normalized), 0) catch return false;
+    var it = std.mem.tokenizeAny(u8, pattern_text, " ,\t\r\n");
+    while (it.next()) |token| {
+        if (token.len == 0) continue;
+
+        var token_text = ngx_str_t{ .data = @constCast(token.ptr), .len = token.len };
+        var cidr = std.mem.zeroes(core.ngx_cidr_t);
+        const rc = core.ngx_ptocidr(&token_text, &cidr);
+        if (rc != NGX_OK and rc != NGX_DONE) continue;
+
+        if (cidrContains(input_addr, cidr)) return true;
     }
     return false;
 }
@@ -452,6 +535,46 @@ fn parseWafRuleLine(line_raw: []const u8, rule: *waf_rule, pool: [*c]core.ngx_po
         if (pattern_text.len == 0) return "@within requires at least one candidate value";
         rule.operator = WAF_OPERATOR_WITHIN;
         rule.pattern = lowerDup(pool, pattern_text) orelse return "unable to allocate within candidate list";
+    } else if (std.mem.startsWith(u8, operator_text, "@lt ")) {
+        const pattern_text = trimAscii(operator_text[4..]);
+        if (pattern_text.len == 0) return "@lt requires a numeric value";
+        if (parseI64Strict(pattern_text) == null) return "@lt requires a numeric value";
+        rule.operator = WAF_OPERATOR_LT;
+        rule.pattern = dupSlice(pool, pattern_text) orelse return "unable to allocate lt pattern";
+    } else if (std.mem.startsWith(u8, operator_text, "@le ")) {
+        const pattern_text = trimAscii(operator_text[4..]);
+        if (pattern_text.len == 0) return "@le requires a numeric value";
+        if (parseI64Strict(pattern_text) == null) return "@le requires a numeric value";
+        rule.operator = WAF_OPERATOR_LE;
+        rule.pattern = dupSlice(pool, pattern_text) orelse return "unable to allocate le pattern";
+    } else if (std.mem.startsWith(u8, operator_text, "@gt ")) {
+        const pattern_text = trimAscii(operator_text[4..]);
+        if (pattern_text.len == 0) return "@gt requires a numeric value";
+        if (parseI64Strict(pattern_text) == null) return "@gt requires a numeric value";
+        rule.operator = WAF_OPERATOR_GT;
+        rule.pattern = dupSlice(pool, pattern_text) orelse return "unable to allocate gt pattern";
+    } else if (std.mem.startsWith(u8, operator_text, "@ge ")) {
+        const pattern_text = trimAscii(operator_text[4..]);
+        if (pattern_text.len == 0) return "@ge requires a numeric value";
+        if (parseI64Strict(pattern_text) == null) return "@ge requires a numeric value";
+        rule.operator = WAF_OPERATOR_GE;
+        rule.pattern = dupSlice(pool, pattern_text) orelse return "unable to allocate ge pattern";
+    } else if (std.mem.startsWith(u8, operator_text, "@containsWord ")) {
+        const pattern_text = trimAscii(operator_text[14..]);
+        if (pattern_text.len == 0) return "@containsWord requires a pattern";
+        rule.operator = WAF_OPERATOR_CONTAINS_WORD;
+        rule.pattern = lowerDup(pool, pattern_text) orelse return "unable to allocate containsWord pattern";
+    } else if (std.mem.eql(u8, operator_text, "@noMatch")) {
+        rule.operator = WAF_OPERATOR_NO_MATCH;
+        rule.pattern = ngx_str_t{ .len = 0, .data = core.nullptr(u8) };
+    } else if (std.mem.eql(u8, operator_text, "@unconditionalMatch")) {
+        rule.operator = WAF_OPERATOR_UNCONDITIONAL_MATCH;
+        rule.pattern = ngx_str_t{ .len = 0, .data = core.nullptr(u8) };
+    } else if (std.mem.startsWith(u8, operator_text, "@ipMatch ")) {
+        const pattern_text = trimAscii(operator_text[9..]);
+        if (pattern_text.len == 0) return "@ipMatch requires at least one IP or CIDR";
+        rule.operator = WAF_OPERATOR_IP_MATCH;
+        rule.pattern = lowerDup(pool, pattern_text) orelse return "unable to allocate ipMatch pattern";
     } else if (std.mem.startsWith(u8, operator_text, "@streq ") or std.mem.startsWith(u8, operator_text, "@eq ")) {
         const offset: usize = if (std.mem.startsWith(u8, operator_text, "@streq ")) 7 else 4;
         const pattern_text = trimAscii(operator_text[offset..]);
@@ -575,6 +698,32 @@ fn analyzeCustomRules(input: []const u8, target: u8, phase: u8, lccf: *waf_loc_c
             WAF_OPERATOR_WITHIN => {
                 const pattern = core.slicify(u8, rule.pattern.data, rule.pattern.len);
                 if (tokenSetContains(normalized, pattern)) {
+                    const detail = if (rule.msg.len > 0 and rule.msg.data != null) core.slicify(u8, rule.msg.data, rule.msg.len) else pattern;
+                    return buildRuleDetection(rule, detail);
+                }
+            },
+            WAF_OPERATOR_LT, WAF_OPERATOR_LE, WAF_OPERATOR_GT, WAF_OPERATOR_GE => {
+                const pattern = core.slicify(u8, rule.pattern.data, rule.pattern.len);
+                if (numericCompare(normalized, pattern, rule.operator)) {
+                    const detail = if (rule.msg.len > 0 and rule.msg.data != null) core.slicify(u8, rule.msg.data, rule.msg.len) else pattern;
+                    return buildRuleDetection(rule, detail);
+                }
+            },
+            WAF_OPERATOR_CONTAINS_WORD => {
+                const pattern = core.slicify(u8, rule.pattern.data, rule.pattern.len);
+                if (containsWord(normalized, pattern)) {
+                    const detail = if (rule.msg.len > 0 and rule.msg.data != null) core.slicify(u8, rule.msg.data, rule.msg.len) else pattern;
+                    return buildRuleDetection(rule, detail);
+                }
+            },
+            WAF_OPERATOR_NO_MATCH => {},
+            WAF_OPERATOR_UNCONDITIONAL_MATCH => {
+                const detail = if (rule.msg.len > 0 and rule.msg.data != null) core.slicify(u8, rule.msg.data, rule.msg.len) else "unconditionalMatch";
+                return buildRuleDetection(rule, detail);
+            },
+            WAF_OPERATOR_IP_MATCH => {
+                const pattern = core.slicify(u8, rule.pattern.data, rule.pattern.len);
+                if (ipMatchListContains(normalized, pattern)) {
                     const detail = if (rule.msg.len > 0 and rule.msg.data != null) core.slicify(u8, rule.msg.data, rule.msg.len) else pattern;
                     return buildRuleDetection(rule, detail);
                 }
@@ -929,6 +1078,12 @@ fn resetBanEntry(entry: *waf_ban_entry) void {
     entry.* = std.mem.zeroes(waf_ban_entry);
 }
 
+fn snapshotBanEntry(entry: *waf_ban_entry) void {
+    var snapshot_buf: [128]u8 = undefined;
+    const snapshot = std.fmt.bufPrint(&snapshot_buf, "{}:{}:{}:{}:{}:{}", .{ entry.*.count, entry.*.strikes, entry.*.score, entry.*.ban_until, entry.*.first_seen, entry.*.last_seen }) catch return;
+    std.mem.doNotOptimizeAway(snapshot);
+}
+
 fn assignBanEntryIp(entry: *waf_ban_entry, ip: []const u8) void {
     resetBanEntry(entry);
     const copy_len: usize = @min(ip.len, WAF_BAN_MAX_IP_LEN);
@@ -1053,8 +1208,7 @@ fn isClientBanned(r: [*c]ngx_http_request_t, lccf: *waf_loc_conf) bool {
     if (findBanEntry(store, ip)) |entry| {
         const now = nowSeconds();
         decayBanEntry(entry, now, lccf);
-        const snapshot = .{ entry.*.count, entry.*.strikes, entry.*.score, entry.*.ban_until };
-        std.mem.doNotOptimizeAway(snapshot);
+        snapshotBanEntry(entry);
         if (entry.*.ban_until > now) return true;
     }
     return false;
@@ -1079,8 +1233,7 @@ fn recordOffense(r: [*c]ngx_http_request_t, lccf: *waf_loc_conf, score_weight: u
     const entry = getOrCreateBanEntry(shpool.?, store, ip, lccf) orelse return;
     const now = nowSeconds();
     applyOffenseToEntry(entry, now, lccf, @max(@as(u16, 1), score_weight));
-    const snapshot = .{ entry.*.count, entry.*.strikes, entry.*.score, entry.*.ban_until };
-    std.mem.doNotOptimizeAway(snapshot);
+    snapshotBanEntry(entry);
 }
 
 fn ngx_http_waf_ban_zone_init(zone: [*c]core.ngx_shm_zone_t, data: ?*anyopaque) callconv(.c) ngx_int_t {
@@ -1393,6 +1546,32 @@ fn analyzeSingleRule(rule: *waf_rule, input: []const u8, decode_buf: []u8, lower
         WAF_OPERATOR_WITHIN => {
             const pattern = core.slicify(u8, rule.pattern.data, rule.pattern.len);
             if (tokenSetContains(normalized, pattern)) {
+                const detail = if (rule.msg.len > 0 and rule.msg.data != null) core.slicify(u8, rule.msg.data, rule.msg.len) else pattern;
+                return buildRuleDetection(rule, detail);
+            }
+        },
+        WAF_OPERATOR_LT, WAF_OPERATOR_LE, WAF_OPERATOR_GT, WAF_OPERATOR_GE => {
+            const pattern = core.slicify(u8, rule.pattern.data, rule.pattern.len);
+            if (numericCompare(normalized, pattern, rule.operator)) {
+                const detail = if (rule.msg.len > 0 and rule.msg.data != null) core.slicify(u8, rule.msg.data, rule.msg.len) else pattern;
+                return buildRuleDetection(rule, detail);
+            }
+        },
+        WAF_OPERATOR_CONTAINS_WORD => {
+            const pattern = core.slicify(u8, rule.pattern.data, rule.pattern.len);
+            if (containsWord(normalized, pattern)) {
+                const detail = if (rule.msg.len > 0 and rule.msg.data != null) core.slicify(u8, rule.msg.data, rule.msg.len) else pattern;
+                return buildRuleDetection(rule, detail);
+            }
+        },
+        WAF_OPERATOR_NO_MATCH => {},
+        WAF_OPERATOR_UNCONDITIONAL_MATCH => {
+            const detail = if (rule.msg.len > 0 and rule.msg.data != null) core.slicify(u8, rule.msg.data, rule.msg.len) else "unconditionalMatch";
+            return buildRuleDetection(rule, detail);
+        },
+        WAF_OPERATOR_IP_MATCH => {
+            const pattern = core.slicify(u8, rule.pattern.data, rule.pattern.len);
+            if (ipMatchListContains(normalized, pattern)) {
                 const detail = if (rule.msg.len > 0 and rule.msg.data != null) core.slicify(u8, rule.msg.data, rule.msg.len) else pattern;
                 return buildRuleDetection(rule, detail);
             }
@@ -2793,6 +2972,7 @@ test "applyOffenseToEntry honors weighted score increments" {
     try expectEqual(@as(ngx_uint_t, 0), entry.ban_until);
 
     applyOffenseToEntry(&entry, 101, &lccf, 2);
+
     try expectEqual(@as(u16, 0), entry.score);
     try expectEqual(@as(u16, 1), entry.strikes);
     try expectEqual(@as(ngx_uint_t, 104), entry.ban_until);

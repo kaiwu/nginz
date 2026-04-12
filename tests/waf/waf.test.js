@@ -14,6 +14,11 @@ const ACTION_RULES_FILE = `${process.cwd()}/tests/waf/action.rules`;
 const UNSUPPORTED_RULES_FILE = `${process.cwd()}/tests/waf/unsupported.rules`;
 const TRANSFORM_RULES_FILE = `${process.cwd()}/tests/waf/transform.rules`;
 const OPERATORS_RULES_FILE = `${process.cwd()}/tests/waf/operators.rules`;
+const OPERATORS_IPMATCH_RULES_FILE = `${process.cwd()}/tests/waf/operators-ipmatch.rules`;
+const OPERATORS_IPMATCH_NEGATIVE_RULES_FILE = `${process.cwd()}/tests/waf/operators-ipmatch-negative.rules`;
+const OPERATORS_CONTAINS_WORD_NEGATIVE_RULES_FILE = `${process.cwd()}/tests/waf/operators-contains-word-negative.rules`;
+const OPERATORS_NO_MATCH_RULES_FILE = `${process.cwd()}/tests/waf/operators-no-match.rules`;
+const OPERATORS_UNCONDITIONAL_RULES_FILE = `${process.cwd()}/tests/waf/operators-unconditional.rules`;
 const COLLECTIONS_RULES_FILE = `${process.cwd()}/tests/waf/collections.rules`;
 const BODY_RULES_FILE = `${process.cwd()}/tests/waf/body.rules`;
 const RESPONSE_RULES_FILE = `${process.cwd()}/tests/waf/response.rules`;
@@ -81,6 +86,11 @@ describe("waf module", () => {
         .replaceAll("__WAF_SCORE_RULES_FILE__", SCORE_RULES_FILE)
         .replaceAll("__WAF_TRANSFORM_RULES_FILE__", TRANSFORM_RULES_FILE)
         .replaceAll("__WAF_OPERATORS_RULES_FILE__", OPERATORS_RULES_FILE)
+        .replaceAll("__WAF_OPERATORS_IPMATCH_RULES_FILE__", OPERATORS_IPMATCH_RULES_FILE)
+        .replaceAll("__WAF_OPERATORS_IPMATCH_NEGATIVE_RULES_FILE__", OPERATORS_IPMATCH_NEGATIVE_RULES_FILE)
+        .replaceAll("__WAF_OPERATORS_CONTAINS_WORD_NEGATIVE_RULES_FILE__", OPERATORS_CONTAINS_WORD_NEGATIVE_RULES_FILE)
+        .replaceAll("__WAF_OPERATORS_NO_MATCH_RULES_FILE__", OPERATORS_NO_MATCH_RULES_FILE)
+        .replaceAll("__WAF_OPERATORS_UNCONDITIONAL_RULES_FILE__", OPERATORS_UNCONDITIONAL_RULES_FILE)
         .replaceAll("__WAF_COLLECTIONS_RULES_FILE__", COLLECTIONS_RULES_FILE)
         .replaceAll("__WAF_BODY_RULES_FILE__", BODY_RULES_FILE)
         .replaceAll("__WAF_RESPONSE_RULES_FILE__", RESPONSE_RULES_FILE)
@@ -560,7 +570,7 @@ describe("waf module", () => {
     });
 
     test("per-rule deny overrides detect mode", async () => {
-      const res = await fetch(`${TEST_URL}/rules-deny/deny-path`);
+      const res = await fetchNoKeepAlive(`${TEST_URL}/rules-deny/deny-path`);
       expect(res.status).toBe(418);
       const body = await res.json();
       expect(body.rule).toBe("rule");
@@ -895,6 +905,87 @@ describe("waf module", () => {
       expect(res.status).toBe(200);
       const body = await res.text();
       expect(body).toContain("rules operators within response");
+    });
+
+    test("keeps ge coverage concrete in operators.rules", async () => {
+      const res = await fetch(`${TEST_URL}/rules-operators-ge?ge_arg=10`);
+      expect(res.status).toBe(403);
+      const body = await res.json();
+      expect(body.rule).toBe("rule");
+    });
+
+    test("keeps gt coverage concrete in operators.rules", async () => {
+      const res = await fetch(`${TEST_URL}/rules-operators-gt?gt_arg=11`);
+      expect(res.status).toBe(403);
+      const body = await res.json();
+      expect(body.rule).toBe("rule");
+    });
+
+    test("keeps le coverage concrete in operators.rules", async () => {
+      const res = await fetch(`${TEST_URL}/rules-operators-le?le_arg=10`);
+      expect(res.status).toBe(403);
+      const body = await res.json();
+      expect(body.rule).toBe("rule");
+    });
+
+    test("keeps lt coverage concrete in operators.rules", async () => {
+      const res = await fetch(`${TEST_URL}/rules-operators-lt?lt_arg=9`);
+      expect(res.status).toBe(403);
+      const body = await res.json();
+      expect(body.rule).toBe("rule");
+    });
+
+    test("numeric comparison operators do not match when the comparison fails", async () => {
+      const res = await fetch(`${TEST_URL}/rules-operators-lt?lt_arg=10`);
+      expect(res.status).toBe(200);
+      const body = await res.text();
+      expect(body).toContain("rules operators lt response");
+    });
+
+    test("keeps ipMatch coverage concrete in operators.rules", async () => {
+      const res = await fetch(`${TEST_URL}/rules-operators-ipmatch`);
+      expect(res.status).toBe(403);
+      const body = await res.json();
+      expect(body.rule).toBe("rule");
+    });
+
+    test("ipMatch does not match when the client IP falls outside the configured ranges", async () => {
+      const res = await fetch(`${TEST_URL}/rules-operators-ipmatch-miss`);
+      expect(res.status).toBe(200);
+      const body = await res.text();
+      expect(body).toContain("rules operators ipmatch miss response");
+    });
+
+    test("keeps containsWord coverage concrete in operators.rules", async () => {
+      const res = await fetch(`${TEST_URL}/rules-operators-contains-word`, {
+        headers: { "X-Word-Header": "prefix token suffix" },
+      });
+      expect(res.status).toBe(403);
+      const body = await res.json();
+      expect(body.rule).toBe("rule");
+    });
+
+    test("containsWord does not match when the candidate only appears as a substring", async () => {
+      const res = await fetch(`${TEST_URL}/rules-operators-contains-word-miss`, {
+        headers: { "X-Word-Header": "prefixtoken_suffix" },
+      });
+      expect(res.status).toBe(200);
+      const body = await res.text();
+      expect(body).toContain("rules operators contains word miss response");
+    });
+
+    test("noMatch never produces a detection", async () => {
+      const res = await fetch(`${TEST_URL}/rules-operators-no-match/some-path`);
+      expect(res.status).toBe(200);
+      const body = await res.text();
+      expect(body).toContain("rules operators no match response");
+    });
+
+    test("unconditionalMatch always produces a detection", async () => {
+      const res = await fetch(`${TEST_URL}/rules-operators-unconditional/some-path`);
+      expect(res.status).toBe(403);
+      const body = await res.json();
+      expect(body.rule).toBe("rule");
     });
 
   });
