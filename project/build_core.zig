@@ -58,22 +58,22 @@ pub fn build_core(
             .pic = true,
             .target = target,
             .optimize = optimize,
+            .link_libc = true,
         }),
     });
 
     var files = ArrayList([]const u8).init(b.allocator);
     defer files.deinit();
-    _ = try common.list("./submodules/nginx/src/core", 0, &common.BUILD_BUFFER, &files);
+    _ = try common.list(b.graph.io, "./submodules/nginx/src/core", 0, &common.BUILD_BUFFER, &files);
 
     try common.append(&files, &lib_files);
     try common.append(&files, &os_files);
     try common.append(&files, &event_files);
 
     for (common.NGX_INCLUDE_PATH) |p| {
-        core.addIncludePath(b.path(p));
+        core.root_module.addIncludePath(b.path(p));
     }
-    core.linkLibC();
-    core.addCSourceFiles(.{
+    core.root_module.addCSourceFiles(.{
         .files = files.items[0..],
         .flags = &common.C_FLAGS,
     });

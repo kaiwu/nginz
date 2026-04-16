@@ -96,7 +96,7 @@ fn should_route_to_canary(r: [*c]ngx_http_request_t, lccf: *canary_loc_conf) boo
     if (lccf.percentage > 0) {
         // Generate random number 0-99
         var random_byte: [1]u8 = undefined;
-        std.crypto.random.bytes(&random_byte);
+        _ = std.c.getrandom(&random_byte, random_byte.len, 0);
         const random_value: u32 = @as(u32, random_byte[0]) * 100 / 256;
 
         if (random_value < lccf.percentage) {

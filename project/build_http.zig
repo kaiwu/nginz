@@ -13,18 +13,18 @@ pub fn build_http(
             .pic = true,
             .target = target,
             .optimize = optimize,
+            .link_libc = true,
         }),
     });
 
     var files = ArrayList([]const u8).init(b.allocator);
     defer files.deinit();
-    _ = try common.list("./submodules/nginx/src/http", 0, &common.BUILD_BUFFER, &files);
+    _ = try common.list(b.graph.io, "./submodules/nginx/src/http", 0, &common.BUILD_BUFFER, &files);
 
     for (common.NGX_INCLUDE_PATH) |p| {
-        http.addIncludePath(b.path(p));
+        http.root_module.addIncludePath(b.path(p));
     }
-    http.linkLibC();
-    http.addCSourceFiles(.{
+    http.root_module.addCSourceFiles(.{
         .files = files.items[0..],
         .flags = &common.C_FLAGS,
     });

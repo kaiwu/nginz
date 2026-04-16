@@ -1,5 +1,5 @@
 const std = @import("std");
-const fs = std.fs;
+const Io = std.Io;
 const OOM = std.mem.Allocator.Error.OutOfMemory;
 const ArrayList = std.array_list.Managed;
 
@@ -51,16 +51,16 @@ pub fn append(files: *ArrayList([]const u8), src: []const []const u8) !void {
     }
 }
 
-pub fn list(d: []const u8, ii: usize, mem: []u8, files: *ArrayList([]const u8)) !usize {
-    var dir = fs.cwd().openDir(d, .{ .iterate = true }) catch {
+pub fn list(io: Io, d: []const u8, ii: usize, mem: []u8, files: *ArrayList([]const u8)) !usize {
+    var dir = Io.Dir.cwd().openDir(io, d, .{ .iterate = true }) catch {
         return ii;
     };
-    defer dir.close();
+    defer dir.close(io);
 
     var it = dir.iterate();
     var i = ii;
     out: while (true) {
-        const e = try it.next();
+        const e = try it.next(io);
         if (e) |entry| {
             if (entry.kind != .file and entry.kind != .directory) {
                 continue;
@@ -88,7 +88,7 @@ pub fn list(d: []const u8, ii: usize, mem: []u8, files: *ArrayList([]const u8)) 
                 i += len;
             }
             if (entry.kind == .directory) {
-                i = try list(mem[i .. i + len], i + len, mem, files);
+                i = try list(io, mem[i .. i + len], i + len, mem, files);
             }
         } else {
             break;

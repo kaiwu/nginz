@@ -27,12 +27,12 @@ pub fn build_libinjection(
             .pic = true,
             .target = target,
             .optimize = optimize,
+            .link_libc = true,
         }),
     });
 
-    libinjection.linkLibC();
-    libinjection.addIncludePath(b.path("src/c/libinjection"));
-    libinjection.addCSourceFiles(.{
+    libinjection.root_module.addIncludePath(b.path("src/c/libinjection"));
+    libinjection.root_module.addCSourceFiles(.{
         .files = &files,
         .flags = &LIBINJECTION_C_FLAGS,
     });

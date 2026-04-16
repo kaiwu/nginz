@@ -670,9 +670,12 @@ pub const AcmeDomainKey = struct {
 ///           └── fullchain.pem # Certificate + intermediates
 pub const AcmeStorage = struct {
     const Self = @This();
-    const fs = std.fs;
 
     storage_path: []const u8,
+
+    fn localIo() std.Io {
+        return std.Io.Threaded.global_single_threaded.io();
+    }
 
     pub fn init(path: []const u8) Self {
         return Self{ .storage_path = path };
@@ -680,24 +683,27 @@ pub const AcmeStorage = struct {
 
     /// Ensure storage directories exist
     pub fn ensureDirectories(self: *Self) !void {
+        const io = localIo();
+
         // Create base directory
-        fs.cwd().makePath(self.storage_path) catch |err| {
+        std.Io.Dir.cwd().createDirPath(io, self.storage_path) catch |err| {
             if (err != error.PathAlreadyExists) return err;
         };
 
         // Create certs subdirectory
         var path_buf: [512]u8 = undefined;
         const certs_path = std.fmt.bufPrint(&path_buf, "{s}/certs", .{self.storage_path}) catch return error.PathTooLong;
-        fs.cwd().makePath(certs_path) catch |err| {
+        std.Io.Dir.cwd().createDirPath(io, certs_path) catch |err| {
             if (err != error.PathAlreadyExists) return err;
         };
     }
 
     /// Ensure domain directory exists
     pub fn ensureDomainDir(self: *Self, domain: []const u8) !void {
+        const io = localIo();
         var path_buf: [512]u8 = undefined;
         const domain_path = std.fmt.bufPrint(&path_buf, "{s}/certs/{s}", .{ self.storage_path, domain }) catch return error.PathTooLong;
-        fs.cwd().makePath(domain_path) catch |err| {
+        std.Io.Dir.cwd().createDirPath(io, domain_path) catch |err| {
             if (err != error.PathAlreadyExists) return err;
         };
     }
@@ -709,29 +715,28 @@ pub const AcmeStorage = struct {
     }
 
     pub fn saveAccountKey(self: *Self, pem: []const u8) !void {
+        const io = localIo();
         var path_buf: [512]u8 = undefined;
         const path = try self.accountKeyPath(&path_buf);
 
-        const file = try fs.cwd().createFile(path, .{ .mode = 0o600 });
-        defer file.close();
-        try file.writeAll(pem);
+        var file = try std.Io.Dir.cwd().createFile(io, path, .{ .permissions = .fromMode(0o600) });
+        defer file.close(io);
+        try file.writeStreamingAll(io, pem);
     }
 
     pub fn loadAccountKey(self: *Self, buf: []u8) ![]const u8 {
+        const io = localIo();
         var path_buf: [512]u8 = undefined;
         const path = try self.accountKeyPath(&path_buf);
 
-        const file = fs.cwd().openFile(path, .{}) catch return error.AccountKeyNotFound;
-        defer file.close();
-
-        const bytes_read = try file.readAll(buf);
-        return buf[0..bytes_read];
+        return std.Io.Dir.cwd().readFile(io, path, buf) catch return error.AccountKeyNotFound;
     }
 
     pub fn accountKeyExists(self: *Self) bool {
+        const io = localIo();
         var path_buf: [512]u8 = undefined;
         const path = self.accountKeyPath(&path_buf) catch return false;
-        fs.cwd().access(path, .{}) catch return false;
+        std.Io.Dir.cwd().access(io, path, .{}) catch return false;
         return true;
     }
 
@@ -743,30 +748,29 @@ pub const AcmeStorage = struct {
 
     pub fn saveDomainKey(self: *Self, domain: []const u8, pem: []const u8) !void {
         try self.ensureDomainDir(domain);
+        const io = localIo();
 
         var path_buf: [512]u8 = undefined;
         const path = try self.domainKeyPath(domain, &path_buf);
 
-        const file = try fs.cwd().createFile(path, .{ .mode = 0o600 });
-        defer file.close();
-        try file.writeAll(pem);
+        var file = try std.Io.Dir.cwd().createFile(io, path, .{ .permissions = .fromMode(0o600) });
+        defer file.close(io);
+        try file.writeStreamingAll(io, pem);
     }
 
     pub fn loadDomainKey(self: *Self, domain: []const u8, buf: []u8) ![]const u8 {
+        const io = localIo();
         var path_buf: [512]u8 = undefined;
         const path = try self.domainKeyPath(domain, &path_buf);
 
-        const file = fs.cwd().openFile(path, .{}) catch return error.DomainKeyNotFound;
-        defer file.close();
-
-        const bytes_read = try file.readAll(buf);
-        return buf[0..bytes_read];
+        return std.Io.Dir.cwd().readFile(io, path, buf) catch return error.DomainKeyNotFound;
     }
 
     pub fn domainKeyExists(self: *Self, domain: []const u8) bool {
+        const io = localIo();
         var path_buf: [512]u8 = undefined;
         const path = self.domainKeyPath(domain, &path_buf) catch return false;
-        fs.cwd().access(path, .{}) catch return false;
+        std.Io.Dir.cwd().access(io, path, .{}) catch return false;
         return true;
     }
 
@@ -778,45 +782,46 @@ pub const AcmeStorage = struct {
 
     pub fn saveCertificate(self: *Self, domain: []const u8, pem: []const u8) !void {
         try self.ensureDomainDir(domain);
+        const io = localIo();
 
         var path_buf: [512]u8 = undefined;
         const path = try self.certPath(domain, &path_buf);
 
-        const file = try fs.cwd().createFile(path, .{ .mode = 0o644 });
-        defer file.close();
-        try file.writeAll(pem);
+        var file = try std.Io.Dir.cwd().createFile(io, path, .{ .permissions = .fromMode(0o644) });
+        defer file.close(io);
+        try file.writeStreamingAll(io, pem);
     }
 
     pub fn loadCertificate(self: *Self, domain: []const u8, buf: []u8) ![]const u8 {
+        const io = localIo();
         var path_buf: [512]u8 = undefined;
         const path = try self.certPath(domain, &path_buf);
 
-        const file = fs.cwd().openFile(path, .{}) catch return error.CertNotFound;
-        defer file.close();
-
-        const bytes_read = try file.readAll(buf);
-        return buf[0..bytes_read];
+        return std.Io.Dir.cwd().readFile(io, path, buf) catch return error.CertNotFound;
     }
 
     pub fn certExists(self: *Self, domain: []const u8) bool {
+        const io = localIo();
         var path_buf: [512]u8 = undefined;
         const path = self.certPath(domain, &path_buf) catch return false;
-        fs.cwd().access(path, .{}) catch return false;
+        std.Io.Dir.cwd().access(io, path, .{}) catch return false;
         return true;
     }
 
     /// Remove all storage for a domain
     pub fn removeDomain(self: *Self, domain: []const u8) !void {
+        const io = localIo();
         var path_buf: [512]u8 = undefined;
         const domain_path = std.fmt.bufPrint(&path_buf, "{s}/certs/{s}", .{ self.storage_path, domain }) catch return error.PathTooLong;
-        fs.cwd().deleteTree(domain_path) catch |err| {
+        std.Io.Dir.cwd().deleteTree(io, domain_path) catch |err| {
             if (err != error.FileNotFound) return err;
         };
     }
 
     /// Clean up entire storage (for testing)
     pub fn removeAll(self: *Self) void {
-        fs.cwd().deleteTree(self.storage_path) catch {};
+        const io = localIo();
+        std.Io.Dir.cwd().deleteTree(io, self.storage_path) catch {};
     }
 };
 
@@ -2631,7 +2636,7 @@ fn postconfiguration(cf: [*c]ngx_conf_t) callconv(.c) ngx_int_t {
     };
 
     var handlers = NArray(http.ngx_http_handler_pt).init0(
-        &cmcf.*.phases[http.NGX_HTTP_ACCESS_PHASE].handlers,
+        &cmcf[0].phases[http.NGX_HTTP_ACCESS_PHASE].handlers,
     );
 
     // Register challenge handler
@@ -3175,18 +3180,19 @@ test "CSR with different domain" {
 test "AcmeStorage directory creation" {
     const test_path = "/tmp/acme-test-storage";
     var storage = AcmeStorage.init(test_path);
+    const io = std.Io.Threaded.global_single_threaded.io();
     defer storage.removeAll();
 
     // Create directories
     try storage.ensureDirectories();
 
     // Verify base dir exists
-    std.fs.cwd().access(test_path, .{}) catch {
+    std.Io.Dir.cwd().access(io, test_path, .{}) catch {
         return error.TestFailed;
     };
 
     // Verify certs dir exists
-    std.fs.cwd().access(test_path ++ "/certs", .{}) catch {
+    std.Io.Dir.cwd().access(io, test_path ++ "/certs", .{}) catch {
         return error.TestFailed;
     };
 }

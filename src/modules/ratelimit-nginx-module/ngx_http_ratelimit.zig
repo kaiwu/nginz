@@ -259,7 +259,7 @@ fn postconfiguration(cf: [*c]ngx_conf_t) callconv(.c) ngx_int_t {
     ) orelse return NGX_ERROR;
 
     var handlers = NArray(http.ngx_http_handler_pt).init0(
-        &cmcf.*.phases[5].handlers,
+        &cmcf[0].phases[5].handlers,
     );
     const h = handlers.append() catch return NGX_ERROR;
     h.* = ngx_http_ratelimit_access_handler;

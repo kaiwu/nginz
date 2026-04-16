@@ -103,8 +103,9 @@ fn ngx_http_cache_tags_zone_init(zone: [*c]core.ngx_shm_zone_t, data: ?*anyopaqu
 // Find or create a tag entry
 fn findOrCreateTag(store: [*c]cache_tags_store, tag: []const u8) ?*TagEntry {
     // First, look for existing tag
-    for (&store.*.tags, 0..) |*entry, i| {
-        if (store.*.tag_used[i] == 1 and entry.tag_len == tag.len and std.mem.eql(u8, entry.tag[0..entry.tag_len], tag)) {
+    for (&store[0].tags, 0..) |*entry, i| {
+        const entry_tag: []const u8 = @ptrCast(entry.tag[0..entry.tag_len]);
+        if (store[0].tag_used[i] == @as(u8, 1) and entry.tag_len == tag.len and std.mem.eql(u8, entry_tag, tag)) {
             return entry;
         }
     }
@@ -112,13 +113,13 @@ fn findOrCreateTag(store: [*c]cache_tags_store, tag: []const u8) ?*TagEntry {
     // Create new tag entry
     if (store.*.tag_count >= MAX_TAGS) return null;
 
-    for (&store.*.tags, 0..) |*entry, i| {
-        if (store.*.tag_used[i] == 0) {
+    for (&store[0].tags, 0..) |*entry, i| {
+        if (store[0].tag_used[i] == @as(u8, 0)) {
             entry.* = std.mem.zeroes(TagEntry);
             const len = @min(tag.len, MAX_TAG_LEN);
             entry.tag_len = len;
             @memcpy(entry.tag[0..len], tag[0..len]);
-            store.*.tag_used[i] = 1;
+            store[0].tag_used[i] = @as(u8, 1);
             store.*.tag_count += 1;
             return entry;
         }
@@ -128,8 +129,9 @@ fn findOrCreateTag(store: [*c]cache_tags_store, tag: []const u8) ?*TagEntry {
 
 // Find a tag entry (read-only)
 fn findTag(store: [*c]cache_tags_store, tag: []const u8) ?*TagEntry {
-    for (&store.*.tags, 0..) |*entry, i| {
-        if (store.*.tag_used[i] == 1 and entry.tag_len == tag.len and std.mem.eql(u8, entry.tag[0..entry.tag_len], tag)) {
+    for (&store[0].tags, 0..) |*entry, i| {
+        const entry_tag: []const u8 = @ptrCast(entry.tag[0..entry.tag_len]);
+        if (store[0].tag_used[i] == @as(u8, 1) and entry.tag_len == tag.len and std.mem.eql(u8, entry_tag, tag)) {
             return entry;
         }
     }
@@ -181,11 +183,12 @@ fn associateTagsWithUri(store: [*c]cache_tags_store, tags_str: []const u8, uri: 
 
 // Purge all URIs associated with a tag, returns count
 fn purgeByTag(store: [*c]cache_tags_store, tag: []const u8) usize {
-    for (&store.*.tags, 0..) |*entry, i| {
-        if (store.*.tag_used[i] == 1 and entry.tag_len == tag.len and std.mem.eql(u8, entry.tag[0..entry.tag_len], tag)) {
+    for (&store[0].tags, 0..) |*entry, i| {
+        const entry_tag: []const u8 = @ptrCast(entry.tag[0..entry.tag_len]);
+        if (store[0].tag_used[i] == @as(u8, 1) and entry.tag_len == tag.len and std.mem.eql(u8, entry_tag, tag)) {
             const count = entry.uri_count;
             entry.* = std.mem.zeroes(TagEntry);
-            store.*.tag_used[i] = 0;
+            store[0].tag_used[i] = @as(u8, 0);
             store.*.tag_count -= 1;
             return count;
         }
@@ -300,13 +303,14 @@ export fn ngx_http_cache_tags_purge_handler(r: [*c]ngx_http_request_t) callconv(
         written += (std.fmt.bufPrint(response_buf[written..], "{{\"tags\":[", .{}) catch return NGX_ERROR).len;
 
         var first = true;
-        for (&store.*.tags, 0..) |*entry, i| {
-            if (store.*.tag_used[i] == 1) {
+        for (&store[0].tags, 0..) |*entry, i| {
+            if (store[0].tag_used[i] == @as(u8, 1)) {
+                const entry_tag: []const u8 = @ptrCast(entry.tag[0..entry.tag_len]);
                 if (!first) {
                     written += (std.fmt.bufPrint(response_buf[written..], ",", .{}) catch return NGX_ERROR).len;
                 }
                 written += (std.fmt.bufPrint(response_buf[written..], "{{\"tag\":\"{s}\",\"uris\":{d}}}", .{
-                    entry.tag[0..entry.tag_len],
+                    entry_tag,
                     entry.uri_count,
                 }) catch return NGX_ERROR).len;
                 first = false;

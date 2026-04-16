@@ -443,7 +443,7 @@ fn wechatpay_postconfiguration(
         conf.ngx_http_conf_get_module_main_conf(cf, &ngx_http_core_module),
     )) |cmcf| {
         var handlers = NArray(http.ngx_http_handler_pt).init0(
-            &cmcf.*.phases[http.NGX_HTTP_ACCESS_PHASE].handlers,
+            &cmcf[0].phases[http.NGX_HTTP_ACCESS_PHASE].handlers,
         );
         const h = handlers.append() catch return NGX_ERROR;
         h.* = ngx_http_wechatpay_access_handler;

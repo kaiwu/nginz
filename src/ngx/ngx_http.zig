@@ -131,7 +131,7 @@ pub fn ngz_set_upstream_header(
 
         h.*.lowcase_key = p + h.*.key.len + 1 + h.*.value.len + 1;
         if (h.*.key.len == r.*.lowcase_index) {
-            core.ngz_memcpy(h.*.lowcase_key, &r.*.lowcase_header, h.*.key.len);
+            core.ngz_memcpy(h.*.lowcase_key, &r[0].lowcase_header, h.*.key.len);
         } else {
             string.ngx_strlow(h.*.lowcase_key, h.*.key.data, h.*.key.len);
         }

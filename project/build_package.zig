@@ -499,13 +499,13 @@ pub fn createPackageSteps(
                 .root_source_file = b.path(info.source),
                 .target = target,
                 .optimize = optimize,
+                .link_libc = true,
             }),
         });
-        obj.addIncludePath(b.path(module_dir));
+        obj.root_module.addIncludePath(b.path(module_dir));
         obj.root_module.addImport("ngx", nginx);
         obj.root_module.addImport("ngx_libinjection", ngx_libinjection);
         obj.bundle_compiler_rt = true;
-        obj.linkLibC();
 
         // Install object file to modules/<name>/
         const install_obj = b.addInstallFile(obj.getEmittedBin(), "modules/" ++ module_name ++ "/" ++ obj_base ++ "_module.o");

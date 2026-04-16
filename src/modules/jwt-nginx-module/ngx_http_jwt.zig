@@ -27,6 +27,7 @@ const NArray = ngx.array.NArray;
 const CJSON = cjson.CJSON;
 
 extern var ngx_http_core_module: ngx_module_t;
+extern fn time(t: ?*i64) i64;
 
 // OpenSSL HMAC bindings from ssl module
 const HMAC_CTX = ssl.HMAC_CTX;
@@ -173,7 +174,7 @@ fn check_expiration(payload_json: []const u8, pool: [*c]core.ngx_pool_t) bool {
     // Check exp claim
     if (CJSON.query(json, "$.exp")) |exp_node| {
         if (CJSON.intValue(exp_node)) |exp| {
-            const now = std.time.timestamp();
+            const now = time(null);
             if (exp < now) {
                 return false; // Token expired
             }
@@ -183,7 +184,7 @@ fn check_expiration(payload_json: []const u8, pool: [*c]core.ngx_pool_t) bool {
     // Check nbf claim (not before)
     if (CJSON.query(json, "$.nbf")) |nbf_node| {
         if (CJSON.intValue(nbf_node)) |nbf| {
-            const now = std.time.timestamp();
+            const now = time(null);
             if (nbf > now) {
                 return false; // Token not yet valid
             }
@@ -301,7 +302,7 @@ fn postconfiguration(cf: [*c]ngx_conf_t) callconv(.c) ngx_int_t {
     ) orelse return NGX_ERROR;
 
     var handlers = NArray(http.ngx_http_handler_pt).init0(
-        &cmcf.*.phases[http.NGX_HTTP_ACCESS_PHASE].handlers,
+        &cmcf[0].phases[http.NGX_HTTP_ACCESS_PHASE].handlers,
     );
     const h = handlers.append() catch return NGX_ERROR;
     h.* = ngx_http_jwt_access_handler;

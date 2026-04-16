@@ -357,7 +357,7 @@ fn ngx_http_prometheus_log_handler(
     const duration_ms: u64 = if (current_ms >= start_time_ms) current_ms - start_time_ms else 0;
 
     // Update histogram buckets (cumulative)
-    for (&store.*.histogram_buckets, 0..) |*bucket, i| {
+    for (&store[0].histogram_buckets, 0..) |*bucket, i| {
         if (duration_ms <= HISTOGRAM_BUCKETS[i]) {
             bucket.* += 1;
         }
@@ -388,7 +388,7 @@ fn postconfiguration(cf: [*c]ngx_conf_t) callconv(.c) ngx_int_t {
 
     // NGX_HTTP_LOG_PHASE = 10
     var handlers = NArray(http.ngx_http_handler_pt).init0(
-        &cmcf.*.phases[10].handlers,
+        &cmcf[0].phases[10].handlers,
     );
     const h = handlers.append() catch return NGX_ERROR;
     h.* = ngx_http_prometheus_log_handler;

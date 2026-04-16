@@ -51,29 +51,29 @@ pub fn build_njs(
             .pic = true,
             .target = target,
             .optimize = optimize,
+            .link_libc = true,
         }),
     });
 
     var files = ArrayList([]const u8).init(b.allocator);
     defer files.deinit();
-    const n = try common.list("./submodules/njs/src", 0, &common.BUILD_BUFFER, &files);
-    _ = try common.list("./submodules/njs/external", n, &common.BUILD_BUFFER, &files);
+    const n = try common.list(b.graph.io, "./submodules/njs/src", 0, &common.BUILD_BUFFER, &files);
+    _ = try common.list(b.graph.io, "./submodules/njs/external", n, &common.BUILD_BUFFER, &files);
 
     try common.append(&files, &modules_files);
 
     for (NJS_INCLUDE_PATH) |p| {
-        njs.addIncludePath(b.path(p));
+        njs.root_module.addIncludePath(b.path(p));
     }
     const libxml2 = std.Build.LazyPath{ .cwd_relative = "/usr/include/libxml2" };
-    njs.addSystemIncludePath(libxml2);
-    njs.linkLibC();
-    njs.addCSourceFiles(.{
+    njs.root_module.addSystemIncludePath(libxml2);
+    njs.root_module.addCSourceFiles(.{
         .files = files.items[0..],
         .flags = &NJS_C_FLAGS,
     });
 
     njs.step.dependOn(&quickjs.step);
-    njs.linkLibrary(quickjs);
+    njs.root_module.linkLibrary(quickjs);
 
     // b.installArtifact(njs);
 
@@ -83,22 +83,22 @@ pub fn build_njs(
             .pic = true,
             .target = target,
             .optimize = optimize,
+            .link_libc = true,
         }),
     });
 
-    http_njs.linkLibC();
     http_njs.step.dependOn(&njs.step);
-    http_njs.linkLibrary(njs);
-    http_njs.linkLibrary(quickjs);
-    http_njs.addIncludePath(b.path("submodules/njs/nginx"));
+    http_njs.root_module.linkLibrary(njs);
+    http_njs.root_module.linkLibrary(quickjs);
+    http_njs.root_module.addIncludePath(b.path("submodules/njs/nginx"));
     for (common.NGX_INCLUDE_PATH) |p| {
-        http_njs.addIncludePath(b.path(p));
+        http_njs.root_module.addIncludePath(b.path(p));
     }
     for (NJS_INCLUDE_PATH) |p| {
-        http_njs.addIncludePath(b.path(p));
+        http_njs.root_module.addIncludePath(b.path(p));
     }
 
-    http_njs.addCSourceFiles(.{
+    http_njs.root_module.addCSourceFiles(.{
         .files = &http_module_files,
         .flags = &common.C_FLAGS,
     });

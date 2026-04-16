@@ -143,17 +143,18 @@ fn getCircuitStats(lccf: *circuit_breaker_loc_conf) ?[*c]SharedCircuitStats {
     const store = getCircuitStore() orelse return null;
     const key = core.slicify(u8, lccf.*.circuit_key.data, lccf.*.circuit_key.len);
 
-    for (&store.*.entries) |*entry| {
-        if (entry.key_len == key.len and std.mem.eql(u8, entry.key[0..entry.key_len], key)) {
+    for (&store[0].entries) |*entry| {
+        const entry_key: []const u8 = @ptrCast(entry.key[0..entry.key_len]);
+        if (entry.key_len == key.len and std.mem.eql(u8, entry_key, key)) {
             return &entry.stats;
         }
     }
 
     if (store.*.circuit_count >= MAX_CIRCUITS) {
-        return &store.*.entries[0].stats;
+        return &store[0].entries[0].stats;
     }
 
-    for (&store.*.entries) |*entry| {
+    for (&store[0].entries) |*entry| {
         if (entry.key_len == 0) {
             entry.* = std.mem.zeroes(CircuitEntry);
             const copy_len = @min(key.len, MAX_CIRCUIT_KEY_LEN);
@@ -165,7 +166,7 @@ fn getCircuitStats(lccf: *circuit_breaker_loc_conf) ?[*c]SharedCircuitStats {
         }
     }
 
-    return &store.*.entries[0].stats;
+    return &store[0].entries[0].stats;
 }
 
 // Get current time in milliseconds
@@ -507,14 +508,14 @@ fn postconfiguration(cf: [*c]ngx_conf_t) callconv(.c) ngx_int_t {
     ) orelse return NGX_ERROR;
 
     var access_handlers = NArray(http.ngx_http_handler_pt).init0(
-        &cmcf.*.phases[http.NGX_HTTP_ACCESS_PHASE].handlers,
+        &cmcf[0].phases[http.NGX_HTTP_ACCESS_PHASE].handlers,
     );
     const h1 = access_handlers.append() catch return NGX_ERROR;
     h1.* = ngx_http_circuit_breaker_access_handler;
 
     // Register log phase handler (NGX_HTTP_LOG_PHASE = 10)
     var log_handlers = NArray(http.ngx_http_handler_pt).init0(
-        &cmcf.*.phases[10].handlers,
+        &cmcf[0].phases[10].handlers,
     );
     const h2 = log_handlers.append() catch return NGX_ERROR;
     h2.* = ngx_http_circuit_breaker_log_handler;

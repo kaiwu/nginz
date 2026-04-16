@@ -254,23 +254,25 @@ fn lookupZigOffset(struct_name: []const u8, field_name: []const u8) ?usize {
 
 const print = std.debug.print;
 
-pub fn main() !void {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    defer _ = gpa.deinit();
-    const allocator = gpa.allocator();
+pub fn main(init: std.process.Init) !void {
+    var args_iter = init.minimal.args.iterate();
+    defer args_iter.deinit();
 
-    const args = try std.process.argsAlloc(allocator);
-    defer std.process.argsFree(allocator, args);
+    var args = std.array_list.Managed([]const u8).init(init.gpa);
+    defer args.deinit();
 
-    if (args.len < 2) {
+    while (args_iter.next()) |arg| {
+        try args.append(arg);
+    }
+
+    if (args.items.len < 2) {
         print("Usage: check_layout <c_output_file>\n", .{});
         std.process.exit(1);
     }
 
-    const file_ = try std.fs.cwd().openFile(args[1], .{});
-    defer file_.close();
-    const content = try file_.readToEndAlloc(allocator, 1024 * 1024);
-    defer allocator.free(content);
+    const content_buf = try init.gpa.alloc(u8, 1024 * 1024);
+    defer init.gpa.free(content_buf);
+    const content = try std.Io.Dir.cwd().readFile(init.io, args.items[1], content_buf);
 
     var mismatches: u32 = 0;
     var checked: u32 = 0;

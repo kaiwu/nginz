@@ -46,11 +46,11 @@ pub fn build_cjson(
             .pic = true,
             .target = target,
             .optimize = optimize,
+            .link_libc = true,
         }),
     });
 
-    cjson.linkLibC();
-    cjson.addCSourceFiles(.{
+    cjson.root_module.addCSourceFiles(.{
         .files = &files,
         .flags = &CJSON_C_FLAGS,
     });

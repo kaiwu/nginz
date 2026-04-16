@@ -54,7 +54,7 @@ const hex_chars = "0123456789abcdef";
 fn generate_uuid4(buf: [*]u8) void {
     // Use Zig's crypto random for high-quality randomness
     var random_bytes: [16]u8 = undefined;
-    std.crypto.random.bytes(&random_bytes);
+    _ = std.c.getrandom(&random_bytes, random_bytes.len, 0);
 
     // Set version (4) in byte 6 (bits 4-7)
     random_bytes[6] = (random_bytes[6] & 0x0f) | 0x40;

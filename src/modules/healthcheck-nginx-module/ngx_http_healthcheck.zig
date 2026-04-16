@@ -253,7 +253,7 @@ fn postconfiguration(cf: [*c]ngx_conf_t) callconv(.c) ngx_int_t {
     ) orelse return NGX_ERROR;
 
     var log_handlers = ngx.array.NArray(http.ngx_http_handler_pt).init0(
-        &cmcf.*.phases[10].handlers,
+        &cmcf[0].phases[10].handlers,
     );
     const h = log_handlers.append() catch return NGX_ERROR;
     h.* = ngx_http_healthcheck_log_handler;

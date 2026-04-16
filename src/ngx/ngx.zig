@@ -1978,9 +1978,9 @@ pub const struct_f_owner_ex = extern struct {
 pub const struct_file_handle = extern struct {
     handle_bytes: c_uint align(4) = @import("std").mem.zeroes(c_uint),
     handle_type: c_int = @import("std").mem.zeroes(c_int),
-    pub fn f_handle(self: anytype) @import("std").zig.c_translation.FlexibleArrayType(@TypeOf(self), u8) {
-        const Intermediate = @import("std").zig.c_translation.FlexibleArrayType(@TypeOf(self), u8);
-        const ReturnType = @import("std").zig.c_translation.FlexibleArrayType(@TypeOf(self), u8);
+    pub fn f_handle(self: anytype) @import("std").zig.c_translation.helpers.FlexibleArrayType(@TypeOf(self), u8) {
+        const Intermediate = @import("std").zig.c_translation.helpers.FlexibleArrayType(@TypeOf(self), u8);
+        const ReturnType = @import("std").zig.c_translation.helpers.FlexibleArrayType(@TypeOf(self), u8);
         return @as(ReturnType, @ptrCast(@alignCast(@as(Intermediate, @ptrCast(self)) + 8)));
     }
 };
@@ -2245,9 +2245,9 @@ pub const struct_cmsghdr = extern struct {
     cmsg_len: usize align(8) = @import("std").mem.zeroes(usize),
     cmsg_level: c_int = @import("std").mem.zeroes(c_int),
     cmsg_type: c_int = @import("std").mem.zeroes(c_int),
-    pub fn __cmsg_data(self: anytype) @import("std").zig.c_translation.FlexibleArrayType(@TypeOf(self), u8) {
-        const Intermediate = @import("std").zig.c_translation.FlexibleArrayType(@TypeOf(self), u8);
-        const ReturnType = @import("std").zig.c_translation.FlexibleArrayType(@TypeOf(self), u8);
+    pub fn __cmsg_data(self: anytype) @import("std").zig.c_translation.helpers.FlexibleArrayType(@TypeOf(self), u8) {
+        const Intermediate = @import("std").zig.c_translation.helpers.FlexibleArrayType(@TypeOf(self), u8);
+        const ReturnType = @import("std").zig.c_translation.helpers.FlexibleArrayType(@TypeOf(self), u8);
         return @as(ReturnType, @ptrCast(@alignCast(@as(Intermediate, @ptrCast(self)) + 16)));
     }
 };
@@ -3090,7 +3090,7 @@ pub const struct_ngx_log_s = extern struct {
     next: [*c]ngx_log_t = @import("std").mem.zeroes([*c]ngx_log_t),
 };
 pub const ngx_log_t = struct_ngx_log_s;
-const struct_ngx_file_flags_s = packed struct {
+const struct_ngx_file_flags_s = packed struct(u32) {
     valid_info: bool,
     directio: bool,
     padding: u30,
@@ -3105,7 +3105,7 @@ pub const struct_ngx_file_s = extern struct {
     flags: struct_ngx_file_flags_s = @import("std").mem.zeroes(struct_ngx_file_flags_s),
 };
 pub const ngx_file_t = struct_ngx_file_s;
-const struct_ngx_buf_flags_s = packed struct {
+const struct_ngx_buf_flags_s = packed struct(u32) {
     temporary: bool,
     memory: bool,
     mmap: bool,
@@ -3176,7 +3176,7 @@ pub const struct_ngx_queue_s = extern struct {
     next: [*c]ngx_queue_t = @import("std").mem.zeroes([*c]ngx_queue_t),
 };
 pub const ngx_queue_t = struct_ngx_queue_s;
-const struct_ngx_event_flags_s = packed struct {
+const struct_ngx_event_flags_s = packed struct(u32) {
     write: bool,
     accept: bool,
     instance: bool,
@@ -3223,7 +3223,7 @@ pub const struct_ngx_rbtree_s = extern struct {
     insert: ngx_rbtree_insert_pt = @import("std").mem.zeroes(ngx_rbtree_insert_pt),
 };
 pub const ngx_rbtree_t = struct_ngx_rbtree_s;
-const struct_ngx_listening_flags_s = packed struct {
+const struct_ngx_listening_flags_s = packed struct(u32) {
     open: bool,
     remain: bool,
     ignore: bool,
@@ -3291,7 +3291,7 @@ pub const struct_ssl_session_st = opaque {};
 pub const SSL_SESSION = struct_ssl_session_st;
 pub const struct_ngx_ssl_ocsp_s = opaque {};
 pub const ngx_ssl_ocsp_t = struct_ngx_ssl_ocsp_s;
-const struct_ngx_ssl_connection_flags_s = packed struct {
+const struct_ngx_ssl_connection_flags_s = packed struct(u32) {
     handshaked: bool,
     handshake_rejected: bool,
     renegotiation: bool,
@@ -3333,7 +3333,7 @@ pub const struct_ngx_udp_connection_s = extern struct {
 };
 pub const ngx_udp_connection_t = struct_ngx_udp_connection_s;
 pub const ngx_msec_t = ngx_rbtree_key_t;
-const struct_ngx_connection_flags_s = packed struct {
+const struct_ngx_connection_flags_s = packed struct(u32) {
     buffered: u8,
     log_error: u3,
     timedout: bool,
@@ -3527,7 +3527,7 @@ pub const ngx_keyval_t = extern struct {
     key: ngx_str_t = @import("std").mem.zeroes(ngx_str_t),
     value: ngx_str_t = @import("std").mem.zeroes(ngx_str_t),
 };
-const ngx_variable_value_flags_t = packed struct {
+const ngx_variable_value_flags_t = packed struct(u32) {
     len: u28,
     valid: bool,
     no_cacheable: bool,
@@ -3606,7 +3606,7 @@ pub const ngx_file_mapping_t = extern struct {
     fd: ngx_fd_t = @import("std").mem.zeroes(ngx_fd_t),
     log: [*c]ngx_log_t = @import("std").mem.zeroes([*c]ngx_log_t),
 };
-const ngx_dir_flags_t = packed struct {
+const ngx_dir_flags_t = packed struct(u32) {
     type: u8,
     valid_info: bool,
     padding: u23,
@@ -3668,7 +3668,7 @@ pub extern fn ngx_init_setproctitle(log: [*c]ngx_log_t) ngx_int_t;
 pub extern fn ngx_setproctitle(title: [*c]u8) void;
 pub const ngx_pid_t = pid_t;
 pub const ngx_spawn_proc_pt = ?*const fn ([*c]ngx_cycle_t, ?*anyopaque) callconv(.c) void;
-const ngx_process_flags_t = packed struct {
+const ngx_process_flags_t = packed struct(u32) {
     respawn: bool,
     just_spawn: bool,
     detached: bool,
@@ -3767,7 +3767,7 @@ pub const ngx_bufs_t = extern struct {
     size: usize = @import("std").mem.zeroes(usize),
 };
 pub const ngx_output_chain_filter_pt = ?*const fn (?*anyopaque, [*c]ngx_chain_t) callconv(.c) ngx_int_t;
-const struct_ngx_output_chain_ctx_flags_s = packed struct {
+const struct_ngx_output_chain_ctx_flags_s = packed struct(u32) {
     sendfile: bool,
     directio: bool,
     unaligned: bool,
@@ -3958,7 +3958,7 @@ pub const ngx_path_init_t = extern struct {
     name: ngx_str_t = @import("std").mem.zeroes(ngx_str_t),
     level: [3]usize = @import("std").mem.zeroes([3]usize),
 };
-const ngx_temp_file_flags_t = packed struct {
+const ngx_temp_file_flags_t = packed struct(u32) {
     log_level: u8,
     persistent: bool,
     clean: bool,
@@ -3974,7 +3974,7 @@ pub const ngx_temp_file_t = extern struct {
     access: ngx_uint_t = @import("std").mem.zeroes(ngx_uint_t),
     flags: ngx_temp_file_flags_t = @import("std").mem.zeroes(ngx_temp_file_flags_t),
 };
-const ngx_ext_rename_file_flags_t = packed struct {
+const ngx_ext_rename_file_flags_t = packed struct(u32) {
     create_path: bool,
     delete_file: bool,
     padding: u30,
@@ -4634,7 +4634,7 @@ pub const ngx_slab_stat_t = extern struct {
     reqs: ngx_uint_t = @import("std").mem.zeroes(ngx_uint_t),
     fails: ngx_uint_t = @import("std").mem.zeroes(ngx_uint_t),
 };
-const ngx_slab_pool_flags_t = packed struct {
+const ngx_slab_pool_flags_t = packed struct(u32) {
     log_nomem: bool,
     padding: u31,
 };
@@ -4691,7 +4691,7 @@ pub const ngx_addr_t = extern struct {
     socklen: socklen_t = @import("std").mem.zeroes(socklen_t),
     name: ngx_str_t = @import("std").mem.zeroes(ngx_str_t),
 };
-const ngx_url_flags_t = packed struct {
+const ngx_url_flags_t = packed struct(u32) {
     listen: bool,
     uri_part: bool,
     no_resolve: bool,
@@ -4780,7 +4780,7 @@ pub extern var ngx_core_module: ngx_module_t;
 pub extern var ngx_test_config: ngx_uint_t;
 pub extern var ngx_dump_config: ngx_uint_t;
 pub extern var ngx_quiet_mode: ngx_uint_t;
-const struct_ngx_resolver_flags_s = packed struct {
+const struct_ngx_resolver_flags_s = packed struct(u32) {
     ipv4: bool,
     ipv6: bool,
     padding: u30,
@@ -4829,7 +4829,7 @@ pub const ngx_resolver_connection_t = extern struct {
 };
 pub const ngx_resolver_ctx_t = struct_ngx_resolver_ctx_s;
 pub const ngx_resolver_handler_pt = ?*const fn ([*c]ngx_resolver_ctx_t) callconv(.c) void;
-const struct_ngx_resolver_ctx_flags_s = packed struct {
+const struct_ngx_resolver_ctx_flags_s = packed struct(u32) {
     quick: bool,
     @"async": bool,
     cancelable: bool,
@@ -4891,7 +4891,7 @@ const union_unnamed_83 = extern union {
     addr6: struct_in6_addr,
     addrs6: [*c]struct_in6_addr,
 };
-const ngx_resolver_node_flags_t = packed struct {
+const ngx_resolver_node_flags_t = packed struct(u32) {
     tcp: bool,
     tcp6: bool,
     padding: u30,
@@ -15170,7 +15170,7 @@ pub const struct_ngx_ssl_sess_id_s = extern struct {
     session: [*c]u_char = @import("std").mem.zeroes([*c]u_char),
 };
 pub const ngx_ssl_sess_id_t = struct_ngx_ssl_sess_id_s;
-const ngx_ssl_ticket_key_flags_t = packed struct {
+const ngx_ssl_ticket_key_flags_t = packed struct(u32) {
     size: u8,
     shared: bool,
     padding: u23,
@@ -15355,7 +15355,7 @@ pub extern var ngx_max_module: ngx_uint_t;
 pub const ngx_module_names: [*c][*c]u8 = @extern([*c][*c]u8, .{
     .name = "ngx_module_names",
 });
-const ngx_open_file_info_flags_t = packed struct {
+const ngx_open_file_info_flags_t = packed struct(u32) {
     disable_symlinks: u2,
     test_dir: bool,
     test_only: bool,
@@ -15384,7 +15384,7 @@ pub const ngx_open_file_info_t = extern struct {
     disable_symlinks_from: usize = @import("std").mem.zeroes(usize),
     flags: ngx_open_file_info_flags_t = @import("std").mem.zeroes(ngx_open_file_info_flags_t),
 };
-const struct_ngx_cached_open_file_flags_s = packed struct {
+const struct_ngx_cached_open_file_flags_s = packed struct(u64) {
     disable_symlinks: u2,
     count: u24,
     close: bool,
@@ -15503,7 +15503,7 @@ pub extern fn ngx_connection_error(c: [*c]ngx_connection_t, err: ngx_err_t, text
 pub extern fn ngx_get_connection(s: ngx_socket_t, log: [*c]ngx_log_t) [*c]ngx_connection_t;
 pub extern fn ngx_free_connection(c: [*c]ngx_connection_t) void;
 pub extern fn ngx_reusable_connection(c: [*c]ngx_connection_t, reusable: ngx_uint_t) void;
-const ngx_syslog_peer_flags_t = packed struct {
+const ngx_syslog_peer_flags_t = packed struct(u32) {
     busy: bool,
     nohostname: bool,
     padding: u30,
@@ -15545,9 +15545,9 @@ const enum_unnamed_110 = c_uint;
 pub const struct_bpf_insn = opaque {};
 pub const struct_bpf_lpm_trie_key = extern struct {
     prefixlen: __u32 align(4) = @import("std").mem.zeroes(__u32),
-    pub fn data(self: anytype) @import("std").zig.c_translation.FlexibleArrayType(@TypeOf(self), u8) {
-        const Intermediate = @import("std").zig.c_translation.FlexibleArrayType(@TypeOf(self), u8);
-        const ReturnType = @import("std").zig.c_translation.FlexibleArrayType(@TypeOf(self), u8);
+    pub fn data(self: anytype) @import("std").zig.c_translation.helpers.FlexibleArrayType(@TypeOf(self), u8) {
+        const Intermediate = @import("std").zig.c_translation.helpers.FlexibleArrayType(@TypeOf(self), u8);
+        const ReturnType = @import("std").zig.c_translation.helpers.FlexibleArrayType(@TypeOf(self), u8);
         return @as(ReturnType, @ptrCast(@alignCast(@as(Intermediate, @ptrCast(self)) + 4)));
     }
 };
@@ -15560,9 +15560,9 @@ const union_unnamed_111 = extern union {
 };
 pub const struct_bpf_lpm_trie_key_u8 = extern struct {
     unnamed_0: union_unnamed_111 align(4) = @import("std").mem.zeroes(union_unnamed_111),
-    pub fn data(self: anytype) @import("std").zig.c_translation.FlexibleArrayType(@TypeOf(self), u8) {
-        const Intermediate = @import("std").zig.c_translation.FlexibleArrayType(@TypeOf(self), u8);
-        const ReturnType = @import("std").zig.c_translation.FlexibleArrayType(@TypeOf(self), u8);
+    pub fn data(self: anytype) @import("std").zig.c_translation.helpers.FlexibleArrayType(@TypeOf(self), u8) {
+        const Intermediate = @import("std").zig.c_translation.helpers.FlexibleArrayType(@TypeOf(self), u8);
+        const ReturnType = @import("std").zig.c_translation.helpers.FlexibleArrayType(@TypeOf(self), u8);
         return @as(ReturnType, @ptrCast(@alignCast(@as(Intermediate, @ptrCast(self)) + 4)));
     }
 };
@@ -16905,9 +16905,9 @@ pub const struct_bpf_cgroup_dev_ctx = extern struct {
     minor: __u32 = @import("std").mem.zeroes(__u32),
 };
 pub const struct_bpf_raw_tracepoint_args = extern struct {
-    pub fn args(self: anytype) @import("std").zig.c_translation.FlexibleArrayType(@TypeOf(self), c_ulonglong) {
-        const Intermediate = @import("std").zig.c_translation.FlexibleArrayType(@TypeOf(self), u8);
-        const ReturnType = @import("std").zig.c_translation.FlexibleArrayType(@TypeOf(self), c_ulonglong);
+    pub fn args(self: anytype) @import("std").zig.c_translation.helpers.FlexibleArrayType(@TypeOf(self), c_ulonglong) {
+        const Intermediate = @import("std").zig.c_translation.helpers.FlexibleArrayType(@TypeOf(self), u8);
+        const ReturnType = @import("std").zig.c_translation.helpers.FlexibleArrayType(@TypeOf(self), c_ulonglong);
         return @as(ReturnType, @ptrCast(@alignCast(@as(Intermediate, @ptrCast(self)) + 0)));
     }
 };
@@ -17149,7 +17149,7 @@ pub const struct_ngx_http_file_cache_s = extern struct {
     use_temp_path: ngx_uint_t = @import("std").mem.zeroes(ngx_uint_t),
 };
 pub const ngx_http_file_cache_t = struct_ngx_http_file_cache_s;
-const struct_ngx_http_cache_flags_s = packed struct {
+const struct_ngx_http_cache_flags_s = packed struct(u32) {
     lock: bool,
     waiting: bool,
     updated: bool,
@@ -17206,7 +17206,7 @@ pub const ngx_event_free_peer_pt = ?*const fn ([*c]ngx_peer_connection_t, ?*anyo
 pub const ngx_event_notify_peer_pt = ?*const fn ([*c]ngx_peer_connection_t, ?*anyopaque, ngx_uint_t) callconv(.c) void;
 pub const ngx_event_set_peer_session_pt = ?*const fn ([*c]ngx_peer_connection_t, ?*anyopaque) callconv(.c) ngx_int_t;
 pub const ngx_event_save_peer_session_pt = ?*const fn ([*c]ngx_peer_connection_t, ?*anyopaque) callconv(.c) void;
-const struct_ngx_peer_connection_flags_s = packed struct {
+const struct_ngx_peer_connection_flags_s = packed struct(u32) {
     cached: bool,
     transparent: bool,
     so_keepalive: bool,
@@ -17238,7 +17238,7 @@ pub const struct_ngx_peer_connection_s = extern struct {
 pub const ngx_peer_connection_t = struct_ngx_peer_connection_s;
 pub const ngx_event_pipe_input_filter_pt = ?*const fn ([*c]ngx_event_pipe_t, [*c]ngx_buf_t) callconv(.c) ngx_int_t;
 pub const ngx_event_pipe_output_filter_pt = ?*const fn (?*anyopaque, [*c]ngx_chain_t) callconv(.c) ngx_int_t;
-const struct_ngx_event_pipe_flags_s = packed struct {
+const struct_ngx_event_pipe_flags_s = packed struct(u32) {
     read: bool,
     cacheable: bool,
     single_buf: bool,
@@ -17306,7 +17306,7 @@ pub const struct_ngx_http_upstream_srv_conf_s = extern struct {
 };
 pub const ngx_http_upstream_srv_conf_t = struct_ngx_http_upstream_srv_conf_s;
 pub const ngx_http_cleanup_pt = ?*const fn (?*anyopaque) callconv(.c) void;
-const struct_ngx_http_upstream_flags_s = packed struct {
+const struct_ngx_http_upstream_flags_s = packed struct(u32) {
     store: bool,
     cacheable: bool,
     accel: bool,
@@ -17390,7 +17390,7 @@ pub const struct_ngx_http_cleanup_s = extern struct {
 };
 pub const ngx_http_cleanup_t = struct_ngx_http_cleanup_s;
 
-const struct_ngx_http_request_flag0_s = packed struct {
+const struct_ngx_http_request_flag0_s = packed struct(u64) {
     count: u16,
     subrequests: u8,
     blocked: u8,
@@ -17419,7 +17419,7 @@ const struct_ngx_http_request_flag0_s = packed struct {
     gzip_tested: bool,
     gzip_ok: bool,
 };
-const struct_ngx_http_request_flag1_s = packed struct {
+const struct_ngx_http_request_flag1_s = packed struct(u64) {
     gzip_vary: bool,
     realloc_captures: bool,
     proxy: bool,
@@ -17466,7 +17466,7 @@ const struct_ngx_http_request_flag1_s = packed struct {
     health_check: bool,
     padding: u14,
 };
-const struct_ngx_http_request_flag2_s = packed struct {
+const struct_ngx_http_request_flag2_s = packed struct(u32) {
     http_minor: u16,
     http_major: u16,
 };
@@ -17640,7 +17640,7 @@ pub const ngx_http_header_out_t = extern struct {
     name: ngx_str_t = @import("std").mem.zeroes(ngx_str_t),
     offset: ngx_uint_t = @import("std").mem.zeroes(ngx_uint_t),
 };
-const ngx_http_headers_in_flags_t = packed struct {
+const ngx_http_headers_in_flags_t = packed struct(u32) {
     connection_type: u2,
     chunked: bool,
     multi: bool,
@@ -17720,7 +17720,7 @@ pub const ngx_http_headers_out_t = extern struct {
     last_modified_time: time_t = @import("std").mem.zeroes(time_t),
 };
 pub const ngx_http_client_body_handler_pt = ?*const fn ([*c]ngx_http_request_t) callconv(.c) void;
-const ngx_http_request_body_flags_t = packed struct {
+const ngx_http_request_body_flags_t = packed struct(u32) {
     filter_need_buffering: bool,
     last_sent: bool,
     last_saved: bool,
@@ -17738,7 +17738,7 @@ pub const ngx_http_request_body_t = extern struct {
     post_handler: ngx_http_client_body_handler_pt = @import("std").mem.zeroes(ngx_http_client_body_handler_pt),
     flags: ngx_http_request_body_flags_t = @import("std").mem.zeroes(ngx_http_request_body_flags_t),
 };
-const struct_ngx_http_addr_conf_flags_s = packed struct {
+const struct_ngx_http_addr_conf_flags_s = packed struct(u32) {
     ssl: bool,
     http2: bool,
     quic: bool,
@@ -17751,7 +17751,7 @@ pub const struct_ngx_http_addr_conf_s = extern struct {
     flags: struct_ngx_http_addr_conf_flags_s = @import("std").mem.zeroes(struct_ngx_http_addr_conf_flags_s),
 };
 pub const ngx_http_addr_conf_t = struct_ngx_http_addr_conf_s;
-const ngx_http_connection_flags_t = packed struct {
+const ngx_http_connection_flags_t = packed struct(u32) {
     ssl: bool,
     proxy_protocol: bool,
     padding: u30,
@@ -17781,7 +17781,7 @@ pub const ngx_http_headers_in: [*c]ngx_http_header_t = @extern([*c]ngx_http_head
 pub const ngx_http_headers_out: [*c]ngx_http_header_out_t = @extern([*c]ngx_http_header_out_t, .{
     .name = "ngx_http_headers_out",
 });
-const ngx_http_script_engine_flags_t = packed struct {
+const ngx_http_script_engine_flags_t = packed struct(u32) {
     flushed: bool,
     skip: bool,
     quote: bool,
@@ -17801,7 +17801,7 @@ pub const ngx_http_script_engine_t = extern struct {
     request: [*c]ngx_http_request_t = @import("std").mem.zeroes([*c]ngx_http_request_t),
 };
 
-const ngx_http_script_compile_flags_t = packed struct {
+const ngx_http_script_compile_flags_t = packed struct(u32) {
     compile_args: bool,
     complete_lengths: bool,
     complete_values: bool,
@@ -17835,7 +17835,7 @@ pub const ngx_http_complex_value_t = extern struct {
     values: ?*anyopaque = @import("std").mem.zeroes(?*anyopaque),
     u: union_unnamed_259 = @import("std").mem.zeroes(union_unnamed_259),
 };
-const ngx_http_compile_complex_value_flags_t = packed struct {
+const ngx_http_compile_complex_value_flags_t = packed struct(u32) {
     zero: bool,
     conf_prefix: bool,
     root_prefix: bool,
@@ -17866,7 +17866,7 @@ pub const ngx_http_script_copy_capture_code_t = extern struct {
     code: ngx_http_script_code_pt = @import("std").mem.zeroes(ngx_http_script_code_pt),
     n: usize = @import("std").mem.zeroes(usize),
 };
-const ngx_http_script_regex_code_flags_t = packed struct {
+const ngx_http_script_regex_code_flags_t = packed struct(u32) {
     @"test": bool,
     negative_test: bool,
     uri: bool,
@@ -17886,7 +17886,7 @@ pub const ngx_http_script_regex_code_t = extern struct {
     flags: ngx_http_script_regex_code_flags_t = @import("std").mem.zeroes(ngx_http_script_regex_code_flags_t),
     name: ngx_str_t = @import("std").mem.zeroes(ngx_str_t),
 };
-const ngx_http_script_regex_end_code_flags_t = packed struct {
+const ngx_http_script_regex_end_code_flags_t = packed struct(u32) {
     uri: bool,
     args: bool,
     add_args: bool,
@@ -18069,7 +18069,7 @@ pub const ngx_http_upstream_peer_t = extern struct {
     init: ngx_http_upstream_init_peer_pt = @import("std").mem.zeroes(ngx_http_upstream_init_peer_pt),
     data: ?*anyopaque = @import("std").mem.zeroes(?*anyopaque),
 };
-const ngx_http_upstream_server_flags_t = packed struct {
+const ngx_http_upstream_server_flags_t = packed struct(u32) {
     backup: bool,
     padding: u31,
 };
@@ -18093,7 +18093,7 @@ pub const ngx_http_upstream_local_t = extern struct {
     value: [*c]ngx_http_complex_value_t = @import("std").mem.zeroes([*c]ngx_http_complex_value_t),
     transparent: ngx_uint_t = @import("std").mem.zeroes(ngx_uint_t),
 };
-const ngx_http_upstream_conf_flags_t = packed struct {
+const ngx_http_upstream_conf_flags_t = packed struct(u32) {
     cache: i2,
     store: i2,
     intercept_404: bool,
@@ -18175,7 +18175,7 @@ pub const ngx_http_upstream_header_t = extern struct {
     conf: ngx_uint_t = @import("std").mem.zeroes(ngx_uint_t),
     redirect: ngx_uint_t = @import("std").mem.zeroes(ngx_uint_t),
 };
-const ngx_http_upstream_headers_in_flags_t = packed struct {
+const ngx_http_upstream_headers_in_flags_t = packed struct(u32) {
     connection_close: bool,
     chunked: bool,
     no_cache: bool,
@@ -18245,7 +18245,7 @@ pub const ngx_http_upstream_cache_method_mask: [*c]ngx_conf_bitmask_t = @extern(
 pub const ngx_http_upstream_ignore_headers_masks: [*c]ngx_conf_bitmask_t = @extern([*c]ngx_conf_bitmask_t, .{
     .name = "ngx_http_upstream_ignore_headers_masks",
 });
-const struct_ngx_http_upstream_rr_peer_flags_s = packed struct {
+const struct_ngx_http_upstream_rr_peer_flags_s = packed struct(u32) {
     route: bool,
     zombie: bool,
     padding: u30,
@@ -18279,7 +18279,7 @@ pub const struct_ngx_http_upstream_rr_peer_s = extern struct {
 };
 pub const ngx_http_upstream_rr_peer_t = struct_ngx_http_upstream_rr_peer_s;
 pub const ngx_http_upstream_rr_peers_t = struct_ngx_http_upstream_rr_peers_s;
-const struct_ngx_http_upstream_rr_peers_flags_s = packed struct {
+const struct_ngx_http_upstream_rr_peers_flags_s = packed struct(u32) {
     single: bool,
     weighted: bool,
     padding: u30,
@@ -18323,7 +18323,7 @@ pub extern fn ngx_http_upstream_set_round_robin_peer_session(pc: [*c]ngx_peer_co
 pub extern fn ngx_http_upstream_save_round_robin_peer_session(pc: [*c]ngx_peer_connection_t, data: ?*anyopaque) void;
 pub const ngx_http_location_tree_node_t = struct_ngx_http_location_tree_node_s;
 
-const struct_ngx_http_core_loc_conf_flags_s = packed struct {
+const struct_ngx_http_core_loc_conf_flags_s = packed struct(u32) {
     noname: bool,
     lmt_excpt: bool,
     named: bool,
@@ -18431,7 +18431,7 @@ pub const struct_ngx_http_location_tree_node_s = extern struct {
     auto_redirect: u_char = @import("std").mem.zeroes(u_char),
     name: [1]u_char = @import("std").mem.zeroes([1]u_char),
 };
-const ngx_http_listen_opt_flags_t = packed struct {
+const ngx_http_listen_opt_flags_t = packed struct(u32) {
     set: bool,
     default_server: bool,
     bind: bool,
@@ -18504,7 +18504,7 @@ pub const ngx_http_core_main_conf_t = extern struct {
     ports: [*c]ngx_array_t = @import("std").mem.zeroes([*c]ngx_array_t),
     phases: [11]ngx_http_phase_t = @import("std").mem.zeroes([11]ngx_http_phase_t),
 };
-const ngx_http_core_srv_conf_flags_t = packed struct {
+const ngx_http_core_srv_conf_flags_t = packed struct(u32) {
     listen: bool,
     captures: bool,
     allow_connect: bool,
@@ -18556,7 +18556,7 @@ pub const ngx_http_conf_port_t = extern struct {
     port: in_port_t = @import("std").mem.zeroes(in_port_t),
     addrs: ngx_array_t = @import("std").mem.zeroes(ngx_array_t),
 };
-const ngx_http_conf_addr_flags_t = packed struct {
+const ngx_http_conf_addr_flags_t = packed struct(u32) {
     protocols: u3,
     protocols_set: bool,
     protocols_changed: bool,
@@ -18625,7 +18625,7 @@ pub const ngx_http_cache_valid_t = extern struct {
     status: ngx_uint_t = @import("std").mem.zeroes(ngx_uint_t),
     valid: time_t = @import("std").mem.zeroes(time_t),
 };
-const ngx_http_file_cache_node_flags_t = packed struct {
+const ngx_http_file_cache_node_flags_t = packed struct(u64) {
     count: u20,
     uses: u10,
     valid_msec: u10,
@@ -18885,27 +18885,27 @@ pub const __SHRT_WIDTH__ = @as(c_int, 16);
 pub const __INT_WIDTH__ = @as(c_int, 32);
 pub const __LONG_WIDTH__ = @as(c_int, 64);
 pub const __LLONG_WIDTH__ = @as(c_int, 64);
-pub const __BITINT_MAXWIDTH__ = @import("std").zig.c_translation.promoteIntLiteral(c_int, 8388608, .decimal);
+pub const __BITINT_MAXWIDTH__ = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 8388608, .decimal);
 pub const __SCHAR_MAX__ = @as(c_int, 127);
 pub const __SHRT_MAX__ = @as(c_int, 32767);
-pub const __INT_MAX__ = @import("std").zig.c_translation.promoteIntLiteral(c_int, 2147483647, .decimal);
-pub const __LONG_MAX__ = @import("std").zig.c_translation.promoteIntLiteral(c_long, 9223372036854775807, .decimal);
+pub const __INT_MAX__ = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 2147483647, .decimal);
+pub const __LONG_MAX__ = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_long, 9223372036854775807, .decimal);
 pub const __LONG_LONG_MAX__ = @as(c_longlong, 9223372036854775807);
-pub const __WCHAR_MAX__ = @import("std").zig.c_translation.promoteIntLiteral(c_int, 2147483647, .decimal);
+pub const __WCHAR_MAX__ = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 2147483647, .decimal);
 pub const __WCHAR_WIDTH__ = @as(c_int, 32);
-pub const __WINT_MAX__ = @import("std").zig.c_translation.promoteIntLiteral(c_uint, 4294967295, .decimal);
+pub const __WINT_MAX__ = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_uint, 4294967295, .decimal);
 pub const __WINT_WIDTH__ = @as(c_int, 32);
-pub const __INTMAX_MAX__ = @import("std").zig.c_translation.promoteIntLiteral(c_long, 9223372036854775807, .decimal);
+pub const __INTMAX_MAX__ = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_long, 9223372036854775807, .decimal);
 pub const __INTMAX_WIDTH__ = @as(c_int, 64);
-pub const __SIZE_MAX__ = @import("std").zig.c_translation.promoteIntLiteral(c_ulong, 18446744073709551615, .decimal);
+pub const __SIZE_MAX__ = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_ulong, 18446744073709551615, .decimal);
 pub const __SIZE_WIDTH__ = @as(c_int, 64);
-pub const __UINTMAX_MAX__ = @import("std").zig.c_translation.promoteIntLiteral(c_ulong, 18446744073709551615, .decimal);
+pub const __UINTMAX_MAX__ = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_ulong, 18446744073709551615, .decimal);
 pub const __UINTMAX_WIDTH__ = @as(c_int, 64);
-pub const __PTRDIFF_MAX__ = @import("std").zig.c_translation.promoteIntLiteral(c_long, 9223372036854775807, .decimal);
+pub const __PTRDIFF_MAX__ = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_long, 9223372036854775807, .decimal);
 pub const __PTRDIFF_WIDTH__ = @as(c_int, 64);
-pub const __INTPTR_MAX__ = @import("std").zig.c_translation.promoteIntLiteral(c_long, 9223372036854775807, .decimal);
+pub const __INTPTR_MAX__ = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_long, 9223372036854775807, .decimal);
 pub const __INTPTR_WIDTH__ = @as(c_int, 64);
-pub const __UINTPTR_MAX__ = @import("std").zig.c_translation.promoteIntLiteral(c_ulong, 18446744073709551615, .decimal);
+pub const __UINTPTR_MAX__ = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_ulong, 18446744073709551615, .decimal);
 pub const __UINTPTR_WIDTH__ = @as(c_int, 64);
 pub const __SIZEOF_DOUBLE__ = @as(c_int, 8);
 pub const __SIZEOF_FLOAT__ = @as(c_int, 4);
@@ -18945,7 +18945,7 @@ pub const __SIZE_FMTx__ = "lx";
 pub const __SIZE_FMTX__ = "lX";
 pub const __WCHAR_TYPE__ = c_int;
 pub const __WINT_TYPE__ = c_uint;
-pub const __SIG_ATOMIC_MAX__ = @import("std").zig.c_translation.promoteIntLiteral(c_int, 2147483647, .decimal);
+pub const __SIG_ATOMIC_MAX__ = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 2147483647, .decimal);
 pub const __SIG_ATOMIC_WIDTH__ = @as(c_int, 32);
 pub const __CHAR16_TYPE__ = c_ushort;
 pub const __CHAR32_TYPE__ = c_uint;
@@ -19044,7 +19044,7 @@ pub const __UINT16_FMTu__ = "hu";
 pub const __UINT16_FMTx__ = "hx";
 pub const __UINT16_FMTX__ = "hX";
 pub const __UINT16_C_SUFFIX__ = "";
-pub const __UINT16_MAX__ = @import("std").zig.c_translation.promoteIntLiteral(c_int, 65535, .decimal);
+pub const __UINT16_MAX__ = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 65535, .decimal);
 pub const __INT16_MAX__ = @as(c_int, 32767);
 pub const __UINT32_TYPE__ = c_uint;
 pub const __UINT32_FMTo__ = "o";
@@ -19053,8 +19053,8 @@ pub const __UINT32_FMTx__ = "x";
 pub const __UINT32_FMTX__ = "X";
 pub const __UINT32_C_SUFFIX__ = @compileError("unable to translate macro: undefined identifier `U`");
 // (no file):220:9
-pub const __UINT32_MAX__ = @import("std").zig.c_translation.promoteIntLiteral(c_uint, 4294967295, .decimal);
-pub const __INT32_MAX__ = @import("std").zig.c_translation.promoteIntLiteral(c_int, 2147483647, .decimal);
+pub const __UINT32_MAX__ = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_uint, 4294967295, .decimal);
+pub const __INT32_MAX__ = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 2147483647, .decimal);
 pub const __UINT64_TYPE__ = c_ulong;
 pub const __UINT64_FMTo__ = "lo";
 pub const __UINT64_FMTu__ = "lu";
@@ -19062,8 +19062,8 @@ pub const __UINT64_FMTx__ = "lx";
 pub const __UINT64_FMTX__ = "lX";
 pub const __UINT64_C_SUFFIX__ = @compileError("unable to translate macro: undefined identifier `UL`");
 // (no file):228:9
-pub const __UINT64_MAX__ = @import("std").zig.c_translation.promoteIntLiteral(c_ulong, 18446744073709551615, .decimal);
-pub const __INT64_MAX__ = @import("std").zig.c_translation.promoteIntLiteral(c_long, 9223372036854775807, .decimal);
+pub const __UINT64_MAX__ = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_ulong, 18446744073709551615, .decimal);
+pub const __INT64_MAX__ = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_long, 9223372036854775807, .decimal);
 pub const __INT_LEAST8_TYPE__ = i8;
 pub const __INT_LEAST8_MAX__ = @as(c_int, 127);
 pub const __INT_LEAST8_WIDTH__ = @as(c_int, 8);
@@ -19081,29 +19081,29 @@ pub const __INT_LEAST16_WIDTH__ = @as(c_int, 16);
 pub const __INT_LEAST16_FMTd__ = "hd";
 pub const __INT_LEAST16_FMTi__ = "hi";
 pub const __UINT_LEAST16_TYPE__ = c_ushort;
-pub const __UINT_LEAST16_MAX__ = @import("std").zig.c_translation.promoteIntLiteral(c_int, 65535, .decimal);
+pub const __UINT_LEAST16_MAX__ = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 65535, .decimal);
 pub const __UINT_LEAST16_FMTo__ = "ho";
 pub const __UINT_LEAST16_FMTu__ = "hu";
 pub const __UINT_LEAST16_FMTx__ = "hx";
 pub const __UINT_LEAST16_FMTX__ = "hX";
 pub const __INT_LEAST32_TYPE__ = c_int;
-pub const __INT_LEAST32_MAX__ = @import("std").zig.c_translation.promoteIntLiteral(c_int, 2147483647, .decimal);
+pub const __INT_LEAST32_MAX__ = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 2147483647, .decimal);
 pub const __INT_LEAST32_WIDTH__ = @as(c_int, 32);
 pub const __INT_LEAST32_FMTd__ = "d";
 pub const __INT_LEAST32_FMTi__ = "i";
 pub const __UINT_LEAST32_TYPE__ = c_uint;
-pub const __UINT_LEAST32_MAX__ = @import("std").zig.c_translation.promoteIntLiteral(c_uint, 4294967295, .decimal);
+pub const __UINT_LEAST32_MAX__ = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_uint, 4294967295, .decimal);
 pub const __UINT_LEAST32_FMTo__ = "o";
 pub const __UINT_LEAST32_FMTu__ = "u";
 pub const __UINT_LEAST32_FMTx__ = "x";
 pub const __UINT_LEAST32_FMTX__ = "X";
 pub const __INT_LEAST64_TYPE__ = c_long;
-pub const __INT_LEAST64_MAX__ = @import("std").zig.c_translation.promoteIntLiteral(c_long, 9223372036854775807, .decimal);
+pub const __INT_LEAST64_MAX__ = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_long, 9223372036854775807, .decimal);
 pub const __INT_LEAST64_WIDTH__ = @as(c_int, 64);
 pub const __INT_LEAST64_FMTd__ = "ld";
 pub const __INT_LEAST64_FMTi__ = "li";
 pub const __UINT_LEAST64_TYPE__ = c_ulong;
-pub const __UINT_LEAST64_MAX__ = @import("std").zig.c_translation.promoteIntLiteral(c_ulong, 18446744073709551615, .decimal);
+pub const __UINT_LEAST64_MAX__ = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_ulong, 18446744073709551615, .decimal);
 pub const __UINT_LEAST64_FMTo__ = "lo";
 pub const __UINT_LEAST64_FMTu__ = "lu";
 pub const __UINT_LEAST64_FMTx__ = "lx";
@@ -19125,29 +19125,29 @@ pub const __INT_FAST16_WIDTH__ = @as(c_int, 16);
 pub const __INT_FAST16_FMTd__ = "hd";
 pub const __INT_FAST16_FMTi__ = "hi";
 pub const __UINT_FAST16_TYPE__ = c_ushort;
-pub const __UINT_FAST16_MAX__ = @import("std").zig.c_translation.promoteIntLiteral(c_int, 65535, .decimal);
+pub const __UINT_FAST16_MAX__ = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 65535, .decimal);
 pub const __UINT_FAST16_FMTo__ = "ho";
 pub const __UINT_FAST16_FMTu__ = "hu";
 pub const __UINT_FAST16_FMTx__ = "hx";
 pub const __UINT_FAST16_FMTX__ = "hX";
 pub const __INT_FAST32_TYPE__ = c_int;
-pub const __INT_FAST32_MAX__ = @import("std").zig.c_translation.promoteIntLiteral(c_int, 2147483647, .decimal);
+pub const __INT_FAST32_MAX__ = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 2147483647, .decimal);
 pub const __INT_FAST32_WIDTH__ = @as(c_int, 32);
 pub const __INT_FAST32_FMTd__ = "d";
 pub const __INT_FAST32_FMTi__ = "i";
 pub const __UINT_FAST32_TYPE__ = c_uint;
-pub const __UINT_FAST32_MAX__ = @import("std").zig.c_translation.promoteIntLiteral(c_uint, 4294967295, .decimal);
+pub const __UINT_FAST32_MAX__ = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_uint, 4294967295, .decimal);
 pub const __UINT_FAST32_FMTo__ = "o";
 pub const __UINT_FAST32_FMTu__ = "u";
 pub const __UINT_FAST32_FMTx__ = "x";
 pub const __UINT_FAST32_FMTX__ = "X";
 pub const __INT_FAST64_TYPE__ = c_long;
-pub const __INT_FAST64_MAX__ = @import("std").zig.c_translation.promoteIntLiteral(c_long, 9223372036854775807, .decimal);
+pub const __INT_FAST64_MAX__ = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_long, 9223372036854775807, .decimal);
 pub const __INT_FAST64_WIDTH__ = @as(c_int, 64);
 pub const __INT_FAST64_FMTd__ = "ld";
 pub const __INT_FAST64_FMTi__ = "li";
 pub const __UINT_FAST64_TYPE__ = c_ulong;
-pub const __UINT_FAST64_MAX__ = @import("std").zig.c_translation.promoteIntLiteral(c_ulong, 18446744073709551615, .decimal);
+pub const __UINT_FAST64_MAX__ = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_ulong, 18446744073709551615, .decimal);
 pub const __UINT_FAST64_FMTo__ = "lo";
 pub const __UINT_FAST64_FMTu__ = "lu";
 pub const __UINT_FAST64_FMTx__ = "lx";
@@ -19631,11 +19631,11 @@ pub const BYTE_ORDER = __BYTE_ORDER;
 pub const _BITS_BYTESWAP_H = @as(c_int, 1);
 pub inline fn __bswap_constant_16(x: anytype) __uint16_t {
     _ = &x;
-    return @import("std").zig.c_translation.cast(__uint16_t, ((x >> @as(c_int, 8)) & @as(c_int, 0xff)) | ((x & @as(c_int, 0xff)) << @as(c_int, 8)));
+    return @import("std").zig.c_translation.helpers.cast(__uint16_t, ((x >> @as(c_int, 8)) & @as(c_int, 0xff)) | ((x & @as(c_int, 0xff)) << @as(c_int, 8)));
 }
-pub inline fn __bswap_constant_32(x: anytype) @TypeOf(((((x & @import("std").zig.c_translation.promoteIntLiteral(c_uint, 0xff000000, .hex)) >> @as(c_int, 24)) | ((x & @import("std").zig.c_translation.promoteIntLiteral(c_uint, 0x00ff0000, .hex)) >> @as(c_int, 8))) | ((x & @as(c_uint, 0x0000ff00)) << @as(c_int, 8))) | ((x & @as(c_uint, 0x000000ff)) << @as(c_int, 24))) {
+pub inline fn __bswap_constant_32(x: anytype) @TypeOf(((((x & @import("std").zig.c_translation.helpers.promoteIntLiteral(c_uint, 0xff000000, .hex)) >> @as(c_int, 24)) | ((x & @import("std").zig.c_translation.helpers.promoteIntLiteral(c_uint, 0x00ff0000, .hex)) >> @as(c_int, 8))) | ((x & @as(c_uint, 0x0000ff00)) << @as(c_int, 8))) | ((x & @as(c_uint, 0x000000ff)) << @as(c_int, 24))) {
     _ = &x;
-    return ((((x & @import("std").zig.c_translation.promoteIntLiteral(c_uint, 0xff000000, .hex)) >> @as(c_int, 24)) | ((x & @import("std").zig.c_translation.promoteIntLiteral(c_uint, 0x00ff0000, .hex)) >> @as(c_int, 8))) | ((x & @as(c_uint, 0x0000ff00)) << @as(c_int, 8))) | ((x & @as(c_uint, 0x000000ff)) << @as(c_int, 24));
+    return ((((x & @import("std").zig.c_translation.helpers.promoteIntLiteral(c_uint, 0xff000000, .hex)) >> @as(c_int, 24)) | ((x & @import("std").zig.c_translation.helpers.promoteIntLiteral(c_uint, 0x00ff0000, .hex)) >> @as(c_int, 8))) | ((x & @as(c_uint, 0x0000ff00)) << @as(c_int, 8))) | ((x & @as(c_uint, 0x000000ff)) << @as(c_int, 24));
 }
 pub inline fn __bswap_constant_64(x: anytype) @TypeOf(((((((((x & @as(c_ulonglong, 0xff00000000000000)) >> @as(c_int, 56)) | ((x & @as(c_ulonglong, 0x00ff000000000000)) >> @as(c_int, 40))) | ((x & @as(c_ulonglong, 0x0000ff0000000000)) >> @as(c_int, 24))) | ((x & @as(c_ulonglong, 0x000000ff00000000)) >> @as(c_int, 8))) | ((x & @as(c_ulonglong, 0x00000000ff000000)) << @as(c_int, 8))) | ((x & @as(c_ulonglong, 0x0000000000ff0000)) << @as(c_int, 24))) | ((x & @as(c_ulonglong, 0x000000000000ff00)) << @as(c_int, 40))) | ((x & @as(c_ulonglong, 0x00000000000000ff)) << @as(c_int, 56))) {
     _ = &x;
@@ -19704,17 +19704,17 @@ pub inline fn __FD_ISSET(d: anytype, s: anytype) @TypeOf((__FDS_BITS(s)[@as(usiz
 }
 pub const __sigset_t_defined = @as(c_int, 1);
 pub const ____sigset_t_defined = "";
-pub const _SIGSET_NWORDS = @import("std").zig.c_translation.MacroArithmetic.div(@as(c_int, 1024), @as(c_int, 8) * @import("std").zig.c_translation.sizeof(c_ulong));
+pub const _SIGSET_NWORDS = @import("std").zig.c_translation.helpers.div(@as(c_int, 1024), @as(c_int, 8) * @import("std").zig.c_translation.helpers.sizeof(c_ulong));
 pub const __timeval_defined = @as(c_int, 1);
 pub const _STRUCT_TIMESPEC = @as(c_int, 1);
-pub const __NFDBITS = @as(c_int, 8) * @import("std").zig.c_translation.cast(c_int, @import("std").zig.c_translation.sizeof(__fd_mask));
-pub inline fn __FD_ELT(d: anytype) @TypeOf(@import("std").zig.c_translation.MacroArithmetic.div(d, __NFDBITS)) {
+pub const __NFDBITS = @as(c_int, 8) * @import("std").zig.c_translation.helpers.cast(c_int, @import("std").zig.c_translation.helpers.sizeof(__fd_mask));
+pub inline fn __FD_ELT(d: anytype) @TypeOf(@import("std").zig.c_translation.helpers.div(d, __NFDBITS)) {
     _ = &d;
-    return @import("std").zig.c_translation.MacroArithmetic.div(d, __NFDBITS);
+    return @import("std").zig.c_translation.helpers.div(d, __NFDBITS);
 }
 pub inline fn __FD_MASK(d: anytype) __fd_mask {
     _ = &d;
-    return @import("std").zig.c_translation.cast(__fd_mask, @as(c_ulong, 1) << @import("std").zig.c_translation.MacroArithmetic.rem(d, __NFDBITS));
+    return @import("std").zig.c_translation.helpers.cast(__fd_mask, @as(c_ulong, 1) << @import("std").zig.c_translation.helpers.rem(d, __NFDBITS));
 }
 pub inline fn __FDS_BITS(set: anytype) @TypeOf(set.*.fds_bits) {
     _ = &set;
@@ -19902,7 +19902,7 @@ pub const STDIN_FILENO = @as(c_int, 0);
 pub const STDOUT_FILENO = @as(c_int, 1);
 pub const STDERR_FILENO = @as(c_int, 2);
 pub const __need_NULL = "";
-pub const NULL = @import("std").zig.c_translation.cast(?*anyopaque, @as(c_int, 0));
+pub const NULL = @import("std").zig.c_translation.helpers.cast(?*anyopaque, @as(c_int, 0));
 pub const __intptr_t_defined = "";
 pub const __socklen_t_defined = "";
 pub const R_OK = @as(c_int, 4);
@@ -19989,7 +19989,7 @@ pub inline fn __ferror_unlocked_body(_fp: anytype) @TypeOf((_fp.*._flags & _IO_E
     _ = &_fp;
     return (_fp.*._flags & _IO_ERR_SEEN) != @as(c_int, 0);
 }
-pub const _IO_USER_LOCK = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x8000, .hex);
+pub const _IO_USER_LOCK = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x8000, .hex);
 pub const __cookie_io_functions_t_defined = @as(c_int, 1);
 pub const _VA_LIST_DEFINED = "";
 pub const _IOFBF = @as(c_int, 0);
@@ -19999,7 +19999,7 @@ pub const BUFSIZ = @as(c_int, 8192);
 pub const EOF = -@as(c_int, 1);
 pub const P_tmpdir = "/tmp";
 pub const L_tmpnam = @as(c_int, 20);
-pub const TMP_MAX = @import("std").zig.c_translation.promoteIntLiteral(c_int, 238328, .decimal);
+pub const TMP_MAX = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 238328, .decimal);
 pub const _BITS_STDIO_LIM_H = @as(c_int, 1);
 pub const FILENAME_MAX = @as(c_int, 4096);
 pub const L_ctermid = @as(c_int, 9);
@@ -20029,7 +20029,7 @@ pub const __HAVE_DISTINCT_FLOAT64X = @as(c_int, 0);
 pub const __HAVE_DISTINCT_FLOAT128X = __HAVE_FLOAT128X;
 pub const __HAVE_FLOAT128_UNLIKE_LDBL = (__HAVE_DISTINCT_FLOAT128 != 0) and (__LDBL_MANT_DIG__ != @as(c_int, 113));
 pub const __HAVE_FLOATN_NOT_TYPEDEF = @as(c_int, 0);
-pub const __f32 = @import("std").zig.c_translation.Macros.F_SUFFIX;
+pub const __f32 = @import("std").zig.c_translation.helpers.F_SUFFIX;
 pub inline fn __f64(x: anytype) @TypeOf(x) {
     _ = &x;
     return x;
@@ -20038,7 +20038,7 @@ pub inline fn __f32x(x: anytype) @TypeOf(x) {
     _ = &x;
     return x;
 }
-pub const __f64x = @import("std").zig.c_translation.Macros.L_SUFFIX;
+pub const __f64x = @import("std").zig.c_translation.helpers.L_SUFFIX;
 pub const __CFLOAT32 = @compileError("unable to translate: TODO _Complex");
 // /usr/include/bits/floatn-common.h:149:12
 pub const __CFLOAT64 = @compileError("unable to translate: TODO _Complex");
@@ -20089,13 +20089,13 @@ pub const WUNTRACED = @as(c_int, 2);
 pub const WSTOPPED = @as(c_int, 2);
 pub const WEXITED = @as(c_int, 4);
 pub const WCONTINUED = @as(c_int, 8);
-pub const WNOWAIT = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x01000000, .hex);
-pub const __WNOTHREAD = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x20000000, .hex);
-pub const __WALL = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x40000000, .hex);
-pub const __WCLONE = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x80000000, .hex);
-pub inline fn __WEXITSTATUS(status: anytype) @TypeOf((status & @import("std").zig.c_translation.promoteIntLiteral(c_int, 0xff00, .hex)) >> @as(c_int, 8)) {
+pub const WNOWAIT = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x01000000, .hex);
+pub const __WNOTHREAD = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x20000000, .hex);
+pub const __WALL = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x40000000, .hex);
+pub const __WCLONE = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x80000000, .hex);
+pub inline fn __WEXITSTATUS(status: anytype) @TypeOf((status & @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0xff00, .hex)) >> @as(c_int, 8)) {
     _ = &status;
-    return (status & @import("std").zig.c_translation.promoteIntLiteral(c_int, 0xff00, .hex)) >> @as(c_int, 8);
+    return (status & @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0xff00, .hex)) >> @as(c_int, 8);
 }
 pub inline fn __WTERMSIG(status: anytype) @TypeOf(status & @as(c_int, 0x7f)) {
     _ = &status;
@@ -20109,9 +20109,9 @@ pub inline fn __WIFEXITED(status: anytype) @TypeOf(__WTERMSIG(status) == @as(c_i
     _ = &status;
     return __WTERMSIG(status) == @as(c_int, 0);
 }
-pub inline fn __WIFSIGNALED(status: anytype) @TypeOf((@import("std").zig.c_translation.cast(i8, (status & @as(c_int, 0x7f)) + @as(c_int, 1)) >> @as(c_int, 1)) > @as(c_int, 0)) {
+pub inline fn __WIFSIGNALED(status: anytype) @TypeOf((@import("std").zig.c_translation.helpers.cast(i8, (status & @as(c_int, 0x7f)) + @as(c_int, 1)) >> @as(c_int, 1)) > @as(c_int, 0)) {
     _ = &status;
-    return (@import("std").zig.c_translation.cast(i8, (status & @as(c_int, 0x7f)) + @as(c_int, 1)) >> @as(c_int, 1)) > @as(c_int, 0);
+    return (@import("std").zig.c_translation.helpers.cast(i8, (status & @as(c_int, 0x7f)) + @as(c_int, 1)) >> @as(c_int, 1)) > @as(c_int, 0);
 }
 pub inline fn __WIFSTOPPED(status: anytype) @TypeOf((status & @as(c_int, 0xff)) == @as(c_int, 0x7f)) {
     _ = &status;
@@ -20134,7 +20134,7 @@ pub inline fn __W_STOPCODE(sig: anytype) @TypeOf((sig << @as(c_int, 8)) | @as(c_
     _ = &sig;
     return (sig << @as(c_int, 8)) | @as(c_int, 0x7f);
 }
-pub const __W_CONTINUED = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0xffff, .hex);
+pub const __W_CONTINUED = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0xffff, .hex);
 pub const __WCOREFLAG = @as(c_int, 0x80);
 pub inline fn WEXITSTATUS(status: anytype) @TypeOf(__WEXITSTATUS(status)) {
     _ = &status;
@@ -20166,7 +20166,7 @@ pub inline fn WIFCONTINUED(status: anytype) @TypeOf(__WIFCONTINUED(status)) {
 }
 pub const __ldiv_t_defined = @as(c_int, 1);
 pub const __lldiv_t_defined = @as(c_int, 1);
-pub const RAND_MAX = @import("std").zig.c_translation.promoteIntLiteral(c_int, 2147483647, .decimal);
+pub const RAND_MAX = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 2147483647, .decimal);
 pub const EXIT_FAILURE = @as(c_int, 1);
 pub const EXIT_SUCCESS = @as(c_int, 0);
 pub const MB_CUR_MAX = __ctype_get_mb_cur_max();
@@ -20179,10 +20179,10 @@ pub inline fn _ISbit(bit: anytype) @TypeOf(if (bit < @as(c_int, 8)) (@as(c_int, 
     _ = &bit;
     return if (bit < @as(c_int, 8)) (@as(c_int, 1) << bit) << @as(c_int, 8) else (@as(c_int, 1) << bit) >> @as(c_int, 8);
 }
-pub inline fn __isctype(c: anytype, @"type": anytype) @TypeOf(__ctype_b_loc().*[@as(usize, @intCast(@import("std").zig.c_translation.cast(c_int, c)))] & @import("std").zig.c_translation.cast(c_ushort, @"type")) {
+pub inline fn __isctype(c: anytype, @"type": anytype) @TypeOf(__ctype_b_loc().*[@as(usize, @intCast(@import("std").zig.c_translation.helpers.cast(c_int, c)))] & @import("std").zig.c_translation.helpers.cast(c_ushort, @"type")) {
     _ = &c;
     _ = &@"type";
-    return __ctype_b_loc().*[@as(usize, @intCast(@import("std").zig.c_translation.cast(c_int, c)))] & @import("std").zig.c_translation.cast(c_ushort, @"type");
+    return __ctype_b_loc().*[@as(usize, @intCast(@import("std").zig.c_translation.helpers.cast(c_int, c)))] & @import("std").zig.c_translation.helpers.cast(c_ushort, @"type");
 }
 pub inline fn __isascii(c: anytype) @TypeOf((c & ~@as(c_int, 0x7f)) == @as(c_int, 0)) {
     _ = &c;
@@ -20196,11 +20196,11 @@ pub const __exctype = @compileError("unable to translate C expr: unexpected toke
 // /usr/include/ctype.h:102:9
 pub const __tobody = @compileError("unable to translate macro: undefined identifier `__res`");
 // /usr/include/ctype.h:155:9
-pub inline fn __isctype_l(c: anytype, @"type": anytype, locale: anytype) @TypeOf(locale.*.__ctype_b[@as(usize, @intCast(@import("std").zig.c_translation.cast(c_int, c)))] & @import("std").zig.c_translation.cast(c_ushort, @"type")) {
+pub inline fn __isctype_l(c: anytype, @"type": anytype, locale: anytype) @TypeOf(locale.*.__ctype_b[@as(usize, @intCast(@import("std").zig.c_translation.helpers.cast(c_int, c)))] & @import("std").zig.c_translation.helpers.cast(c_ushort, @"type")) {
     _ = &c;
     _ = &@"type";
     _ = &locale;
-    return locale.*.__ctype_b[@as(usize, @intCast(@import("std").zig.c_translation.cast(c_int, c)))] & @import("std").zig.c_translation.cast(c_ushort, @"type");
+    return locale.*.__ctype_b[@as(usize, @intCast(@import("std").zig.c_translation.helpers.cast(c_int, c)))] & @import("std").zig.c_translation.helpers.cast(c_ushort, @"type");
 }
 pub const __exctype_l = @compileError("unable to translate C expr: unexpected token 'extern'");
 // /usr/include/ctype.h:244:10
@@ -20438,10 +20438,10 @@ pub const strndupa = @compileError("unable to translate macro: undefined identif
 pub const _STRINGS_H = @as(c_int, 1);
 pub const _SIGNAL_H = "";
 pub const _BITS_SIGNUM_GENERIC_H = @as(c_int, 1);
-pub const SIG_ERR = @import("std").zig.c_translation.cast(__sighandler_t, -@as(c_int, 1));
-pub const SIG_DFL = @import("std").zig.c_translation.cast(__sighandler_t, @as(c_int, 0));
-pub const SIG_IGN = @import("std").zig.c_translation.cast(__sighandler_t, @as(c_int, 1));
-pub const SIG_HOLD = @import("std").zig.c_translation.cast(__sighandler_t, @as(c_int, 2));
+pub const SIG_ERR = @import("std").zig.c_translation.helpers.cast(__sighandler_t, -@as(c_int, 1));
+pub const SIG_DFL = @import("std").zig.c_translation.helpers.cast(__sighandler_t, @as(c_int, 0));
+pub const SIG_IGN = @import("std").zig.c_translation.helpers.cast(__sighandler_t, @as(c_int, 1));
+pub const SIG_HOLD = @import("std").zig.c_translation.helpers.cast(__sighandler_t, @as(c_int, 2));
 pub const SIGINT = @as(c_int, 2);
 pub const SIGILL = @as(c_int, 4);
 pub const SIGABRT = @as(c_int, 6);
@@ -20484,7 +20484,7 @@ pub const __sig_atomic_t_defined = @as(c_int, 1);
 pub const __siginfo_t_defined = @as(c_int, 1);
 pub const ____sigval_t_defined = "";
 pub const __SI_MAX_SIZE = @as(c_int, 128);
-pub const __SI_PAD_SIZE = @import("std").zig.c_translation.MacroArithmetic.div(__SI_MAX_SIZE, @import("std").zig.c_translation.sizeof(c_int)) - @as(c_int, 4);
+pub const __SI_PAD_SIZE = @import("std").zig.c_translation.helpers.div(__SI_MAX_SIZE, @import("std").zig.c_translation.helpers.sizeof(c_int)) - @as(c_int, 4);
 pub const _BITS_SIGINFO_ARCH_H = @as(c_int, 1);
 pub const __SI_ALIGNMENT = "";
 pub const __SI_BAND_TYPE = c_long;
@@ -20538,15 +20538,15 @@ pub const _BITS_SIGINFO_CONSTS_ARCH_H = @as(c_int, 1);
 pub const __sigval_t_defined = "";
 pub const __sigevent_t_defined = @as(c_int, 1);
 pub const __SIGEV_MAX_SIZE = @as(c_int, 64);
-pub const __SIGEV_PAD_SIZE = @import("std").zig.c_translation.MacroArithmetic.div(__SIGEV_MAX_SIZE, @import("std").zig.c_translation.sizeof(c_int)) - @as(c_int, 4);
+pub const __SIGEV_PAD_SIZE = @import("std").zig.c_translation.helpers.div(__SIGEV_MAX_SIZE, @import("std").zig.c_translation.helpers.sizeof(c_int)) - @as(c_int, 4);
 pub const sigev_notify_function = @compileError("unable to translate macro: undefined identifier `_sigev_un`");
 // /usr/include/bits/types/sigevent_t.h:45:9
 pub const sigev_notify_attributes = @compileError("unable to translate macro: undefined identifier `_sigev_un`");
 // /usr/include/bits/types/sigevent_t.h:46:9
 pub const _BITS_SIGEVENT_CONSTS_H = @as(c_int, 1);
-pub inline fn sigmask(sig: anytype) @TypeOf(__glibc_macro_warning("sigmask is deprecated")(@import("std").zig.c_translation.cast(c_int, @as(c_uint, 1) << (sig - @as(c_int, 1))))) {
+pub inline fn sigmask(sig: anytype) @TypeOf(__glibc_macro_warning("sigmask is deprecated")(@import("std").zig.c_translation.helpers.cast(c_int, @as(c_uint, 1) << (sig - @as(c_int, 1))))) {
     _ = &sig;
-    return __glibc_macro_warning("sigmask is deprecated")(@import("std").zig.c_translation.cast(c_int, @as(c_uint, 1) << (sig - @as(c_int, 1))));
+    return __glibc_macro_warning("sigmask is deprecated")(@import("std").zig.c_translation.helpers.cast(c_int, @as(c_uint, 1) << (sig - @as(c_int, 1))));
 }
 pub const NSIG = _NSIG;
 pub const _BITS_SIGACTION_H = @as(c_int, 1);
@@ -20557,11 +20557,11 @@ pub const sa_sigaction = @compileError("unable to translate macro: undefined ide
 pub const SA_NOCLDSTOP = @as(c_int, 1);
 pub const SA_NOCLDWAIT = @as(c_int, 2);
 pub const SA_SIGINFO = @as(c_int, 4);
-pub const SA_ONSTACK = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x08000000, .hex);
-pub const SA_RESTART = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x10000000, .hex);
-pub const SA_NODEFER = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x40000000, .hex);
-pub const SA_RESETHAND = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x80000000, .hex);
-pub const SA_INTERRUPT = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x20000000, .hex);
+pub const SA_ONSTACK = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x08000000, .hex);
+pub const SA_RESTART = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x10000000, .hex);
+pub const SA_NODEFER = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x40000000, .hex);
+pub const SA_RESETHAND = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x80000000, .hex);
+pub const SA_INTERRUPT = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x20000000, .hex);
 pub const SA_NOMASK = SA_NODEFER;
 pub const SA_ONESHOT = SA_RESETHAND;
 pub const SA_STACK = SA_ONSTACK;
@@ -20569,9 +20569,9 @@ pub const SIG_BLOCK = @as(c_int, 0);
 pub const SIG_UNBLOCK = @as(c_int, 1);
 pub const SIG_SETMASK = @as(c_int, 2);
 pub const _BITS_SIGCONTEXT_H = @as(c_int, 1);
-pub const FP_XSTATE_MAGIC1 = @import("std").zig.c_translation.promoteIntLiteral(c_uint, 0x46505853, .hex);
-pub const FP_XSTATE_MAGIC2 = @import("std").zig.c_translation.promoteIntLiteral(c_uint, 0x46505845, .hex);
-pub const FP_XSTATE_MAGIC2_SIZE = @import("std").zig.c_translation.sizeof(FP_XSTATE_MAGIC2);
+pub const FP_XSTATE_MAGIC1 = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_uint, 0x46505853, .hex);
+pub const FP_XSTATE_MAGIC2 = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_uint, 0x46505845, .hex);
+pub const FP_XSTATE_MAGIC2_SIZE = @import("std").zig.c_translation.helpers.sizeof(FP_XSTATE_MAGIC2);
 pub const __stack_t_defined = @as(c_int, 1);
 pub const _SYS_UCONTEXT_H = @as(c_int, 1);
 pub inline fn __ctx(fld: anytype) @TypeOf(fld) {
@@ -20603,13 +20603,13 @@ pub inline fn _D_EXACT_NAMLEN(d: anytype) @TypeOf(strlen(d.*.d_name)) {
     _ = &d;
     return strlen(d.*.d_name);
 }
-pub inline fn _D_ALLOC_NAMLEN(d: anytype) @TypeOf((@import("std").zig.c_translation.cast([*c]u8, d) + d.*.d_reclen) - (&d.*.d_name[@as(usize, @intCast(@as(c_int, 0)))])) {
+pub inline fn _D_ALLOC_NAMLEN(d: anytype) @TypeOf((@import("std").zig.c_translation.helpers.cast([*c]u8, d) + d.*.d_reclen) - (&d.*.d_name[@as(usize, @intCast(@as(c_int, 0)))])) {
     _ = &d;
-    return (@import("std").zig.c_translation.cast([*c]u8, d) + d.*.d_reclen) - (&d.*.d_name[@as(usize, @intCast(@as(c_int, 0)))]);
+    return (@import("std").zig.c_translation.helpers.cast([*c]u8, d) + d.*.d_reclen) - (&d.*.d_name[@as(usize, @intCast(@as(c_int, 0)))]);
 }
-pub inline fn IFTODT(mode: anytype) @TypeOf((mode & @import("std").zig.c_translation.promoteIntLiteral(c_int, 0o170000, .octal)) >> @as(c_int, 12)) {
+pub inline fn IFTODT(mode: anytype) @TypeOf((mode & @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0o170000, .octal)) >> @as(c_int, 12)) {
     _ = &mode;
-    return (mode & @import("std").zig.c_translation.promoteIntLiteral(c_int, 0o170000, .octal)) >> @as(c_int, 12);
+    return (mode & @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0o170000, .octal)) >> @as(c_int, 12);
 }
 pub inline fn DTTOIF(dirtype: anytype) @TypeOf(dirtype << @as(c_int, 12)) {
     _ = &dirtype;
@@ -20649,15 +20649,15 @@ pub const _POSIX_TZNAME_MAX = @as(c_int, 6);
 pub const _POSIX_QLIMIT = @as(c_int, 1);
 pub const _POSIX_HIWAT = _POSIX_PIPE_BUF;
 pub const _POSIX_UIO_MAXIOV = @as(c_int, 16);
-pub const _POSIX_CLOCKRES_MIN = @import("std").zig.c_translation.promoteIntLiteral(c_int, 20000000, .decimal);
+pub const _POSIX_CLOCKRES_MIN = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 20000000, .decimal);
 pub const __undef_NR_OPEN = "";
 pub const __undef_LINK_MAX = "";
 pub const __undef_OPEN_MAX = "";
 pub const __undef_ARG_MAX = "";
 pub const _LINUX_LIMITS_H = "";
 pub const NR_OPEN = @as(c_int, 1024);
-pub const NGROUPS_MAX = @import("std").zig.c_translation.promoteIntLiteral(c_int, 65536, .decimal);
-pub const ARG_MAX = @import("std").zig.c_translation.promoteIntLiteral(c_int, 131072, .decimal);
+pub const NGROUPS_MAX = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 65536, .decimal);
+pub const ARG_MAX = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 131072, .decimal);
 pub const LINK_MAX = @as(c_int, 127);
 pub const MAX_CANON = @as(c_int, 255);
 pub const MAX_INPUT = @as(c_int, 255);
@@ -20665,8 +20665,8 @@ pub const NAME_MAX = @as(c_int, 255);
 pub const PATH_MAX = @as(c_int, 4096);
 pub const PIPE_BUF = @as(c_int, 4096);
 pub const XATTR_NAME_MAX = @as(c_int, 255);
-pub const XATTR_SIZE_MAX = @import("std").zig.c_translation.promoteIntLiteral(c_int, 65536, .decimal);
-pub const XATTR_LIST_MAX = @import("std").zig.c_translation.promoteIntLiteral(c_int, 65536, .decimal);
+pub const XATTR_SIZE_MAX = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 65536, .decimal);
+pub const XATTR_LIST_MAX = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 65536, .decimal);
 pub const RTSIG_MAX = @as(c_int, 32);
 pub const _POSIX_THREAD_KEYS_MAX = @as(c_int, 128);
 pub const PTHREAD_KEYS_MAX = @as(c_int, 1024);
@@ -20676,12 +20676,12 @@ pub const _POSIX_THREAD_THREADS_MAX = @as(c_int, 64);
 pub const AIO_PRIO_DELTA_MAX = @as(c_int, 20);
 pub const __SC_THREAD_STACK_MIN_VALUE = @as(c_int, 75);
 pub const PTHREAD_STACK_MIN = __sysconf(__SC_THREAD_STACK_MIN_VALUE);
-pub const DELAYTIMER_MAX = @import("std").zig.c_translation.promoteIntLiteral(c_int, 2147483647, .decimal);
+pub const DELAYTIMER_MAX = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 2147483647, .decimal);
 pub const TTY_NAME_MAX = @as(c_int, 32);
 pub const LOGIN_NAME_MAX = @as(c_int, 256);
 pub const HOST_NAME_MAX = @as(c_int, 64);
-pub const MQ_PRIO_MAX = @import("std").zig.c_translation.promoteIntLiteral(c_int, 32768, .decimal);
-pub const SEM_VALUE_MAX = @import("std").zig.c_translation.promoteIntLiteral(c_int, 2147483647, .decimal);
+pub const MQ_PRIO_MAX = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 32768, .decimal);
+pub const SEM_VALUE_MAX = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 2147483647, .decimal);
 pub const SSIZE_MAX = LONG_MAX;
 pub const MAXNAMLEN = NAME_MAX;
 pub const _GLOB_H = @as(c_int, 1);
@@ -20734,14 +20734,14 @@ pub const st_ctime = @compileError("unable to translate macro: undefined identif
 pub const _STATBUF_ST_BLKSIZE = "";
 pub const _STATBUF_ST_RDEV = "";
 pub const _STATBUF_ST_NSEC = "";
-pub const __S_IFMT = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0o170000, .octal);
+pub const __S_IFMT = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0o170000, .octal);
 pub const __S_IFDIR = @as(c_int, 0o040000);
 pub const __S_IFCHR = @as(c_int, 0o020000);
 pub const __S_IFBLK = @as(c_int, 0o060000);
-pub const __S_IFREG = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0o100000, .octal);
+pub const __S_IFREG = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0o100000, .octal);
 pub const __S_IFIFO = @as(c_int, 0o010000);
-pub const __S_IFLNK = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0o120000, .octal);
-pub const __S_IFSOCK = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0o140000, .octal);
+pub const __S_IFLNK = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0o120000, .octal);
+pub const __S_IFSOCK = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0o140000, .octal);
 pub inline fn __S_TYPEISMQ(buf: anytype) @TypeOf(buf.*.st_mode - buf.*.st_mode) {
     _ = &buf;
     return buf.*.st_mode - buf.*.st_mode;
@@ -20884,7 +20884,7 @@ pub const STATX_MNT_ID = @as(c_uint, 0x00001000);
 pub const STATX_DIOALIGN = @as(c_uint, 0x00002000);
 pub const STATX_MNT_ID_UNIQUE = @as(c_uint, 0x00004000);
 pub const STATX_SUBVOL = @as(c_uint, 0x00008000);
-pub const STATX__RESERVED = @import("std").zig.c_translation.promoteIntLiteral(c_uint, 0x80000000, .hex);
+pub const STATX__RESERVED = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_uint, 0x80000000, .hex);
 pub const STATX_ALL = @as(c_uint, 0x00000fff);
 pub const STATX_ATTR_COMPRESSED = @as(c_int, 0x00000004);
 pub const STATX_ATTR_IMMUTABLE = @as(c_int, 0x00000010);
@@ -20893,8 +20893,8 @@ pub const STATX_ATTR_NODUMP = @as(c_int, 0x00000040);
 pub const STATX_ATTR_ENCRYPTED = @as(c_int, 0x00000800);
 pub const STATX_ATTR_AUTOMOUNT = @as(c_int, 0x00001000);
 pub const STATX_ATTR_MOUNT_ROOT = @as(c_int, 0x00002000);
-pub const STATX_ATTR_VERITY = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x00100000, .hex);
-pub const STATX_ATTR_DAX = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x00200000, .hex);
+pub const STATX_ATTR_VERITY = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x00100000, .hex);
+pub const STATX_ATTR_DAX = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x00200000, .hex);
 pub const __statx_timestamp_defined = @as(c_int, 1);
 pub const __statx_defined = @as(c_int, 1);
 pub const _FCNTL_H = @as(c_int, 1);
@@ -20913,17 +20913,17 @@ pub const O_TRUNC = @as(c_int, 0o1000);
 pub const O_APPEND = @as(c_int, 0o2000);
 pub const O_NONBLOCK = @as(c_int, 0o4000);
 pub const O_NDELAY = O_NONBLOCK;
-pub const O_SYNC = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0o4010000, .octal);
+pub const O_SYNC = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0o4010000, .octal);
 pub const O_FSYNC = O_SYNC;
 pub const O_ASYNC = @as(c_int, 0o20000);
-pub const __O_DIRECTORY = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0o200000, .octal);
-pub const __O_NOFOLLOW = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0o400000, .octal);
-pub const __O_CLOEXEC = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0o2000000, .octal);
+pub const __O_DIRECTORY = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0o200000, .octal);
+pub const __O_NOFOLLOW = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0o400000, .octal);
+pub const __O_CLOEXEC = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0o2000000, .octal);
 pub const __O_DIRECT = @as(c_int, 0o40000);
-pub const __O_NOATIME = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0o1000000, .octal);
-pub const __O_PATH = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0o10000000, .octal);
+pub const __O_NOATIME = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0o1000000, .octal);
+pub const __O_PATH = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0o10000000, .octal);
 pub const __O_DSYNC = @as(c_int, 0o10000);
-pub const __O_TMPFILE = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0o20000000, .octal) | __O_DIRECTORY;
+pub const __O_TMPFILE = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0o20000000, .octal) | __O_DIRECTORY;
 pub const F_GETLK = F_GETLK64;
 pub const F_SETLK = F_SETLK64;
 pub const F_SETLKW = F_SETLKW64;
@@ -20989,7 +20989,7 @@ pub const DN_CREATE = @as(c_int, 0x00000004);
 pub const DN_DELETE = @as(c_int, 0x00000008);
 pub const DN_RENAME = @as(c_int, 0x00000010);
 pub const DN_ATTRIB = @as(c_int, 0x00000020);
-pub const DN_MULTISHOT = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x80000000, .hex);
+pub const DN_MULTISHOT = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x80000000, .hex);
 pub const F_SEAL_SEAL = @as(c_int, 0x0001);
 pub const F_SEAL_SHRINK = @as(c_int, 0x0002);
 pub const F_SEAL_GROW = @as(c_int, 0x0004);
@@ -21048,7 +21048,7 @@ pub const AT_STATX_SYNC_TYPE = @as(c_int, 0x6000);
 pub const AT_STATX_SYNC_AS_STAT = @as(c_int, 0x0000);
 pub const AT_STATX_FORCE_SYNC = @as(c_int, 0x2000);
 pub const AT_STATX_DONT_SYNC = @as(c_int, 0x4000);
-pub const AT_RECURSIVE = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x8000, .hex);
+pub const AT_RECURSIVE = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x8000, .hex);
 pub const AT_EACCESS = @as(c_int, 0x200);
 pub const _SYS_WAIT_H = @as(c_int, 1);
 pub const WCOREFLAG = __WCOREFLAG;
@@ -21077,18 +21077,18 @@ pub const MAP_DENYWRITE = @as(c_int, 0x00800);
 pub const MAP_EXECUTABLE = @as(c_int, 0x01000);
 pub const MAP_LOCKED = @as(c_int, 0x02000);
 pub const MAP_NORESERVE = @as(c_int, 0x04000);
-pub const MAP_POPULATE = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x08000, .hex);
-pub const MAP_NONBLOCK = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x10000, .hex);
-pub const MAP_STACK = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x20000, .hex);
-pub const MAP_HUGETLB = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x40000, .hex);
-pub const MAP_SYNC = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x80000, .hex);
-pub const MAP_FIXED_NOREPLACE = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x100000, .hex);
+pub const MAP_POPULATE = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x08000, .hex);
+pub const MAP_NONBLOCK = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x10000, .hex);
+pub const MAP_STACK = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x20000, .hex);
+pub const MAP_HUGETLB = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x40000, .hex);
+pub const MAP_SYNC = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x80000, .hex);
+pub const MAP_FIXED_NOREPLACE = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x100000, .hex);
 pub const PROT_READ = @as(c_int, 0x1);
 pub const PROT_WRITE = @as(c_int, 0x2);
 pub const PROT_EXEC = @as(c_int, 0x4);
 pub const PROT_NONE = @as(c_int, 0x0);
-pub const PROT_GROWSDOWN = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x01000000, .hex);
-pub const PROT_GROWSUP = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x02000000, .hex);
+pub const PROT_GROWSDOWN = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x01000000, .hex);
+pub const PROT_GROWSUP = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x02000000, .hex);
 pub const MAP_SHARED = @as(c_int, 0x01);
 pub const MAP_PRIVATE = @as(c_int, 0x02);
 pub const MAP_SHARED_VALIDATE = @as(c_int, 0x03);
@@ -21158,7 +21158,7 @@ pub const MFD_EXEC = @as(c_uint, 0x10);
 pub const MLOCK_ONFAULT = @as(c_uint, 1);
 pub const PKEY_DISABLE_ACCESS = @as(c_int, 0x1);
 pub const PKEY_DISABLE_WRITE = @as(c_int, 0x2);
-pub const MAP_FAILED = @import("std").zig.c_translation.cast(?*anyopaque, -@as(c_int, 1));
+pub const MAP_FAILED = @import("std").zig.c_translation.helpers.cast(?*anyopaque, -@as(c_int, 1));
 pub const _SYS_RESOURCE_H = @as(c_int, 1);
 pub const RLIMIT_RSS = __RLIMIT_RSS;
 pub const RLIMIT_OFILE = __RLIMIT_OFILE;
@@ -21189,7 +21189,7 @@ pub const SCHED_BATCH = @as(c_int, 3);
 pub const SCHED_ISO = @as(c_int, 4);
 pub const SCHED_IDLE = @as(c_int, 5);
 pub const SCHED_DEADLINE = @as(c_int, 6);
-pub const SCHED_RESET_ON_FORK = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x40000000, .hex);
+pub const SCHED_RESET_ON_FORK = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x40000000, .hex);
 pub const CSIGNAL = @as(c_int, 0x000000ff);
 pub const CLONE_VM = @as(c_int, 0x00000100);
 pub const CLONE_FS = @as(c_int, 0x00000200);
@@ -21198,35 +21198,35 @@ pub const CLONE_SIGHAND = @as(c_int, 0x00000800);
 pub const CLONE_PIDFD = @as(c_int, 0x00001000);
 pub const CLONE_PTRACE = @as(c_int, 0x00002000);
 pub const CLONE_VFORK = @as(c_int, 0x00004000);
-pub const CLONE_PARENT = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x00008000, .hex);
-pub const CLONE_THREAD = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x00010000, .hex);
-pub const CLONE_NEWNS = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x00020000, .hex);
-pub const CLONE_SYSVSEM = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x00040000, .hex);
-pub const CLONE_SETTLS = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x00080000, .hex);
-pub const CLONE_PARENT_SETTID = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x00100000, .hex);
-pub const CLONE_CHILD_CLEARTID = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x00200000, .hex);
-pub const CLONE_DETACHED = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x00400000, .hex);
-pub const CLONE_UNTRACED = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x00800000, .hex);
-pub const CLONE_CHILD_SETTID = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x01000000, .hex);
-pub const CLONE_NEWCGROUP = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x02000000, .hex);
-pub const CLONE_NEWUTS = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x04000000, .hex);
-pub const CLONE_NEWIPC = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x08000000, .hex);
-pub const CLONE_NEWUSER = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x10000000, .hex);
-pub const CLONE_NEWPID = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x20000000, .hex);
-pub const CLONE_NEWNET = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x40000000, .hex);
-pub const CLONE_IO = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x80000000, .hex);
+pub const CLONE_PARENT = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x00008000, .hex);
+pub const CLONE_THREAD = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x00010000, .hex);
+pub const CLONE_NEWNS = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x00020000, .hex);
+pub const CLONE_SYSVSEM = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x00040000, .hex);
+pub const CLONE_SETTLS = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x00080000, .hex);
+pub const CLONE_PARENT_SETTID = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x00100000, .hex);
+pub const CLONE_CHILD_CLEARTID = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x00200000, .hex);
+pub const CLONE_DETACHED = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x00400000, .hex);
+pub const CLONE_UNTRACED = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x00800000, .hex);
+pub const CLONE_CHILD_SETTID = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x01000000, .hex);
+pub const CLONE_NEWCGROUP = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x02000000, .hex);
+pub const CLONE_NEWUTS = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x04000000, .hex);
+pub const CLONE_NEWIPC = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x08000000, .hex);
+pub const CLONE_NEWUSER = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x10000000, .hex);
+pub const CLONE_NEWPID = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x20000000, .hex);
+pub const CLONE_NEWNET = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x40000000, .hex);
+pub const CLONE_IO = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x80000000, .hex);
 pub const CLONE_NEWTIME = @as(c_int, 0x00000080);
 pub const _BITS_TYPES_STRUCT_SCHED_PARAM = @as(c_int, 1);
 pub const _BITS_CPU_SET_H = @as(c_int, 1);
 pub const __CPU_SETSIZE = @as(c_int, 1024);
-pub const __NCPUBITS = @as(c_int, 8) * @import("std").zig.c_translation.sizeof(__cpu_mask);
-pub inline fn __CPUELT(cpu: anytype) @TypeOf(@import("std").zig.c_translation.MacroArithmetic.div(cpu, __NCPUBITS)) {
+pub const __NCPUBITS = @as(c_int, 8) * @import("std").zig.c_translation.helpers.sizeof(__cpu_mask);
+pub inline fn __CPUELT(cpu: anytype) @TypeOf(@import("std").zig.c_translation.helpers.div(cpu, __NCPUBITS)) {
     _ = &cpu;
-    return @import("std").zig.c_translation.MacroArithmetic.div(cpu, __NCPUBITS);
+    return @import("std").zig.c_translation.helpers.div(cpu, __NCPUBITS);
 }
-pub inline fn __CPUMASK(cpu: anytype) @TypeOf(@import("std").zig.c_translation.cast(__cpu_mask, @as(c_int, 1)) << @import("std").zig.c_translation.MacroArithmetic.rem(cpu, __NCPUBITS)) {
+pub inline fn __CPUMASK(cpu: anytype) @TypeOf(@import("std").zig.c_translation.helpers.cast(__cpu_mask, @as(c_int, 1)) << @import("std").zig.c_translation.helpers.rem(cpu, __NCPUBITS)) {
     _ = &cpu;
-    return @import("std").zig.c_translation.cast(__cpu_mask, @as(c_int, 1)) << @import("std").zig.c_translation.MacroArithmetic.rem(cpu, __NCPUBITS);
+    return @import("std").zig.c_translation.helpers.cast(__cpu_mask, @as(c_int, 1)) << @import("std").zig.c_translation.helpers.rem(cpu, __NCPUBITS);
 }
 pub const __CPU_ZERO_S = @compileError("unable to translate C expr: unexpected token 'do'");
 // /usr/include/bits/cpu-set.h:46:10
@@ -21245,9 +21245,9 @@ pub const __CPU_EQUAL_S = @compileError("unable to translate macro: undefined id
 // /usr/include/bits/cpu-set.h:84:10
 pub const __CPU_OP_S = @compileError("unable to translate macro: undefined identifier `__dest`");
 // /usr/include/bits/cpu-set.h:99:9
-pub inline fn __CPU_ALLOC_SIZE(count: anytype) @TypeOf(@import("std").zig.c_translation.MacroArithmetic.div((count + __NCPUBITS) - @as(c_int, 1), __NCPUBITS) * @import("std").zig.c_translation.sizeof(__cpu_mask)) {
+pub inline fn __CPU_ALLOC_SIZE(count: anytype) @TypeOf(@import("std").zig.c_translation.helpers.div((count + __NCPUBITS) - @as(c_int, 1), __NCPUBITS) * @import("std").zig.c_translation.helpers.sizeof(__cpu_mask)) {
     _ = &count;
-    return @import("std").zig.c_translation.MacroArithmetic.div((count + __NCPUBITS) - @as(c_int, 1), __NCPUBITS) * @import("std").zig.c_translation.sizeof(__cpu_mask);
+    return @import("std").zig.c_translation.helpers.div((count + __NCPUBITS) - @as(c_int, 1), __NCPUBITS) * @import("std").zig.c_translation.helpers.sizeof(__cpu_mask);
 }
 pub inline fn __CPU_ALLOC(count: anytype) @TypeOf(__sched_cpualloc(count)) {
     _ = &count;
@@ -21260,28 +21260,28 @@ pub inline fn __CPU_FREE(cpuset: anytype) @TypeOf(__sched_cpufree(cpuset)) {
 pub const __sched_priority = @compileError("unable to translate macro: undefined identifier `sched_priority`");
 // /usr/include/sched.h:48:9
 pub const CPU_SETSIZE = __CPU_SETSIZE;
-pub inline fn CPU_SET(cpu: anytype, cpusetp: anytype) @TypeOf(__CPU_SET_S(cpu, @import("std").zig.c_translation.sizeof(cpu_set_t), cpusetp)) {
+pub inline fn CPU_SET(cpu: anytype, cpusetp: anytype) @TypeOf(__CPU_SET_S(cpu, @import("std").zig.c_translation.helpers.sizeof(cpu_set_t), cpusetp)) {
     _ = &cpu;
     _ = &cpusetp;
-    return __CPU_SET_S(cpu, @import("std").zig.c_translation.sizeof(cpu_set_t), cpusetp);
+    return __CPU_SET_S(cpu, @import("std").zig.c_translation.helpers.sizeof(cpu_set_t), cpusetp);
 }
-pub inline fn CPU_CLR(cpu: anytype, cpusetp: anytype) @TypeOf(__CPU_CLR_S(cpu, @import("std").zig.c_translation.sizeof(cpu_set_t), cpusetp)) {
+pub inline fn CPU_CLR(cpu: anytype, cpusetp: anytype) @TypeOf(__CPU_CLR_S(cpu, @import("std").zig.c_translation.helpers.sizeof(cpu_set_t), cpusetp)) {
     _ = &cpu;
     _ = &cpusetp;
-    return __CPU_CLR_S(cpu, @import("std").zig.c_translation.sizeof(cpu_set_t), cpusetp);
+    return __CPU_CLR_S(cpu, @import("std").zig.c_translation.helpers.sizeof(cpu_set_t), cpusetp);
 }
-pub inline fn CPU_ISSET(cpu: anytype, cpusetp: anytype) @TypeOf(__CPU_ISSET_S(cpu, @import("std").zig.c_translation.sizeof(cpu_set_t), cpusetp)) {
+pub inline fn CPU_ISSET(cpu: anytype, cpusetp: anytype) @TypeOf(__CPU_ISSET_S(cpu, @import("std").zig.c_translation.helpers.sizeof(cpu_set_t), cpusetp)) {
     _ = &cpu;
     _ = &cpusetp;
-    return __CPU_ISSET_S(cpu, @import("std").zig.c_translation.sizeof(cpu_set_t), cpusetp);
+    return __CPU_ISSET_S(cpu, @import("std").zig.c_translation.helpers.sizeof(cpu_set_t), cpusetp);
 }
-pub inline fn CPU_ZERO(cpusetp: anytype) @TypeOf(__CPU_ZERO_S(@import("std").zig.c_translation.sizeof(cpu_set_t), cpusetp)) {
+pub inline fn CPU_ZERO(cpusetp: anytype) @TypeOf(__CPU_ZERO_S(@import("std").zig.c_translation.helpers.sizeof(cpu_set_t), cpusetp)) {
     _ = &cpusetp;
-    return __CPU_ZERO_S(@import("std").zig.c_translation.sizeof(cpu_set_t), cpusetp);
+    return __CPU_ZERO_S(@import("std").zig.c_translation.helpers.sizeof(cpu_set_t), cpusetp);
 }
-pub inline fn CPU_COUNT(cpusetp: anytype) @TypeOf(__CPU_COUNT_S(@import("std").zig.c_translation.sizeof(cpu_set_t), cpusetp)) {
+pub inline fn CPU_COUNT(cpusetp: anytype) @TypeOf(__CPU_COUNT_S(@import("std").zig.c_translation.helpers.sizeof(cpu_set_t), cpusetp)) {
     _ = &cpusetp;
-    return __CPU_COUNT_S(@import("std").zig.c_translation.sizeof(cpu_set_t), cpusetp);
+    return __CPU_COUNT_S(@import("std").zig.c_translation.helpers.sizeof(cpu_set_t), cpusetp);
 }
 pub inline fn CPU_SET_S(cpu: anytype, setsize: anytype, cpusetp: anytype) @TypeOf(__CPU_SET_S(cpu, setsize, cpusetp)) {
     _ = &cpu;
@@ -21311,10 +21311,10 @@ pub inline fn CPU_COUNT_S(setsize: anytype, cpusetp: anytype) @TypeOf(__CPU_COUN
     _ = &cpusetp;
     return __CPU_COUNT_S(setsize, cpusetp);
 }
-pub inline fn CPU_EQUAL(cpusetp1: anytype, cpusetp2: anytype) @TypeOf(__CPU_EQUAL_S(@import("std").zig.c_translation.sizeof(cpu_set_t), cpusetp1, cpusetp2)) {
+pub inline fn CPU_EQUAL(cpusetp1: anytype, cpusetp2: anytype) @TypeOf(__CPU_EQUAL_S(@import("std").zig.c_translation.helpers.sizeof(cpu_set_t), cpusetp1, cpusetp2)) {
     _ = &cpusetp1;
     _ = &cpusetp2;
-    return __CPU_EQUAL_S(@import("std").zig.c_translation.sizeof(cpu_set_t), cpusetp1, cpusetp2);
+    return __CPU_EQUAL_S(@import("std").zig.c_translation.helpers.sizeof(cpu_set_t), cpusetp1, cpusetp2);
 }
 pub inline fn CPU_EQUAL_S(setsize: anytype, cpusetp1: anytype, cpusetp2: anytype) @TypeOf(__CPU_EQUAL_S(setsize, cpusetp1, cpusetp2)) {
     _ = &setsize;
@@ -21480,10 +21480,10 @@ pub const SOMAXCONN = @as(c_int, 4096);
 pub const _BITS_SOCKADDR_H = @as(c_int, 1);
 pub const __SOCKADDR_COMMON = @compileError("unable to translate macro: undefined identifier `family`");
 // /usr/include/bits/sockaddr.h:34:9
-pub const __SOCKADDR_COMMON_SIZE = @import("std").zig.c_translation.sizeof(c_ushort);
+pub const __SOCKADDR_COMMON_SIZE = @import("std").zig.c_translation.helpers.sizeof(c_ushort);
 pub const _SS_SIZE = @as(c_int, 128);
 pub const __ss_aligntype = c_ulong;
-pub const _SS_PADSIZE = (_SS_SIZE - __SOCKADDR_COMMON_SIZE) - @import("std").zig.c_translation.sizeof(__ss_aligntype);
+pub const _SS_PADSIZE = (_SS_SIZE - __SOCKADDR_COMMON_SIZE) - @import("std").zig.c_translation.helpers.sizeof(__ss_aligntype);
 pub inline fn CMSG_DATA(cmsg: anytype) @TypeOf(cmsg.*.__cmsg_data) {
     _ = &cmsg;
     return cmsg.*.__cmsg_data;
@@ -21493,35 +21493,35 @@ pub inline fn CMSG_NXTHDR(mhdr: anytype, cmsg: anytype) @TypeOf(__cmsg_nxthdr(mh
     _ = &cmsg;
     return __cmsg_nxthdr(mhdr, cmsg);
 }
-pub inline fn CMSG_FIRSTHDR(mhdr: anytype) @TypeOf(if (@import("std").zig.c_translation.cast(usize, mhdr.*.msg_controllen) >= @import("std").zig.c_translation.sizeof(struct_cmsghdr)) @import("std").zig.c_translation.cast([*c]struct_cmsghdr, mhdr.*.msg_control) else @import("std").zig.c_translation.cast([*c]struct_cmsghdr, @as(c_int, 0))) {
+pub inline fn CMSG_FIRSTHDR(mhdr: anytype) @TypeOf(if (@import("std").zig.c_translation.helpers.cast(usize, mhdr.*.msg_controllen) >= @import("std").zig.c_translation.helpers.sizeof(struct_cmsghdr)) @import("std").zig.c_translation.helpers.cast([*c]struct_cmsghdr, mhdr.*.msg_control) else @import("std").zig.c_translation.helpers.cast([*c]struct_cmsghdr, @as(c_int, 0))) {
     _ = &mhdr;
-    return if (@import("std").zig.c_translation.cast(usize, mhdr.*.msg_controllen) >= @import("std").zig.c_translation.sizeof(struct_cmsghdr)) @import("std").zig.c_translation.cast([*c]struct_cmsghdr, mhdr.*.msg_control) else @import("std").zig.c_translation.cast([*c]struct_cmsghdr, @as(c_int, 0));
+    return if (@import("std").zig.c_translation.helpers.cast(usize, mhdr.*.msg_controllen) >= @import("std").zig.c_translation.helpers.sizeof(struct_cmsghdr)) @import("std").zig.c_translation.helpers.cast([*c]struct_cmsghdr, mhdr.*.msg_control) else @import("std").zig.c_translation.helpers.cast([*c]struct_cmsghdr, @as(c_int, 0));
 }
-pub inline fn CMSG_ALIGN(len: anytype) @TypeOf(((len + @import("std").zig.c_translation.sizeof(usize)) - @as(c_int, 1)) & @import("std").zig.c_translation.cast(usize, ~(@import("std").zig.c_translation.sizeof(usize) - @as(c_int, 1)))) {
+pub inline fn CMSG_ALIGN(len: anytype) @TypeOf(((len + @import("std").zig.c_translation.helpers.sizeof(usize)) - @as(c_int, 1)) & @import("std").zig.c_translation.helpers.cast(usize, ~(@import("std").zig.c_translation.helpers.sizeof(usize) - @as(c_int, 1)))) {
     _ = &len;
-    return ((len + @import("std").zig.c_translation.sizeof(usize)) - @as(c_int, 1)) & @import("std").zig.c_translation.cast(usize, ~(@import("std").zig.c_translation.sizeof(usize) - @as(c_int, 1)));
+    return ((len + @import("std").zig.c_translation.helpers.sizeof(usize)) - @as(c_int, 1)) & @import("std").zig.c_translation.helpers.cast(usize, ~(@import("std").zig.c_translation.helpers.sizeof(usize) - @as(c_int, 1)));
 }
-pub inline fn CMSG_SPACE(len: anytype) @TypeOf(CMSG_ALIGN(len) + CMSG_ALIGN(@import("std").zig.c_translation.sizeof(struct_cmsghdr))) {
+pub inline fn CMSG_SPACE(len: anytype) @TypeOf(CMSG_ALIGN(len) + CMSG_ALIGN(@import("std").zig.c_translation.helpers.sizeof(struct_cmsghdr))) {
     _ = &len;
-    return CMSG_ALIGN(len) + CMSG_ALIGN(@import("std").zig.c_translation.sizeof(struct_cmsghdr));
+    return CMSG_ALIGN(len) + CMSG_ALIGN(@import("std").zig.c_translation.helpers.sizeof(struct_cmsghdr));
 }
-pub inline fn CMSG_LEN(len: anytype) @TypeOf(CMSG_ALIGN(@import("std").zig.c_translation.sizeof(struct_cmsghdr)) + len) {
+pub inline fn CMSG_LEN(len: anytype) @TypeOf(CMSG_ALIGN(@import("std").zig.c_translation.helpers.sizeof(struct_cmsghdr)) + len) {
     _ = &len;
-    return CMSG_ALIGN(@import("std").zig.c_translation.sizeof(struct_cmsghdr)) + len;
+    return CMSG_ALIGN(@import("std").zig.c_translation.helpers.sizeof(struct_cmsghdr)) + len;
 }
-pub inline fn __CMSG_PADDING(len: anytype) @TypeOf((@import("std").zig.c_translation.sizeof(usize) - (len & (@import("std").zig.c_translation.sizeof(usize) - @as(c_int, 1)))) & (@import("std").zig.c_translation.sizeof(usize) - @as(c_int, 1))) {
+pub inline fn __CMSG_PADDING(len: anytype) @TypeOf((@import("std").zig.c_translation.helpers.sizeof(usize) - (len & (@import("std").zig.c_translation.helpers.sizeof(usize) - @as(c_int, 1)))) & (@import("std").zig.c_translation.helpers.sizeof(usize) - @as(c_int, 1))) {
     _ = &len;
-    return (@import("std").zig.c_translation.sizeof(usize) - (len & (@import("std").zig.c_translation.sizeof(usize) - @as(c_int, 1)))) & (@import("std").zig.c_translation.sizeof(usize) - @as(c_int, 1));
+    return (@import("std").zig.c_translation.helpers.sizeof(usize) - (len & (@import("std").zig.c_translation.helpers.sizeof(usize) - @as(c_int, 1)))) & (@import("std").zig.c_translation.helpers.sizeof(usize) - @as(c_int, 1));
 }
 pub const __ASM_GENERIC_SOCKET_H = "";
 pub const __ASM_GENERIC_SOCKIOS_H = "";
-pub const FIOSETOWN = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x8901, .hex);
-pub const SIOCSPGRP = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x8902, .hex);
-pub const FIOGETOWN = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x8903, .hex);
-pub const SIOCGPGRP = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x8904, .hex);
-pub const SIOCATMARK = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x8905, .hex);
-pub const SIOCGSTAMP_OLD = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x8906, .hex);
-pub const SIOCGSTAMPNS_OLD = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x8907, .hex);
+pub const FIOSETOWN = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x8901, .hex);
+pub const SIOCSPGRP = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x8902, .hex);
+pub const FIOGETOWN = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x8903, .hex);
+pub const SIOCGPGRP = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x8904, .hex);
+pub const SIOCATMARK = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x8905, .hex);
+pub const SIOCGSTAMP_OLD = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x8906, .hex);
+pub const SIOCGSTAMPNS_OLD = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x8907, .hex);
 pub const SOL_SOCKET = @as(c_int, 1);
 pub const SO_DEBUG = @as(c_int, 1);
 pub const SO_REUSEADDR = @as(c_int, 2);
@@ -21753,56 +21753,56 @@ pub const SOL_ICMPV6 = @as(c_int, 58);
 pub const IPV6_RTHDR_LOOSE = @as(c_int, 0);
 pub const IPV6_RTHDR_STRICT = @as(c_int, 1);
 pub const IPV6_RTHDR_TYPE_0 = @as(c_int, 0);
-pub inline fn IN_CLASSA(a: anytype) @TypeOf((@import("std").zig.c_translation.cast(in_addr_t, a) & @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x80000000, .hex)) == @as(c_int, 0)) {
+pub inline fn IN_CLASSA(a: anytype) @TypeOf((@import("std").zig.c_translation.helpers.cast(in_addr_t, a) & @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x80000000, .hex)) == @as(c_int, 0)) {
     _ = &a;
-    return (@import("std").zig.c_translation.cast(in_addr_t, a) & @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x80000000, .hex)) == @as(c_int, 0);
+    return (@import("std").zig.c_translation.helpers.cast(in_addr_t, a) & @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x80000000, .hex)) == @as(c_int, 0);
 }
-pub const IN_CLASSA_NET = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0xff000000, .hex);
+pub const IN_CLASSA_NET = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0xff000000, .hex);
 pub const IN_CLASSA_NSHIFT = @as(c_int, 24);
-pub const IN_CLASSA_HOST = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0xffffffff, .hex) & ~IN_CLASSA_NET;
+pub const IN_CLASSA_HOST = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0xffffffff, .hex) & ~IN_CLASSA_NET;
 pub const IN_CLASSA_MAX = @as(c_int, 128);
-pub inline fn IN_CLASSB(a: anytype) @TypeOf((@import("std").zig.c_translation.cast(in_addr_t, a) & @import("std").zig.c_translation.promoteIntLiteral(c_int, 0xc0000000, .hex)) == @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x80000000, .hex)) {
+pub inline fn IN_CLASSB(a: anytype) @TypeOf((@import("std").zig.c_translation.helpers.cast(in_addr_t, a) & @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0xc0000000, .hex)) == @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x80000000, .hex)) {
     _ = &a;
-    return (@import("std").zig.c_translation.cast(in_addr_t, a) & @import("std").zig.c_translation.promoteIntLiteral(c_int, 0xc0000000, .hex)) == @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x80000000, .hex);
+    return (@import("std").zig.c_translation.helpers.cast(in_addr_t, a) & @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0xc0000000, .hex)) == @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x80000000, .hex);
 }
-pub const IN_CLASSB_NET = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0xffff0000, .hex);
+pub const IN_CLASSB_NET = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0xffff0000, .hex);
 pub const IN_CLASSB_NSHIFT = @as(c_int, 16);
-pub const IN_CLASSB_HOST = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0xffffffff, .hex) & ~IN_CLASSB_NET;
-pub const IN_CLASSB_MAX = @import("std").zig.c_translation.promoteIntLiteral(c_int, 65536, .decimal);
-pub inline fn IN_CLASSC(a: anytype) @TypeOf((@import("std").zig.c_translation.cast(in_addr_t, a) & @import("std").zig.c_translation.promoteIntLiteral(c_int, 0xe0000000, .hex)) == @import("std").zig.c_translation.promoteIntLiteral(c_int, 0xc0000000, .hex)) {
+pub const IN_CLASSB_HOST = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0xffffffff, .hex) & ~IN_CLASSB_NET;
+pub const IN_CLASSB_MAX = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 65536, .decimal);
+pub inline fn IN_CLASSC(a: anytype) @TypeOf((@import("std").zig.c_translation.helpers.cast(in_addr_t, a) & @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0xe0000000, .hex)) == @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0xc0000000, .hex)) {
     _ = &a;
-    return (@import("std").zig.c_translation.cast(in_addr_t, a) & @import("std").zig.c_translation.promoteIntLiteral(c_int, 0xe0000000, .hex)) == @import("std").zig.c_translation.promoteIntLiteral(c_int, 0xc0000000, .hex);
+    return (@import("std").zig.c_translation.helpers.cast(in_addr_t, a) & @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0xe0000000, .hex)) == @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0xc0000000, .hex);
 }
-pub const IN_CLASSC_NET = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0xffffff00, .hex);
+pub const IN_CLASSC_NET = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0xffffff00, .hex);
 pub const IN_CLASSC_NSHIFT = @as(c_int, 8);
-pub const IN_CLASSC_HOST = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0xffffffff, .hex) & ~IN_CLASSC_NET;
-pub inline fn IN_CLASSD(a: anytype) @TypeOf((@import("std").zig.c_translation.cast(in_addr_t, a) & @import("std").zig.c_translation.promoteIntLiteral(c_int, 0xf0000000, .hex)) == @import("std").zig.c_translation.promoteIntLiteral(c_int, 0xe0000000, .hex)) {
+pub const IN_CLASSC_HOST = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0xffffffff, .hex) & ~IN_CLASSC_NET;
+pub inline fn IN_CLASSD(a: anytype) @TypeOf((@import("std").zig.c_translation.helpers.cast(in_addr_t, a) & @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0xf0000000, .hex)) == @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0xe0000000, .hex)) {
     _ = &a;
-    return (@import("std").zig.c_translation.cast(in_addr_t, a) & @import("std").zig.c_translation.promoteIntLiteral(c_int, 0xf0000000, .hex)) == @import("std").zig.c_translation.promoteIntLiteral(c_int, 0xe0000000, .hex);
+    return (@import("std").zig.c_translation.helpers.cast(in_addr_t, a) & @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0xf0000000, .hex)) == @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0xe0000000, .hex);
 }
 pub inline fn IN_MULTICAST(a: anytype) @TypeOf(IN_CLASSD(a)) {
     _ = &a;
     return IN_CLASSD(a);
 }
-pub inline fn IN_EXPERIMENTAL(a: anytype) @TypeOf((@import("std").zig.c_translation.cast(in_addr_t, a) & @import("std").zig.c_translation.promoteIntLiteral(c_int, 0xe0000000, .hex)) == @import("std").zig.c_translation.promoteIntLiteral(c_int, 0xe0000000, .hex)) {
+pub inline fn IN_EXPERIMENTAL(a: anytype) @TypeOf((@import("std").zig.c_translation.helpers.cast(in_addr_t, a) & @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0xe0000000, .hex)) == @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0xe0000000, .hex)) {
     _ = &a;
-    return (@import("std").zig.c_translation.cast(in_addr_t, a) & @import("std").zig.c_translation.promoteIntLiteral(c_int, 0xe0000000, .hex)) == @import("std").zig.c_translation.promoteIntLiteral(c_int, 0xe0000000, .hex);
+    return (@import("std").zig.c_translation.helpers.cast(in_addr_t, a) & @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0xe0000000, .hex)) == @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0xe0000000, .hex);
 }
-pub inline fn IN_BADCLASS(a: anytype) @TypeOf((@import("std").zig.c_translation.cast(in_addr_t, a) & @import("std").zig.c_translation.promoteIntLiteral(c_int, 0xf0000000, .hex)) == @import("std").zig.c_translation.promoteIntLiteral(c_int, 0xf0000000, .hex)) {
+pub inline fn IN_BADCLASS(a: anytype) @TypeOf((@import("std").zig.c_translation.helpers.cast(in_addr_t, a) & @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0xf0000000, .hex)) == @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0xf0000000, .hex)) {
     _ = &a;
-    return (@import("std").zig.c_translation.cast(in_addr_t, a) & @import("std").zig.c_translation.promoteIntLiteral(c_int, 0xf0000000, .hex)) == @import("std").zig.c_translation.promoteIntLiteral(c_int, 0xf0000000, .hex);
+    return (@import("std").zig.c_translation.helpers.cast(in_addr_t, a) & @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0xf0000000, .hex)) == @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0xf0000000, .hex);
 }
-pub const INADDR_ANY = @import("std").zig.c_translation.cast(in_addr_t, @as(c_int, 0x00000000));
-pub const INADDR_BROADCAST = @import("std").zig.c_translation.cast(in_addr_t, @import("std").zig.c_translation.promoteIntLiteral(c_int, 0xffffffff, .hex));
-pub const INADDR_NONE = @import("std").zig.c_translation.cast(in_addr_t, @import("std").zig.c_translation.promoteIntLiteral(c_int, 0xffffffff, .hex));
-pub const INADDR_DUMMY = @import("std").zig.c_translation.cast(in_addr_t, @import("std").zig.c_translation.promoteIntLiteral(c_int, 0xc0000008, .hex));
+pub const INADDR_ANY = @import("std").zig.c_translation.helpers.cast(in_addr_t, @as(c_int, 0x00000000));
+pub const INADDR_BROADCAST = @import("std").zig.c_translation.helpers.cast(in_addr_t, @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0xffffffff, .hex));
+pub const INADDR_NONE = @import("std").zig.c_translation.helpers.cast(in_addr_t, @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0xffffffff, .hex));
+pub const INADDR_DUMMY = @import("std").zig.c_translation.helpers.cast(in_addr_t, @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0xc0000008, .hex));
 pub const IN_LOOPBACKNET = @as(c_int, 127);
-pub const INADDR_LOOPBACK = @import("std").zig.c_translation.cast(in_addr_t, @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x7f000001, .hex));
-pub const INADDR_UNSPEC_GROUP = @import("std").zig.c_translation.cast(in_addr_t, @import("std").zig.c_translation.promoteIntLiteral(c_int, 0xe0000000, .hex));
-pub const INADDR_ALLHOSTS_GROUP = @import("std").zig.c_translation.cast(in_addr_t, @import("std").zig.c_translation.promoteIntLiteral(c_int, 0xe0000001, .hex));
-pub const INADDR_ALLRTRS_GROUP = @import("std").zig.c_translation.cast(in_addr_t, @import("std").zig.c_translation.promoteIntLiteral(c_int, 0xe0000002, .hex));
-pub const INADDR_ALLSNOOPERS_GROUP = @import("std").zig.c_translation.cast(in_addr_t, @import("std").zig.c_translation.promoteIntLiteral(c_int, 0xe000006a, .hex));
-pub const INADDR_MAX_LOCAL_GROUP = @import("std").zig.c_translation.cast(in_addr_t, @import("std").zig.c_translation.promoteIntLiteral(c_int, 0xe00000ff, .hex));
+pub const INADDR_LOOPBACK = @import("std").zig.c_translation.helpers.cast(in_addr_t, @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x7f000001, .hex));
+pub const INADDR_UNSPEC_GROUP = @import("std").zig.c_translation.helpers.cast(in_addr_t, @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0xe0000000, .hex));
+pub const INADDR_ALLHOSTS_GROUP = @import("std").zig.c_translation.helpers.cast(in_addr_t, @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0xe0000001, .hex));
+pub const INADDR_ALLRTRS_GROUP = @import("std").zig.c_translation.helpers.cast(in_addr_t, @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0xe0000002, .hex));
+pub const INADDR_ALLSNOOPERS_GROUP = @import("std").zig.c_translation.helpers.cast(in_addr_t, @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0xe000006a, .hex));
+pub const INADDR_MAX_LOCAL_GROUP = @import("std").zig.c_translation.helpers.cast(in_addr_t, @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0xe00000ff, .hex));
 pub const s6_addr = @compileError("unable to translate macro: undefined identifier `__in6_u`");
 // /usr/include/netinet/in.h:229:9
 pub const s6_addr16 = @compileError("unable to translate macro: undefined identifier `__in6_u`");
@@ -21815,13 +21815,13 @@ pub const IN6ADDR_LOOPBACK_INIT = @compileError("unable to translate C expr: une
 // /usr/include/netinet/in.h:240:9
 pub const INET_ADDRSTRLEN = @as(c_int, 16);
 pub const INET6_ADDRSTRLEN = @as(c_int, 46);
-pub inline fn IP_MSFILTER_SIZE(numsrc: anytype) @TypeOf((@import("std").zig.c_translation.sizeof(struct_ip_msfilter) - @import("std").zig.c_translation.sizeof(struct_in_addr)) + (numsrc * @import("std").zig.c_translation.sizeof(struct_in_addr))) {
+pub inline fn IP_MSFILTER_SIZE(numsrc: anytype) @TypeOf((@import("std").zig.c_translation.helpers.sizeof(struct_ip_msfilter) - @import("std").zig.c_translation.helpers.sizeof(struct_in_addr)) + (numsrc * @import("std").zig.c_translation.helpers.sizeof(struct_in_addr))) {
     _ = &numsrc;
-    return (@import("std").zig.c_translation.sizeof(struct_ip_msfilter) - @import("std").zig.c_translation.sizeof(struct_in_addr)) + (numsrc * @import("std").zig.c_translation.sizeof(struct_in_addr));
+    return (@import("std").zig.c_translation.helpers.sizeof(struct_ip_msfilter) - @import("std").zig.c_translation.helpers.sizeof(struct_in_addr)) + (numsrc * @import("std").zig.c_translation.helpers.sizeof(struct_in_addr));
 }
-pub inline fn GROUP_FILTER_SIZE(numsrc: anytype) @TypeOf((@import("std").zig.c_translation.sizeof(struct_group_filter) - @import("std").zig.c_translation.sizeof(struct_sockaddr_storage)) + (numsrc * @import("std").zig.c_translation.sizeof(struct_sockaddr_storage))) {
+pub inline fn GROUP_FILTER_SIZE(numsrc: anytype) @TypeOf((@import("std").zig.c_translation.helpers.sizeof(struct_group_filter) - @import("std").zig.c_translation.helpers.sizeof(struct_sockaddr_storage)) + (numsrc * @import("std").zig.c_translation.helpers.sizeof(struct_sockaddr_storage))) {
     _ = &numsrc;
-    return (@import("std").zig.c_translation.sizeof(struct_group_filter) - @import("std").zig.c_translation.sizeof(struct_sockaddr_storage)) + (numsrc * @import("std").zig.c_translation.sizeof(struct_sockaddr_storage));
+    return (@import("std").zig.c_translation.helpers.sizeof(struct_group_filter) - @import("std").zig.c_translation.helpers.sizeof(struct_sockaddr_storage)) + (numsrc * @import("std").zig.c_translation.helpers.sizeof(struct_sockaddr_storage));
 }
 pub const IN6_IS_ADDR_UNSPECIFIED = @compileError("unable to translate macro: undefined identifier `__a`");
 // /usr/include/netinet/in.h:435:10
@@ -21896,59 +21896,59 @@ pub const _BITS_WCHAR_H = @as(c_int, 1);
 pub const __WCHAR_MAX = __WCHAR_MAX__;
 pub const __WCHAR_MIN = -__WCHAR_MAX - @as(c_int, 1);
 pub const _BITS_STDINT_LEAST_H = @as(c_int, 1);
-pub const __INT64_C = @import("std").zig.c_translation.Macros.L_SUFFIX;
-pub const __UINT64_C = @import("std").zig.c_translation.Macros.UL_SUFFIX;
+pub const __INT64_C = @import("std").zig.c_translation.helpers.L_SUFFIX;
+pub const __UINT64_C = @import("std").zig.c_translation.helpers.UL_SUFFIX;
 pub const INT8_MIN = -@as(c_int, 128);
 pub const INT16_MIN = -@as(c_int, 32767) - @as(c_int, 1);
-pub const INT32_MIN = -@import("std").zig.c_translation.promoteIntLiteral(c_int, 2147483647, .decimal) - @as(c_int, 1);
-pub const INT64_MIN = -__INT64_C(@import("std").zig.c_translation.promoteIntLiteral(c_int, 9223372036854775807, .decimal)) - @as(c_int, 1);
+pub const INT32_MIN = -@import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 2147483647, .decimal) - @as(c_int, 1);
+pub const INT64_MIN = -__INT64_C(@import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 9223372036854775807, .decimal)) - @as(c_int, 1);
 pub const INT8_MAX = @as(c_int, 127);
 pub const INT16_MAX = @as(c_int, 32767);
-pub const INT32_MAX = @import("std").zig.c_translation.promoteIntLiteral(c_int, 2147483647, .decimal);
-pub const INT64_MAX = __INT64_C(@import("std").zig.c_translation.promoteIntLiteral(c_int, 9223372036854775807, .decimal));
+pub const INT32_MAX = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 2147483647, .decimal);
+pub const INT64_MAX = __INT64_C(@import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 9223372036854775807, .decimal));
 pub const UINT8_MAX = @as(c_int, 255);
-pub const UINT16_MAX = @import("std").zig.c_translation.promoteIntLiteral(c_int, 65535, .decimal);
-pub const UINT32_MAX = @import("std").zig.c_translation.promoteIntLiteral(c_uint, 4294967295, .decimal);
-pub const UINT64_MAX = __UINT64_C(@import("std").zig.c_translation.promoteIntLiteral(c_int, 18446744073709551615, .decimal));
+pub const UINT16_MAX = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 65535, .decimal);
+pub const UINT32_MAX = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_uint, 4294967295, .decimal);
+pub const UINT64_MAX = __UINT64_C(@import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 18446744073709551615, .decimal));
 pub const INT_LEAST8_MIN = -@as(c_int, 128);
 pub const INT_LEAST16_MIN = -@as(c_int, 32767) - @as(c_int, 1);
-pub const INT_LEAST32_MIN = -@import("std").zig.c_translation.promoteIntLiteral(c_int, 2147483647, .decimal) - @as(c_int, 1);
-pub const INT_LEAST64_MIN = -__INT64_C(@import("std").zig.c_translation.promoteIntLiteral(c_int, 9223372036854775807, .decimal)) - @as(c_int, 1);
+pub const INT_LEAST32_MIN = -@import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 2147483647, .decimal) - @as(c_int, 1);
+pub const INT_LEAST64_MIN = -__INT64_C(@import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 9223372036854775807, .decimal)) - @as(c_int, 1);
 pub const INT_LEAST8_MAX = @as(c_int, 127);
 pub const INT_LEAST16_MAX = @as(c_int, 32767);
-pub const INT_LEAST32_MAX = @import("std").zig.c_translation.promoteIntLiteral(c_int, 2147483647, .decimal);
-pub const INT_LEAST64_MAX = __INT64_C(@import("std").zig.c_translation.promoteIntLiteral(c_int, 9223372036854775807, .decimal));
+pub const INT_LEAST32_MAX = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 2147483647, .decimal);
+pub const INT_LEAST64_MAX = __INT64_C(@import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 9223372036854775807, .decimal));
 pub const UINT_LEAST8_MAX = @as(c_int, 255);
-pub const UINT_LEAST16_MAX = @import("std").zig.c_translation.promoteIntLiteral(c_int, 65535, .decimal);
-pub const UINT_LEAST32_MAX = @import("std").zig.c_translation.promoteIntLiteral(c_uint, 4294967295, .decimal);
-pub const UINT_LEAST64_MAX = __UINT64_C(@import("std").zig.c_translation.promoteIntLiteral(c_int, 18446744073709551615, .decimal));
+pub const UINT_LEAST16_MAX = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 65535, .decimal);
+pub const UINT_LEAST32_MAX = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_uint, 4294967295, .decimal);
+pub const UINT_LEAST64_MAX = __UINT64_C(@import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 18446744073709551615, .decimal));
 pub const INT_FAST8_MIN = -@as(c_int, 128);
-pub const INT_FAST16_MIN = -@import("std").zig.c_translation.promoteIntLiteral(c_long, 9223372036854775807, .decimal) - @as(c_int, 1);
-pub const INT_FAST32_MIN = -@import("std").zig.c_translation.promoteIntLiteral(c_long, 9223372036854775807, .decimal) - @as(c_int, 1);
-pub const INT_FAST64_MIN = -__INT64_C(@import("std").zig.c_translation.promoteIntLiteral(c_int, 9223372036854775807, .decimal)) - @as(c_int, 1);
+pub const INT_FAST16_MIN = -@import("std").zig.c_translation.helpers.promoteIntLiteral(c_long, 9223372036854775807, .decimal) - @as(c_int, 1);
+pub const INT_FAST32_MIN = -@import("std").zig.c_translation.helpers.promoteIntLiteral(c_long, 9223372036854775807, .decimal) - @as(c_int, 1);
+pub const INT_FAST64_MIN = -__INT64_C(@import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 9223372036854775807, .decimal)) - @as(c_int, 1);
 pub const INT_FAST8_MAX = @as(c_int, 127);
-pub const INT_FAST16_MAX = @import("std").zig.c_translation.promoteIntLiteral(c_long, 9223372036854775807, .decimal);
-pub const INT_FAST32_MAX = @import("std").zig.c_translation.promoteIntLiteral(c_long, 9223372036854775807, .decimal);
-pub const INT_FAST64_MAX = __INT64_C(@import("std").zig.c_translation.promoteIntLiteral(c_int, 9223372036854775807, .decimal));
+pub const INT_FAST16_MAX = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_long, 9223372036854775807, .decimal);
+pub const INT_FAST32_MAX = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_long, 9223372036854775807, .decimal);
+pub const INT_FAST64_MAX = __INT64_C(@import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 9223372036854775807, .decimal));
 pub const UINT_FAST8_MAX = @as(c_int, 255);
-pub const UINT_FAST16_MAX = @import("std").zig.c_translation.promoteIntLiteral(c_ulong, 18446744073709551615, .decimal);
-pub const UINT_FAST32_MAX = @import("std").zig.c_translation.promoteIntLiteral(c_ulong, 18446744073709551615, .decimal);
-pub const UINT_FAST64_MAX = __UINT64_C(@import("std").zig.c_translation.promoteIntLiteral(c_int, 18446744073709551615, .decimal));
-pub const INTPTR_MIN = -@import("std").zig.c_translation.promoteIntLiteral(c_long, 9223372036854775807, .decimal) - @as(c_int, 1);
-pub const INTPTR_MAX = @import("std").zig.c_translation.promoteIntLiteral(c_long, 9223372036854775807, .decimal);
-pub const UINTPTR_MAX = @import("std").zig.c_translation.promoteIntLiteral(c_ulong, 18446744073709551615, .decimal);
-pub const INTMAX_MIN = -__INT64_C(@import("std").zig.c_translation.promoteIntLiteral(c_int, 9223372036854775807, .decimal)) - @as(c_int, 1);
-pub const INTMAX_MAX = __INT64_C(@import("std").zig.c_translation.promoteIntLiteral(c_int, 9223372036854775807, .decimal));
-pub const UINTMAX_MAX = __UINT64_C(@import("std").zig.c_translation.promoteIntLiteral(c_int, 18446744073709551615, .decimal));
-pub const PTRDIFF_MIN = -@import("std").zig.c_translation.promoteIntLiteral(c_long, 9223372036854775807, .decimal) - @as(c_int, 1);
-pub const PTRDIFF_MAX = @import("std").zig.c_translation.promoteIntLiteral(c_long, 9223372036854775807, .decimal);
-pub const SIG_ATOMIC_MIN = -@import("std").zig.c_translation.promoteIntLiteral(c_int, 2147483647, .decimal) - @as(c_int, 1);
-pub const SIG_ATOMIC_MAX = @import("std").zig.c_translation.promoteIntLiteral(c_int, 2147483647, .decimal);
-pub const SIZE_MAX = @import("std").zig.c_translation.promoteIntLiteral(c_ulong, 18446744073709551615, .decimal);
+pub const UINT_FAST16_MAX = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_ulong, 18446744073709551615, .decimal);
+pub const UINT_FAST32_MAX = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_ulong, 18446744073709551615, .decimal);
+pub const UINT_FAST64_MAX = __UINT64_C(@import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 18446744073709551615, .decimal));
+pub const INTPTR_MIN = -@import("std").zig.c_translation.helpers.promoteIntLiteral(c_long, 9223372036854775807, .decimal) - @as(c_int, 1);
+pub const INTPTR_MAX = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_long, 9223372036854775807, .decimal);
+pub const UINTPTR_MAX = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_ulong, 18446744073709551615, .decimal);
+pub const INTMAX_MIN = -__INT64_C(@import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 9223372036854775807, .decimal)) - @as(c_int, 1);
+pub const INTMAX_MAX = __INT64_C(@import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 9223372036854775807, .decimal));
+pub const UINTMAX_MAX = __UINT64_C(@import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 18446744073709551615, .decimal));
+pub const PTRDIFF_MIN = -@import("std").zig.c_translation.helpers.promoteIntLiteral(c_long, 9223372036854775807, .decimal) - @as(c_int, 1);
+pub const PTRDIFF_MAX = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_long, 9223372036854775807, .decimal);
+pub const SIG_ATOMIC_MIN = -@import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 2147483647, .decimal) - @as(c_int, 1);
+pub const SIG_ATOMIC_MAX = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 2147483647, .decimal);
+pub const SIZE_MAX = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_ulong, 18446744073709551615, .decimal);
 pub const WCHAR_MIN = __WCHAR_MIN;
 pub const WCHAR_MAX = __WCHAR_MAX;
 pub const WINT_MIN = @as(c_uint, 0);
-pub const WINT_MAX = @import("std").zig.c_translation.promoteIntLiteral(c_uint, 4294967295, .decimal);
+pub const WINT_MAX = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_uint, 4294967295, .decimal);
 pub inline fn INT8_C(c: anytype) @TypeOf(c) {
     _ = &c;
     return c;
@@ -21961,7 +21961,7 @@ pub inline fn INT32_C(c: anytype) @TypeOf(c) {
     _ = &c;
     return c;
 }
-pub const INT64_C = @import("std").zig.c_translation.Macros.L_SUFFIX;
+pub const INT64_C = @import("std").zig.c_translation.helpers.L_SUFFIX;
 pub inline fn UINT8_C(c: anytype) @TypeOf(c) {
     _ = &c;
     return c;
@@ -21970,10 +21970,10 @@ pub inline fn UINT16_C(c: anytype) @TypeOf(c) {
     _ = &c;
     return c;
 }
-pub const UINT32_C = @import("std").zig.c_translation.Macros.U_SUFFIX;
-pub const UINT64_C = @import("std").zig.c_translation.Macros.UL_SUFFIX;
-pub const INTMAX_C = @import("std").zig.c_translation.Macros.L_SUFFIX;
-pub const UINTMAX_C = @import("std").zig.c_translation.Macros.UL_SUFFIX;
+pub const UINT32_C = @import("std").zig.c_translation.helpers.U_SUFFIX;
+pub const UINT64_C = @import("std").zig.c_translation.helpers.UL_SUFFIX;
+pub const INTMAX_C = @import("std").zig.c_translation.helpers.L_SUFFIX;
+pub const UINTMAX_C = @import("std").zig.c_translation.helpers.UL_SUFFIX;
 pub const INT8_WIDTH = @as(c_int, 8);
 pub const UINT8_WIDTH = @as(c_int, 8);
 pub const INT16_WIDTH = @as(c_int, 16);
@@ -22027,7 +22027,7 @@ pub const TCPOLEN_TIMESTAMP = @as(c_int, 10);
 pub const TCPOLEN_TSTAMP_APPA = TCPOLEN_TIMESTAMP + @as(c_int, 2);
 pub const TCPOPT_TSTAMP_HDR = (((TCPOPT_NOP << @as(c_int, 24)) | (TCPOPT_NOP << @as(c_int, 16))) | (TCPOPT_TIMESTAMP << @as(c_int, 8))) | TCPOLEN_TIMESTAMP;
 pub const TCP_MSS = @as(c_int, 512);
-pub const TCP_MAXWIN = @import("std").zig.c_translation.promoteIntLiteral(c_int, 65535, .decimal);
+pub const TCP_MAXWIN = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 65535, .decimal);
 pub const TCP_MAX_WINSHIFT = @as(c_int, 14);
 pub const SOL_TCP = @as(c_int, 6);
 pub const TCPI_OPT_TIMESTAMPS = @as(c_int, 1);
@@ -22118,7 +22118,7 @@ pub const SUN_LEN = @compileError("unable to translate macro: undefined identifi
 // /usr/include/sys/un.h:41:10
 pub const _TIME_H = @as(c_int, 1);
 pub const _BITS_TIME_H = @as(c_int, 1);
-pub const CLOCKS_PER_SEC = @import("std").zig.c_translation.cast(__clock_t, @import("std").zig.c_translation.promoteIntLiteral(c_int, 1000000, .decimal));
+pub const CLOCKS_PER_SEC = @import("std").zig.c_translation.helpers.cast(__clock_t, @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 1000000, .decimal));
 pub const CLOCK_REALTIME = @as(c_int, 0);
 pub const CLOCK_MONOTONIC = @as(c_int, 1);
 pub const CLOCK_PROCESS_CPUTIME_ID = @as(c_int, 2);
@@ -22143,8 +22143,8 @@ pub const ADJ_SETOFFSET = @as(c_int, 0x0100);
 pub const ADJ_MICRO = @as(c_int, 0x1000);
 pub const ADJ_NANO = @as(c_int, 0x2000);
 pub const ADJ_TICK = @as(c_int, 0x4000);
-pub const ADJ_OFFSET_SINGLESHOT = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x8001, .hex);
-pub const ADJ_OFFSET_SS_READ = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0xa001, .hex);
+pub const ADJ_OFFSET_SINGLESHOT = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x8001, .hex);
+pub const ADJ_OFFSET_SS_READ = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0xa001, .hex);
 pub const MOD_OFFSET = ADJ_OFFSET;
 pub const MOD_FREQUENCY = ADJ_FREQUENCY;
 pub const MOD_MAXERROR = ADJ_MAXERROR;
@@ -22171,14 +22171,14 @@ pub const STA_PPSERROR = @as(c_int, 0x0800);
 pub const STA_CLOCKERR = @as(c_int, 0x1000);
 pub const STA_NANO = @as(c_int, 0x2000);
 pub const STA_MODE = @as(c_int, 0x4000);
-pub const STA_CLK = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x8000, .hex);
+pub const STA_CLK = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x8000, .hex);
 pub const STA_RONLY = ((((((STA_PPSSIGNAL | STA_PPSJITTER) | STA_PPSWANDER) | STA_PPSERROR) | STA_CLOCKERR) | STA_NANO) | STA_MODE) | STA_CLK;
 pub const __struct_tm_defined = @as(c_int, 1);
 pub const __itimerspec_defined = @as(c_int, 1);
 pub const TIME_UTC = @as(c_int, 1);
-pub inline fn __isleap(year: anytype) @TypeOf((@import("std").zig.c_translation.MacroArithmetic.rem(year, @as(c_int, 4)) == @as(c_int, 0)) and ((@import("std").zig.c_translation.MacroArithmetic.rem(year, @as(c_int, 100)) != @as(c_int, 0)) or (@import("std").zig.c_translation.MacroArithmetic.rem(year, @as(c_int, 400)) == @as(c_int, 0)))) {
+pub inline fn __isleap(year: anytype) @TypeOf((@import("std").zig.c_translation.helpers.rem(year, @as(c_int, 4)) == @as(c_int, 0)) and ((@import("std").zig.c_translation.helpers.rem(year, @as(c_int, 100)) != @as(c_int, 0)) or (@import("std").zig.c_translation.helpers.rem(year, @as(c_int, 400)) == @as(c_int, 0)))) {
     _ = &year;
-    return (@import("std").zig.c_translation.MacroArithmetic.rem(year, @as(c_int, 4)) == @as(c_int, 0)) and ((@import("std").zig.c_translation.MacroArithmetic.rem(year, @as(c_int, 100)) != @as(c_int, 0)) or (@import("std").zig.c_translation.MacroArithmetic.rem(year, @as(c_int, 400)) == @as(c_int, 0)));
+    return (@import("std").zig.c_translation.helpers.rem(year, @as(c_int, 4)) == @as(c_int, 0)) and ((@import("std").zig.c_translation.helpers.rem(year, @as(c_int, 100)) != @as(c_int, 0)) or (@import("std").zig.c_translation.helpers.rem(year, @as(c_int, 400)) == @as(c_int, 0)));
 }
 pub const _MALLOC_H = @as(c_int, 1);
 pub const __MALLOC_HOOK_VOLATILE = @compileError("unable to translate C expr: unexpected token 'volatile'");
@@ -22291,9 +22291,9 @@ pub inline fn _IOC(dir: anytype, @"type": anytype, nr: anytype, size: anytype) @
     _ = &size;
     return (((dir << _IOC_DIRSHIFT) | (@"type" << _IOC_TYPESHIFT)) | (nr << _IOC_NRSHIFT)) | (size << _IOC_SIZESHIFT);
 }
-pub inline fn _IOC_TYPECHECK(t: anytype) @TypeOf(@import("std").zig.c_translation.sizeof(t)) {
+pub inline fn _IOC_TYPECHECK(t: anytype) @TypeOf(@import("std").zig.c_translation.helpers.sizeof(t)) {
     _ = &t;
-    return @import("std").zig.c_translation.sizeof(t);
+    return @import("std").zig.c_translation.helpers.sizeof(t);
 }
 pub inline fn _IO(@"type": anytype, nr: anytype) @TypeOf(_IOC(_IOC_NONE, @"type", nr, @as(c_int, 0))) {
     _ = &@"type";
@@ -22318,23 +22318,23 @@ pub inline fn _IOWR(@"type": anytype, nr: anytype, size: anytype) @TypeOf(_IOC(_
     _ = &size;
     return _IOC(_IOC_READ | _IOC_WRITE, @"type", nr, _IOC_TYPECHECK(size));
 }
-pub inline fn _IOR_BAD(@"type": anytype, nr: anytype, size: anytype) @TypeOf(_IOC(_IOC_READ, @"type", nr, @import("std").zig.c_translation.sizeof(size))) {
+pub inline fn _IOR_BAD(@"type": anytype, nr: anytype, size: anytype) @TypeOf(_IOC(_IOC_READ, @"type", nr, @import("std").zig.c_translation.helpers.sizeof(size))) {
     _ = &@"type";
     _ = &nr;
     _ = &size;
-    return _IOC(_IOC_READ, @"type", nr, @import("std").zig.c_translation.sizeof(size));
+    return _IOC(_IOC_READ, @"type", nr, @import("std").zig.c_translation.helpers.sizeof(size));
 }
-pub inline fn _IOW_BAD(@"type": anytype, nr: anytype, size: anytype) @TypeOf(_IOC(_IOC_WRITE, @"type", nr, @import("std").zig.c_translation.sizeof(size))) {
+pub inline fn _IOW_BAD(@"type": anytype, nr: anytype, size: anytype) @TypeOf(_IOC(_IOC_WRITE, @"type", nr, @import("std").zig.c_translation.helpers.sizeof(size))) {
     _ = &@"type";
     _ = &nr;
     _ = &size;
-    return _IOC(_IOC_WRITE, @"type", nr, @import("std").zig.c_translation.sizeof(size));
+    return _IOC(_IOC_WRITE, @"type", nr, @import("std").zig.c_translation.helpers.sizeof(size));
 }
-pub inline fn _IOWR_BAD(@"type": anytype, nr: anytype, size: anytype) @TypeOf(_IOC(_IOC_READ | _IOC_WRITE, @"type", nr, @import("std").zig.c_translation.sizeof(size))) {
+pub inline fn _IOWR_BAD(@"type": anytype, nr: anytype, size: anytype) @TypeOf(_IOC(_IOC_READ | _IOC_WRITE, @"type", nr, @import("std").zig.c_translation.helpers.sizeof(size))) {
     _ = &@"type";
     _ = &nr;
     _ = &size;
-    return _IOC(_IOC_READ | _IOC_WRITE, @"type", nr, @import("std").zig.c_translation.sizeof(size));
+    return _IOC(_IOC_READ | _IOC_WRITE, @"type", nr, @import("std").zig.c_translation.helpers.sizeof(size));
 }
 pub inline fn _IOC_DIR(nr: anytype) @TypeOf((nr >> _IOC_DIRSHIFT) & _IOC_DIRMASK) {
     _ = &nr;
@@ -22449,60 +22449,60 @@ pub const TIOCPKT_NOSTOP = @as(c_int, 16);
 pub const TIOCPKT_DOSTOP = @as(c_int, 32);
 pub const TIOCPKT_IOCTL = @as(c_int, 64);
 pub const TIOCSER_TEMT = @as(c_int, 0x01);
-pub const SIOCADDRT = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x890B, .hex);
-pub const SIOCDELRT = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x890C, .hex);
-pub const SIOCRTMSG = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x890D, .hex);
-pub const SIOCGIFNAME = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x8910, .hex);
-pub const SIOCSIFLINK = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x8911, .hex);
-pub const SIOCGIFCONF = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x8912, .hex);
-pub const SIOCGIFFLAGS = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x8913, .hex);
-pub const SIOCSIFFLAGS = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x8914, .hex);
-pub const SIOCGIFADDR = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x8915, .hex);
-pub const SIOCSIFADDR = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x8916, .hex);
-pub const SIOCGIFDSTADDR = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x8917, .hex);
-pub const SIOCSIFDSTADDR = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x8918, .hex);
-pub const SIOCGIFBRDADDR = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x8919, .hex);
-pub const SIOCSIFBRDADDR = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x891a, .hex);
-pub const SIOCGIFNETMASK = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x891b, .hex);
-pub const SIOCSIFNETMASK = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x891c, .hex);
-pub const SIOCGIFMETRIC = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x891d, .hex);
-pub const SIOCSIFMETRIC = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x891e, .hex);
-pub const SIOCGIFMEM = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x891f, .hex);
-pub const SIOCSIFMEM = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x8920, .hex);
-pub const SIOCGIFMTU = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x8921, .hex);
-pub const SIOCSIFMTU = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x8922, .hex);
-pub const SIOCSIFNAME = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x8923, .hex);
-pub const SIOCSIFHWADDR = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x8924, .hex);
-pub const SIOCGIFENCAP = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x8925, .hex);
-pub const SIOCSIFENCAP = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x8926, .hex);
-pub const SIOCGIFHWADDR = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x8927, .hex);
-pub const SIOCGIFSLAVE = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x8929, .hex);
-pub const SIOCSIFSLAVE = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x8930, .hex);
-pub const SIOCADDMULTI = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x8931, .hex);
-pub const SIOCDELMULTI = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x8932, .hex);
-pub const SIOCGIFINDEX = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x8933, .hex);
+pub const SIOCADDRT = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x890B, .hex);
+pub const SIOCDELRT = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x890C, .hex);
+pub const SIOCRTMSG = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x890D, .hex);
+pub const SIOCGIFNAME = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x8910, .hex);
+pub const SIOCSIFLINK = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x8911, .hex);
+pub const SIOCGIFCONF = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x8912, .hex);
+pub const SIOCGIFFLAGS = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x8913, .hex);
+pub const SIOCSIFFLAGS = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x8914, .hex);
+pub const SIOCGIFADDR = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x8915, .hex);
+pub const SIOCSIFADDR = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x8916, .hex);
+pub const SIOCGIFDSTADDR = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x8917, .hex);
+pub const SIOCSIFDSTADDR = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x8918, .hex);
+pub const SIOCGIFBRDADDR = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x8919, .hex);
+pub const SIOCSIFBRDADDR = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x891a, .hex);
+pub const SIOCGIFNETMASK = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x891b, .hex);
+pub const SIOCSIFNETMASK = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x891c, .hex);
+pub const SIOCGIFMETRIC = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x891d, .hex);
+pub const SIOCSIFMETRIC = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x891e, .hex);
+pub const SIOCGIFMEM = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x891f, .hex);
+pub const SIOCSIFMEM = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x8920, .hex);
+pub const SIOCGIFMTU = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x8921, .hex);
+pub const SIOCSIFMTU = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x8922, .hex);
+pub const SIOCSIFNAME = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x8923, .hex);
+pub const SIOCSIFHWADDR = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x8924, .hex);
+pub const SIOCGIFENCAP = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x8925, .hex);
+pub const SIOCSIFENCAP = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x8926, .hex);
+pub const SIOCGIFHWADDR = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x8927, .hex);
+pub const SIOCGIFSLAVE = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x8929, .hex);
+pub const SIOCSIFSLAVE = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x8930, .hex);
+pub const SIOCADDMULTI = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x8931, .hex);
+pub const SIOCDELMULTI = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x8932, .hex);
+pub const SIOCGIFINDEX = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x8933, .hex);
 pub const SIOGIFINDEX = SIOCGIFINDEX;
-pub const SIOCSIFPFLAGS = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x8934, .hex);
-pub const SIOCGIFPFLAGS = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x8935, .hex);
-pub const SIOCDIFADDR = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x8936, .hex);
-pub const SIOCSIFHWBROADCAST = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x8937, .hex);
-pub const SIOCGIFCOUNT = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x8938, .hex);
-pub const SIOCGIFBR = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x8940, .hex);
-pub const SIOCSIFBR = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x8941, .hex);
-pub const SIOCGIFTXQLEN = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x8942, .hex);
-pub const SIOCSIFTXQLEN = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x8943, .hex);
-pub const SIOCDARP = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x8953, .hex);
-pub const SIOCGARP = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x8954, .hex);
-pub const SIOCSARP = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x8955, .hex);
-pub const SIOCDRARP = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x8960, .hex);
-pub const SIOCGRARP = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x8961, .hex);
-pub const SIOCSRARP = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x8962, .hex);
-pub const SIOCGIFMAP = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x8970, .hex);
-pub const SIOCSIFMAP = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x8971, .hex);
-pub const SIOCADDDLCI = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x8980, .hex);
-pub const SIOCDELDLCI = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x8981, .hex);
-pub const SIOCDEVPRIVATE = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x89F0, .hex);
-pub const SIOCPROTOPRIVATE = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x89E0, .hex);
+pub const SIOCSIFPFLAGS = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x8934, .hex);
+pub const SIOCGIFPFLAGS = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x8935, .hex);
+pub const SIOCDIFADDR = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x8936, .hex);
+pub const SIOCSIFHWBROADCAST = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x8937, .hex);
+pub const SIOCGIFCOUNT = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x8938, .hex);
+pub const SIOCGIFBR = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x8940, .hex);
+pub const SIOCSIFBR = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x8941, .hex);
+pub const SIOCGIFTXQLEN = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x8942, .hex);
+pub const SIOCSIFTXQLEN = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x8943, .hex);
+pub const SIOCDARP = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x8953, .hex);
+pub const SIOCGARP = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x8954, .hex);
+pub const SIOCSARP = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x8955, .hex);
+pub const SIOCDRARP = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x8960, .hex);
+pub const SIOCGRARP = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x8961, .hex);
+pub const SIOCSRARP = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x8962, .hex);
+pub const SIOCGIFMAP = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x8970, .hex);
+pub const SIOCSIFMAP = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x8971, .hex);
+pub const SIOCADDDLCI = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x8980, .hex);
+pub const SIOCDELDLCI = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x8981, .hex);
+pub const SIOCDEVPRIVATE = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x89F0, .hex);
+pub const SIOCPROTOPRIVATE = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x89E0, .hex);
 pub const NCC = @as(c_int, 8);
 pub const TIOCM_LE = @as(c_int, 0x001);
 pub const TIOCM_DTR = @as(c_int, 0x002);
@@ -22608,7 +22608,7 @@ pub inline fn DL_CALL_FCT(fctp: anytype, args: anytype) @TypeOf(fctp.* ++ args) 
     _ = &fctp;
     _ = &args;
     return blk_1: {
-        _ = _dl_mcount_wrapper_check(@import("std").zig.c_translation.cast(?*anyopaque, fctp));
+        _ = _dl_mcount_wrapper_check(@import("std").zig.c_translation.helpers.cast(?*anyopaque, fctp));
         break :blk_1 fctp.* ++ args;
     };
 }
@@ -22618,8 +22618,8 @@ pub const DLFO_EH_SEGMENT_TYPE = @compileError("unable to translate macro: undef
 // /usr/include/bits/dl_find_object.h:29:9
 pub const LM_ID_BASE = @as(c_int, 0);
 pub const LM_ID_NEWLM = -@as(c_int, 1);
-pub const RTLD_NEXT = @import("std").zig.c_translation.cast(?*anyopaque, -@as(c_long, 1));
-pub const RTLD_DEFAULT = @import("std").zig.c_translation.cast(?*anyopaque, @as(c_int, 0));
+pub const RTLD_NEXT = @import("std").zig.c_translation.helpers.cast(?*anyopaque, -@as(c_long, 1));
+pub const RTLD_DEFAULT = @import("std").zig.c_translation.helpers.cast(?*anyopaque, @as(c_int, 0));
 pub const NGX_CONFIGURE = " --with-http_ssl_module";
 pub const NGX_COMPILER = "gcc 14.2.1 20240910 (GCC) ";
 pub const NGX_HAVE_GCC_ATOMIC = @as(c_int, 1);
@@ -22734,7 +22734,7 @@ pub const NGX_USER = "nobody";
 pub const NGX_GROUP = "nobody";
 pub const _SEMAPHORE_H = @as(c_int, 1);
 pub const __SIZEOF_SEM_T = @as(c_int, 32);
-pub const SEM_FAILED = @import("std").zig.c_translation.cast([*c]sem_t, @as(c_int, 0));
+pub const SEM_FAILED = @import("std").zig.c_translation.helpers.cast([*c]sem_t, @as(c_int, 0));
 pub const _SYS_PRCTL_H = @as(c_int, 1);
 pub const _LINUX_PRCTL_H = "";
 pub const PR_SET_PDEATHSIG = @as(c_int, 1);
@@ -22754,11 +22754,11 @@ pub const PR_FPEMU_SIGFPE = @as(c_int, 2);
 pub const PR_GET_FPEXC = @as(c_int, 11);
 pub const PR_SET_FPEXC = @as(c_int, 12);
 pub const PR_FP_EXC_SW_ENABLE = @as(c_int, 0x80);
-pub const PR_FP_EXC_DIV = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x010000, .hex);
-pub const PR_FP_EXC_OVF = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x020000, .hex);
-pub const PR_FP_EXC_UND = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x040000, .hex);
-pub const PR_FP_EXC_RES = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x080000, .hex);
-pub const PR_FP_EXC_INV = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x100000, .hex);
+pub const PR_FP_EXC_DIV = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x010000, .hex);
+pub const PR_FP_EXC_OVF = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x020000, .hex);
+pub const PR_FP_EXC_UND = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x040000, .hex);
+pub const PR_FP_EXC_RES = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x080000, .hex);
+pub const PR_FP_EXC_INV = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x100000, .hex);
 pub const PR_FP_EXC_DISABLED = @as(c_int, 0);
 pub const PR_FP_EXC_NONRECOV = @as(c_int, 1);
 pub const PR_FP_EXC_ASYNC = @as(c_int, 2);
@@ -22811,8 +22811,8 @@ pub const PR_SET_MM_AUXV = @as(c_int, 12);
 pub const PR_SET_MM_EXE_FILE = @as(c_int, 13);
 pub const PR_SET_MM_MAP = @as(c_int, 14);
 pub const PR_SET_MM_MAP_SIZE = @as(c_int, 15);
-pub const PR_SET_PTRACER = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x59616d61, .hex);
-pub const PR_SET_PTRACER_ANY = @import("std").zig.c_translation.cast(c_ulong, -@as(c_int, 1));
+pub const PR_SET_PTRACER = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x59616d61, .hex);
+pub const PR_SET_PTRACER_ANY = @import("std").zig.c_translation.helpers.cast(c_ulong, -@as(c_int, 1));
 pub const PR_SET_CHILD_SUBREAPER = @as(c_int, 36);
 pub const PR_GET_CHILD_SUBREAPER = @as(c_int, 37);
 pub const PR_SET_NO_NEW_PRIVS = @as(c_int, 38);
@@ -22834,7 +22834,7 @@ pub const PR_CAP_AMBIENT_CLEAR_ALL = @as(c_int, 4);
 pub const PR_SVE_SET_VL = @as(c_int, 50);
 pub const PR_SVE_SET_VL_ONEXEC = @as(c_int, 1) << @as(c_int, 18);
 pub const PR_SVE_GET_VL = @as(c_int, 51);
-pub const PR_SVE_VL_LEN_MASK = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0xffff, .hex);
+pub const PR_SVE_VL_LEN_MASK = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0xffff, .hex);
 pub const PR_SVE_VL_INHERIT = @as(c_int, 1) << @as(c_int, 17);
 pub const PR_GET_SPECULATION_CTRL = @as(c_int, 52);
 pub const PR_SET_SPECULATION_CTRL = @as(c_int, 53);
@@ -22884,15 +22884,15 @@ pub const PR_SCHED_CORE_SCOPE_PROCESS_GROUP = @as(c_int, 2);
 pub const PR_SME_SET_VL = @as(c_int, 63);
 pub const PR_SME_SET_VL_ONEXEC = @as(c_int, 1) << @as(c_int, 18);
 pub const PR_SME_GET_VL = @as(c_int, 64);
-pub const PR_SME_VL_LEN_MASK = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0xffff, .hex);
+pub const PR_SME_VL_LEN_MASK = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0xffff, .hex);
 pub const PR_SME_VL_INHERIT = @as(c_int, 1) << @as(c_int, 17);
 pub const PR_SET_MDWE = @as(c_int, 65);
 pub const PR_MDWE_REFUSE_EXEC_GAIN = @as(c_ulong, 1) << @as(c_int, 0);
 pub const PR_MDWE_NO_INHERIT = @as(c_ulong, 1) << @as(c_int, 1);
 pub const PR_GET_MDWE = @as(c_int, 66);
-pub const PR_SET_VMA = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x53564d41, .hex);
+pub const PR_SET_VMA = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x53564d41, .hex);
 pub const PR_SET_VMA_ANON_NAME = @as(c_int, 0);
-pub const PR_GET_AUXV = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x41555856, .hex);
+pub const PR_GET_AUXV = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x41555856, .hex);
 pub const PR_SET_MEMORY_MERGE = @as(c_int, 67);
 pub const PR_GET_MEMORY_MERGE = @as(c_int, 68);
 pub const PR_RISCV_V_SET_CONTROL = @as(c_int, 69);
@@ -22934,7 +22934,7 @@ pub const EPIOCGPARAMS = _IOR(EPOLL_IOC_TYPE, @as(c_int, 0x02), struct_epoll_par
 pub const _SYS_EVENTFD_H = @as(c_int, 1);
 pub const _SYSCALL_H = @as(c_int, 1);
 pub const _ASM_X86_UNISTD_H = "";
-pub const __X32_SYSCALL_BIT = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x40000000, .hex);
+pub const __X32_SYSCALL_BIT = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x40000000, .hex);
 pub const _ASM_UNISTD_64_H = "";
 pub const __NR_read = @as(c_int, 0);
 pub const __NR_write = @as(c_int, 1);
@@ -23310,7 +23310,7 @@ pub const __NR_lsm_get_self_attr = @as(c_int, 459);
 pub const __NR_lsm_set_self_attr = @as(c_int, 460);
 pub const __NR_lsm_list_modules = @as(c_int, 461);
 pub const __NR_mseal = @as(c_int, 462);
-pub const __GLIBC_LINUX_VERSION_CODE = @import("std").zig.c_translation.promoteIntLiteral(c_int, 395520, .decimal);
+pub const __GLIBC_LINUX_VERSION_CODE = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 395520, .decimal);
 pub const SYS__sysctl = __NR__sysctl;
 pub const SYS_accept = __NR_accept;
 pub const SYS_accept4 = __NR_accept4;
@@ -23685,25 +23685,25 @@ pub const SYS_waitid = __NR_waitid;
 pub const SYS_write = __NR_write;
 pub const SYS_writev = __NR_writev;
 pub const _LINUX_CAPABILITY_H = "";
-pub const _LINUX_CAPABILITY_VERSION_1 = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x19980330, .hex);
+pub const _LINUX_CAPABILITY_VERSION_1 = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x19980330, .hex);
 pub const _LINUX_CAPABILITY_U32S_1 = @as(c_int, 1);
-pub const _LINUX_CAPABILITY_VERSION_2 = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x20071026, .hex);
+pub const _LINUX_CAPABILITY_VERSION_2 = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x20071026, .hex);
 pub const _LINUX_CAPABILITY_U32S_2 = @as(c_int, 2);
-pub const _LINUX_CAPABILITY_VERSION_3 = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x20080522, .hex);
+pub const _LINUX_CAPABILITY_VERSION_3 = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x20080522, .hex);
 pub const _LINUX_CAPABILITY_U32S_3 = @as(c_int, 2);
-pub const VFS_CAP_REVISION_MASK = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0xFF000000, .hex);
+pub const VFS_CAP_REVISION_MASK = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0xFF000000, .hex);
 pub const VFS_CAP_REVISION_SHIFT = @as(c_int, 24);
 pub const VFS_CAP_FLAGS_MASK = ~VFS_CAP_REVISION_MASK;
 pub const VFS_CAP_FLAGS_EFFECTIVE = @as(c_int, 0x000001);
-pub const VFS_CAP_REVISION_1 = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x01000000, .hex);
+pub const VFS_CAP_REVISION_1 = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x01000000, .hex);
 pub const VFS_CAP_U32_1 = @as(c_int, 1);
-pub const XATTR_CAPS_SZ_1 = @import("std").zig.c_translation.sizeof(__le32) * (@as(c_int, 1) + (@as(c_int, 2) * VFS_CAP_U32_1));
-pub const VFS_CAP_REVISION_2 = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x02000000, .hex);
+pub const XATTR_CAPS_SZ_1 = @import("std").zig.c_translation.helpers.sizeof(__le32) * (@as(c_int, 1) + (@as(c_int, 2) * VFS_CAP_U32_1));
+pub const VFS_CAP_REVISION_2 = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x02000000, .hex);
 pub const VFS_CAP_U32_2 = @as(c_int, 2);
-pub const XATTR_CAPS_SZ_2 = @import("std").zig.c_translation.sizeof(__le32) * (@as(c_int, 1) + (@as(c_int, 2) * VFS_CAP_U32_2));
-pub const VFS_CAP_REVISION_3 = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x03000000, .hex);
+pub const XATTR_CAPS_SZ_2 = @import("std").zig.c_translation.helpers.sizeof(__le32) * (@as(c_int, 1) + (@as(c_int, 2) * VFS_CAP_U32_2));
+pub const VFS_CAP_REVISION_3 = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x03000000, .hex);
 pub const VFS_CAP_U32_3 = @as(c_int, 2);
-pub const XATTR_CAPS_SZ_3 = @import("std").zig.c_translation.sizeof(__le32) * (@as(c_int, 2) + (@as(c_int, 2) * VFS_CAP_U32_3));
+pub const XATTR_CAPS_SZ_3 = @import("std").zig.c_translation.helpers.sizeof(__le32) * (@as(c_int, 2) + (@as(c_int, 2) * VFS_CAP_U32_3));
 pub const XATTR_CAPS_SZ = XATTR_CAPS_SZ_3;
 pub const VFS_CAP_U32 = VFS_CAP_U32_3;
 pub const VFS_CAP_REVISION = VFS_CAP_REVISION_3;
@@ -23808,8 +23808,8 @@ pub const NGX_INT32_LEN = @compileError("unable to translate C expr: unexpected 
 pub const NGX_INT64_LEN = @compileError("unable to translate C expr: unexpected token 'a string literal'");
 // src/core/ngx_config.h:84:9
 pub const NGX_INT_T_LEN = NGX_INT64_LEN;
-pub const NGX_MAX_INT_T_VALUE = @import("std").zig.c_translation.promoteIntLiteral(c_int, 9223372036854775807, .decimal);
-pub const NGX_ALIGNMENT = @import("std").zig.c_translation.sizeof(c_ulong);
+pub const NGX_MAX_INT_T_VALUE = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 9223372036854775807, .decimal);
+pub const NGX_ALIGNMENT = @import("std").zig.c_translation.helpers.sizeof(c_ulong);
 pub inline fn ngx_align(d: anytype, a: anytype) @TypeOf((d + (a - @as(c_int, 1))) & ~(a - @as(c_int, 1))) {
     _ = &d;
     _ = &a;
@@ -23818,15 +23818,15 @@ pub inline fn ngx_align(d: anytype, a: anytype) @TypeOf((d + (a - @as(c_int, 1))
 pub inline fn ngx_align_ptr(p: anytype, a: anytype) [*c]u_char {
     _ = &p;
     _ = &a;
-    return @import("std").zig.c_translation.cast([*c]u_char, (@import("std").zig.c_translation.cast(usize, p) + (@import("std").zig.c_translation.cast(usize, a) - @as(c_int, 1))) & ~(@import("std").zig.c_translation.cast(usize, a) - @as(c_int, 1)));
+    return @import("std").zig.c_translation.helpers.cast([*c]u_char, (@import("std").zig.c_translation.helpers.cast(usize, p) + (@import("std").zig.c_translation.helpers.cast(usize, a) - @as(c_int, 1))) & ~(@import("std").zig.c_translation.helpers.cast(usize, a) - @as(c_int, 1)));
 }
 pub const ngx_abort = abort;
-pub const NGX_INVALID_ARRAY_INDEX = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x80000000, .hex);
+pub const NGX_INVALID_ARRAY_INDEX = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x80000000, .hex);
 pub const ngx_inline = @compileError("unable to translate C expr: unexpected token 'inline'");
 // src/core/ngx_config.h:114:9
 pub const NGX_MAXHOSTNAMELEN = @as(c_int, 256);
-pub const NGX_MAX_UINT32_VALUE = @import("std").zig.c_translation.cast(u32, @import("std").zig.c_translation.promoteIntLiteral(c_int, 0xffffffff, .hex));
-pub const NGX_MAX_INT32_VALUE = @import("std").zig.c_translation.cast(u32, @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x7fffffff, .hex));
+pub const NGX_MAX_UINT32_VALUE = @import("std").zig.c_translation.helpers.cast(u32, @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0xffffffff, .hex));
+pub const NGX_MAX_INT32_VALUE = @import("std").zig.c_translation.helpers.cast(u32, @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x7fffffff, .hex));
 pub const NGX_COMPAT_BEGIN = @compileError("unable to translate C expr: unexpected token ''");
 // src/core/ngx_config.h:139:9
 pub const NGX_COMPAT_END = "";
@@ -23959,19 +23959,19 @@ pub const ngx_tm_gmtoff = @compileError("unable to translate macro: undefined id
 // src/os/unix/ngx_time.h:40:9
 pub const ngx_tm_zone = @compileError("unable to translate macro: undefined identifier `tm_zone`");
 // src/os/unix/ngx_time.h:41:9
-pub inline fn ngx_timezone(isdst: anytype) @TypeOf(@import("std").zig.c_translation.MacroArithmetic.div(-(if (isdst) timezone + @as(c_int, 3600) else timezone), @as(c_int, 60))) {
+pub inline fn ngx_timezone(isdst: anytype) @TypeOf(@import("std").zig.c_translation.helpers.div(-(if (isdst) timezone + @as(c_int, 3600) else timezone), @as(c_int, 60))) {
     _ = &isdst;
-    return @import("std").zig.c_translation.MacroArithmetic.div(-(if (isdst) timezone + @as(c_int, 3600) else timezone), @as(c_int, 60));
+    return @import("std").zig.c_translation.helpers.div(-(if (isdst) timezone + @as(c_int, 3600) else timezone), @as(c_int, 60));
 }
 pub const ngx_gettimeofday = @compileError("unable to translate C expr: unexpected token ';'");
 // src/os/unix/ngx_time.h:61:9
 pub inline fn ngx_msleep(ms: anytype) anyopaque {
     _ = &ms;
-    return @import("std").zig.c_translation.cast(anyopaque, usleep(ms * @as(c_int, 1000)));
+    return @import("std").zig.c_translation.helpers.cast(anyopaque, usleep(ms * @as(c_int, 1000)));
 }
 pub inline fn ngx_sleep(s: anytype) anyopaque {
     _ = &s;
-    return @import("std").zig.c_translation.cast(anyopaque, sleep(s));
+    return @import("std").zig.c_translation.helpers.cast(anyopaque, sleep(s));
 }
 pub const _NGX_SOCKET_H_INCLUDED_ = "";
 pub const NGX_WRITE_SHUTDOWN = SHUT_WR;
@@ -24004,11 +24004,11 @@ pub const ngx_str_null = @compileError("unable to translate C expr: unexpected t
 // src/core/ngx_string.h:44:9
 pub inline fn ngx_tolower(c: anytype) u_char {
     _ = &c;
-    return @import("std").zig.c_translation.cast(u_char, if ((c >= 'A') and (c <= 'Z')) c | @as(c_int, 0x20) else c);
+    return @import("std").zig.c_translation.helpers.cast(u_char, if ((c >= 'A') and (c <= 'Z')) c | @as(c_int, 0x20) else c);
 }
 pub inline fn ngx_toupper(c: anytype) u_char {
     _ = &c;
-    return @import("std").zig.c_translation.cast(u_char, if ((c >= 'a') and (c <= 'z')) c & ~@as(c_int, 0x20) else c);
+    return @import("std").zig.c_translation.helpers.cast(u_char, if ((c >= 'a') and (c <= 'z')) c & ~@as(c_int, 0x20) else c);
 }
 pub const ngx_strncmp = @compileError("unable to translate C expr: unexpected token 'const'");
 // src/core/ngx_string.h:53:9
@@ -24023,38 +24023,38 @@ pub const ngx_strchr = @compileError("unable to translate C expr: unexpected tok
 pub inline fn ngx_memzero(buf: anytype, n: anytype) anyopaque {
     _ = &buf;
     _ = &n;
-    return @import("std").zig.c_translation.cast(anyopaque, memset(buf, @as(c_int, 0), n));
+    return @import("std").zig.c_translation.helpers.cast(anyopaque, memset(buf, @as(c_int, 0), n));
 }
 pub inline fn ngx_memset(buf: anytype, c: anytype, n: anytype) anyopaque {
     _ = &buf;
     _ = &c;
     _ = &n;
-    return @import("std").zig.c_translation.cast(anyopaque, memset(buf, c, n));
+    return @import("std").zig.c_translation.helpers.cast(anyopaque, memset(buf, c, n));
 }
 pub inline fn ngx_memcpy(dst: anytype, src: anytype, n: anytype) anyopaque {
     _ = &dst;
     _ = &src;
     _ = &n;
-    return @import("std").zig.c_translation.cast(anyopaque, memcpy(dst, src, n));
+    return @import("std").zig.c_translation.helpers.cast(anyopaque, memcpy(dst, src, n));
 }
-pub inline fn ngx_cpymem(dst: anytype, src: anytype, n: anytype) @TypeOf(@import("std").zig.c_translation.cast([*c]u_char, memcpy(dst, src, n)) + n) {
+pub inline fn ngx_cpymem(dst: anytype, src: anytype, n: anytype) @TypeOf(@import("std").zig.c_translation.helpers.cast([*c]u_char, memcpy(dst, src, n)) + n) {
     _ = &dst;
     _ = &src;
     _ = &n;
-    return @import("std").zig.c_translation.cast([*c]u_char, memcpy(dst, src, n)) + n;
+    return @import("std").zig.c_translation.helpers.cast([*c]u_char, memcpy(dst, src, n)) + n;
 }
 pub const ngx_copy = ngx_cpymem;
 pub inline fn ngx_memmove(dst: anytype, src: anytype, n: anytype) anyopaque {
     _ = &dst;
     _ = &src;
     _ = &n;
-    return @import("std").zig.c_translation.cast(anyopaque, memmove(dst, src, n));
+    return @import("std").zig.c_translation.helpers.cast(anyopaque, memmove(dst, src, n));
 }
-pub inline fn ngx_movemem(dst: anytype, src: anytype, n: anytype) @TypeOf(@import("std").zig.c_translation.cast([*c]u_char, memmove(dst, src, n)) + n) {
+pub inline fn ngx_movemem(dst: anytype, src: anytype, n: anytype) @TypeOf(@import("std").zig.c_translation.helpers.cast([*c]u_char, memmove(dst, src, n)) + n) {
     _ = &dst;
     _ = &src;
     _ = &n;
-    return @import("std").zig.c_translation.cast([*c]u_char, memmove(dst, src, n)) + n;
+    return @import("std").zig.c_translation.helpers.cast([*c]u_char, memmove(dst, src, n)) + n;
 }
 pub inline fn ngx_memcmp(s1: anytype, s2: anytype, n: anytype) @TypeOf(memcmp(s1, s2, n)) {
     _ = &s1;
@@ -24069,13 +24069,13 @@ pub inline fn ngx_vsnprintf(buf: anytype, max: anytype, fmt: anytype, args: anyt
     _ = &args;
     return ngx_vslprintf(buf, buf + max, fmt, args);
 }
-pub inline fn ngx_base64_encoded_length(len: anytype) @TypeOf(@import("std").zig.c_translation.MacroArithmetic.div(len + @as(c_int, 2), @as(c_int, 3)) * @as(c_int, 4)) {
+pub inline fn ngx_base64_encoded_length(len: anytype) @TypeOf(@import("std").zig.c_translation.helpers.div(len + @as(c_int, 2), @as(c_int, 3)) * @as(c_int, 4)) {
     _ = &len;
-    return @import("std").zig.c_translation.MacroArithmetic.div(len + @as(c_int, 2), @as(c_int, 3)) * @as(c_int, 4);
+    return @import("std").zig.c_translation.helpers.div(len + @as(c_int, 2), @as(c_int, 3)) * @as(c_int, 4);
 }
-pub inline fn ngx_base64_decoded_length(len: anytype) @TypeOf(@import("std").zig.c_translation.MacroArithmetic.div(len + @as(c_int, 3), @as(c_int, 4)) * @as(c_int, 3)) {
+pub inline fn ngx_base64_decoded_length(len: anytype) @TypeOf(@import("std").zig.c_translation.helpers.div(len + @as(c_int, 3), @as(c_int, 4)) * @as(c_int, 3)) {
     _ = &len;
-    return @import("std").zig.c_translation.MacroArithmetic.div(len + @as(c_int, 3), @as(c_int, 4)) * @as(c_int, 3);
+    return @import("std").zig.c_translation.helpers.div(len + @as(c_int, 3), @as(c_int, 4)) * @as(c_int, 3);
 }
 pub const NGX_ESCAPE_URI = @as(c_int, 0);
 pub const NGX_ESCAPE_ARGS = @as(c_int, 1);
@@ -24185,13 +24185,13 @@ pub inline fn ngx_file_uniq(sb: anytype) @TypeOf(sb.*.st_ino) {
 pub inline fn ngx_realpath(p: anytype, r: anytype) [*c]u_char {
     _ = &p;
     _ = &r;
-    return @import("std").zig.c_translation.cast([*c]u_char, realpath(@import("std").zig.c_translation.cast([*c]u8, p), @import("std").zig.c_translation.cast([*c]u8, r)));
+    return @import("std").zig.c_translation.helpers.cast([*c]u_char, realpath(@import("std").zig.c_translation.helpers.cast([*c]u8, p), @import("std").zig.c_translation.helpers.cast([*c]u8, r)));
 }
 pub const ngx_realpath_n = "realpath()";
-pub inline fn ngx_getcwd(buf: anytype, size: anytype) @TypeOf(getcwd(@import("std").zig.c_translation.cast([*c]u8, buf), size) != NULL) {
+pub inline fn ngx_getcwd(buf: anytype, size: anytype) @TypeOf(getcwd(@import("std").zig.c_translation.helpers.cast([*c]u8, buf), size) != NULL) {
     _ = &buf;
     _ = &size;
-    return getcwd(@import("std").zig.c_translation.cast([*c]u8, buf), size) != NULL;
+    return getcwd(@import("std").zig.c_translation.helpers.cast([*c]u8, buf), size) != NULL;
 }
 pub const ngx_getcwd_n = "getcwd()";
 pub inline fn ngx_path_separator(c: anytype) @TypeOf(c == '/') {
@@ -24219,7 +24219,7 @@ pub inline fn ngx_dir_access(a: anytype) @TypeOf(a | ((a & @as(c_int, 0o444)) >>
 }
 pub inline fn ngx_de_name(dir: anytype) [*c]u_char {
     _ = &dir;
-    return @import("std").zig.c_translation.cast([*c]u_char, dir.*.de.*.d_name);
+    return @import("std").zig.c_translation.helpers.cast([*c]u_char, dir.*.de.*.d_name);
 }
 pub inline fn ngx_de_namelen(dir: anytype) @TypeOf(ngx_strlen(dir.*.de.*.d_name)) {
     _ = &dir;
@@ -24271,7 +24271,7 @@ pub const ngx_openat_file_n = "openat()";
 pub const ngx_file_at_info = @compileError("unable to translate C expr: unexpected token 'const'");
 // src/os/unix/ngx_files.h:362:9
 pub const ngx_file_at_info_n = "fstatat()";
-pub const NGX_AT_FDCWD = @import("std").zig.c_translation.cast(ngx_fd_t, AT_FDCWD);
+pub const NGX_AT_FDCWD = @import("std").zig.c_translation.helpers.cast(ngx_fd_t, AT_FDCWD);
 pub const ngx_stdout = STDOUT_FILENO;
 pub const ngx_stderr = STDERR_FILENO;
 pub inline fn ngx_set_stderr(fd: anytype) @TypeOf(dup2(fd, STDERR_FILENO)) {
@@ -24304,9 +24304,9 @@ pub inline fn ngx_sched_yield() @TypeOf(sched_yield()) {
 }
 pub const _NGX_USER_H_INCLUDED_ = "";
 pub const _NGX_DLOPEN_H_INCLUDED_ = "";
-pub inline fn ngx_dlopen(path: anytype) @TypeOf(dlopen(@import("std").zig.c_translation.cast([*c]u8, path), RTLD_NOW | RTLD_GLOBAL)) {
+pub inline fn ngx_dlopen(path: anytype) @TypeOf(dlopen(@import("std").zig.c_translation.helpers.cast([*c]u8, path), RTLD_NOW | RTLD_GLOBAL)) {
     _ = &path;
-    return dlopen(@import("std").zig.c_translation.cast([*c]u8, path), RTLD_NOW | RTLD_GLOBAL);
+    return dlopen(@import("std").zig.c_translation.helpers.cast([*c]u8, path), RTLD_NOW | RTLD_GLOBAL);
 }
 pub const ngx_dlopen_n = "dlopen()";
 pub inline fn ngx_dlsym(handle: anytype, symbol: anytype) @TypeOf(dlsym(handle, symbol)) {
@@ -24346,8 +24346,8 @@ pub const NGX_LOG_DEBUG_MAIL = @as(c_int, 0x200);
 pub const NGX_LOG_DEBUG_STREAM = @as(c_int, 0x400);
 pub const NGX_LOG_DEBUG_FIRST = NGX_LOG_DEBUG_CORE;
 pub const NGX_LOG_DEBUG_LAST = NGX_LOG_DEBUG_STREAM;
-pub const NGX_LOG_DEBUG_CONNECTION = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x80000000, .hex);
-pub const NGX_LOG_DEBUG_ALL = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x7ffffff0, .hex);
+pub const NGX_LOG_DEBUG_CONNECTION = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x80000000, .hex);
+pub const NGX_LOG_DEBUG_ALL = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x7ffffff0, .hex);
 pub const NGX_MAX_ERROR_STR = @as(c_int, 2048);
 pub const NGX_HAVE_VARIADIC_MACROS = @as(c_int, 1);
 pub const ngx_log_error = @compileError("unable to translate C expr: expected ')' instead got '...'");
@@ -24381,9 +24381,9 @@ pub inline fn NGX_MAX_ALLOC_FROM_POOL() @TypeOf(ngx_pagesize - @as(c_int, 1)) {
 }
 pub const NGX_DEFAULT_POOL_SIZE = @as(c_int, 16) * @as(c_int, 1024);
 pub const NGX_POOL_ALIGNMENT = @as(c_int, 16);
-pub const NGX_MIN_POOL_SIZE = ngx_align(@import("std").zig.c_translation.sizeof(ngx_pool_t) + (@as(c_int, 2) * @import("std").zig.c_translation.sizeof(ngx_pool_large_t)), NGX_POOL_ALIGNMENT);
+pub const NGX_MIN_POOL_SIZE = ngx_align(@import("std").zig.c_translation.helpers.sizeof(ngx_pool_t) + (@as(c_int, 2) * @import("std").zig.c_translation.helpers.sizeof(ngx_pool_large_t)), NGX_POOL_ALIGNMENT);
 pub const _NGX_BUF_H_INCLUDED_ = "";
-pub const NGX_CHAIN_ERROR = @import("std").zig.c_translation.cast([*c]ngx_chain_t, NGX_ERROR);
+pub const NGX_CHAIN_ERROR = @import("std").zig.c_translation.helpers.cast([*c]ngx_chain_t, NGX_ERROR);
 pub inline fn ngx_buf_in_memory(b: anytype) @TypeOf(((b.*.temporary != 0) or (b.*.memory != 0)) or (b.*.mmap != 0)) {
     _ = &b;
     return ((b.*.temporary != 0) or (b.*.memory != 0)) or (b.*.mmap != 0);
@@ -24400,17 +24400,17 @@ pub inline fn ngx_buf_sync_only(b: anytype) @TypeOf(((((b.*.sync != 0) and !(ngx
     _ = &b;
     return ((((b.*.sync != 0) and !(ngx_buf_in_memory(b) != 0)) and !(b.*.in_file != 0)) and !(b.*.flush != 0)) and !(b.*.last_buf != 0);
 }
-pub inline fn ngx_buf_size(b: anytype) @TypeOf(if (ngx_buf_in_memory(b)) @import("std").zig.c_translation.cast(off_t, b.*.last - b.*.pos) else b.*.file_last - b.*.file_pos) {
+pub inline fn ngx_buf_size(b: anytype) @TypeOf(if (ngx_buf_in_memory(b)) @import("std").zig.c_translation.helpers.cast(off_t, b.*.last - b.*.pos) else b.*.file_last - b.*.file_pos) {
     _ = &b;
-    return if (ngx_buf_in_memory(b)) @import("std").zig.c_translation.cast(off_t, b.*.last - b.*.pos) else b.*.file_last - b.*.file_pos;
+    return if (ngx_buf_in_memory(b)) @import("std").zig.c_translation.helpers.cast(off_t, b.*.last - b.*.pos) else b.*.file_last - b.*.file_pos;
 }
-pub inline fn ngx_alloc_buf(pool: anytype) @TypeOf(ngx_palloc(pool, @import("std").zig.c_translation.sizeof(ngx_buf_t))) {
+pub inline fn ngx_alloc_buf(pool: anytype) @TypeOf(ngx_palloc(pool, @import("std").zig.c_translation.helpers.sizeof(ngx_buf_t))) {
     _ = &pool;
-    return ngx_palloc(pool, @import("std").zig.c_translation.sizeof(ngx_buf_t));
+    return ngx_palloc(pool, @import("std").zig.c_translation.helpers.sizeof(ngx_buf_t));
 }
-pub inline fn ngx_calloc_buf(pool: anytype) @TypeOf(ngx_pcalloc(pool, @import("std").zig.c_translation.sizeof(ngx_buf_t))) {
+pub inline fn ngx_calloc_buf(pool: anytype) @TypeOf(ngx_pcalloc(pool, @import("std").zig.c_translation.helpers.sizeof(ngx_buf_t))) {
     _ = &pool;
-    return ngx_pcalloc(pool, @import("std").zig.c_translation.sizeof(ngx_buf_t));
+    return ngx_pcalloc(pool, @import("std").zig.c_translation.helpers.sizeof(ngx_buf_t));
 }
 pub const ngx_free_chain = @compileError("unable to translate C expr: unexpected token '='");
 // src/core/ngx_buf.h:148:9
@@ -24464,10 +24464,10 @@ pub const NGX_HASH_LARGE_ASIZE = @as(c_int, 16384);
 pub const NGX_HASH_LARGE_HSIZE = @as(c_int, 10007);
 pub const NGX_HASH_WILDCARD_KEY = @as(c_int, 1);
 pub const NGX_HASH_READONLY_KEY = @as(c_int, 2);
-pub inline fn ngx_hash(key: anytype, c: anytype) @TypeOf((@import("std").zig.c_translation.cast(ngx_uint_t, key) * @as(c_int, 31)) + c) {
+pub inline fn ngx_hash(key: anytype, c: anytype) @TypeOf((@import("std").zig.c_translation.helpers.cast(ngx_uint_t, key) * @as(c_int, 31)) + c) {
     _ = &key;
     _ = &c;
-    return (@import("std").zig.c_translation.cast(ngx_uint_t, key) * @as(c_int, 31)) + c;
+    return (@import("std").zig.c_translation.helpers.cast(ngx_uint_t, key) * @as(c_int, 31)) + c;
 }
 pub const _NGX_FILE_H_INCLUDED_ = "";
 pub const NGX_MAX_PATH_LEVEL = @as(c_int, 3);
@@ -24688,9 +24688,9 @@ pub const SCNbFAST32 = __PRIPTR_PREFIX ++ "b";
 pub const SCNbFAST64 = __PRI64_PREFIX ++ "b";
 pub const SCNbMAX = __PRI64_PREFIX ++ "b";
 pub const SCNbPTR = __PRIPTR_PREFIX ++ "b";
-pub const PCRE2_ANCHORED = @import("std").zig.c_translation.promoteIntLiteral(c_uint, 0x80000000, .hex);
-pub const PCRE2_NO_UTF_CHECK = @import("std").zig.c_translation.promoteIntLiteral(c_uint, 0x40000000, .hex);
-pub const PCRE2_ENDANCHORED = @import("std").zig.c_translation.promoteIntLiteral(c_uint, 0x20000000, .hex);
+pub const PCRE2_ANCHORED = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_uint, 0x80000000, .hex);
+pub const PCRE2_NO_UTF_CHECK = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_uint, 0x40000000, .hex);
+pub const PCRE2_ENDANCHORED = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_uint, 0x20000000, .hex);
 pub const PCRE2_ALLOW_EMPTY_CLASS = @as(c_uint, 0x00000001);
 pub const PCRE2_ALT_BSUX = @as(c_uint, 0x00000002);
 pub const PCRE2_AUTO_CALLOUT = @as(c_uint, 0x00000004);
@@ -24707,17 +24707,17 @@ pub const PCRE2_NEVER_UTF = @as(c_uint, 0x00001000);
 pub const PCRE2_NO_AUTO_CAPTURE = @as(c_uint, 0x00002000);
 pub const PCRE2_NO_AUTO_POSSESS = @as(c_uint, 0x00004000);
 pub const PCRE2_NO_DOTSTAR_ANCHOR = @as(c_uint, 0x00008000);
-pub const PCRE2_NO_START_OPTIMIZE = @import("std").zig.c_translation.promoteIntLiteral(c_uint, 0x00010000, .hex);
-pub const PCRE2_UCP = @import("std").zig.c_translation.promoteIntLiteral(c_uint, 0x00020000, .hex);
-pub const PCRE2_UNGREEDY = @import("std").zig.c_translation.promoteIntLiteral(c_uint, 0x00040000, .hex);
-pub const PCRE2_UTF = @import("std").zig.c_translation.promoteIntLiteral(c_uint, 0x00080000, .hex);
-pub const PCRE2_NEVER_BACKSLASH_C = @import("std").zig.c_translation.promoteIntLiteral(c_uint, 0x00100000, .hex);
-pub const PCRE2_ALT_CIRCUMFLEX = @import("std").zig.c_translation.promoteIntLiteral(c_uint, 0x00200000, .hex);
-pub const PCRE2_ALT_VERBNAMES = @import("std").zig.c_translation.promoteIntLiteral(c_uint, 0x00400000, .hex);
-pub const PCRE2_USE_OFFSET_LIMIT = @import("std").zig.c_translation.promoteIntLiteral(c_uint, 0x00800000, .hex);
-pub const PCRE2_EXTENDED_MORE = @import("std").zig.c_translation.promoteIntLiteral(c_uint, 0x01000000, .hex);
-pub const PCRE2_LITERAL = @import("std").zig.c_translation.promoteIntLiteral(c_uint, 0x02000000, .hex);
-pub const PCRE2_MATCH_INVALID_UTF = @import("std").zig.c_translation.promoteIntLiteral(c_uint, 0x04000000, .hex);
+pub const PCRE2_NO_START_OPTIMIZE = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_uint, 0x00010000, .hex);
+pub const PCRE2_UCP = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_uint, 0x00020000, .hex);
+pub const PCRE2_UNGREEDY = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_uint, 0x00040000, .hex);
+pub const PCRE2_UTF = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_uint, 0x00080000, .hex);
+pub const PCRE2_NEVER_BACKSLASH_C = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_uint, 0x00100000, .hex);
+pub const PCRE2_ALT_CIRCUMFLEX = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_uint, 0x00200000, .hex);
+pub const PCRE2_ALT_VERBNAMES = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_uint, 0x00400000, .hex);
+pub const PCRE2_USE_OFFSET_LIMIT = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_uint, 0x00800000, .hex);
+pub const PCRE2_EXTENDED_MORE = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_uint, 0x01000000, .hex);
+pub const PCRE2_LITERAL = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_uint, 0x02000000, .hex);
+pub const PCRE2_MATCH_INVALID_UTF = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_uint, 0x04000000, .hex);
 pub const PCRE2_EXTRA_ALLOW_SURROGATE_ESCAPES = @as(c_uint, 0x00000001);
 pub const PCRE2_EXTRA_BAD_ESCAPE_IS_LITERAL = @as(c_uint, 0x00000002);
 pub const PCRE2_EXTRA_MATCH_WORD = @as(c_uint, 0x00000004);
@@ -24751,9 +24751,9 @@ pub const PCRE2_SUBSTITUTE_OVERFLOW_LENGTH = @as(c_uint, 0x00001000);
 pub const PCRE2_NO_JIT = @as(c_uint, 0x00002000);
 pub const PCRE2_COPY_MATCHED_SUBJECT = @as(c_uint, 0x00004000);
 pub const PCRE2_SUBSTITUTE_LITERAL = @as(c_uint, 0x00008000);
-pub const PCRE2_SUBSTITUTE_MATCHED = @import("std").zig.c_translation.promoteIntLiteral(c_uint, 0x00010000, .hex);
-pub const PCRE2_SUBSTITUTE_REPLACEMENT_ONLY = @import("std").zig.c_translation.promoteIntLiteral(c_uint, 0x00020000, .hex);
-pub const PCRE2_DISABLE_RECURSELOOP_CHECK = @import("std").zig.c_translation.promoteIntLiteral(c_uint, 0x00040000, .hex);
+pub const PCRE2_SUBSTITUTE_MATCHED = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_uint, 0x00010000, .hex);
+pub const PCRE2_SUBSTITUTE_REPLACEMENT_ONLY = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_uint, 0x00020000, .hex);
+pub const PCRE2_DISABLE_RECURSELOOP_CHECK = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_uint, 0x00040000, .hex);
 pub const PCRE2_CONVERT_UTF = @as(c_uint, 0x00000001);
 pub const PCRE2_CONVERT_NO_UTF_CHECK = @as(c_uint, 0x00000002);
 pub const PCRE2_CONVERT_POSIX_BASIC = @as(c_uint, 0x00000004);
@@ -25229,14 +25229,14 @@ pub const NGX_REGEX_CASELESS = @as(c_int, 0x00000001);
 pub const NGX_REGEX_MULTILINE = @as(c_int, 0x00000002);
 pub const ngx_regex_exec_n = "pcre2_match()";
 pub const _NGX_RADIX_TREE_H_INCLUDED_ = "";
-pub const NGX_RADIX_NO_VALUE = @import("std").zig.c_translation.cast(usize, -@as(c_int, 1));
+pub const NGX_RADIX_NO_VALUE = @import("std").zig.c_translation.helpers.cast(usize, -@as(c_int, 1));
 pub const _NGX_TIMES_H_INCLUDED_ = "";
 pub const ngx_next_time_n = "mktime()";
 pub inline fn ngx_time() @TypeOf(ngx_cached_time.*.sec) {
     return ngx_cached_time.*.sec;
 }
 pub inline fn ngx_timeofday() [*c]ngx_time_t {
-    return @import("std").zig.c_translation.cast([*c]ngx_time_t, ngx_cached_time);
+    return @import("std").zig.c_translation.helpers.cast([*c]ngx_time_t, ngx_cached_time);
 }
 pub const _NGX_RWLOCK_H_INCLUDED_ = "";
 pub const _NGX_SHMTX_H_INCLUDED_ = "";
@@ -25249,7 +25249,7 @@ pub const NGX_INET6_ADDRSTRLEN = @compileError("unable to translate C expr: unex
 pub const NGX_UNIX_ADDRSTRLEN = @compileError("unable to translate macro: undefined identifier `sun_path`");
 // src/core/ngx_inet.h:19:9
 pub const NGX_SOCKADDR_STRLEN = NGX_UNIX_ADDRSTRLEN;
-pub const NGX_SOCKADDRLEN = @import("std").zig.c_translation.sizeof(ngx_sockaddr_t);
+pub const NGX_SOCKADDRLEN = @import("std").zig.c_translation.helpers.sizeof(ngx_sockaddr_t);
 pub const _NGX_CYCLE_H_INCLUDED_ = "";
 pub const NGX_CYCLE_POOL_SIZE = NGX_DEFAULT_POOL_SIZE;
 pub const NGX_DEBUG_POINTS_STOP = @as(c_int, 1);
@@ -25273,7 +25273,7 @@ pub const NGX_RESOLVE_NXDOMAIN = @as(c_int, 3);
 pub const NGX_RESOLVE_NOTIMP = @as(c_int, 4);
 pub const NGX_RESOLVE_REFUSED = @as(c_int, 5);
 pub const NGX_RESOLVE_TIMEDOUT = NGX_ETIMEDOUT;
-pub const NGX_NO_RESOLVER = @import("std").zig.c_translation.cast(?*anyopaque, -@as(c_int, 1));
+pub const NGX_NO_RESOLVER = @import("std").zig.c_translation.helpers.cast(?*anyopaque, -@as(c_int, 1));
 pub const NGX_RESOLVER_MAX_RECURSION = @as(c_int, 50);
 pub const _NGX_EVENT_OPENSSL_H_INCLUDED_ = "";
 pub const OPENSSL_SUPPRESS_DEPRECATED = "";
@@ -25479,7 +25479,7 @@ pub inline fn sk_OPENSSL_STRING_num(sk: anytype) @TypeOf(OPENSSL_sk_num(ossl_che
 pub inline fn sk_OPENSSL_STRING_value(sk: anytype, idx: anytype) [*c]u8 {
     _ = &sk;
     _ = &idx;
-    return @import("std").zig.c_translation.cast([*c]u8, OPENSSL_sk_value(ossl_check_const_OPENSSL_STRING_sk_type(sk), idx));
+    return @import("std").zig.c_translation.helpers.cast([*c]u8, OPENSSL_sk_value(ossl_check_const_OPENSSL_STRING_sk_type(sk), idx));
 }
 pub const sk_OPENSSL_STRING_new = @compileError("unable to translate C expr: unexpected token ')'");
 // /usr/include/openssl/safestack.h:208:9
@@ -25503,12 +25503,12 @@ pub inline fn sk_OPENSSL_STRING_zero(sk: anytype) @TypeOf(OPENSSL_sk_zero(ossl_c
 pub inline fn sk_OPENSSL_STRING_delete(sk: anytype, i: anytype) [*c]u8 {
     _ = &sk;
     _ = &i;
-    return @import("std").zig.c_translation.cast([*c]u8, OPENSSL_sk_delete(ossl_check_OPENSSL_STRING_sk_type(sk), i));
+    return @import("std").zig.c_translation.helpers.cast([*c]u8, OPENSSL_sk_delete(ossl_check_OPENSSL_STRING_sk_type(sk), i));
 }
 pub inline fn sk_OPENSSL_STRING_delete_ptr(sk: anytype, ptr: anytype) [*c]u8 {
     _ = &sk;
     _ = &ptr;
-    return @import("std").zig.c_translation.cast([*c]u8, OPENSSL_sk_delete_ptr(ossl_check_OPENSSL_STRING_sk_type(sk), ossl_check_OPENSSL_STRING_type(ptr)));
+    return @import("std").zig.c_translation.helpers.cast([*c]u8, OPENSSL_sk_delete_ptr(ossl_check_OPENSSL_STRING_sk_type(sk), ossl_check_OPENSSL_STRING_type(ptr)));
 }
 pub inline fn sk_OPENSSL_STRING_push(sk: anytype, ptr: anytype) @TypeOf(OPENSSL_sk_push(ossl_check_OPENSSL_STRING_sk_type(sk), ossl_check_OPENSSL_STRING_type(ptr))) {
     _ = &sk;
@@ -25522,11 +25522,11 @@ pub inline fn sk_OPENSSL_STRING_unshift(sk: anytype, ptr: anytype) @TypeOf(OPENS
 }
 pub inline fn sk_OPENSSL_STRING_pop(sk: anytype) [*c]u8 {
     _ = &sk;
-    return @import("std").zig.c_translation.cast([*c]u8, OPENSSL_sk_pop(ossl_check_OPENSSL_STRING_sk_type(sk)));
+    return @import("std").zig.c_translation.helpers.cast([*c]u8, OPENSSL_sk_pop(ossl_check_OPENSSL_STRING_sk_type(sk)));
 }
 pub inline fn sk_OPENSSL_STRING_shift(sk: anytype) [*c]u8 {
     _ = &sk;
-    return @import("std").zig.c_translation.cast([*c]u8, OPENSSL_sk_shift(ossl_check_OPENSSL_STRING_sk_type(sk)));
+    return @import("std").zig.c_translation.helpers.cast([*c]u8, OPENSSL_sk_shift(ossl_check_OPENSSL_STRING_sk_type(sk)));
 }
 pub inline fn sk_OPENSSL_STRING_pop_free(sk: anytype, freefunc: anytype) @TypeOf(OPENSSL_sk_pop_free(ossl_check_OPENSSL_STRING_sk_type(sk), ossl_check_OPENSSL_STRING_freefunc_type(freefunc))) {
     _ = &sk;
@@ -25543,7 +25543,7 @@ pub inline fn sk_OPENSSL_STRING_set(sk: anytype, idx: anytype, ptr: anytype) [*c
     _ = &sk;
     _ = &idx;
     _ = &ptr;
-    return @import("std").zig.c_translation.cast([*c]u8, OPENSSL_sk_set(ossl_check_OPENSSL_STRING_sk_type(sk), idx, ossl_check_OPENSSL_STRING_type(ptr)));
+    return @import("std").zig.c_translation.helpers.cast([*c]u8, OPENSSL_sk_set(ossl_check_OPENSSL_STRING_sk_type(sk), idx, ossl_check_OPENSSL_STRING_type(ptr)));
 }
 pub inline fn sk_OPENSSL_STRING_find(sk: anytype, ptr: anytype) @TypeOf(OPENSSL_sk_find(ossl_check_OPENSSL_STRING_sk_type(sk), ossl_check_OPENSSL_STRING_type(ptr))) {
     _ = &sk;
@@ -25576,7 +25576,7 @@ pub const sk_OPENSSL_STRING_deep_copy = @compileError("unable to translate C exp
 pub inline fn sk_OPENSSL_STRING_set_cmp_func(sk: anytype, cmp: anytype) sk_OPENSSL_STRING_compfunc {
     _ = &sk;
     _ = &cmp;
-    return @import("std").zig.c_translation.cast(sk_OPENSSL_STRING_compfunc, OPENSSL_sk_set_cmp_func(ossl_check_OPENSSL_STRING_sk_type(sk), ossl_check_OPENSSL_STRING_compfunc_type(cmp)));
+    return @import("std").zig.c_translation.helpers.cast(sk_OPENSSL_STRING_compfunc, OPENSSL_sk_set_cmp_func(ossl_check_OPENSSL_STRING_sk_type(sk), ossl_check_OPENSSL_STRING_compfunc_type(cmp)));
 }
 pub inline fn sk_OPENSSL_CSTRING_num(sk: anytype) @TypeOf(OPENSSL_sk_num(ossl_check_const_OPENSSL_CSTRING_sk_type(sk))) {
     _ = &sk;
@@ -25665,7 +25665,7 @@ pub const sk_OPENSSL_CSTRING_deep_copy = @compileError("unable to translate C ex
 pub inline fn sk_OPENSSL_CSTRING_set_cmp_func(sk: anytype, cmp: anytype) sk_OPENSSL_CSTRING_compfunc {
     _ = &sk;
     _ = &cmp;
-    return @import("std").zig.c_translation.cast(sk_OPENSSL_CSTRING_compfunc, OPENSSL_sk_set_cmp_func(ossl_check_OPENSSL_CSTRING_sk_type(sk), ossl_check_OPENSSL_CSTRING_compfunc_type(cmp)));
+    return @import("std").zig.c_translation.helpers.cast(sk_OPENSSL_CSTRING_compfunc, OPENSSL_sk_set_cmp_func(ossl_check_OPENSSL_CSTRING_sk_type(sk), ossl_check_OPENSSL_CSTRING_compfunc_type(cmp)));
 }
 pub inline fn sk_OPENSSL_BLOCK_num(sk: anytype) @TypeOf(OPENSSL_sk_num(ossl_check_const_OPENSSL_BLOCK_sk_type(sk))) {
     _ = &sk;
@@ -25674,7 +25674,7 @@ pub inline fn sk_OPENSSL_BLOCK_num(sk: anytype) @TypeOf(OPENSSL_sk_num(ossl_chec
 pub inline fn sk_OPENSSL_BLOCK_value(sk: anytype, idx: anytype) ?*anyopaque {
     _ = &sk;
     _ = &idx;
-    return @import("std").zig.c_translation.cast(?*anyopaque, OPENSSL_sk_value(ossl_check_const_OPENSSL_BLOCK_sk_type(sk), idx));
+    return @import("std").zig.c_translation.helpers.cast(?*anyopaque, OPENSSL_sk_value(ossl_check_const_OPENSSL_BLOCK_sk_type(sk), idx));
 }
 pub const sk_OPENSSL_BLOCK_new = @compileError("unable to translate C expr: unexpected token ')'");
 // /usr/include/openssl/safestack.h:268:9
@@ -25698,12 +25698,12 @@ pub inline fn sk_OPENSSL_BLOCK_zero(sk: anytype) @TypeOf(OPENSSL_sk_zero(ossl_ch
 pub inline fn sk_OPENSSL_BLOCK_delete(sk: anytype, i: anytype) ?*anyopaque {
     _ = &sk;
     _ = &i;
-    return @import("std").zig.c_translation.cast(?*anyopaque, OPENSSL_sk_delete(ossl_check_OPENSSL_BLOCK_sk_type(sk), i));
+    return @import("std").zig.c_translation.helpers.cast(?*anyopaque, OPENSSL_sk_delete(ossl_check_OPENSSL_BLOCK_sk_type(sk), i));
 }
 pub inline fn sk_OPENSSL_BLOCK_delete_ptr(sk: anytype, ptr: anytype) ?*anyopaque {
     _ = &sk;
     _ = &ptr;
-    return @import("std").zig.c_translation.cast(?*anyopaque, OPENSSL_sk_delete_ptr(ossl_check_OPENSSL_BLOCK_sk_type(sk), ossl_check_OPENSSL_BLOCK_type(ptr)));
+    return @import("std").zig.c_translation.helpers.cast(?*anyopaque, OPENSSL_sk_delete_ptr(ossl_check_OPENSSL_BLOCK_sk_type(sk), ossl_check_OPENSSL_BLOCK_type(ptr)));
 }
 pub inline fn sk_OPENSSL_BLOCK_push(sk: anytype, ptr: anytype) @TypeOf(OPENSSL_sk_push(ossl_check_OPENSSL_BLOCK_sk_type(sk), ossl_check_OPENSSL_BLOCK_type(ptr))) {
     _ = &sk;
@@ -25717,11 +25717,11 @@ pub inline fn sk_OPENSSL_BLOCK_unshift(sk: anytype, ptr: anytype) @TypeOf(OPENSS
 }
 pub inline fn sk_OPENSSL_BLOCK_pop(sk: anytype) ?*anyopaque {
     _ = &sk;
-    return @import("std").zig.c_translation.cast(?*anyopaque, OPENSSL_sk_pop(ossl_check_OPENSSL_BLOCK_sk_type(sk)));
+    return @import("std").zig.c_translation.helpers.cast(?*anyopaque, OPENSSL_sk_pop(ossl_check_OPENSSL_BLOCK_sk_type(sk)));
 }
 pub inline fn sk_OPENSSL_BLOCK_shift(sk: anytype) ?*anyopaque {
     _ = &sk;
-    return @import("std").zig.c_translation.cast(?*anyopaque, OPENSSL_sk_shift(ossl_check_OPENSSL_BLOCK_sk_type(sk)));
+    return @import("std").zig.c_translation.helpers.cast(?*anyopaque, OPENSSL_sk_shift(ossl_check_OPENSSL_BLOCK_sk_type(sk)));
 }
 pub inline fn sk_OPENSSL_BLOCK_pop_free(sk: anytype, freefunc: anytype) @TypeOf(OPENSSL_sk_pop_free(ossl_check_OPENSSL_BLOCK_sk_type(sk), ossl_check_OPENSSL_BLOCK_freefunc_type(freefunc))) {
     _ = &sk;
@@ -25738,7 +25738,7 @@ pub inline fn sk_OPENSSL_BLOCK_set(sk: anytype, idx: anytype, ptr: anytype) ?*an
     _ = &sk;
     _ = &idx;
     _ = &ptr;
-    return @import("std").zig.c_translation.cast(?*anyopaque, OPENSSL_sk_set(ossl_check_OPENSSL_BLOCK_sk_type(sk), idx, ossl_check_OPENSSL_BLOCK_type(ptr)));
+    return @import("std").zig.c_translation.helpers.cast(?*anyopaque, OPENSSL_sk_set(ossl_check_OPENSSL_BLOCK_sk_type(sk), idx, ossl_check_OPENSSL_BLOCK_type(ptr)));
 }
 pub inline fn sk_OPENSSL_BLOCK_find(sk: anytype, ptr: anytype) @TypeOf(OPENSSL_sk_find(ossl_check_OPENSSL_BLOCK_sk_type(sk), ossl_check_OPENSSL_BLOCK_type(ptr))) {
     _ = &sk;
@@ -25771,7 +25771,7 @@ pub const sk_OPENSSL_BLOCK_deep_copy = @compileError("unable to translate C expr
 pub inline fn sk_OPENSSL_BLOCK_set_cmp_func(sk: anytype, cmp: anytype) sk_OPENSSL_BLOCK_compfunc {
     _ = &sk;
     _ = &cmp;
-    return @import("std").zig.c_translation.cast(sk_OPENSSL_BLOCK_compfunc, OPENSSL_sk_set_cmp_func(ossl_check_OPENSSL_BLOCK_sk_type(sk), ossl_check_OPENSSL_BLOCK_compfunc_type(cmp)));
+    return @import("std").zig.c_translation.helpers.cast(sk_OPENSSL_BLOCK_compfunc, OPENSSL_sk_set_cmp_func(ossl_check_OPENSSL_BLOCK_sk_type(sk), ossl_check_OPENSSL_BLOCK_compfunc_type(cmp)));
 }
 pub const OPENSSL_TYPES_H = "";
 pub const OSSL_FUTURE_CONST = "";
@@ -27143,9 +27143,9 @@ pub inline fn OPENSSL_secure_actual_size(ptr: anytype) @TypeOf(CRYPTO_secure_act
     _ = &ptr;
     return CRYPTO_secure_actual_size(ptr);
 }
-pub inline fn OPENSSL_MALLOC_MAX_NELEMS(@"type": anytype) @TypeOf(@import("std").zig.c_translation.MacroArithmetic.div((@as(c_uint, 1) << ((@import("std").zig.c_translation.sizeof(c_int) * @as(c_int, 8)) - @as(c_int, 1))) - @as(c_int, 1), @import("std").zig.c_translation.sizeof(@"type"))) {
+pub inline fn OPENSSL_MALLOC_MAX_NELEMS(@"type": anytype) @TypeOf(@import("std").zig.c_translation.helpers.div((@as(c_uint, 1) << ((@import("std").zig.c_translation.helpers.sizeof(c_int) * @as(c_int, 8)) - @as(c_int, 1))) - @as(c_int, 1), @import("std").zig.c_translation.helpers.sizeof(@"type"))) {
     _ = &@"type";
-    return @import("std").zig.c_translation.MacroArithmetic.div((@as(c_uint, 1) << ((@import("std").zig.c_translation.sizeof(c_int) * @as(c_int, 8)) - @as(c_int, 1))) - @as(c_int, 1), @import("std").zig.c_translation.sizeof(@"type"));
+    return @import("std").zig.c_translation.helpers.div((@as(c_uint, 1) << ((@import("std").zig.c_translation.helpers.sizeof(c_int) * @as(c_int, 8)) - @as(c_int, 1))) - @as(c_int, 1), @import("std").zig.c_translation.helpers.sizeof(@"type"));
 }
 pub const OPENSSL_VERSION = @as(c_int, 0);
 pub const OPENSSL_CFLAGS = @as(c_int, 1);
@@ -27174,7 +27174,7 @@ pub inline fn sk_void_num(sk: anytype) @TypeOf(OPENSSL_sk_num(ossl_check_const_v
 pub inline fn sk_void_value(sk: anytype, idx: anytype) ?*anyopaque {
     _ = &sk;
     _ = &idx;
-    return @import("std").zig.c_translation.cast(?*anyopaque, OPENSSL_sk_value(ossl_check_const_void_sk_type(sk), idx));
+    return @import("std").zig.c_translation.helpers.cast(?*anyopaque, OPENSSL_sk_value(ossl_check_const_void_sk_type(sk), idx));
 }
 pub const sk_void_new = @compileError("unable to translate C expr: unexpected token ')'");
 // /usr/include/openssl/crypto.h:200:9
@@ -27198,12 +27198,12 @@ pub inline fn sk_void_zero(sk: anytype) @TypeOf(OPENSSL_sk_zero(ossl_check_void_
 pub inline fn sk_void_delete(sk: anytype, i: anytype) ?*anyopaque {
     _ = &sk;
     _ = &i;
-    return @import("std").zig.c_translation.cast(?*anyopaque, OPENSSL_sk_delete(ossl_check_void_sk_type(sk), i));
+    return @import("std").zig.c_translation.helpers.cast(?*anyopaque, OPENSSL_sk_delete(ossl_check_void_sk_type(sk), i));
 }
 pub inline fn sk_void_delete_ptr(sk: anytype, ptr: anytype) ?*anyopaque {
     _ = &sk;
     _ = &ptr;
-    return @import("std").zig.c_translation.cast(?*anyopaque, OPENSSL_sk_delete_ptr(ossl_check_void_sk_type(sk), ossl_check_void_type(ptr)));
+    return @import("std").zig.c_translation.helpers.cast(?*anyopaque, OPENSSL_sk_delete_ptr(ossl_check_void_sk_type(sk), ossl_check_void_type(ptr)));
 }
 pub inline fn sk_void_push(sk: anytype, ptr: anytype) @TypeOf(OPENSSL_sk_push(ossl_check_void_sk_type(sk), ossl_check_void_type(ptr))) {
     _ = &sk;
@@ -27217,11 +27217,11 @@ pub inline fn sk_void_unshift(sk: anytype, ptr: anytype) @TypeOf(OPENSSL_sk_unsh
 }
 pub inline fn sk_void_pop(sk: anytype) ?*anyopaque {
     _ = &sk;
-    return @import("std").zig.c_translation.cast(?*anyopaque, OPENSSL_sk_pop(ossl_check_void_sk_type(sk)));
+    return @import("std").zig.c_translation.helpers.cast(?*anyopaque, OPENSSL_sk_pop(ossl_check_void_sk_type(sk)));
 }
 pub inline fn sk_void_shift(sk: anytype) ?*anyopaque {
     _ = &sk;
-    return @import("std").zig.c_translation.cast(?*anyopaque, OPENSSL_sk_shift(ossl_check_void_sk_type(sk)));
+    return @import("std").zig.c_translation.helpers.cast(?*anyopaque, OPENSSL_sk_shift(ossl_check_void_sk_type(sk)));
 }
 pub inline fn sk_void_pop_free(sk: anytype, freefunc: anytype) @TypeOf(OPENSSL_sk_pop_free(ossl_check_void_sk_type(sk), ossl_check_void_freefunc_type(freefunc))) {
     _ = &sk;
@@ -27238,7 +27238,7 @@ pub inline fn sk_void_set(sk: anytype, idx: anytype, ptr: anytype) ?*anyopaque {
     _ = &sk;
     _ = &idx;
     _ = &ptr;
-    return @import("std").zig.c_translation.cast(?*anyopaque, OPENSSL_sk_set(ossl_check_void_sk_type(sk), idx, ossl_check_void_type(ptr)));
+    return @import("std").zig.c_translation.helpers.cast(?*anyopaque, OPENSSL_sk_set(ossl_check_void_sk_type(sk), idx, ossl_check_void_type(ptr)));
 }
 pub inline fn sk_void_find(sk: anytype, ptr: anytype) @TypeOf(OPENSSL_sk_find(ossl_check_void_sk_type(sk), ossl_check_void_type(ptr))) {
     _ = &sk;
@@ -27271,7 +27271,7 @@ pub const sk_void_deep_copy = @compileError("unable to translate C expr: unexpec
 pub inline fn sk_void_set_cmp_func(sk: anytype, cmp: anytype) sk_void_compfunc {
     _ = &sk;
     _ = &cmp;
-    return @import("std").zig.c_translation.cast(sk_void_compfunc, OPENSSL_sk_set_cmp_func(ossl_check_void_sk_type(sk), ossl_check_void_compfunc_type(cmp)));
+    return @import("std").zig.c_translation.helpers.cast(sk_void_compfunc, OPENSSL_sk_set_cmp_func(ossl_check_void_sk_type(sk), ossl_check_void_compfunc_type(cmp)));
 }
 pub const CRYPTO_EX_INDEX_SSL = @as(c_int, 0);
 pub const CRYPTO_EX_INDEX_SSL_CTX = @as(c_int, 1);
@@ -27403,7 +27403,7 @@ pub const PTHREAD_RWLOCK_WRITER_NONRECURSIVE_INITIALIZER_NP = @compileError("una
 // /usr/include/pthread.h:117:11
 pub const PTHREAD_COND_INITIALIZER = @compileError("unable to translate C expr: unexpected token '{'");
 // /usr/include/pthread.h:155:9
-pub const PTHREAD_CANCELED = @import("std").zig.c_translation.cast(?*anyopaque, -@as(c_int, 1));
+pub const PTHREAD_CANCELED = @import("std").zig.c_translation.helpers.cast(?*anyopaque, -@as(c_int, 1));
 pub const PTHREAD_ONCE_INIT = @as(c_int, 0);
 pub const PTHREAD_BARRIER_SERIAL_THREAD = -@as(c_int, 1);
 pub const PTHREAD_ATTR_NO_SIGMASK_NP = -@as(c_int, 1);
@@ -27416,10 +27416,10 @@ pub const pthread_cleanup_push_defer_np = @compileError("unable to translate mac
 // /usr/include/pthread.h:716:11
 pub const pthread_cleanup_pop_restore_np = @compileError("unable to translate macro: undefined identifier `__cancel_buf`");
 // /usr/include/pthread.h:738:11
-pub inline fn __sigsetjmp_cancel(env: anytype, savemask: anytype) @TypeOf(__sigsetjmp(@import("std").zig.c_translation.cast([*c]struct___jmp_buf_tag, @import("std").zig.c_translation.cast(?*anyopaque, env)), savemask)) {
+pub inline fn __sigsetjmp_cancel(env: anytype, savemask: anytype) @TypeOf(__sigsetjmp(@import("std").zig.c_translation.helpers.cast([*c]struct___jmp_buf_tag, @import("std").zig.c_translation.helpers.cast(?*anyopaque, env)), savemask)) {
     _ = &env;
     _ = &savemask;
-    return __sigsetjmp(@import("std").zig.c_translation.cast([*c]struct___jmp_buf_tag, @import("std").zig.c_translation.cast(?*anyopaque, env)), savemask);
+    return __sigsetjmp(@import("std").zig.c_translation.helpers.cast([*c]struct___jmp_buf_tag, @import("std").zig.c_translation.helpers.cast(?*anyopaque, env)), savemask);
 }
 pub const CRYPTO_ONCE_STATIC_INIT = PTHREAD_ONCE_INIT;
 pub const OPENSSL_COMPERR_H = "";
@@ -27442,7 +27442,7 @@ pub inline fn sk_SSL_COMP_num(sk: anytype) @TypeOf(OPENSSL_sk_num(ossl_check_con
 pub inline fn sk_SSL_COMP_value(sk: anytype, idx: anytype) [*c]SSL_COMP {
     _ = &sk;
     _ = &idx;
-    return @import("std").zig.c_translation.cast([*c]SSL_COMP, OPENSSL_sk_value(ossl_check_const_SSL_COMP_sk_type(sk), idx));
+    return @import("std").zig.c_translation.helpers.cast([*c]SSL_COMP, OPENSSL_sk_value(ossl_check_const_SSL_COMP_sk_type(sk), idx));
 }
 pub const sk_SSL_COMP_new = @compileError("unable to translate C expr: unexpected token ')'");
 // /usr/include/openssl/comp.h:69:9
@@ -27466,12 +27466,12 @@ pub inline fn sk_SSL_COMP_zero(sk: anytype) @TypeOf(OPENSSL_sk_zero(ossl_check_S
 pub inline fn sk_SSL_COMP_delete(sk: anytype, i: anytype) [*c]SSL_COMP {
     _ = &sk;
     _ = &i;
-    return @import("std").zig.c_translation.cast([*c]SSL_COMP, OPENSSL_sk_delete(ossl_check_SSL_COMP_sk_type(sk), i));
+    return @import("std").zig.c_translation.helpers.cast([*c]SSL_COMP, OPENSSL_sk_delete(ossl_check_SSL_COMP_sk_type(sk), i));
 }
 pub inline fn sk_SSL_COMP_delete_ptr(sk: anytype, ptr: anytype) [*c]SSL_COMP {
     _ = &sk;
     _ = &ptr;
-    return @import("std").zig.c_translation.cast([*c]SSL_COMP, OPENSSL_sk_delete_ptr(ossl_check_SSL_COMP_sk_type(sk), ossl_check_SSL_COMP_type(ptr)));
+    return @import("std").zig.c_translation.helpers.cast([*c]SSL_COMP, OPENSSL_sk_delete_ptr(ossl_check_SSL_COMP_sk_type(sk), ossl_check_SSL_COMP_type(ptr)));
 }
 pub inline fn sk_SSL_COMP_push(sk: anytype, ptr: anytype) @TypeOf(OPENSSL_sk_push(ossl_check_SSL_COMP_sk_type(sk), ossl_check_SSL_COMP_type(ptr))) {
     _ = &sk;
@@ -27485,11 +27485,11 @@ pub inline fn sk_SSL_COMP_unshift(sk: anytype, ptr: anytype) @TypeOf(OPENSSL_sk_
 }
 pub inline fn sk_SSL_COMP_pop(sk: anytype) [*c]SSL_COMP {
     _ = &sk;
-    return @import("std").zig.c_translation.cast([*c]SSL_COMP, OPENSSL_sk_pop(ossl_check_SSL_COMP_sk_type(sk)));
+    return @import("std").zig.c_translation.helpers.cast([*c]SSL_COMP, OPENSSL_sk_pop(ossl_check_SSL_COMP_sk_type(sk)));
 }
 pub inline fn sk_SSL_COMP_shift(sk: anytype) [*c]SSL_COMP {
     _ = &sk;
-    return @import("std").zig.c_translation.cast([*c]SSL_COMP, OPENSSL_sk_shift(ossl_check_SSL_COMP_sk_type(sk)));
+    return @import("std").zig.c_translation.helpers.cast([*c]SSL_COMP, OPENSSL_sk_shift(ossl_check_SSL_COMP_sk_type(sk)));
 }
 pub inline fn sk_SSL_COMP_pop_free(sk: anytype, freefunc: anytype) @TypeOf(OPENSSL_sk_pop_free(ossl_check_SSL_COMP_sk_type(sk), ossl_check_SSL_COMP_freefunc_type(freefunc))) {
     _ = &sk;
@@ -27506,7 +27506,7 @@ pub inline fn sk_SSL_COMP_set(sk: anytype, idx: anytype, ptr: anytype) [*c]SSL_C
     _ = &sk;
     _ = &idx;
     _ = &ptr;
-    return @import("std").zig.c_translation.cast([*c]SSL_COMP, OPENSSL_sk_set(ossl_check_SSL_COMP_sk_type(sk), idx, ossl_check_SSL_COMP_type(ptr)));
+    return @import("std").zig.c_translation.helpers.cast([*c]SSL_COMP, OPENSSL_sk_set(ossl_check_SSL_COMP_sk_type(sk), idx, ossl_check_SSL_COMP_type(ptr)));
 }
 pub inline fn sk_SSL_COMP_find(sk: anytype, ptr: anytype) @TypeOf(OPENSSL_sk_find(ossl_check_SSL_COMP_sk_type(sk), ossl_check_SSL_COMP_type(ptr))) {
     _ = &sk;
@@ -27539,7 +27539,7 @@ pub const sk_SSL_COMP_deep_copy = @compileError("unable to translate C expr: une
 pub inline fn sk_SSL_COMP_set_cmp_func(sk: anytype, cmp: anytype) sk_SSL_COMP_compfunc {
     _ = &sk;
     _ = &cmp;
-    return @import("std").zig.c_translation.cast(sk_SSL_COMP_compfunc, OPENSSL_sk_set_cmp_func(ossl_check_SSL_COMP_sk_type(sk), ossl_check_SSL_COMP_compfunc_type(cmp)));
+    return @import("std").zig.c_translation.helpers.cast(sk_SSL_COMP_compfunc, OPENSSL_sk_set_cmp_func(ossl_check_SSL_COMP_sk_type(sk), ossl_check_SSL_COMP_compfunc_type(cmp)));
 }
 pub const OPENSSL_BIO_H = "";
 pub const HEADER_BIO_H = "";
@@ -27779,7 +27779,7 @@ pub inline fn sk_BIO_num(sk: anytype) @TypeOf(OPENSSL_sk_num(ossl_check_const_BI
 pub inline fn sk_BIO_value(sk: anytype, idx: anytype) [*c]BIO {
     _ = &sk;
     _ = &idx;
-    return @import("std").zig.c_translation.cast([*c]BIO, OPENSSL_sk_value(ossl_check_const_BIO_sk_type(sk), idx));
+    return @import("std").zig.c_translation.helpers.cast([*c]BIO, OPENSSL_sk_value(ossl_check_const_BIO_sk_type(sk), idx));
 }
 pub const sk_BIO_new = @compileError("unable to translate C expr: unexpected token ')'");
 // /usr/include/openssl/bio.h:338:9
@@ -27803,12 +27803,12 @@ pub inline fn sk_BIO_zero(sk: anytype) @TypeOf(OPENSSL_sk_zero(ossl_check_BIO_sk
 pub inline fn sk_BIO_delete(sk: anytype, i: anytype) [*c]BIO {
     _ = &sk;
     _ = &i;
-    return @import("std").zig.c_translation.cast([*c]BIO, OPENSSL_sk_delete(ossl_check_BIO_sk_type(sk), i));
+    return @import("std").zig.c_translation.helpers.cast([*c]BIO, OPENSSL_sk_delete(ossl_check_BIO_sk_type(sk), i));
 }
 pub inline fn sk_BIO_delete_ptr(sk: anytype, ptr: anytype) [*c]BIO {
     _ = &sk;
     _ = &ptr;
-    return @import("std").zig.c_translation.cast([*c]BIO, OPENSSL_sk_delete_ptr(ossl_check_BIO_sk_type(sk), ossl_check_BIO_type(ptr)));
+    return @import("std").zig.c_translation.helpers.cast([*c]BIO, OPENSSL_sk_delete_ptr(ossl_check_BIO_sk_type(sk), ossl_check_BIO_type(ptr)));
 }
 pub inline fn sk_BIO_push(sk: anytype, ptr: anytype) @TypeOf(OPENSSL_sk_push(ossl_check_BIO_sk_type(sk), ossl_check_BIO_type(ptr))) {
     _ = &sk;
@@ -27822,11 +27822,11 @@ pub inline fn sk_BIO_unshift(sk: anytype, ptr: anytype) @TypeOf(OPENSSL_sk_unshi
 }
 pub inline fn sk_BIO_pop(sk: anytype) [*c]BIO {
     _ = &sk;
-    return @import("std").zig.c_translation.cast([*c]BIO, OPENSSL_sk_pop(ossl_check_BIO_sk_type(sk)));
+    return @import("std").zig.c_translation.helpers.cast([*c]BIO, OPENSSL_sk_pop(ossl_check_BIO_sk_type(sk)));
 }
 pub inline fn sk_BIO_shift(sk: anytype) [*c]BIO {
     _ = &sk;
-    return @import("std").zig.c_translation.cast([*c]BIO, OPENSSL_sk_shift(ossl_check_BIO_sk_type(sk)));
+    return @import("std").zig.c_translation.helpers.cast([*c]BIO, OPENSSL_sk_shift(ossl_check_BIO_sk_type(sk)));
 }
 pub inline fn sk_BIO_pop_free(sk: anytype, freefunc: anytype) @TypeOf(OPENSSL_sk_pop_free(ossl_check_BIO_sk_type(sk), ossl_check_BIO_freefunc_type(freefunc))) {
     _ = &sk;
@@ -27843,7 +27843,7 @@ pub inline fn sk_BIO_set(sk: anytype, idx: anytype, ptr: anytype) [*c]BIO {
     _ = &sk;
     _ = &idx;
     _ = &ptr;
-    return @import("std").zig.c_translation.cast([*c]BIO, OPENSSL_sk_set(ossl_check_BIO_sk_type(sk), idx, ossl_check_BIO_type(ptr)));
+    return @import("std").zig.c_translation.helpers.cast([*c]BIO, OPENSSL_sk_set(ossl_check_BIO_sk_type(sk), idx, ossl_check_BIO_type(ptr)));
 }
 pub inline fn sk_BIO_find(sk: anytype, ptr: anytype) @TypeOf(OPENSSL_sk_find(ossl_check_BIO_sk_type(sk), ossl_check_BIO_type(ptr))) {
     _ = &sk;
@@ -27876,7 +27876,7 @@ pub const sk_BIO_deep_copy = @compileError("unable to translate C expr: unexpect
 pub inline fn sk_BIO_set_cmp_func(sk: anytype, cmp: anytype) sk_BIO_compfunc {
     _ = &sk;
     _ = &cmp;
-    return @import("std").zig.c_translation.cast(sk_BIO_compfunc, OPENSSL_sk_set_cmp_func(ossl_check_BIO_sk_type(sk), ossl_check_BIO_compfunc_type(cmp)));
+    return @import("std").zig.c_translation.helpers.cast(sk_BIO_compfunc, OPENSSL_sk_set_cmp_func(ossl_check_BIO_sk_type(sk), ossl_check_BIO_compfunc_type(cmp)));
 }
 pub const BIO_POLL_DESCRIPTOR_TYPE_NONE = @as(c_int, 0);
 pub const BIO_POLL_DESCRIPTOR_TYPE_SOCK_FD = @as(c_int, 1);
@@ -27962,20 +27962,20 @@ pub inline fn BIO_set_tfo(b: anytype, n: anytype) @TypeOf(BIO_ctrl(b, BIO_C_SET_
 pub const BIO_FAMILY_IPV4 = @as(c_int, 4);
 pub const BIO_FAMILY_IPV6 = @as(c_int, 6);
 pub const BIO_FAMILY_IPANY = @as(c_int, 256);
-pub inline fn BIO_set_conn_hostname(b: anytype, name: anytype) @TypeOf(BIO_ctrl(b, BIO_C_SET_CONNECT, @as(c_int, 0), @import("std").zig.c_translation.cast([*c]u8, name))) {
+pub inline fn BIO_set_conn_hostname(b: anytype, name: anytype) @TypeOf(BIO_ctrl(b, BIO_C_SET_CONNECT, @as(c_int, 0), @import("std").zig.c_translation.helpers.cast([*c]u8, name))) {
     _ = &b;
     _ = &name;
-    return BIO_ctrl(b, BIO_C_SET_CONNECT, @as(c_int, 0), @import("std").zig.c_translation.cast([*c]u8, name));
+    return BIO_ctrl(b, BIO_C_SET_CONNECT, @as(c_int, 0), @import("std").zig.c_translation.helpers.cast([*c]u8, name));
 }
-pub inline fn BIO_set_conn_port(b: anytype, port: anytype) @TypeOf(BIO_ctrl(b, BIO_C_SET_CONNECT, @as(c_int, 1), @import("std").zig.c_translation.cast([*c]u8, port))) {
+pub inline fn BIO_set_conn_port(b: anytype, port: anytype) @TypeOf(BIO_ctrl(b, BIO_C_SET_CONNECT, @as(c_int, 1), @import("std").zig.c_translation.helpers.cast([*c]u8, port))) {
     _ = &b;
     _ = &port;
-    return BIO_ctrl(b, BIO_C_SET_CONNECT, @as(c_int, 1), @import("std").zig.c_translation.cast([*c]u8, port));
+    return BIO_ctrl(b, BIO_C_SET_CONNECT, @as(c_int, 1), @import("std").zig.c_translation.helpers.cast([*c]u8, port));
 }
-pub inline fn BIO_set_conn_address(b: anytype, addr: anytype) @TypeOf(BIO_ctrl(b, BIO_C_SET_CONNECT, @as(c_int, 2), @import("std").zig.c_translation.cast([*c]u8, addr))) {
+pub inline fn BIO_set_conn_address(b: anytype, addr: anytype) @TypeOf(BIO_ctrl(b, BIO_C_SET_CONNECT, @as(c_int, 2), @import("std").zig.c_translation.helpers.cast([*c]u8, addr))) {
     _ = &b;
     _ = &addr;
-    return BIO_ctrl(b, BIO_C_SET_CONNECT, @as(c_int, 2), @import("std").zig.c_translation.cast([*c]u8, addr));
+    return BIO_ctrl(b, BIO_C_SET_CONNECT, @as(c_int, 2), @import("std").zig.c_translation.helpers.cast([*c]u8, addr));
 }
 pub inline fn BIO_set_conn_ip_family(b: anytype, f: anytype) @TypeOf(BIO_int_ctrl(b, BIO_C_SET_CONNECT, @as(c_int, 3), f)) {
     _ = &b;
@@ -28012,15 +28012,15 @@ pub inline fn BIO_get_sock_type(b: anytype) @TypeOf(BIO_ctrl(b, BIO_C_GET_SOCK_T
 }
 pub const BIO_get0_dgram_bio = @compileError("unable to translate C expr: expected ')' instead got '*'");
 // /usr/include/openssl/bio.h:527:11
-pub inline fn BIO_set_accept_name(b: anytype, name: anytype) @TypeOf(BIO_ctrl(b, BIO_C_SET_ACCEPT, @as(c_int, 0), @import("std").zig.c_translation.cast([*c]u8, name))) {
+pub inline fn BIO_set_accept_name(b: anytype, name: anytype) @TypeOf(BIO_ctrl(b, BIO_C_SET_ACCEPT, @as(c_int, 0), @import("std").zig.c_translation.helpers.cast([*c]u8, name))) {
     _ = &b;
     _ = &name;
-    return BIO_ctrl(b, BIO_C_SET_ACCEPT, @as(c_int, 0), @import("std").zig.c_translation.cast([*c]u8, name));
+    return BIO_ctrl(b, BIO_C_SET_ACCEPT, @as(c_int, 0), @import("std").zig.c_translation.helpers.cast([*c]u8, name));
 }
-pub inline fn BIO_set_accept_port(b: anytype, port: anytype) @TypeOf(BIO_ctrl(b, BIO_C_SET_ACCEPT, @as(c_int, 1), @import("std").zig.c_translation.cast([*c]u8, port))) {
+pub inline fn BIO_set_accept_port(b: anytype, port: anytype) @TypeOf(BIO_ctrl(b, BIO_C_SET_ACCEPT, @as(c_int, 1), @import("std").zig.c_translation.helpers.cast([*c]u8, port))) {
     _ = &b;
     _ = &port;
-    return BIO_ctrl(b, BIO_C_SET_ACCEPT, @as(c_int, 1), @import("std").zig.c_translation.cast([*c]u8, port));
+    return BIO_ctrl(b, BIO_C_SET_ACCEPT, @as(c_int, 1), @import("std").zig.c_translation.helpers.cast([*c]u8, port));
 }
 pub const BIO_get_accept_name = @compileError("unable to translate C expr: unexpected token 'const'");
 // /usr/include/openssl/bio.h:534:11
@@ -28030,15 +28030,15 @@ pub const BIO_get_peer_name = @compileError("unable to translate C expr: unexpec
 // /usr/include/openssl/bio.h:536:11
 pub const BIO_get_peer_port = @compileError("unable to translate C expr: unexpected token 'const'");
 // /usr/include/openssl/bio.h:537:11
-pub inline fn BIO_set_nbio_accept(b: anytype, n: anytype) @TypeOf(BIO_ctrl(b, BIO_C_SET_ACCEPT, @as(c_int, 2), if (n) @import("std").zig.c_translation.cast(?*anyopaque, "a") else NULL)) {
+pub inline fn BIO_set_nbio_accept(b: anytype, n: anytype) @TypeOf(BIO_ctrl(b, BIO_C_SET_ACCEPT, @as(c_int, 2), if (n) @import("std").zig.c_translation.helpers.cast(?*anyopaque, "a") else NULL)) {
     _ = &b;
     _ = &n;
-    return BIO_ctrl(b, BIO_C_SET_ACCEPT, @as(c_int, 2), if (n) @import("std").zig.c_translation.cast(?*anyopaque, "a") else NULL);
+    return BIO_ctrl(b, BIO_C_SET_ACCEPT, @as(c_int, 2), if (n) @import("std").zig.c_translation.helpers.cast(?*anyopaque, "a") else NULL);
 }
-pub inline fn BIO_set_accept_bios(b: anytype, bio: anytype) @TypeOf(BIO_ctrl(b, BIO_C_SET_ACCEPT, @as(c_int, 3), @import("std").zig.c_translation.cast([*c]u8, bio))) {
+pub inline fn BIO_set_accept_bios(b: anytype, bio: anytype) @TypeOf(BIO_ctrl(b, BIO_C_SET_ACCEPT, @as(c_int, 3), @import("std").zig.c_translation.helpers.cast([*c]u8, bio))) {
     _ = &b;
     _ = &bio;
-    return BIO_ctrl(b, BIO_C_SET_ACCEPT, @as(c_int, 3), @import("std").zig.c_translation.cast([*c]u8, bio));
+    return BIO_ctrl(b, BIO_C_SET_ACCEPT, @as(c_int, 3), @import("std").zig.c_translation.helpers.cast([*c]u8, bio));
 }
 pub inline fn BIO_set_accept_ip_family(b: anytype, f: anytype) @TypeOf(BIO_int_ctrl(b, BIO_C_SET_ACCEPT, @as(c_int, 4), f)) {
     _ = &b;
@@ -28049,10 +28049,10 @@ pub inline fn BIO_get_accept_ip_family(b: anytype) @TypeOf(BIO_ctrl(b, BIO_C_GET
     _ = &b;
     return BIO_ctrl(b, BIO_C_GET_ACCEPT, @as(c_int, 4), NULL);
 }
-pub inline fn BIO_set_tfo_accept(b: anytype, n: anytype) @TypeOf(BIO_ctrl(b, BIO_C_SET_ACCEPT, @as(c_int, 5), if (n) @import("std").zig.c_translation.cast(?*anyopaque, "a") else NULL)) {
+pub inline fn BIO_set_tfo_accept(b: anytype, n: anytype) @TypeOf(BIO_ctrl(b, BIO_C_SET_ACCEPT, @as(c_int, 5), if (n) @import("std").zig.c_translation.helpers.cast(?*anyopaque, "a") else NULL)) {
     _ = &b;
     _ = &n;
-    return BIO_ctrl(b, BIO_C_SET_ACCEPT, @as(c_int, 5), if (n) @import("std").zig.c_translation.cast(?*anyopaque, "a") else NULL);
+    return BIO_ctrl(b, BIO_C_SET_ACCEPT, @as(c_int, 5), if (n) @import("std").zig.c_translation.helpers.cast(?*anyopaque, "a") else NULL);
 }
 pub const BIO_BIND_NORMAL = @as(c_int, 0);
 pub const BIO_BIND_REUSEADDR = BIO_SOCK_REUSEADDR;
@@ -28084,61 +28084,61 @@ pub inline fn BIO_set_fd(b: anytype, fd: anytype, c: anytype) @TypeOf(BIO_int_ct
     _ = &c;
     return BIO_int_ctrl(b, BIO_C_SET_FD, c, fd);
 }
-pub inline fn BIO_get_fd(b: anytype, c: anytype) @TypeOf(BIO_ctrl(b, BIO_C_GET_FD, @as(c_int, 0), @import("std").zig.c_translation.cast([*c]u8, c))) {
+pub inline fn BIO_get_fd(b: anytype, c: anytype) @TypeOf(BIO_ctrl(b, BIO_C_GET_FD, @as(c_int, 0), @import("std").zig.c_translation.helpers.cast([*c]u8, c))) {
     _ = &b;
     _ = &c;
-    return BIO_ctrl(b, BIO_C_GET_FD, @as(c_int, 0), @import("std").zig.c_translation.cast([*c]u8, c));
+    return BIO_ctrl(b, BIO_C_GET_FD, @as(c_int, 0), @import("std").zig.c_translation.helpers.cast([*c]u8, c));
 }
-pub inline fn BIO_set_fp(b: anytype, fp: anytype, c: anytype) @TypeOf(BIO_ctrl(b, BIO_C_SET_FILE_PTR, c, @import("std").zig.c_translation.cast([*c]u8, fp))) {
+pub inline fn BIO_set_fp(b: anytype, fp: anytype, c: anytype) @TypeOf(BIO_ctrl(b, BIO_C_SET_FILE_PTR, c, @import("std").zig.c_translation.helpers.cast([*c]u8, fp))) {
     _ = &b;
     _ = &fp;
     _ = &c;
-    return BIO_ctrl(b, BIO_C_SET_FILE_PTR, c, @import("std").zig.c_translation.cast([*c]u8, fp));
+    return BIO_ctrl(b, BIO_C_SET_FILE_PTR, c, @import("std").zig.c_translation.helpers.cast([*c]u8, fp));
 }
-pub inline fn BIO_get_fp(b: anytype, fpp: anytype) @TypeOf(BIO_ctrl(b, BIO_C_GET_FILE_PTR, @as(c_int, 0), @import("std").zig.c_translation.cast([*c]u8, fpp))) {
+pub inline fn BIO_get_fp(b: anytype, fpp: anytype) @TypeOf(BIO_ctrl(b, BIO_C_GET_FILE_PTR, @as(c_int, 0), @import("std").zig.c_translation.helpers.cast([*c]u8, fpp))) {
     _ = &b;
     _ = &fpp;
-    return BIO_ctrl(b, BIO_C_GET_FILE_PTR, @as(c_int, 0), @import("std").zig.c_translation.cast([*c]u8, fpp));
+    return BIO_ctrl(b, BIO_C_GET_FILE_PTR, @as(c_int, 0), @import("std").zig.c_translation.helpers.cast([*c]u8, fpp));
 }
 pub inline fn BIO_seek(b: anytype, ofs: anytype) c_int {
     _ = &b;
     _ = &ofs;
-    return @import("std").zig.c_translation.cast(c_int, BIO_ctrl(b, BIO_C_FILE_SEEK, ofs, NULL));
+    return @import("std").zig.c_translation.helpers.cast(c_int, BIO_ctrl(b, BIO_C_FILE_SEEK, ofs, NULL));
 }
 pub inline fn BIO_tell(b: anytype) c_int {
     _ = &b;
-    return @import("std").zig.c_translation.cast(c_int, BIO_ctrl(b, BIO_C_FILE_TELL, @as(c_int, 0), NULL));
+    return @import("std").zig.c_translation.helpers.cast(c_int, BIO_ctrl(b, BIO_C_FILE_TELL, @as(c_int, 0), NULL));
 }
 pub inline fn BIO_read_filename(b: anytype, name: anytype) c_int {
     _ = &b;
     _ = &name;
-    return @import("std").zig.c_translation.cast(c_int, BIO_ctrl(b, BIO_C_SET_FILENAME, BIO_CLOSE | BIO_FP_READ, @import("std").zig.c_translation.cast([*c]u8, name)));
+    return @import("std").zig.c_translation.helpers.cast(c_int, BIO_ctrl(b, BIO_C_SET_FILENAME, BIO_CLOSE | BIO_FP_READ, @import("std").zig.c_translation.helpers.cast([*c]u8, name)));
 }
 pub inline fn BIO_write_filename(b: anytype, name: anytype) c_int {
     _ = &b;
     _ = &name;
-    return @import("std").zig.c_translation.cast(c_int, BIO_ctrl(b, BIO_C_SET_FILENAME, BIO_CLOSE | BIO_FP_WRITE, name));
+    return @import("std").zig.c_translation.helpers.cast(c_int, BIO_ctrl(b, BIO_C_SET_FILENAME, BIO_CLOSE | BIO_FP_WRITE, name));
 }
 pub inline fn BIO_append_filename(b: anytype, name: anytype) c_int {
     _ = &b;
     _ = &name;
-    return @import("std").zig.c_translation.cast(c_int, BIO_ctrl(b, BIO_C_SET_FILENAME, BIO_CLOSE | BIO_FP_APPEND, name));
+    return @import("std").zig.c_translation.helpers.cast(c_int, BIO_ctrl(b, BIO_C_SET_FILENAME, BIO_CLOSE | BIO_FP_APPEND, name));
 }
 pub inline fn BIO_rw_filename(b: anytype, name: anytype) c_int {
     _ = &b;
     _ = &name;
-    return @import("std").zig.c_translation.cast(c_int, BIO_ctrl(b, BIO_C_SET_FILENAME, (BIO_CLOSE | BIO_FP_READ) | BIO_FP_WRITE, name));
+    return @import("std").zig.c_translation.helpers.cast(c_int, BIO_ctrl(b, BIO_C_SET_FILENAME, (BIO_CLOSE | BIO_FP_READ) | BIO_FP_WRITE, name));
 }
-pub inline fn BIO_set_ssl(b: anytype, ssl: anytype, c: anytype) @TypeOf(BIO_ctrl(b, BIO_C_SET_SSL, c, @import("std").zig.c_translation.cast([*c]u8, ssl))) {
+pub inline fn BIO_set_ssl(b: anytype, ssl: anytype, c: anytype) @TypeOf(BIO_ctrl(b, BIO_C_SET_SSL, c, @import("std").zig.c_translation.helpers.cast([*c]u8, ssl))) {
     _ = &b;
     _ = &ssl;
     _ = &c;
-    return BIO_ctrl(b, BIO_C_SET_SSL, c, @import("std").zig.c_translation.cast([*c]u8, ssl));
+    return BIO_ctrl(b, BIO_C_SET_SSL, c, @import("std").zig.c_translation.helpers.cast([*c]u8, ssl));
 }
-pub inline fn BIO_get_ssl(b: anytype, sslp: anytype) @TypeOf(BIO_ctrl(b, BIO_C_GET_SSL, @as(c_int, 0), @import("std").zig.c_translation.cast([*c]u8, sslp))) {
+pub inline fn BIO_get_ssl(b: anytype, sslp: anytype) @TypeOf(BIO_ctrl(b, BIO_C_GET_SSL, @as(c_int, 0), @import("std").zig.c_translation.helpers.cast([*c]u8, sslp))) {
     _ = &b;
     _ = &sslp;
-    return BIO_ctrl(b, BIO_C_GET_SSL, @as(c_int, 0), @import("std").zig.c_translation.cast([*c]u8, sslp));
+    return BIO_ctrl(b, BIO_C_GET_SSL, @as(c_int, 0), @import("std").zig.c_translation.helpers.cast([*c]u8, sslp));
 }
 pub inline fn BIO_set_ssl_mode(b: anytype, client: anytype) @TypeOf(BIO_ctrl(b, BIO_C_SSL_MODE, client, NULL)) {
     _ = &b;
@@ -28159,21 +28159,21 @@ pub inline fn BIO_set_ssl_renegotiate_timeout(b: anytype, seconds: anytype) @Typ
     _ = &seconds;
     return BIO_ctrl(b, BIO_C_SET_SSL_RENEGOTIATE_TIMEOUT, seconds, NULL);
 }
-pub inline fn BIO_get_mem_data(b: anytype, pp: anytype) @TypeOf(BIO_ctrl(b, BIO_CTRL_INFO, @as(c_int, 0), @import("std").zig.c_translation.cast([*c]u8, pp))) {
+pub inline fn BIO_get_mem_data(b: anytype, pp: anytype) @TypeOf(BIO_ctrl(b, BIO_CTRL_INFO, @as(c_int, 0), @import("std").zig.c_translation.helpers.cast([*c]u8, pp))) {
     _ = &b;
     _ = &pp;
-    return BIO_ctrl(b, BIO_CTRL_INFO, @as(c_int, 0), @import("std").zig.c_translation.cast([*c]u8, pp));
+    return BIO_ctrl(b, BIO_CTRL_INFO, @as(c_int, 0), @import("std").zig.c_translation.helpers.cast([*c]u8, pp));
 }
-pub inline fn BIO_set_mem_buf(b: anytype, bm: anytype, c: anytype) @TypeOf(BIO_ctrl(b, BIO_C_SET_BUF_MEM, c, @import("std").zig.c_translation.cast([*c]u8, bm))) {
+pub inline fn BIO_set_mem_buf(b: anytype, bm: anytype, c: anytype) @TypeOf(BIO_ctrl(b, BIO_C_SET_BUF_MEM, c, @import("std").zig.c_translation.helpers.cast([*c]u8, bm))) {
     _ = &b;
     _ = &bm;
     _ = &c;
-    return BIO_ctrl(b, BIO_C_SET_BUF_MEM, c, @import("std").zig.c_translation.cast([*c]u8, bm));
+    return BIO_ctrl(b, BIO_C_SET_BUF_MEM, c, @import("std").zig.c_translation.helpers.cast([*c]u8, bm));
 }
-pub inline fn BIO_get_mem_ptr(b: anytype, pp: anytype) @TypeOf(BIO_ctrl(b, BIO_C_GET_BUF_MEM_PTR, @as(c_int, 0), @import("std").zig.c_translation.cast([*c]u8, pp))) {
+pub inline fn BIO_get_mem_ptr(b: anytype, pp: anytype) @TypeOf(BIO_ctrl(b, BIO_C_GET_BUF_MEM_PTR, @as(c_int, 0), @import("std").zig.c_translation.helpers.cast([*c]u8, pp))) {
     _ = &b;
     _ = &pp;
-    return BIO_ctrl(b, BIO_C_GET_BUF_MEM_PTR, @as(c_int, 0), @import("std").zig.c_translation.cast([*c]u8, pp));
+    return BIO_ctrl(b, BIO_C_GET_BUF_MEM_PTR, @as(c_int, 0), @import("std").zig.c_translation.helpers.cast([*c]u8, pp));
 }
 pub inline fn BIO_set_mem_eof_return(b: anytype, v: anytype) @TypeOf(BIO_ctrl(b, BIO_C_SET_BUF_MEM_EOF_RETURN, v, NULL)) {
     _ = &b;
@@ -28205,49 +28205,49 @@ pub inline fn BIO_set_buffer_read_data(b: anytype, buf: anytype, num: anytype) @
     _ = &num;
     return BIO_ctrl(b, BIO_C_SET_BUFF_READ_DATA, num, buf);
 }
-pub inline fn BIO_dup_state(b: anytype, ret: anytype) @TypeOf(BIO_ctrl(b, BIO_CTRL_DUP, @as(c_int, 0), @import("std").zig.c_translation.cast([*c]u8, ret))) {
+pub inline fn BIO_dup_state(b: anytype, ret: anytype) @TypeOf(BIO_ctrl(b, BIO_CTRL_DUP, @as(c_int, 0), @import("std").zig.c_translation.helpers.cast([*c]u8, ret))) {
     _ = &b;
     _ = &ret;
-    return BIO_ctrl(b, BIO_CTRL_DUP, @as(c_int, 0), @import("std").zig.c_translation.cast([*c]u8, ret));
+    return BIO_ctrl(b, BIO_CTRL_DUP, @as(c_int, 0), @import("std").zig.c_translation.helpers.cast([*c]u8, ret));
 }
 pub inline fn BIO_reset(b: anytype) c_int {
     _ = &b;
-    return @import("std").zig.c_translation.cast(c_int, BIO_ctrl(b, BIO_CTRL_RESET, @as(c_int, 0), NULL));
+    return @import("std").zig.c_translation.helpers.cast(c_int, BIO_ctrl(b, BIO_CTRL_RESET, @as(c_int, 0), NULL));
 }
 pub inline fn BIO_eof(b: anytype) c_int {
     _ = &b;
-    return @import("std").zig.c_translation.cast(c_int, BIO_ctrl(b, BIO_CTRL_EOF, @as(c_int, 0), NULL));
+    return @import("std").zig.c_translation.helpers.cast(c_int, BIO_ctrl(b, BIO_CTRL_EOF, @as(c_int, 0), NULL));
 }
 pub inline fn BIO_set_close(b: anytype, c: anytype) c_int {
     _ = &b;
     _ = &c;
-    return @import("std").zig.c_translation.cast(c_int, BIO_ctrl(b, BIO_CTRL_SET_CLOSE, c, NULL));
+    return @import("std").zig.c_translation.helpers.cast(c_int, BIO_ctrl(b, BIO_CTRL_SET_CLOSE, c, NULL));
 }
 pub inline fn BIO_get_close(b: anytype) c_int {
     _ = &b;
-    return @import("std").zig.c_translation.cast(c_int, BIO_ctrl(b, BIO_CTRL_GET_CLOSE, @as(c_int, 0), NULL));
+    return @import("std").zig.c_translation.helpers.cast(c_int, BIO_ctrl(b, BIO_CTRL_GET_CLOSE, @as(c_int, 0), NULL));
 }
 pub inline fn BIO_pending(b: anytype) c_int {
     _ = &b;
-    return @import("std").zig.c_translation.cast(c_int, BIO_ctrl(b, BIO_CTRL_PENDING, @as(c_int, 0), NULL));
+    return @import("std").zig.c_translation.helpers.cast(c_int, BIO_ctrl(b, BIO_CTRL_PENDING, @as(c_int, 0), NULL));
 }
 pub inline fn BIO_wpending(b: anytype) c_int {
     _ = &b;
-    return @import("std").zig.c_translation.cast(c_int, BIO_ctrl(b, BIO_CTRL_WPENDING, @as(c_int, 0), NULL));
+    return @import("std").zig.c_translation.helpers.cast(c_int, BIO_ctrl(b, BIO_CTRL_WPENDING, @as(c_int, 0), NULL));
 }
 pub inline fn BIO_flush(b: anytype) c_int {
     _ = &b;
-    return @import("std").zig.c_translation.cast(c_int, BIO_ctrl(b, BIO_CTRL_FLUSH, @as(c_int, 0), NULL));
+    return @import("std").zig.c_translation.helpers.cast(c_int, BIO_ctrl(b, BIO_CTRL_FLUSH, @as(c_int, 0), NULL));
 }
 pub inline fn BIO_get_info_callback(b: anytype, cbp: anytype) c_int {
     _ = &b;
     _ = &cbp;
-    return @import("std").zig.c_translation.cast(c_int, BIO_ctrl(b, BIO_CTRL_GET_CALLBACK, @as(c_int, 0), cbp));
+    return @import("std").zig.c_translation.helpers.cast(c_int, BIO_ctrl(b, BIO_CTRL_GET_CALLBACK, @as(c_int, 0), cbp));
 }
 pub inline fn BIO_set_info_callback(b: anytype, cb: anytype) c_int {
     _ = &b;
     _ = &cb;
-    return @import("std").zig.c_translation.cast(c_int, BIO_callback_ctrl(b, BIO_CTRL_SET_CALLBACK, cb));
+    return @import("std").zig.c_translation.helpers.cast(c_int, BIO_callback_ctrl(b, BIO_CTRL_SET_CALLBACK, cb));
 }
 pub inline fn BIO_buffer_get_num_lines(b: anytype) @TypeOf(BIO_ctrl(b, BIO_CTRL_GET, @as(c_int, 0), NULL)) {
     _ = &b;
@@ -28262,120 +28262,120 @@ pub inline fn BIO_buffer_peek(b: anytype, s: anytype, l: anytype) @TypeOf(BIO_ct
 pub inline fn BIO_set_write_buf_size(b: anytype, size: anytype) c_int {
     _ = &b;
     _ = &size;
-    return @import("std").zig.c_translation.cast(c_int, BIO_ctrl(b, BIO_C_SET_WRITE_BUF_SIZE, size, NULL));
+    return @import("std").zig.c_translation.helpers.cast(c_int, BIO_ctrl(b, BIO_C_SET_WRITE_BUF_SIZE, size, NULL));
 }
 pub inline fn BIO_get_write_buf_size(b: anytype, size: anytype) usize {
     _ = &b;
     _ = &size;
-    return @import("std").zig.c_translation.cast(usize, BIO_ctrl(b, BIO_C_GET_WRITE_BUF_SIZE, size, NULL));
+    return @import("std").zig.c_translation.helpers.cast(usize, BIO_ctrl(b, BIO_C_GET_WRITE_BUF_SIZE, size, NULL));
 }
 pub inline fn BIO_make_bio_pair(b1: anytype, b2: anytype) c_int {
     _ = &b1;
     _ = &b2;
-    return @import("std").zig.c_translation.cast(c_int, BIO_ctrl(b1, BIO_C_MAKE_BIO_PAIR, @as(c_int, 0), b2));
+    return @import("std").zig.c_translation.helpers.cast(c_int, BIO_ctrl(b1, BIO_C_MAKE_BIO_PAIR, @as(c_int, 0), b2));
 }
 pub inline fn BIO_destroy_bio_pair(b: anytype) c_int {
     _ = &b;
-    return @import("std").zig.c_translation.cast(c_int, BIO_ctrl(b, BIO_C_DESTROY_BIO_PAIR, @as(c_int, 0), NULL));
+    return @import("std").zig.c_translation.helpers.cast(c_int, BIO_ctrl(b, BIO_C_DESTROY_BIO_PAIR, @as(c_int, 0), NULL));
 }
 pub inline fn BIO_shutdown_wr(b: anytype) c_int {
     _ = &b;
-    return @import("std").zig.c_translation.cast(c_int, BIO_ctrl(b, BIO_C_SHUTDOWN_WR, @as(c_int, 0), NULL));
+    return @import("std").zig.c_translation.helpers.cast(c_int, BIO_ctrl(b, BIO_C_SHUTDOWN_WR, @as(c_int, 0), NULL));
 }
 pub inline fn BIO_get_write_guarantee(b: anytype) c_int {
     _ = &b;
-    return @import("std").zig.c_translation.cast(c_int, BIO_ctrl(b, BIO_C_GET_WRITE_GUARANTEE, @as(c_int, 0), NULL));
+    return @import("std").zig.c_translation.helpers.cast(c_int, BIO_ctrl(b, BIO_C_GET_WRITE_GUARANTEE, @as(c_int, 0), NULL));
 }
 pub inline fn BIO_get_read_request(b: anytype) c_int {
     _ = &b;
-    return @import("std").zig.c_translation.cast(c_int, BIO_ctrl(b, BIO_C_GET_READ_REQUEST, @as(c_int, 0), NULL));
+    return @import("std").zig.c_translation.helpers.cast(c_int, BIO_ctrl(b, BIO_C_GET_READ_REQUEST, @as(c_int, 0), NULL));
 }
 pub inline fn BIO_ctrl_dgram_connect(b: anytype, peer: anytype) c_int {
     _ = &b;
     _ = &peer;
-    return @import("std").zig.c_translation.cast(c_int, BIO_ctrl(b, BIO_CTRL_DGRAM_CONNECT, @as(c_int, 0), @import("std").zig.c_translation.cast([*c]u8, peer)));
+    return @import("std").zig.c_translation.helpers.cast(c_int, BIO_ctrl(b, BIO_CTRL_DGRAM_CONNECT, @as(c_int, 0), @import("std").zig.c_translation.helpers.cast([*c]u8, peer)));
 }
 pub inline fn BIO_ctrl_set_connected(b: anytype, peer: anytype) c_int {
     _ = &b;
     _ = &peer;
-    return @import("std").zig.c_translation.cast(c_int, BIO_ctrl(b, BIO_CTRL_DGRAM_SET_CONNECTED, @as(c_int, 0), @import("std").zig.c_translation.cast([*c]u8, peer)));
+    return @import("std").zig.c_translation.helpers.cast(c_int, BIO_ctrl(b, BIO_CTRL_DGRAM_SET_CONNECTED, @as(c_int, 0), @import("std").zig.c_translation.helpers.cast([*c]u8, peer)));
 }
 pub inline fn BIO_dgram_recv_timedout(b: anytype) c_int {
     _ = &b;
-    return @import("std").zig.c_translation.cast(c_int, BIO_ctrl(b, BIO_CTRL_DGRAM_GET_RECV_TIMER_EXP, @as(c_int, 0), NULL));
+    return @import("std").zig.c_translation.helpers.cast(c_int, BIO_ctrl(b, BIO_CTRL_DGRAM_GET_RECV_TIMER_EXP, @as(c_int, 0), NULL));
 }
 pub inline fn BIO_dgram_send_timedout(b: anytype) c_int {
     _ = &b;
-    return @import("std").zig.c_translation.cast(c_int, BIO_ctrl(b, BIO_CTRL_DGRAM_GET_SEND_TIMER_EXP, @as(c_int, 0), NULL));
+    return @import("std").zig.c_translation.helpers.cast(c_int, BIO_ctrl(b, BIO_CTRL_DGRAM_GET_SEND_TIMER_EXP, @as(c_int, 0), NULL));
 }
 pub inline fn BIO_dgram_get_peer(b: anytype, peer: anytype) c_int {
     _ = &b;
     _ = &peer;
-    return @import("std").zig.c_translation.cast(c_int, BIO_ctrl(b, BIO_CTRL_DGRAM_GET_PEER, @as(c_int, 0), @import("std").zig.c_translation.cast([*c]u8, peer)));
+    return @import("std").zig.c_translation.helpers.cast(c_int, BIO_ctrl(b, BIO_CTRL_DGRAM_GET_PEER, @as(c_int, 0), @import("std").zig.c_translation.helpers.cast([*c]u8, peer)));
 }
 pub inline fn BIO_dgram_set_peer(b: anytype, peer: anytype) c_int {
     _ = &b;
     _ = &peer;
-    return @import("std").zig.c_translation.cast(c_int, BIO_ctrl(b, BIO_CTRL_DGRAM_SET_PEER, @as(c_int, 0), @import("std").zig.c_translation.cast([*c]u8, peer)));
+    return @import("std").zig.c_translation.helpers.cast(c_int, BIO_ctrl(b, BIO_CTRL_DGRAM_SET_PEER, @as(c_int, 0), @import("std").zig.c_translation.helpers.cast([*c]u8, peer)));
 }
 pub inline fn BIO_dgram_detect_peer_addr(b: anytype, peer: anytype) c_int {
     _ = &b;
     _ = &peer;
-    return @import("std").zig.c_translation.cast(c_int, BIO_ctrl(b, BIO_CTRL_DGRAM_DETECT_PEER_ADDR, @as(c_int, 0), @import("std").zig.c_translation.cast([*c]u8, peer)));
+    return @import("std").zig.c_translation.helpers.cast(c_int, BIO_ctrl(b, BIO_CTRL_DGRAM_DETECT_PEER_ADDR, @as(c_int, 0), @import("std").zig.c_translation.helpers.cast([*c]u8, peer)));
 }
 pub inline fn BIO_dgram_get_mtu_overhead(b: anytype) c_uint {
     _ = &b;
-    return @import("std").zig.c_translation.cast(c_uint, BIO_ctrl(b, BIO_CTRL_DGRAM_GET_MTU_OVERHEAD, @as(c_int, 0), NULL));
+    return @import("std").zig.c_translation.helpers.cast(c_uint, BIO_ctrl(b, BIO_CTRL_DGRAM_GET_MTU_OVERHEAD, @as(c_int, 0), NULL));
 }
 pub inline fn BIO_dgram_get_local_addr_cap(b: anytype) c_int {
     _ = &b;
-    return @import("std").zig.c_translation.cast(c_int, BIO_ctrl(b, BIO_CTRL_DGRAM_GET_LOCAL_ADDR_CAP, @as(c_int, 0), NULL));
+    return @import("std").zig.c_translation.helpers.cast(c_int, BIO_ctrl(b, BIO_CTRL_DGRAM_GET_LOCAL_ADDR_CAP, @as(c_int, 0), NULL));
 }
 pub inline fn BIO_dgram_get_local_addr_enable(b: anytype, penable: anytype) c_int {
     _ = &b;
     _ = &penable;
-    return @import("std").zig.c_translation.cast(c_int, BIO_ctrl(b, BIO_CTRL_DGRAM_GET_LOCAL_ADDR_ENABLE, @as(c_int, 0), @import("std").zig.c_translation.cast([*c]u8, penable)));
+    return @import("std").zig.c_translation.helpers.cast(c_int, BIO_ctrl(b, BIO_CTRL_DGRAM_GET_LOCAL_ADDR_ENABLE, @as(c_int, 0), @import("std").zig.c_translation.helpers.cast([*c]u8, penable)));
 }
 pub inline fn BIO_dgram_set_local_addr_enable(b: anytype, enable: anytype) c_int {
     _ = &b;
     _ = &enable;
-    return @import("std").zig.c_translation.cast(c_int, BIO_ctrl(b, BIO_CTRL_DGRAM_SET_LOCAL_ADDR_ENABLE, enable, NULL));
+    return @import("std").zig.c_translation.helpers.cast(c_int, BIO_ctrl(b, BIO_CTRL_DGRAM_SET_LOCAL_ADDR_ENABLE, enable, NULL));
 }
 pub inline fn BIO_dgram_get_effective_caps(b: anytype) u32 {
     _ = &b;
-    return @import("std").zig.c_translation.cast(u32, BIO_ctrl(b, BIO_CTRL_DGRAM_GET_EFFECTIVE_CAPS, @as(c_int, 0), NULL));
+    return @import("std").zig.c_translation.helpers.cast(u32, BIO_ctrl(b, BIO_CTRL_DGRAM_GET_EFFECTIVE_CAPS, @as(c_int, 0), NULL));
 }
 pub inline fn BIO_dgram_get_caps(b: anytype) u32 {
     _ = &b;
-    return @import("std").zig.c_translation.cast(u32, BIO_ctrl(b, BIO_CTRL_DGRAM_GET_CAPS, @as(c_int, 0), NULL));
+    return @import("std").zig.c_translation.helpers.cast(u32, BIO_ctrl(b, BIO_CTRL_DGRAM_GET_CAPS, @as(c_int, 0), NULL));
 }
 pub inline fn BIO_dgram_set_caps(b: anytype, caps: anytype) c_int {
     _ = &b;
     _ = &caps;
-    return @import("std").zig.c_translation.cast(c_int, BIO_ctrl(b, BIO_CTRL_DGRAM_SET_CAPS, @import("std").zig.c_translation.cast(c_long, caps), NULL));
+    return @import("std").zig.c_translation.helpers.cast(c_int, BIO_ctrl(b, BIO_CTRL_DGRAM_SET_CAPS, @import("std").zig.c_translation.helpers.cast(c_long, caps), NULL));
 }
 pub inline fn BIO_dgram_get_no_trunc(b: anytype) c_uint {
     _ = &b;
-    return @import("std").zig.c_translation.cast(c_uint, BIO_ctrl(b, BIO_CTRL_DGRAM_GET_NO_TRUNC, @as(c_int, 0), NULL));
+    return @import("std").zig.c_translation.helpers.cast(c_uint, BIO_ctrl(b, BIO_CTRL_DGRAM_GET_NO_TRUNC, @as(c_int, 0), NULL));
 }
 pub inline fn BIO_dgram_set_no_trunc(b: anytype, enable: anytype) c_int {
     _ = &b;
     _ = &enable;
-    return @import("std").zig.c_translation.cast(c_int, BIO_ctrl(b, BIO_CTRL_DGRAM_SET_NO_TRUNC, enable, NULL));
+    return @import("std").zig.c_translation.helpers.cast(c_int, BIO_ctrl(b, BIO_CTRL_DGRAM_SET_NO_TRUNC, enable, NULL));
 }
 pub inline fn BIO_dgram_get_mtu(b: anytype) c_uint {
     _ = &b;
-    return @import("std").zig.c_translation.cast(c_uint, BIO_ctrl(b, BIO_CTRL_DGRAM_GET_MTU, @as(c_int, 0), NULL));
+    return @import("std").zig.c_translation.helpers.cast(c_uint, BIO_ctrl(b, BIO_CTRL_DGRAM_GET_MTU, @as(c_int, 0), NULL));
 }
 pub inline fn BIO_dgram_set_mtu(b: anytype, mtu: anytype) c_int {
     _ = &b;
     _ = &mtu;
-    return @import("std").zig.c_translation.cast(c_int, BIO_ctrl(b, BIO_CTRL_DGRAM_SET_MTU, mtu, NULL));
+    return @import("std").zig.c_translation.helpers.cast(c_int, BIO_ctrl(b, BIO_CTRL_DGRAM_SET_MTU, mtu, NULL));
 }
-pub inline fn BIO_set_prefix(b: anytype, p: anytype) @TypeOf(BIO_ctrl(b, BIO_CTRL_SET_PREFIX, @as(c_int, 0), @import("std").zig.c_translation.cast(?*anyopaque, p))) {
+pub inline fn BIO_set_prefix(b: anytype, p: anytype) @TypeOf(BIO_ctrl(b, BIO_CTRL_SET_PREFIX, @as(c_int, 0), @import("std").zig.c_translation.helpers.cast(?*anyopaque, p))) {
     _ = &b;
     _ = &p;
-    return BIO_ctrl(b, BIO_CTRL_SET_PREFIX, @as(c_int, 0), @import("std").zig.c_translation.cast(?*anyopaque, p));
+    return BIO_ctrl(b, BIO_CTRL_SET_PREFIX, @as(c_int, 0), @import("std").zig.c_translation.helpers.cast(?*anyopaque, p));
 }
 pub inline fn BIO_set_indent(b: anytype, i: anytype) @TypeOf(BIO_ctrl(b, BIO_CTRL_SET_INDENT, i, NULL)) {
     _ = &b;
@@ -28484,7 +28484,7 @@ pub const BN_FLG_STATIC_DATA = @as(c_int, 0x02);
 pub const BN_FLG_CONSTTIME = @as(c_int, 0x04);
 pub const BN_FLG_SECURE = @as(c_int, 0x08);
 pub const BN_FLG_EXP_CONSTTIME = BN_FLG_CONSTTIME;
-pub const BN_FLG_FREE = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x8000, .hex);
+pub const BN_FLG_FREE = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x8000, .hex);
 pub const BN_RAND_TOP_ANY = -@as(c_int, 1);
 pub const BN_RAND_TOP_ONE = @as(c_int, 0);
 pub const BN_RAND_TOP_TWO = @as(c_int, 1);
@@ -28495,9 +28495,9 @@ pub inline fn BN_prime_checks_for_size(b: anytype) @TypeOf(if (b >= @as(c_int, 3
     _ = &b;
     return if (b >= @as(c_int, 3747)) @as(c_int, 3) else if (b >= @as(c_int, 1345)) @as(c_int, 4) else if (b >= @as(c_int, 476)) @as(c_int, 5) else if (b >= @as(c_int, 400)) @as(c_int, 6) else if (b >= @as(c_int, 347)) @as(c_int, 7) else if (b >= @as(c_int, 308)) @as(c_int, 8) else if (b >= @as(c_int, 55)) @as(c_int, 27) else @as(c_int, 34);
 }
-pub inline fn BN_num_bytes(a: anytype) @TypeOf(@import("std").zig.c_translation.MacroArithmetic.div(BN_num_bits(a) + @as(c_int, 7), @as(c_int, 8))) {
+pub inline fn BN_num_bytes(a: anytype) @TypeOf(@import("std").zig.c_translation.helpers.div(BN_num_bits(a) + @as(c_int, 7), @as(c_int, 8))) {
     _ = &a;
-    return @import("std").zig.c_translation.MacroArithmetic.div(BN_num_bits(a) + @as(c_int, 7), @as(c_int, 8));
+    return @import("std").zig.c_translation.helpers.div(BN_num_bits(a) + @as(c_int, 7), @as(c_int, 8));
 }
 pub inline fn BN_one(a: anytype) @TypeOf(BN_set_word(a, @as(c_int, 1))) {
     _ = &a;
@@ -28535,65 +28535,65 @@ pub const get_rfc3526_prime_3072 = BN_get_rfc3526_prime_3072;
 pub const get_rfc3526_prime_4096 = BN_get_rfc3526_prime_4096;
 pub const get_rfc3526_prime_6144 = BN_get_rfc3526_prime_6144;
 pub const get_rfc3526_prime_8192 = BN_get_rfc3526_prime_8192;
-pub const OSSL_PARAM_UNMODIFIED = @import("std").zig.c_translation.cast(usize, -@as(c_int, 1));
+pub const OSSL_PARAM_UNMODIFIED = @import("std").zig.c_translation.helpers.cast(usize, -@as(c_int, 1));
 pub const OSSL_PARAM_END = @compileError("unable to translate C expr: unexpected token '{'");
 // /usr/include/openssl/params.h:24:10
 pub const OSSL_PARAM_DEFN = @compileError("unable to translate C expr: unexpected token '{'");
 // /usr/include/openssl/params.h:27:10
-pub inline fn OSSL_PARAM_int(key: anytype, addr: anytype) @TypeOf(OSSL_PARAM_DEFN(key, OSSL_PARAM_INTEGER, addr, @import("std").zig.c_translation.sizeof(c_int))) {
+pub inline fn OSSL_PARAM_int(key: anytype, addr: anytype) @TypeOf(OSSL_PARAM_DEFN(key, OSSL_PARAM_INTEGER, addr, @import("std").zig.c_translation.helpers.sizeof(c_int))) {
     _ = &key;
     _ = &addr;
-    return OSSL_PARAM_DEFN(key, OSSL_PARAM_INTEGER, addr, @import("std").zig.c_translation.sizeof(c_int));
+    return OSSL_PARAM_DEFN(key, OSSL_PARAM_INTEGER, addr, @import("std").zig.c_translation.helpers.sizeof(c_int));
 }
-pub inline fn OSSL_PARAM_uint(key: anytype, addr: anytype) @TypeOf(OSSL_PARAM_DEFN(key, OSSL_PARAM_UNSIGNED_INTEGER, addr, @import("std").zig.c_translation.sizeof(c_uint))) {
+pub inline fn OSSL_PARAM_uint(key: anytype, addr: anytype) @TypeOf(OSSL_PARAM_DEFN(key, OSSL_PARAM_UNSIGNED_INTEGER, addr, @import("std").zig.c_translation.helpers.sizeof(c_uint))) {
     _ = &key;
     _ = &addr;
-    return OSSL_PARAM_DEFN(key, OSSL_PARAM_UNSIGNED_INTEGER, addr, @import("std").zig.c_translation.sizeof(c_uint));
+    return OSSL_PARAM_DEFN(key, OSSL_PARAM_UNSIGNED_INTEGER, addr, @import("std").zig.c_translation.helpers.sizeof(c_uint));
 }
-pub inline fn OSSL_PARAM_long(key: anytype, addr: anytype) @TypeOf(OSSL_PARAM_DEFN(key, OSSL_PARAM_INTEGER, addr, @import("std").zig.c_translation.sizeof(c_long))) {
+pub inline fn OSSL_PARAM_long(key: anytype, addr: anytype) @TypeOf(OSSL_PARAM_DEFN(key, OSSL_PARAM_INTEGER, addr, @import("std").zig.c_translation.helpers.sizeof(c_long))) {
     _ = &key;
     _ = &addr;
-    return OSSL_PARAM_DEFN(key, OSSL_PARAM_INTEGER, addr, @import("std").zig.c_translation.sizeof(c_long));
+    return OSSL_PARAM_DEFN(key, OSSL_PARAM_INTEGER, addr, @import("std").zig.c_translation.helpers.sizeof(c_long));
 }
-pub inline fn OSSL_PARAM_ulong(key: anytype, addr: anytype) @TypeOf(OSSL_PARAM_DEFN(key, OSSL_PARAM_UNSIGNED_INTEGER, addr, @import("std").zig.c_translation.sizeof(c_ulong))) {
+pub inline fn OSSL_PARAM_ulong(key: anytype, addr: anytype) @TypeOf(OSSL_PARAM_DEFN(key, OSSL_PARAM_UNSIGNED_INTEGER, addr, @import("std").zig.c_translation.helpers.sizeof(c_ulong))) {
     _ = &key;
     _ = &addr;
-    return OSSL_PARAM_DEFN(key, OSSL_PARAM_UNSIGNED_INTEGER, addr, @import("std").zig.c_translation.sizeof(c_ulong));
+    return OSSL_PARAM_DEFN(key, OSSL_PARAM_UNSIGNED_INTEGER, addr, @import("std").zig.c_translation.helpers.sizeof(c_ulong));
 }
-pub inline fn OSSL_PARAM_int32(key: anytype, addr: anytype) @TypeOf(OSSL_PARAM_DEFN(key, OSSL_PARAM_INTEGER, addr, @import("std").zig.c_translation.sizeof(i32))) {
+pub inline fn OSSL_PARAM_int32(key: anytype, addr: anytype) @TypeOf(OSSL_PARAM_DEFN(key, OSSL_PARAM_INTEGER, addr, @import("std").zig.c_translation.helpers.sizeof(i32))) {
     _ = &key;
     _ = &addr;
-    return OSSL_PARAM_DEFN(key, OSSL_PARAM_INTEGER, addr, @import("std").zig.c_translation.sizeof(i32));
+    return OSSL_PARAM_DEFN(key, OSSL_PARAM_INTEGER, addr, @import("std").zig.c_translation.helpers.sizeof(i32));
 }
-pub inline fn OSSL_PARAM_uint32(key: anytype, addr: anytype) @TypeOf(OSSL_PARAM_DEFN(key, OSSL_PARAM_UNSIGNED_INTEGER, addr, @import("std").zig.c_translation.sizeof(u32))) {
+pub inline fn OSSL_PARAM_uint32(key: anytype, addr: anytype) @TypeOf(OSSL_PARAM_DEFN(key, OSSL_PARAM_UNSIGNED_INTEGER, addr, @import("std").zig.c_translation.helpers.sizeof(u32))) {
     _ = &key;
     _ = &addr;
-    return OSSL_PARAM_DEFN(key, OSSL_PARAM_UNSIGNED_INTEGER, addr, @import("std").zig.c_translation.sizeof(u32));
+    return OSSL_PARAM_DEFN(key, OSSL_PARAM_UNSIGNED_INTEGER, addr, @import("std").zig.c_translation.helpers.sizeof(u32));
 }
-pub inline fn OSSL_PARAM_int64(key: anytype, addr: anytype) @TypeOf(OSSL_PARAM_DEFN(key, OSSL_PARAM_INTEGER, addr, @import("std").zig.c_translation.sizeof(i64))) {
+pub inline fn OSSL_PARAM_int64(key: anytype, addr: anytype) @TypeOf(OSSL_PARAM_DEFN(key, OSSL_PARAM_INTEGER, addr, @import("std").zig.c_translation.helpers.sizeof(i64))) {
     _ = &key;
     _ = &addr;
-    return OSSL_PARAM_DEFN(key, OSSL_PARAM_INTEGER, addr, @import("std").zig.c_translation.sizeof(i64));
+    return OSSL_PARAM_DEFN(key, OSSL_PARAM_INTEGER, addr, @import("std").zig.c_translation.helpers.sizeof(i64));
 }
-pub inline fn OSSL_PARAM_uint64(key: anytype, addr: anytype) @TypeOf(OSSL_PARAM_DEFN(key, OSSL_PARAM_UNSIGNED_INTEGER, addr, @import("std").zig.c_translation.sizeof(u64))) {
+pub inline fn OSSL_PARAM_uint64(key: anytype, addr: anytype) @TypeOf(OSSL_PARAM_DEFN(key, OSSL_PARAM_UNSIGNED_INTEGER, addr, @import("std").zig.c_translation.helpers.sizeof(u64))) {
     _ = &key;
     _ = &addr;
-    return OSSL_PARAM_DEFN(key, OSSL_PARAM_UNSIGNED_INTEGER, addr, @import("std").zig.c_translation.sizeof(u64));
+    return OSSL_PARAM_DEFN(key, OSSL_PARAM_UNSIGNED_INTEGER, addr, @import("std").zig.c_translation.helpers.sizeof(u64));
 }
-pub inline fn OSSL_PARAM_size_t(key: anytype, addr: anytype) @TypeOf(OSSL_PARAM_DEFN(key, OSSL_PARAM_UNSIGNED_INTEGER, addr, @import("std").zig.c_translation.sizeof(usize))) {
+pub inline fn OSSL_PARAM_size_t(key: anytype, addr: anytype) @TypeOf(OSSL_PARAM_DEFN(key, OSSL_PARAM_UNSIGNED_INTEGER, addr, @import("std").zig.c_translation.helpers.sizeof(usize))) {
     _ = &key;
     _ = &addr;
-    return OSSL_PARAM_DEFN(key, OSSL_PARAM_UNSIGNED_INTEGER, addr, @import("std").zig.c_translation.sizeof(usize));
+    return OSSL_PARAM_DEFN(key, OSSL_PARAM_UNSIGNED_INTEGER, addr, @import("std").zig.c_translation.helpers.sizeof(usize));
 }
-pub inline fn OSSL_PARAM_time_t(key: anytype, addr: anytype) @TypeOf(OSSL_PARAM_DEFN(key, OSSL_PARAM_INTEGER, addr, @import("std").zig.c_translation.sizeof(time_t))) {
+pub inline fn OSSL_PARAM_time_t(key: anytype, addr: anytype) @TypeOf(OSSL_PARAM_DEFN(key, OSSL_PARAM_INTEGER, addr, @import("std").zig.c_translation.helpers.sizeof(time_t))) {
     _ = &key;
     _ = &addr;
-    return OSSL_PARAM_DEFN(key, OSSL_PARAM_INTEGER, addr, @import("std").zig.c_translation.sizeof(time_t));
+    return OSSL_PARAM_DEFN(key, OSSL_PARAM_INTEGER, addr, @import("std").zig.c_translation.helpers.sizeof(time_t));
 }
-pub inline fn OSSL_PARAM_double(key: anytype, addr: anytype) @TypeOf(OSSL_PARAM_DEFN(key, OSSL_PARAM_REAL, addr, @import("std").zig.c_translation.sizeof(f64))) {
+pub inline fn OSSL_PARAM_double(key: anytype, addr: anytype) @TypeOf(OSSL_PARAM_DEFN(key, OSSL_PARAM_REAL, addr, @import("std").zig.c_translation.helpers.sizeof(f64))) {
     _ = &key;
     _ = &addr;
-    return OSSL_PARAM_DEFN(key, OSSL_PARAM_REAL, addr, @import("std").zig.c_translation.sizeof(f64));
+    return OSSL_PARAM_DEFN(key, OSSL_PARAM_REAL, addr, @import("std").zig.c_translation.helpers.sizeof(f64));
 }
 pub inline fn OSSL_PARAM_BN(key: anytype, bn: anytype, sz: anytype) @TypeOf(OSSL_PARAM_DEFN(key, OSSL_PARAM_UNSIGNED_INTEGER, bn, sz)) {
     _ = &key;
@@ -37766,8 +37766,8 @@ pub const B_ASN1_BMPSTRING = @as(c_int, 0x0800);
 pub const B_ASN1_UNKNOWN = @as(c_int, 0x1000);
 pub const B_ASN1_UTF8STRING = @as(c_int, 0x2000);
 pub const B_ASN1_UTCTIME = @as(c_int, 0x4000);
-pub const B_ASN1_GENERALIZEDTIME = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x8000, .hex);
-pub const B_ASN1_SEQUENCE = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x10000, .hex);
+pub const B_ASN1_GENERALIZEDTIME = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x8000, .hex);
+pub const B_ASN1_SEQUENCE = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x10000, .hex);
 pub const MBSTRING_FLAG = @as(c_int, 0x1000);
 pub const MBSTRING_UTF8 = MBSTRING_FLAG;
 pub const MBSTRING_ASC = MBSTRING_FLAG | @as(c_int, 1);
@@ -37783,7 +37783,7 @@ pub inline fn sk_X509_ALGOR_num(sk: anytype) @TypeOf(OPENSSL_sk_num(ossl_check_c
 pub inline fn sk_X509_ALGOR_value(sk: anytype, idx: anytype) [*c]X509_ALGOR {
     _ = &sk;
     _ = &idx;
-    return @import("std").zig.c_translation.cast([*c]X509_ALGOR, OPENSSL_sk_value(ossl_check_const_X509_ALGOR_sk_type(sk), idx));
+    return @import("std").zig.c_translation.helpers.cast([*c]X509_ALGOR, OPENSSL_sk_value(ossl_check_const_X509_ALGOR_sk_type(sk), idx));
 }
 pub const sk_X509_ALGOR_new = @compileError("unable to translate C expr: unexpected token ')'");
 // /usr/include/openssl/asn1.h:135:9
@@ -37807,12 +37807,12 @@ pub inline fn sk_X509_ALGOR_zero(sk: anytype) @TypeOf(OPENSSL_sk_zero(ossl_check
 pub inline fn sk_X509_ALGOR_delete(sk: anytype, i: anytype) [*c]X509_ALGOR {
     _ = &sk;
     _ = &i;
-    return @import("std").zig.c_translation.cast([*c]X509_ALGOR, OPENSSL_sk_delete(ossl_check_X509_ALGOR_sk_type(sk), i));
+    return @import("std").zig.c_translation.helpers.cast([*c]X509_ALGOR, OPENSSL_sk_delete(ossl_check_X509_ALGOR_sk_type(sk), i));
 }
 pub inline fn sk_X509_ALGOR_delete_ptr(sk: anytype, ptr: anytype) [*c]X509_ALGOR {
     _ = &sk;
     _ = &ptr;
-    return @import("std").zig.c_translation.cast([*c]X509_ALGOR, OPENSSL_sk_delete_ptr(ossl_check_X509_ALGOR_sk_type(sk), ossl_check_X509_ALGOR_type(ptr)));
+    return @import("std").zig.c_translation.helpers.cast([*c]X509_ALGOR, OPENSSL_sk_delete_ptr(ossl_check_X509_ALGOR_sk_type(sk), ossl_check_X509_ALGOR_type(ptr)));
 }
 pub inline fn sk_X509_ALGOR_push(sk: anytype, ptr: anytype) @TypeOf(OPENSSL_sk_push(ossl_check_X509_ALGOR_sk_type(sk), ossl_check_X509_ALGOR_type(ptr))) {
     _ = &sk;
@@ -37826,11 +37826,11 @@ pub inline fn sk_X509_ALGOR_unshift(sk: anytype, ptr: anytype) @TypeOf(OPENSSL_s
 }
 pub inline fn sk_X509_ALGOR_pop(sk: anytype) [*c]X509_ALGOR {
     _ = &sk;
-    return @import("std").zig.c_translation.cast([*c]X509_ALGOR, OPENSSL_sk_pop(ossl_check_X509_ALGOR_sk_type(sk)));
+    return @import("std").zig.c_translation.helpers.cast([*c]X509_ALGOR, OPENSSL_sk_pop(ossl_check_X509_ALGOR_sk_type(sk)));
 }
 pub inline fn sk_X509_ALGOR_shift(sk: anytype) [*c]X509_ALGOR {
     _ = &sk;
-    return @import("std").zig.c_translation.cast([*c]X509_ALGOR, OPENSSL_sk_shift(ossl_check_X509_ALGOR_sk_type(sk)));
+    return @import("std").zig.c_translation.helpers.cast([*c]X509_ALGOR, OPENSSL_sk_shift(ossl_check_X509_ALGOR_sk_type(sk)));
 }
 pub inline fn sk_X509_ALGOR_pop_free(sk: anytype, freefunc: anytype) @TypeOf(OPENSSL_sk_pop_free(ossl_check_X509_ALGOR_sk_type(sk), ossl_check_X509_ALGOR_freefunc_type(freefunc))) {
     _ = &sk;
@@ -37847,7 +37847,7 @@ pub inline fn sk_X509_ALGOR_set(sk: anytype, idx: anytype, ptr: anytype) [*c]X50
     _ = &sk;
     _ = &idx;
     _ = &ptr;
-    return @import("std").zig.c_translation.cast([*c]X509_ALGOR, OPENSSL_sk_set(ossl_check_X509_ALGOR_sk_type(sk), idx, ossl_check_X509_ALGOR_type(ptr)));
+    return @import("std").zig.c_translation.helpers.cast([*c]X509_ALGOR, OPENSSL_sk_set(ossl_check_X509_ALGOR_sk_type(sk), idx, ossl_check_X509_ALGOR_type(ptr)));
 }
 pub inline fn sk_X509_ALGOR_find(sk: anytype, ptr: anytype) @TypeOf(OPENSSL_sk_find(ossl_check_X509_ALGOR_sk_type(sk), ossl_check_X509_ALGOR_type(ptr))) {
     _ = &sk;
@@ -37880,7 +37880,7 @@ pub const sk_X509_ALGOR_deep_copy = @compileError("unable to translate C expr: u
 pub inline fn sk_X509_ALGOR_set_cmp_func(sk: anytype, cmp: anytype) sk_X509_ALGOR_compfunc {
     _ = &sk;
     _ = &cmp;
-    return @import("std").zig.c_translation.cast(sk_X509_ALGOR_compfunc, OPENSSL_sk_set_cmp_func(ossl_check_X509_ALGOR_sk_type(sk), ossl_check_X509_ALGOR_compfunc_type(cmp)));
+    return @import("std").zig.c_translation.helpers.cast(sk_X509_ALGOR_compfunc, OPENSSL_sk_set_cmp_func(ossl_check_X509_ALGOR_sk_type(sk), ossl_check_X509_ALGOR_compfunc_type(cmp)));
 }
 pub const ASN1_STRING_FLAG_BITS_LEFT = @as(c_int, 0x08);
 pub const ASN1_STRING_FLAG_NDEF = @as(c_int, 0x010);
@@ -37901,7 +37901,7 @@ pub inline fn sk_ASN1_STRING_TABLE_num(sk: anytype) @TypeOf(OPENSSL_sk_num(ossl_
 pub inline fn sk_ASN1_STRING_TABLE_value(sk: anytype, idx: anytype) [*c]ASN1_STRING_TABLE {
     _ = &sk;
     _ = &idx;
-    return @import("std").zig.c_translation.cast([*c]ASN1_STRING_TABLE, OPENSSL_sk_value(ossl_check_const_ASN1_STRING_TABLE_sk_type(sk), idx));
+    return @import("std").zig.c_translation.helpers.cast([*c]ASN1_STRING_TABLE, OPENSSL_sk_value(ossl_check_const_ASN1_STRING_TABLE_sk_type(sk), idx));
 }
 pub const sk_ASN1_STRING_TABLE_new = @compileError("unable to translate C expr: unexpected token ')'");
 // /usr/include/openssl/asn1.h:237:9
@@ -37925,12 +37925,12 @@ pub inline fn sk_ASN1_STRING_TABLE_zero(sk: anytype) @TypeOf(OPENSSL_sk_zero(oss
 pub inline fn sk_ASN1_STRING_TABLE_delete(sk: anytype, i: anytype) [*c]ASN1_STRING_TABLE {
     _ = &sk;
     _ = &i;
-    return @import("std").zig.c_translation.cast([*c]ASN1_STRING_TABLE, OPENSSL_sk_delete(ossl_check_ASN1_STRING_TABLE_sk_type(sk), i));
+    return @import("std").zig.c_translation.helpers.cast([*c]ASN1_STRING_TABLE, OPENSSL_sk_delete(ossl_check_ASN1_STRING_TABLE_sk_type(sk), i));
 }
 pub inline fn sk_ASN1_STRING_TABLE_delete_ptr(sk: anytype, ptr: anytype) [*c]ASN1_STRING_TABLE {
     _ = &sk;
     _ = &ptr;
-    return @import("std").zig.c_translation.cast([*c]ASN1_STRING_TABLE, OPENSSL_sk_delete_ptr(ossl_check_ASN1_STRING_TABLE_sk_type(sk), ossl_check_ASN1_STRING_TABLE_type(ptr)));
+    return @import("std").zig.c_translation.helpers.cast([*c]ASN1_STRING_TABLE, OPENSSL_sk_delete_ptr(ossl_check_ASN1_STRING_TABLE_sk_type(sk), ossl_check_ASN1_STRING_TABLE_type(ptr)));
 }
 pub inline fn sk_ASN1_STRING_TABLE_push(sk: anytype, ptr: anytype) @TypeOf(OPENSSL_sk_push(ossl_check_ASN1_STRING_TABLE_sk_type(sk), ossl_check_ASN1_STRING_TABLE_type(ptr))) {
     _ = &sk;
@@ -37944,11 +37944,11 @@ pub inline fn sk_ASN1_STRING_TABLE_unshift(sk: anytype, ptr: anytype) @TypeOf(OP
 }
 pub inline fn sk_ASN1_STRING_TABLE_pop(sk: anytype) [*c]ASN1_STRING_TABLE {
     _ = &sk;
-    return @import("std").zig.c_translation.cast([*c]ASN1_STRING_TABLE, OPENSSL_sk_pop(ossl_check_ASN1_STRING_TABLE_sk_type(sk)));
+    return @import("std").zig.c_translation.helpers.cast([*c]ASN1_STRING_TABLE, OPENSSL_sk_pop(ossl_check_ASN1_STRING_TABLE_sk_type(sk)));
 }
 pub inline fn sk_ASN1_STRING_TABLE_shift(sk: anytype) [*c]ASN1_STRING_TABLE {
     _ = &sk;
-    return @import("std").zig.c_translation.cast([*c]ASN1_STRING_TABLE, OPENSSL_sk_shift(ossl_check_ASN1_STRING_TABLE_sk_type(sk)));
+    return @import("std").zig.c_translation.helpers.cast([*c]ASN1_STRING_TABLE, OPENSSL_sk_shift(ossl_check_ASN1_STRING_TABLE_sk_type(sk)));
 }
 pub inline fn sk_ASN1_STRING_TABLE_pop_free(sk: anytype, freefunc: anytype) @TypeOf(OPENSSL_sk_pop_free(ossl_check_ASN1_STRING_TABLE_sk_type(sk), ossl_check_ASN1_STRING_TABLE_freefunc_type(freefunc))) {
     _ = &sk;
@@ -37965,7 +37965,7 @@ pub inline fn sk_ASN1_STRING_TABLE_set(sk: anytype, idx: anytype, ptr: anytype) 
     _ = &sk;
     _ = &idx;
     _ = &ptr;
-    return @import("std").zig.c_translation.cast([*c]ASN1_STRING_TABLE, OPENSSL_sk_set(ossl_check_ASN1_STRING_TABLE_sk_type(sk), idx, ossl_check_ASN1_STRING_TABLE_type(ptr)));
+    return @import("std").zig.c_translation.helpers.cast([*c]ASN1_STRING_TABLE, OPENSSL_sk_set(ossl_check_ASN1_STRING_TABLE_sk_type(sk), idx, ossl_check_ASN1_STRING_TABLE_type(ptr)));
 }
 pub inline fn sk_ASN1_STRING_TABLE_find(sk: anytype, ptr: anytype) @TypeOf(OPENSSL_sk_find(ossl_check_ASN1_STRING_TABLE_sk_type(sk), ossl_check_ASN1_STRING_TABLE_type(ptr))) {
     _ = &sk;
@@ -37998,9 +37998,9 @@ pub const sk_ASN1_STRING_TABLE_deep_copy = @compileError("unable to translate C 
 pub inline fn sk_ASN1_STRING_TABLE_set_cmp_func(sk: anytype, cmp: anytype) sk_ASN1_STRING_TABLE_compfunc {
     _ = &sk;
     _ = &cmp;
-    return @import("std").zig.c_translation.cast(sk_ASN1_STRING_TABLE_compfunc, OPENSSL_sk_set_cmp_func(ossl_check_ASN1_STRING_TABLE_sk_type(sk), ossl_check_ASN1_STRING_TABLE_compfunc_type(cmp)));
+    return @import("std").zig.c_translation.helpers.cast(sk_ASN1_STRING_TABLE_compfunc, OPENSSL_sk_set_cmp_func(ossl_check_ASN1_STRING_TABLE_sk_type(sk), ossl_check_ASN1_STRING_TABLE_compfunc_type(cmp)));
 }
-pub const ub_name = @import("std").zig.c_translation.promoteIntLiteral(c_int, 32768, .decimal);
+pub const ub_name = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 32768, .decimal);
 pub const ub_common_name = @as(c_int, 64);
 pub const ub_locality_name = @as(c_int, 128);
 pub const ub_state_name = @as(c_int, 128);
@@ -38138,7 +38138,7 @@ pub inline fn sk_ASN1_TYPE_num(sk: anytype) @TypeOf(OPENSSL_sk_num(ossl_check_co
 pub inline fn sk_ASN1_TYPE_value(sk: anytype, idx: anytype) [*c]ASN1_TYPE {
     _ = &sk;
     _ = &idx;
-    return @import("std").zig.c_translation.cast([*c]ASN1_TYPE, OPENSSL_sk_value(ossl_check_const_ASN1_TYPE_sk_type(sk), idx));
+    return @import("std").zig.c_translation.helpers.cast([*c]ASN1_TYPE, OPENSSL_sk_value(ossl_check_const_ASN1_TYPE_sk_type(sk), idx));
 }
 pub const sk_ASN1_TYPE_new = @compileError("unable to translate C expr: unexpected token ')'");
 // /usr/include/openssl/asn1.h:557:9
@@ -38162,12 +38162,12 @@ pub inline fn sk_ASN1_TYPE_zero(sk: anytype) @TypeOf(OPENSSL_sk_zero(ossl_check_
 pub inline fn sk_ASN1_TYPE_delete(sk: anytype, i: anytype) [*c]ASN1_TYPE {
     _ = &sk;
     _ = &i;
-    return @import("std").zig.c_translation.cast([*c]ASN1_TYPE, OPENSSL_sk_delete(ossl_check_ASN1_TYPE_sk_type(sk), i));
+    return @import("std").zig.c_translation.helpers.cast([*c]ASN1_TYPE, OPENSSL_sk_delete(ossl_check_ASN1_TYPE_sk_type(sk), i));
 }
 pub inline fn sk_ASN1_TYPE_delete_ptr(sk: anytype, ptr: anytype) [*c]ASN1_TYPE {
     _ = &sk;
     _ = &ptr;
-    return @import("std").zig.c_translation.cast([*c]ASN1_TYPE, OPENSSL_sk_delete_ptr(ossl_check_ASN1_TYPE_sk_type(sk), ossl_check_ASN1_TYPE_type(ptr)));
+    return @import("std").zig.c_translation.helpers.cast([*c]ASN1_TYPE, OPENSSL_sk_delete_ptr(ossl_check_ASN1_TYPE_sk_type(sk), ossl_check_ASN1_TYPE_type(ptr)));
 }
 pub inline fn sk_ASN1_TYPE_push(sk: anytype, ptr: anytype) @TypeOf(OPENSSL_sk_push(ossl_check_ASN1_TYPE_sk_type(sk), ossl_check_ASN1_TYPE_type(ptr))) {
     _ = &sk;
@@ -38181,11 +38181,11 @@ pub inline fn sk_ASN1_TYPE_unshift(sk: anytype, ptr: anytype) @TypeOf(OPENSSL_sk
 }
 pub inline fn sk_ASN1_TYPE_pop(sk: anytype) [*c]ASN1_TYPE {
     _ = &sk;
-    return @import("std").zig.c_translation.cast([*c]ASN1_TYPE, OPENSSL_sk_pop(ossl_check_ASN1_TYPE_sk_type(sk)));
+    return @import("std").zig.c_translation.helpers.cast([*c]ASN1_TYPE, OPENSSL_sk_pop(ossl_check_ASN1_TYPE_sk_type(sk)));
 }
 pub inline fn sk_ASN1_TYPE_shift(sk: anytype) [*c]ASN1_TYPE {
     _ = &sk;
-    return @import("std").zig.c_translation.cast([*c]ASN1_TYPE, OPENSSL_sk_shift(ossl_check_ASN1_TYPE_sk_type(sk)));
+    return @import("std").zig.c_translation.helpers.cast([*c]ASN1_TYPE, OPENSSL_sk_shift(ossl_check_ASN1_TYPE_sk_type(sk)));
 }
 pub inline fn sk_ASN1_TYPE_pop_free(sk: anytype, freefunc: anytype) @TypeOf(OPENSSL_sk_pop_free(ossl_check_ASN1_TYPE_sk_type(sk), ossl_check_ASN1_TYPE_freefunc_type(freefunc))) {
     _ = &sk;
@@ -38202,7 +38202,7 @@ pub inline fn sk_ASN1_TYPE_set(sk: anytype, idx: anytype, ptr: anytype) [*c]ASN1
     _ = &sk;
     _ = &idx;
     _ = &ptr;
-    return @import("std").zig.c_translation.cast([*c]ASN1_TYPE, OPENSSL_sk_set(ossl_check_ASN1_TYPE_sk_type(sk), idx, ossl_check_ASN1_TYPE_type(ptr)));
+    return @import("std").zig.c_translation.helpers.cast([*c]ASN1_TYPE, OPENSSL_sk_set(ossl_check_ASN1_TYPE_sk_type(sk), idx, ossl_check_ASN1_TYPE_type(ptr)));
 }
 pub inline fn sk_ASN1_TYPE_find(sk: anytype, ptr: anytype) @TypeOf(OPENSSL_sk_find(ossl_check_ASN1_TYPE_sk_type(sk), ossl_check_ASN1_TYPE_type(ptr))) {
     _ = &sk;
@@ -38235,7 +38235,7 @@ pub const sk_ASN1_TYPE_deep_copy = @compileError("unable to translate C expr: un
 pub inline fn sk_ASN1_TYPE_set_cmp_func(sk: anytype, cmp: anytype) sk_ASN1_TYPE_compfunc {
     _ = &sk;
     _ = &cmp;
-    return @import("std").zig.c_translation.cast(sk_ASN1_TYPE_compfunc, OPENSSL_sk_set_cmp_func(ossl_check_ASN1_TYPE_sk_type(sk), ossl_check_ASN1_TYPE_compfunc_type(cmp)));
+    return @import("std").zig.c_translation.helpers.cast(sk_ASN1_TYPE_compfunc, OPENSSL_sk_set_cmp_func(ossl_check_ASN1_TYPE_sk_type(sk), ossl_check_ASN1_TYPE_compfunc_type(cmp)));
 }
 pub const B_ASN1_TIME = B_ASN1_UTCTIME | B_ASN1_GENERALIZEDTIME;
 pub const B_ASN1_PRINTABLE = ((((((((B_ASN1_NUMERICSTRING | B_ASN1_PRINTABLESTRING) | B_ASN1_T61STRING) | B_ASN1_IA5STRING) | B_ASN1_BIT_STRING) | B_ASN1_UNIVERSALSTRING) | B_ASN1_BMPSTRING) | B_ASN1_UTF8STRING) | B_ASN1_SEQUENCE) | B_ASN1_UNKNOWN;
@@ -38248,7 +38248,7 @@ pub inline fn sk_ASN1_OBJECT_num(sk: anytype) @TypeOf(OPENSSL_sk_num(ossl_check_
 pub inline fn sk_ASN1_OBJECT_value(sk: anytype, idx: anytype) [*c]ASN1_OBJECT {
     _ = &sk;
     _ = &idx;
-    return @import("std").zig.c_translation.cast([*c]ASN1_OBJECT, OPENSSL_sk_value(ossl_check_const_ASN1_OBJECT_sk_type(sk), idx));
+    return @import("std").zig.c_translation.helpers.cast([*c]ASN1_OBJECT, OPENSSL_sk_value(ossl_check_const_ASN1_OBJECT_sk_type(sk), idx));
 }
 pub const sk_ASN1_OBJECT_new = @compileError("unable to translate C expr: unexpected token ')'");
 // /usr/include/openssl/asn1.h:637:9
@@ -38272,12 +38272,12 @@ pub inline fn sk_ASN1_OBJECT_zero(sk: anytype) @TypeOf(OPENSSL_sk_zero(ossl_chec
 pub inline fn sk_ASN1_OBJECT_delete(sk: anytype, i: anytype) [*c]ASN1_OBJECT {
     _ = &sk;
     _ = &i;
-    return @import("std").zig.c_translation.cast([*c]ASN1_OBJECT, OPENSSL_sk_delete(ossl_check_ASN1_OBJECT_sk_type(sk), i));
+    return @import("std").zig.c_translation.helpers.cast([*c]ASN1_OBJECT, OPENSSL_sk_delete(ossl_check_ASN1_OBJECT_sk_type(sk), i));
 }
 pub inline fn sk_ASN1_OBJECT_delete_ptr(sk: anytype, ptr: anytype) [*c]ASN1_OBJECT {
     _ = &sk;
     _ = &ptr;
-    return @import("std").zig.c_translation.cast([*c]ASN1_OBJECT, OPENSSL_sk_delete_ptr(ossl_check_ASN1_OBJECT_sk_type(sk), ossl_check_ASN1_OBJECT_type(ptr)));
+    return @import("std").zig.c_translation.helpers.cast([*c]ASN1_OBJECT, OPENSSL_sk_delete_ptr(ossl_check_ASN1_OBJECT_sk_type(sk), ossl_check_ASN1_OBJECT_type(ptr)));
 }
 pub inline fn sk_ASN1_OBJECT_push(sk: anytype, ptr: anytype) @TypeOf(OPENSSL_sk_push(ossl_check_ASN1_OBJECT_sk_type(sk), ossl_check_ASN1_OBJECT_type(ptr))) {
     _ = &sk;
@@ -38291,11 +38291,11 @@ pub inline fn sk_ASN1_OBJECT_unshift(sk: anytype, ptr: anytype) @TypeOf(OPENSSL_
 }
 pub inline fn sk_ASN1_OBJECT_pop(sk: anytype) [*c]ASN1_OBJECT {
     _ = &sk;
-    return @import("std").zig.c_translation.cast([*c]ASN1_OBJECT, OPENSSL_sk_pop(ossl_check_ASN1_OBJECT_sk_type(sk)));
+    return @import("std").zig.c_translation.helpers.cast([*c]ASN1_OBJECT, OPENSSL_sk_pop(ossl_check_ASN1_OBJECT_sk_type(sk)));
 }
 pub inline fn sk_ASN1_OBJECT_shift(sk: anytype) [*c]ASN1_OBJECT {
     _ = &sk;
-    return @import("std").zig.c_translation.cast([*c]ASN1_OBJECT, OPENSSL_sk_shift(ossl_check_ASN1_OBJECT_sk_type(sk)));
+    return @import("std").zig.c_translation.helpers.cast([*c]ASN1_OBJECT, OPENSSL_sk_shift(ossl_check_ASN1_OBJECT_sk_type(sk)));
 }
 pub inline fn sk_ASN1_OBJECT_pop_free(sk: anytype, freefunc: anytype) @TypeOf(OPENSSL_sk_pop_free(ossl_check_ASN1_OBJECT_sk_type(sk), ossl_check_ASN1_OBJECT_freefunc_type(freefunc))) {
     _ = &sk;
@@ -38312,7 +38312,7 @@ pub inline fn sk_ASN1_OBJECT_set(sk: anytype, idx: anytype, ptr: anytype) [*c]AS
     _ = &sk;
     _ = &idx;
     _ = &ptr;
-    return @import("std").zig.c_translation.cast([*c]ASN1_OBJECT, OPENSSL_sk_set(ossl_check_ASN1_OBJECT_sk_type(sk), idx, ossl_check_ASN1_OBJECT_type(ptr)));
+    return @import("std").zig.c_translation.helpers.cast([*c]ASN1_OBJECT, OPENSSL_sk_set(ossl_check_ASN1_OBJECT_sk_type(sk), idx, ossl_check_ASN1_OBJECT_type(ptr)));
 }
 pub inline fn sk_ASN1_OBJECT_find(sk: anytype, ptr: anytype) @TypeOf(OPENSSL_sk_find(ossl_check_ASN1_OBJECT_sk_type(sk), ossl_check_ASN1_OBJECT_type(ptr))) {
     _ = &sk;
@@ -38345,7 +38345,7 @@ pub const sk_ASN1_OBJECT_deep_copy = @compileError("unable to translate C expr: 
 pub inline fn sk_ASN1_OBJECT_set_cmp_func(sk: anytype, cmp: anytype) sk_ASN1_OBJECT_compfunc {
     _ = &sk;
     _ = &cmp;
-    return @import("std").zig.c_translation.cast(sk_ASN1_OBJECT_compfunc, OPENSSL_sk_set_cmp_func(ossl_check_ASN1_OBJECT_sk_type(sk), ossl_check_ASN1_OBJECT_compfunc_type(cmp)));
+    return @import("std").zig.c_translation.helpers.cast(sk_ASN1_OBJECT_compfunc, OPENSSL_sk_set_cmp_func(ossl_check_ASN1_OBJECT_sk_type(sk), ossl_check_ASN1_OBJECT_compfunc_type(cmp)));
 }
 pub inline fn sk_ASN1_INTEGER_num(sk: anytype) @TypeOf(OPENSSL_sk_num(ossl_check_const_ASN1_INTEGER_sk_type(sk))) {
     _ = &sk;
@@ -38354,7 +38354,7 @@ pub inline fn sk_ASN1_INTEGER_num(sk: anytype) @TypeOf(OPENSSL_sk_num(ossl_check
 pub inline fn sk_ASN1_INTEGER_value(sk: anytype, idx: anytype) [*c]ASN1_INTEGER {
     _ = &sk;
     _ = &idx;
-    return @import("std").zig.c_translation.cast([*c]ASN1_INTEGER, OPENSSL_sk_value(ossl_check_const_ASN1_INTEGER_sk_type(sk), idx));
+    return @import("std").zig.c_translation.helpers.cast([*c]ASN1_INTEGER, OPENSSL_sk_value(ossl_check_const_ASN1_INTEGER_sk_type(sk), idx));
 }
 pub const sk_ASN1_INTEGER_new = @compileError("unable to translate C expr: unexpected token ')'");
 // /usr/include/openssl/asn1.h:703:9
@@ -38378,12 +38378,12 @@ pub inline fn sk_ASN1_INTEGER_zero(sk: anytype) @TypeOf(OPENSSL_sk_zero(ossl_che
 pub inline fn sk_ASN1_INTEGER_delete(sk: anytype, i: anytype) [*c]ASN1_INTEGER {
     _ = &sk;
     _ = &i;
-    return @import("std").zig.c_translation.cast([*c]ASN1_INTEGER, OPENSSL_sk_delete(ossl_check_ASN1_INTEGER_sk_type(sk), i));
+    return @import("std").zig.c_translation.helpers.cast([*c]ASN1_INTEGER, OPENSSL_sk_delete(ossl_check_ASN1_INTEGER_sk_type(sk), i));
 }
 pub inline fn sk_ASN1_INTEGER_delete_ptr(sk: anytype, ptr: anytype) [*c]ASN1_INTEGER {
     _ = &sk;
     _ = &ptr;
-    return @import("std").zig.c_translation.cast([*c]ASN1_INTEGER, OPENSSL_sk_delete_ptr(ossl_check_ASN1_INTEGER_sk_type(sk), ossl_check_ASN1_INTEGER_type(ptr)));
+    return @import("std").zig.c_translation.helpers.cast([*c]ASN1_INTEGER, OPENSSL_sk_delete_ptr(ossl_check_ASN1_INTEGER_sk_type(sk), ossl_check_ASN1_INTEGER_type(ptr)));
 }
 pub inline fn sk_ASN1_INTEGER_push(sk: anytype, ptr: anytype) @TypeOf(OPENSSL_sk_push(ossl_check_ASN1_INTEGER_sk_type(sk), ossl_check_ASN1_INTEGER_type(ptr))) {
     _ = &sk;
@@ -38397,11 +38397,11 @@ pub inline fn sk_ASN1_INTEGER_unshift(sk: anytype, ptr: anytype) @TypeOf(OPENSSL
 }
 pub inline fn sk_ASN1_INTEGER_pop(sk: anytype) [*c]ASN1_INTEGER {
     _ = &sk;
-    return @import("std").zig.c_translation.cast([*c]ASN1_INTEGER, OPENSSL_sk_pop(ossl_check_ASN1_INTEGER_sk_type(sk)));
+    return @import("std").zig.c_translation.helpers.cast([*c]ASN1_INTEGER, OPENSSL_sk_pop(ossl_check_ASN1_INTEGER_sk_type(sk)));
 }
 pub inline fn sk_ASN1_INTEGER_shift(sk: anytype) [*c]ASN1_INTEGER {
     _ = &sk;
-    return @import("std").zig.c_translation.cast([*c]ASN1_INTEGER, OPENSSL_sk_shift(ossl_check_ASN1_INTEGER_sk_type(sk)));
+    return @import("std").zig.c_translation.helpers.cast([*c]ASN1_INTEGER, OPENSSL_sk_shift(ossl_check_ASN1_INTEGER_sk_type(sk)));
 }
 pub inline fn sk_ASN1_INTEGER_pop_free(sk: anytype, freefunc: anytype) @TypeOf(OPENSSL_sk_pop_free(ossl_check_ASN1_INTEGER_sk_type(sk), ossl_check_ASN1_INTEGER_freefunc_type(freefunc))) {
     _ = &sk;
@@ -38418,7 +38418,7 @@ pub inline fn sk_ASN1_INTEGER_set(sk: anytype, idx: anytype, ptr: anytype) [*c]A
     _ = &sk;
     _ = &idx;
     _ = &ptr;
-    return @import("std").zig.c_translation.cast([*c]ASN1_INTEGER, OPENSSL_sk_set(ossl_check_ASN1_INTEGER_sk_type(sk), idx, ossl_check_ASN1_INTEGER_type(ptr)));
+    return @import("std").zig.c_translation.helpers.cast([*c]ASN1_INTEGER, OPENSSL_sk_set(ossl_check_ASN1_INTEGER_sk_type(sk), idx, ossl_check_ASN1_INTEGER_type(ptr)));
 }
 pub inline fn sk_ASN1_INTEGER_find(sk: anytype, ptr: anytype) @TypeOf(OPENSSL_sk_find(ossl_check_ASN1_INTEGER_sk_type(sk), ossl_check_ASN1_INTEGER_type(ptr))) {
     _ = &sk;
@@ -38451,7 +38451,7 @@ pub const sk_ASN1_INTEGER_deep_copy = @compileError("unable to translate C expr:
 pub inline fn sk_ASN1_INTEGER_set_cmp_func(sk: anytype, cmp: anytype) sk_ASN1_INTEGER_compfunc {
     _ = &sk;
     _ = &cmp;
-    return @import("std").zig.c_translation.cast(sk_ASN1_INTEGER_compfunc, OPENSSL_sk_set_cmp_func(ossl_check_ASN1_INTEGER_sk_type(sk), ossl_check_ASN1_INTEGER_compfunc_type(cmp)));
+    return @import("std").zig.c_translation.helpers.cast(sk_ASN1_INTEGER_compfunc, OPENSSL_sk_set_cmp_func(ossl_check_ASN1_INTEGER_sk_type(sk), ossl_check_ASN1_INTEGER_compfunc_type(cmp)));
 }
 pub inline fn sk_ASN1_UTF8STRING_num(sk: anytype) @TypeOf(OPENSSL_sk_num(ossl_check_const_ASN1_UTF8STRING_sk_type(sk))) {
     _ = &sk;
@@ -38460,7 +38460,7 @@ pub inline fn sk_ASN1_UTF8STRING_num(sk: anytype) @TypeOf(OPENSSL_sk_num(ossl_ch
 pub inline fn sk_ASN1_UTF8STRING_value(sk: anytype, idx: anytype) [*c]ASN1_UTF8STRING {
     _ = &sk;
     _ = &idx;
-    return @import("std").zig.c_translation.cast([*c]ASN1_UTF8STRING, OPENSSL_sk_value(ossl_check_const_ASN1_UTF8STRING_sk_type(sk), idx));
+    return @import("std").zig.c_translation.helpers.cast([*c]ASN1_UTF8STRING, OPENSSL_sk_value(ossl_check_const_ASN1_UTF8STRING_sk_type(sk), idx));
 }
 pub const sk_ASN1_UTF8STRING_new = @compileError("unable to translate C expr: unexpected token ')'");
 // /usr/include/openssl/asn1.h:765:9
@@ -38484,12 +38484,12 @@ pub inline fn sk_ASN1_UTF8STRING_zero(sk: anytype) @TypeOf(OPENSSL_sk_zero(ossl_
 pub inline fn sk_ASN1_UTF8STRING_delete(sk: anytype, i: anytype) [*c]ASN1_UTF8STRING {
     _ = &sk;
     _ = &i;
-    return @import("std").zig.c_translation.cast([*c]ASN1_UTF8STRING, OPENSSL_sk_delete(ossl_check_ASN1_UTF8STRING_sk_type(sk), i));
+    return @import("std").zig.c_translation.helpers.cast([*c]ASN1_UTF8STRING, OPENSSL_sk_delete(ossl_check_ASN1_UTF8STRING_sk_type(sk), i));
 }
 pub inline fn sk_ASN1_UTF8STRING_delete_ptr(sk: anytype, ptr: anytype) [*c]ASN1_UTF8STRING {
     _ = &sk;
     _ = &ptr;
-    return @import("std").zig.c_translation.cast([*c]ASN1_UTF8STRING, OPENSSL_sk_delete_ptr(ossl_check_ASN1_UTF8STRING_sk_type(sk), ossl_check_ASN1_UTF8STRING_type(ptr)));
+    return @import("std").zig.c_translation.helpers.cast([*c]ASN1_UTF8STRING, OPENSSL_sk_delete_ptr(ossl_check_ASN1_UTF8STRING_sk_type(sk), ossl_check_ASN1_UTF8STRING_type(ptr)));
 }
 pub inline fn sk_ASN1_UTF8STRING_push(sk: anytype, ptr: anytype) @TypeOf(OPENSSL_sk_push(ossl_check_ASN1_UTF8STRING_sk_type(sk), ossl_check_ASN1_UTF8STRING_type(ptr))) {
     _ = &sk;
@@ -38503,11 +38503,11 @@ pub inline fn sk_ASN1_UTF8STRING_unshift(sk: anytype, ptr: anytype) @TypeOf(OPEN
 }
 pub inline fn sk_ASN1_UTF8STRING_pop(sk: anytype) [*c]ASN1_UTF8STRING {
     _ = &sk;
-    return @import("std").zig.c_translation.cast([*c]ASN1_UTF8STRING, OPENSSL_sk_pop(ossl_check_ASN1_UTF8STRING_sk_type(sk)));
+    return @import("std").zig.c_translation.helpers.cast([*c]ASN1_UTF8STRING, OPENSSL_sk_pop(ossl_check_ASN1_UTF8STRING_sk_type(sk)));
 }
 pub inline fn sk_ASN1_UTF8STRING_shift(sk: anytype) [*c]ASN1_UTF8STRING {
     _ = &sk;
-    return @import("std").zig.c_translation.cast([*c]ASN1_UTF8STRING, OPENSSL_sk_shift(ossl_check_ASN1_UTF8STRING_sk_type(sk)));
+    return @import("std").zig.c_translation.helpers.cast([*c]ASN1_UTF8STRING, OPENSSL_sk_shift(ossl_check_ASN1_UTF8STRING_sk_type(sk)));
 }
 pub inline fn sk_ASN1_UTF8STRING_pop_free(sk: anytype, freefunc: anytype) @TypeOf(OPENSSL_sk_pop_free(ossl_check_ASN1_UTF8STRING_sk_type(sk), ossl_check_ASN1_UTF8STRING_freefunc_type(freefunc))) {
     _ = &sk;
@@ -38524,7 +38524,7 @@ pub inline fn sk_ASN1_UTF8STRING_set(sk: anytype, idx: anytype, ptr: anytype) [*
     _ = &sk;
     _ = &idx;
     _ = &ptr;
-    return @import("std").zig.c_translation.cast([*c]ASN1_UTF8STRING, OPENSSL_sk_set(ossl_check_ASN1_UTF8STRING_sk_type(sk), idx, ossl_check_ASN1_UTF8STRING_type(ptr)));
+    return @import("std").zig.c_translation.helpers.cast([*c]ASN1_UTF8STRING, OPENSSL_sk_set(ossl_check_ASN1_UTF8STRING_sk_type(sk), idx, ossl_check_ASN1_UTF8STRING_type(ptr)));
 }
 pub inline fn sk_ASN1_UTF8STRING_find(sk: anytype, ptr: anytype) @TypeOf(OPENSSL_sk_find(ossl_check_ASN1_UTF8STRING_sk_type(sk), ossl_check_ASN1_UTF8STRING_type(ptr))) {
     _ = &sk;
@@ -38557,7 +38557,7 @@ pub const sk_ASN1_UTF8STRING_deep_copy = @compileError("unable to translate C ex
 pub inline fn sk_ASN1_UTF8STRING_set_cmp_func(sk: anytype, cmp: anytype) sk_ASN1_UTF8STRING_compfunc {
     _ = &sk;
     _ = &cmp;
-    return @import("std").zig.c_translation.cast(sk_ASN1_UTF8STRING_compfunc, OPENSSL_sk_set_cmp_func(ossl_check_ASN1_UTF8STRING_sk_type(sk), ossl_check_ASN1_UTF8STRING_compfunc_type(cmp)));
+    return @import("std").zig.c_translation.helpers.cast(sk_ASN1_UTF8STRING_compfunc, OPENSSL_sk_set_cmp_func(ossl_check_ASN1_UTF8STRING_sk_type(sk), ossl_check_ASN1_UTF8STRING_compfunc_type(cmp)));
 }
 pub inline fn sk_ASN1_GENERALSTRING_num(sk: anytype) @TypeOf(OPENSSL_sk_num(ossl_check_const_ASN1_GENERALSTRING_sk_type(sk))) {
     _ = &sk;
@@ -38566,7 +38566,7 @@ pub inline fn sk_ASN1_GENERALSTRING_num(sk: anytype) @TypeOf(OPENSSL_sk_num(ossl
 pub inline fn sk_ASN1_GENERALSTRING_value(sk: anytype, idx: anytype) [*c]ASN1_GENERALSTRING {
     _ = &sk;
     _ = &idx;
-    return @import("std").zig.c_translation.cast([*c]ASN1_GENERALSTRING, OPENSSL_sk_value(ossl_check_const_ASN1_GENERALSTRING_sk_type(sk), idx));
+    return @import("std").zig.c_translation.helpers.cast([*c]ASN1_GENERALSTRING, OPENSSL_sk_value(ossl_check_const_ASN1_GENERALSTRING_sk_type(sk), idx));
 }
 pub const sk_ASN1_GENERALSTRING_new = @compileError("unable to translate C expr: unexpected token ')'");
 // /usr/include/openssl/asn1.h:802:9
@@ -38590,12 +38590,12 @@ pub inline fn sk_ASN1_GENERALSTRING_zero(sk: anytype) @TypeOf(OPENSSL_sk_zero(os
 pub inline fn sk_ASN1_GENERALSTRING_delete(sk: anytype, i: anytype) [*c]ASN1_GENERALSTRING {
     _ = &sk;
     _ = &i;
-    return @import("std").zig.c_translation.cast([*c]ASN1_GENERALSTRING, OPENSSL_sk_delete(ossl_check_ASN1_GENERALSTRING_sk_type(sk), i));
+    return @import("std").zig.c_translation.helpers.cast([*c]ASN1_GENERALSTRING, OPENSSL_sk_delete(ossl_check_ASN1_GENERALSTRING_sk_type(sk), i));
 }
 pub inline fn sk_ASN1_GENERALSTRING_delete_ptr(sk: anytype, ptr: anytype) [*c]ASN1_GENERALSTRING {
     _ = &sk;
     _ = &ptr;
-    return @import("std").zig.c_translation.cast([*c]ASN1_GENERALSTRING, OPENSSL_sk_delete_ptr(ossl_check_ASN1_GENERALSTRING_sk_type(sk), ossl_check_ASN1_GENERALSTRING_type(ptr)));
+    return @import("std").zig.c_translation.helpers.cast([*c]ASN1_GENERALSTRING, OPENSSL_sk_delete_ptr(ossl_check_ASN1_GENERALSTRING_sk_type(sk), ossl_check_ASN1_GENERALSTRING_type(ptr)));
 }
 pub inline fn sk_ASN1_GENERALSTRING_push(sk: anytype, ptr: anytype) @TypeOf(OPENSSL_sk_push(ossl_check_ASN1_GENERALSTRING_sk_type(sk), ossl_check_ASN1_GENERALSTRING_type(ptr))) {
     _ = &sk;
@@ -38609,11 +38609,11 @@ pub inline fn sk_ASN1_GENERALSTRING_unshift(sk: anytype, ptr: anytype) @TypeOf(O
 }
 pub inline fn sk_ASN1_GENERALSTRING_pop(sk: anytype) [*c]ASN1_GENERALSTRING {
     _ = &sk;
-    return @import("std").zig.c_translation.cast([*c]ASN1_GENERALSTRING, OPENSSL_sk_pop(ossl_check_ASN1_GENERALSTRING_sk_type(sk)));
+    return @import("std").zig.c_translation.helpers.cast([*c]ASN1_GENERALSTRING, OPENSSL_sk_pop(ossl_check_ASN1_GENERALSTRING_sk_type(sk)));
 }
 pub inline fn sk_ASN1_GENERALSTRING_shift(sk: anytype) [*c]ASN1_GENERALSTRING {
     _ = &sk;
-    return @import("std").zig.c_translation.cast([*c]ASN1_GENERALSTRING, OPENSSL_sk_shift(ossl_check_ASN1_GENERALSTRING_sk_type(sk)));
+    return @import("std").zig.c_translation.helpers.cast([*c]ASN1_GENERALSTRING, OPENSSL_sk_shift(ossl_check_ASN1_GENERALSTRING_sk_type(sk)));
 }
 pub inline fn sk_ASN1_GENERALSTRING_pop_free(sk: anytype, freefunc: anytype) @TypeOf(OPENSSL_sk_pop_free(ossl_check_ASN1_GENERALSTRING_sk_type(sk), ossl_check_ASN1_GENERALSTRING_freefunc_type(freefunc))) {
     _ = &sk;
@@ -38630,7 +38630,7 @@ pub inline fn sk_ASN1_GENERALSTRING_set(sk: anytype, idx: anytype, ptr: anytype)
     _ = &sk;
     _ = &idx;
     _ = &ptr;
-    return @import("std").zig.c_translation.cast([*c]ASN1_GENERALSTRING, OPENSSL_sk_set(ossl_check_ASN1_GENERALSTRING_sk_type(sk), idx, ossl_check_ASN1_GENERALSTRING_type(ptr)));
+    return @import("std").zig.c_translation.helpers.cast([*c]ASN1_GENERALSTRING, OPENSSL_sk_set(ossl_check_ASN1_GENERALSTRING_sk_type(sk), idx, ossl_check_ASN1_GENERALSTRING_type(ptr)));
 }
 pub inline fn sk_ASN1_GENERALSTRING_find(sk: anytype, ptr: anytype) @TypeOf(OPENSSL_sk_find(ossl_check_ASN1_GENERALSTRING_sk_type(sk), ossl_check_ASN1_GENERALSTRING_type(ptr))) {
     _ = &sk;
@@ -38663,7 +38663,7 @@ pub const sk_ASN1_GENERALSTRING_deep_copy = @compileError("unable to translate C
 pub inline fn sk_ASN1_GENERALSTRING_set_cmp_func(sk: anytype, cmp: anytype) sk_ASN1_GENERALSTRING_compfunc {
     _ = &sk;
     _ = &cmp;
-    return @import("std").zig.c_translation.cast(sk_ASN1_GENERALSTRING_compfunc, OPENSSL_sk_set_cmp_func(ossl_check_ASN1_GENERALSTRING_sk_type(sk), ossl_check_ASN1_GENERALSTRING_compfunc_type(cmp)));
+    return @import("std").zig.c_translation.helpers.cast(sk_ASN1_GENERALSTRING_compfunc, OPENSSL_sk_set_cmp_func(ossl_check_ASN1_GENERALSTRING_sk_type(sk), ossl_check_ASN1_GENERALSTRING_compfunc_type(cmp)));
 }
 pub const ASN1_dup_of = @compileError("unable to translate C expr: unexpected token ')'");
 // /usr/include/openssl/asn1.h:909:10
@@ -38743,7 +38743,7 @@ pub const OBJ_NAME_TYPE_COMP_METH = @as(c_int, 0x04);
 pub const OBJ_NAME_TYPE_MAC_METH = @as(c_int, 0x05);
 pub const OBJ_NAME_TYPE_KDF_METH = @as(c_int, 0x06);
 pub const OBJ_NAME_TYPE_NUM = @as(c_int, 0x07);
-pub const OBJ_NAME_ALIAS = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x8000, .hex);
+pub const OBJ_NAME_ALIAS = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x8000, .hex);
 pub const OBJ_BSEARCH_VALUE_ON_NOMATCH = @as(c_int, 0x01);
 pub const OBJ_BSEARCH_FIRST_VALUE_ON_MATCH = @as(c_int, 0x02);
 pub inline fn OBJ_create_and_add_object(a: anytype, b: anytype, c: anytype) @TypeOf(OBJ_create(a, b, c)) {
@@ -38842,12 +38842,12 @@ pub const EVP_CIPH_OFB_MODE = @as(c_int, 0x4);
 pub const EVP_CIPH_CTR_MODE = @as(c_int, 0x5);
 pub const EVP_CIPH_GCM_MODE = @as(c_int, 0x6);
 pub const EVP_CIPH_CCM_MODE = @as(c_int, 0x7);
-pub const EVP_CIPH_XTS_MODE = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x10001, .hex);
-pub const EVP_CIPH_WRAP_MODE = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x10002, .hex);
-pub const EVP_CIPH_OCB_MODE = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x10003, .hex);
-pub const EVP_CIPH_SIV_MODE = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x10004, .hex);
-pub const EVP_CIPH_GCM_SIV_MODE = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x10005, .hex);
-pub const EVP_CIPH_MODE = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0xF0007, .hex);
+pub const EVP_CIPH_XTS_MODE = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x10001, .hex);
+pub const EVP_CIPH_WRAP_MODE = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x10002, .hex);
+pub const EVP_CIPH_OCB_MODE = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x10003, .hex);
+pub const EVP_CIPH_SIV_MODE = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x10004, .hex);
+pub const EVP_CIPH_GCM_SIV_MODE = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x10005, .hex);
+pub const EVP_CIPH_MODE = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0xF0007, .hex);
 pub const EVP_CIPH_VARIABLE_LENGTH = @as(c_int, 0x8);
 pub const EVP_CIPH_CUSTOM_IV = @as(c_int, 0x10);
 pub const EVP_CIPH_ALWAYS_CALL_INIT = @as(c_int, 0x20);
@@ -38862,14 +38862,14 @@ pub const EVP_CIPH_FLAG_LENGTH_BITS = @as(c_int, 0x2000);
 pub const EVP_CIPH_FLAG_FIPS = @as(c_int, 0);
 pub const EVP_CIPH_FLAG_NON_FIPS_ALLOW = @as(c_int, 0);
 pub const EVP_CIPH_FLAG_CTS = @as(c_int, 0x4000);
-pub const EVP_CIPH_FLAG_CUSTOM_CIPHER = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x100000, .hex);
-pub const EVP_CIPH_FLAG_AEAD_CIPHER = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x200000, .hex);
-pub const EVP_CIPH_FLAG_TLS1_1_MULTIBLOCK = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x400000, .hex);
-pub const EVP_CIPH_FLAG_PIPELINE = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x800000, .hex);
-pub const EVP_CIPH_FLAG_CUSTOM_ASN1 = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x1000000, .hex);
-pub const EVP_CIPH_FLAG_CIPHER_WITH_MAC = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x2000000, .hex);
-pub const EVP_CIPH_FLAG_GET_WRAP_CIPHER = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x4000000, .hex);
-pub const EVP_CIPH_FLAG_INVERSE_CIPHER = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x8000000, .hex);
+pub const EVP_CIPH_FLAG_CUSTOM_CIPHER = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x100000, .hex);
+pub const EVP_CIPH_FLAG_AEAD_CIPHER = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x200000, .hex);
+pub const EVP_CIPH_FLAG_TLS1_1_MULTIBLOCK = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x400000, .hex);
+pub const EVP_CIPH_FLAG_PIPELINE = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x800000, .hex);
+pub const EVP_CIPH_FLAG_CUSTOM_ASN1 = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x1000000, .hex);
+pub const EVP_CIPH_FLAG_CIPHER_WITH_MAC = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x2000000, .hex);
+pub const EVP_CIPH_FLAG_GET_WRAP_CIPHER = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x4000000, .hex);
+pub const EVP_CIPH_FLAG_INVERSE_CIPHER = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x8000000, .hex);
 pub const EVP_CIPHER_CTX_FLAG_WRAP_ALLOW = @as(c_int, 0x1);
 pub const EVP_CTRL_INIT = @as(c_int, 0x0);
 pub const EVP_CTRL_SET_KEY_LENGTH = @as(c_int, 0x1);
@@ -39037,13 +39037,13 @@ pub inline fn EVP_CIPHER_CTX_get_mode(c: anytype) @TypeOf(EVP_CIPHER_get_mode(EV
     return EVP_CIPHER_get_mode(EVP_CIPHER_CTX_get0_cipher(c));
 }
 pub const EVP_CIPHER_CTX_mode = EVP_CIPHER_CTX_get_mode;
-pub inline fn EVP_ENCODE_LENGTH(l: anytype) @TypeOf(((@import("std").zig.c_translation.MacroArithmetic.div(l + @as(c_int, 2), @as(c_int, 3)) * @as(c_int, 4)) + ((@import("std").zig.c_translation.MacroArithmetic.div(l, @as(c_int, 48)) + @as(c_int, 1)) * @as(c_int, 2))) + @as(c_int, 80)) {
+pub inline fn EVP_ENCODE_LENGTH(l: anytype) @TypeOf(((@import("std").zig.c_translation.helpers.div(l + @as(c_int, 2), @as(c_int, 3)) * @as(c_int, 4)) + ((@import("std").zig.c_translation.helpers.div(l, @as(c_int, 48)) + @as(c_int, 1)) * @as(c_int, 2))) + @as(c_int, 80)) {
     _ = &l;
-    return ((@import("std").zig.c_translation.MacroArithmetic.div(l + @as(c_int, 2), @as(c_int, 3)) * @as(c_int, 4)) + ((@import("std").zig.c_translation.MacroArithmetic.div(l, @as(c_int, 48)) + @as(c_int, 1)) * @as(c_int, 2))) + @as(c_int, 80);
+    return ((@import("std").zig.c_translation.helpers.div(l + @as(c_int, 2), @as(c_int, 3)) * @as(c_int, 4)) + ((@import("std").zig.c_translation.helpers.div(l, @as(c_int, 48)) + @as(c_int, 1)) * @as(c_int, 2))) + @as(c_int, 80);
 }
-pub inline fn EVP_DECODE_LENGTH(l: anytype) @TypeOf((@import("std").zig.c_translation.MacroArithmetic.div(l + @as(c_int, 3), @as(c_int, 4)) * @as(c_int, 3)) + @as(c_int, 80)) {
+pub inline fn EVP_DECODE_LENGTH(l: anytype) @TypeOf((@import("std").zig.c_translation.helpers.div(l + @as(c_int, 3), @as(c_int, 4)) * @as(c_int, 3)) + @as(c_int, 80)) {
     _ = &l;
-    return (@import("std").zig.c_translation.MacroArithmetic.div(l + @as(c_int, 3), @as(c_int, 4)) * @as(c_int, 3)) + @as(c_int, 80);
+    return (@import("std").zig.c_translation.helpers.div(l + @as(c_int, 3), @as(c_int, 4)) * @as(c_int, 3)) + @as(c_int, 80);
 }
 pub inline fn EVP_SignInit_ex(a: anytype, b: anytype, c: anytype) @TypeOf(EVP_DigestInit_ex(a, b, c)) {
     _ = &a;
@@ -39095,10 +39095,10 @@ pub inline fn EVP_SealUpdate(a: anytype, b: anytype, c: anytype, d: anytype, e: 
     _ = &e;
     return EVP_EncryptUpdate(a, b, c, d, e);
 }
-pub inline fn BIO_set_md(b: anytype, md: anytype) @TypeOf(BIO_ctrl(b, BIO_C_SET_MD, @as(c_int, 0), @import("std").zig.c_translation.cast(?*anyopaque, md))) {
+pub inline fn BIO_set_md(b: anytype, md: anytype) @TypeOf(BIO_ctrl(b, BIO_C_SET_MD, @as(c_int, 0), @import("std").zig.c_translation.helpers.cast(?*anyopaque, md))) {
     _ = &b;
     _ = &md;
-    return BIO_ctrl(b, BIO_C_SET_MD, @as(c_int, 0), @import("std").zig.c_translation.cast(?*anyopaque, md));
+    return BIO_ctrl(b, BIO_C_SET_MD, @as(c_int, 0), @import("std").zig.c_translation.helpers.cast(?*anyopaque, md));
 }
 pub inline fn BIO_get_md(b: anytype, mdp: anytype) @TypeOf(BIO_ctrl(b, BIO_C_GET_MD, @as(c_int, 0), mdp)) {
     _ = &b;
@@ -39385,10 +39385,10 @@ pub inline fn i2d_ECPKParameters_bio(bp: anytype, x: anytype) @TypeOf(ASN1_i2d_b
 }
 pub const d2i_ECPKParameters_fp = @compileError("unable to translate C expr: expected ')' instead got '*'");
 // /usr/include/openssl/ec.h:938:11
-pub inline fn i2d_ECPKParameters_fp(fp: anytype, x: anytype) @TypeOf(ASN1_i2d_fp(@import("std").zig.c_translation.cast([*c]i2d_of_void, i2d_ECPKParameters), fp, @import("std").zig.c_translation.cast(?*anyopaque, x))) {
+pub inline fn i2d_ECPKParameters_fp(fp: anytype, x: anytype) @TypeOf(ASN1_i2d_fp(@import("std").zig.c_translation.helpers.cast([*c]i2d_of_void, i2d_ECPKParameters), fp, @import("std").zig.c_translation.helpers.cast(?*anyopaque, x))) {
     _ = &fp;
     _ = &x;
-    return ASN1_i2d_fp(@import("std").zig.c_translation.cast([*c]i2d_of_void, i2d_ECPKParameters), fp, @import("std").zig.c_translation.cast(?*anyopaque, x));
+    return ASN1_i2d_fp(@import("std").zig.c_translation.helpers.cast([*c]i2d_of_void, i2d_ECPKParameters), fp, @import("std").zig.c_translation.helpers.cast(?*anyopaque, x));
 }
 pub const EC_PKEY_NO_PARAMETERS = @as(c_int, 0x001);
 pub const EC_PKEY_NO_PUBKEY = @as(c_int, 0x002);
@@ -39407,9 +39407,9 @@ pub inline fn EC_KEY_get_ex_new_index(l: anytype, p: anytype, newf: anytype, dup
     _ = &freef;
     return CRYPTO_get_ex_new_index(CRYPTO_EX_INDEX_EC_KEY, l, p, newf, dupf, freef);
 }
-pub inline fn EVP_EC_gen(curve: anytype) @TypeOf(EVP_PKEY_Q_keygen(NULL, NULL, "EC", @import("std").zig.c_translation.cast([*c]u8, strstr(curve, "")))) {
+pub inline fn EVP_EC_gen(curve: anytype) @TypeOf(EVP_PKEY_Q_keygen(NULL, NULL, "EC", @import("std").zig.c_translation.helpers.cast([*c]u8, strstr(curve, "")))) {
     _ = &curve;
-    return EVP_PKEY_Q_keygen(NULL, NULL, "EC", @import("std").zig.c_translation.cast([*c]u8, strstr(curve, "")));
+    return EVP_PKEY_Q_keygen(NULL, NULL, "EC", @import("std").zig.c_translation.helpers.cast([*c]u8, strstr(curve, "")));
 }
 pub inline fn ECParameters_dup(x: anytype) @TypeOf(ASN1_dup_of(EC_KEY, i2d_ECParameters, d2i_ECParameters, x)) {
     _ = &x;
@@ -39518,7 +39518,7 @@ pub const RSA_FLAG_EXT_PKEY = @as(c_int, 0x0020);
 pub const RSA_FLAG_NO_BLINDING = @as(c_int, 0x0080);
 pub const RSA_FLAG_NO_CONSTTIME = @as(c_int, 0x0000);
 pub const RSA_FLAG_NO_EXP_CONSTTIME = RSA_FLAG_NO_CONSTTIME;
-pub const RSA_FLAG_TYPE_MASK = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0xF000, .hex);
+pub const RSA_FLAG_TYPE_MASK = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0xF000, .hex);
 pub const RSA_FLAG_TYPE_RSA = @as(c_int, 0x0000);
 pub const RSA_FLAG_TYPE_RSASSAPSS = @as(c_int, 0x1000);
 pub const RSA_FLAG_TYPE_RSAESOAEP = @as(c_int, 0x2000);
@@ -39558,9 +39558,9 @@ pub inline fn RSA_get_app_data(s: anytype) @TypeOf(RSA_get_ex_data(s, @as(c_int,
     _ = &s;
     return RSA_get_ex_data(s, @as(c_int, 0));
 }
-pub inline fn EVP_RSA_gen(bits: anytype) @TypeOf(EVP_PKEY_Q_keygen(NULL, NULL, "RSA", @import("std").zig.c_translation.cast(usize, @as(c_int, 0) + bits))) {
+pub inline fn EVP_RSA_gen(bits: anytype) @TypeOf(EVP_PKEY_Q_keygen(NULL, NULL, "RSA", @import("std").zig.c_translation.helpers.cast(usize, @as(c_int, 0) + bits))) {
     _ = &bits;
-    return EVP_PKEY_Q_keygen(NULL, NULL, "RSA", @import("std").zig.c_translation.cast(usize, @as(c_int, 0) + bits));
+    return EVP_PKEY_Q_keygen(NULL, NULL, "RSA", @import("std").zig.c_translation.helpers.cast(usize, @as(c_int, 0) + bits));
 }
 pub inline fn RSA_get_ex_new_index(l: anytype, p: anytype, newf: anytype, dupf: anytype, freef: anytype) @TypeOf(CRYPTO_get_ex_new_index(CRYPTO_EX_INDEX_RSA, l, p, newf, dupf, freef)) {
     _ = &l;
@@ -39632,10 +39632,10 @@ pub const DH_R_Q_TOO_LARGE = @as(c_int, 130);
 pub const DH_R_SHARED_INFO_ERROR = @as(c_int, 113);
 pub const DH_R_UNABLE_TO_CHECK_GENERATOR = @as(c_int, 121);
 pub const OPENSSL_DH_MAX_MODULUS_BITS = @as(c_int, 10000);
-pub const OPENSSL_DH_CHECK_MAX_MODULUS_BITS = @import("std").zig.c_translation.promoteIntLiteral(c_int, 32768, .decimal);
+pub const OPENSSL_DH_CHECK_MAX_MODULUS_BITS = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 32768, .decimal);
 pub const OPENSSL_DH_FIPS_MIN_MODULUS_BITS = @as(c_int, 1024);
 pub const DH_FLAG_CACHE_MONT_P = @as(c_int, 0x01);
-pub const DH_FLAG_TYPE_MASK = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0xF000, .hex);
+pub const DH_FLAG_TYPE_MASK = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0xF000, .hex);
 pub const DH_FLAG_TYPE_DH = @as(c_int, 0x0000);
 pub const DH_FLAG_TYPE_DHX = @as(c_int, 0x1000);
 pub const DH_FLAG_NO_EXP_CONSTTIME = @as(c_int, 0x00);
@@ -39659,10 +39659,10 @@ pub const DH_CHECK_PUBKEY_INVALID = @as(c_int, 0x04);
 pub const DH_CHECK_P_NOT_STRONG_PRIME = DH_CHECK_P_NOT_SAFE_PRIME;
 pub const d2i_DHparams_fp = @compileError("unable to translate C expr: expected ')' instead got '('");
 // /usr/include/openssl/dh.h:177:12
-pub inline fn i2d_DHparams_fp(fp: anytype, x: anytype) @TypeOf(ASN1_i2d_fp(i2d_DHparams, fp, @import("std").zig.c_translation.cast([*c]u8, x))) {
+pub inline fn i2d_DHparams_fp(fp: anytype, x: anytype) @TypeOf(ASN1_i2d_fp(i2d_DHparams, fp, @import("std").zig.c_translation.helpers.cast([*c]u8, x))) {
     _ = &fp;
     _ = &x;
-    return ASN1_i2d_fp(i2d_DHparams, fp, @import("std").zig.c_translation.cast([*c]u8, x));
+    return ASN1_i2d_fp(i2d_DHparams, fp, @import("std").zig.c_translation.helpers.cast([*c]u8, x));
 }
 pub inline fn d2i_DHparams_bio(bp: anytype, x: anytype) @TypeOf(ASN1_d2i_bio_of(DH, DH_new, d2i_DHparams, bp, x)) {
     _ = &bp;
@@ -39676,10 +39676,10 @@ pub inline fn i2d_DHparams_bio(bp: anytype, x: anytype) @TypeOf(ASN1_i2d_bio_of(
 }
 pub const d2i_DHxparams_fp = @compileError("unable to translate C expr: expected ')' instead got '('");
 // /usr/include/openssl/dh.h:189:12
-pub inline fn i2d_DHxparams_fp(fp: anytype, x: anytype) @TypeOf(ASN1_i2d_fp(i2d_DHxparams, fp, @import("std").zig.c_translation.cast([*c]u8, x))) {
+pub inline fn i2d_DHxparams_fp(fp: anytype, x: anytype) @TypeOf(ASN1_i2d_fp(i2d_DHxparams, fp, @import("std").zig.c_translation.helpers.cast([*c]u8, x))) {
     _ = &fp;
     _ = &x;
-    return ASN1_i2d_fp(i2d_DHxparams, fp, @import("std").zig.c_translation.cast([*c]u8, x));
+    return ASN1_i2d_fp(i2d_DHxparams, fp, @import("std").zig.c_translation.helpers.cast([*c]u8, x));
 }
 pub inline fn d2i_DHxparams_bio(bp: anytype, x: anytype) @TypeOf(ASN1_d2i_bio_of(DH, DH_new, d2i_DHxparams, bp, x)) {
     _ = &bp;
@@ -39728,10 +39728,10 @@ pub const DSA_FLAG_NON_FIPS_ALLOW = @as(c_int, 0x0400);
 pub const DSA_FLAG_FIPS_CHECKED = @as(c_int, 0x0800);
 pub const d2i_DSAparams_fp = @compileError("unable to translate C expr: expected ')' instead got '('");
 // /usr/include/openssl/dsa.h:106:12
-pub inline fn i2d_DSAparams_fp(fp: anytype, x: anytype) @TypeOf(ASN1_i2d_fp(i2d_DSAparams, fp, @import("std").zig.c_translation.cast([*c]u8, x))) {
+pub inline fn i2d_DSAparams_fp(fp: anytype, x: anytype) @TypeOf(ASN1_i2d_fp(i2d_DSAparams, fp, @import("std").zig.c_translation.helpers.cast([*c]u8, x))) {
     _ = &fp;
     _ = &x;
-    return ASN1_i2d_fp(i2d_DSAparams, fp, @import("std").zig.c_translation.cast([*c]u8, x));
+    return ASN1_i2d_fp(i2d_DSAparams, fp, @import("std").zig.c_translation.helpers.cast([*c]u8, x));
 }
 pub inline fn d2i_DSAparams_bio(bp: anytype, x: anytype) @TypeOf(ASN1_d2i_bio_of(DSA, DSA_new, d2i_DSAparams, bp, x)) {
     _ = &bp;
@@ -39826,7 +39826,7 @@ pub inline fn sk_X509_NAME_num(sk: anytype) @TypeOf(OPENSSL_sk_num(ossl_check_co
 pub inline fn sk_X509_NAME_value(sk: anytype, idx: anytype) [*c]X509_NAME {
     _ = &sk;
     _ = &idx;
-    return @import("std").zig.c_translation.cast([*c]X509_NAME, OPENSSL_sk_value(ossl_check_const_X509_NAME_sk_type(sk), idx));
+    return @import("std").zig.c_translation.helpers.cast([*c]X509_NAME, OPENSSL_sk_value(ossl_check_const_X509_NAME_sk_type(sk), idx));
 }
 pub const sk_X509_NAME_new = @compileError("unable to translate C expr: unexpected token ')'");
 // /usr/include/openssl/x509.h:55:9
@@ -39850,12 +39850,12 @@ pub inline fn sk_X509_NAME_zero(sk: anytype) @TypeOf(OPENSSL_sk_zero(ossl_check_
 pub inline fn sk_X509_NAME_delete(sk: anytype, i: anytype) [*c]X509_NAME {
     _ = &sk;
     _ = &i;
-    return @import("std").zig.c_translation.cast([*c]X509_NAME, OPENSSL_sk_delete(ossl_check_X509_NAME_sk_type(sk), i));
+    return @import("std").zig.c_translation.helpers.cast([*c]X509_NAME, OPENSSL_sk_delete(ossl_check_X509_NAME_sk_type(sk), i));
 }
 pub inline fn sk_X509_NAME_delete_ptr(sk: anytype, ptr: anytype) [*c]X509_NAME {
     _ = &sk;
     _ = &ptr;
-    return @import("std").zig.c_translation.cast([*c]X509_NAME, OPENSSL_sk_delete_ptr(ossl_check_X509_NAME_sk_type(sk), ossl_check_X509_NAME_type(ptr)));
+    return @import("std").zig.c_translation.helpers.cast([*c]X509_NAME, OPENSSL_sk_delete_ptr(ossl_check_X509_NAME_sk_type(sk), ossl_check_X509_NAME_type(ptr)));
 }
 pub inline fn sk_X509_NAME_push(sk: anytype, ptr: anytype) @TypeOf(OPENSSL_sk_push(ossl_check_X509_NAME_sk_type(sk), ossl_check_X509_NAME_type(ptr))) {
     _ = &sk;
@@ -39869,11 +39869,11 @@ pub inline fn sk_X509_NAME_unshift(sk: anytype, ptr: anytype) @TypeOf(OPENSSL_sk
 }
 pub inline fn sk_X509_NAME_pop(sk: anytype) [*c]X509_NAME {
     _ = &sk;
-    return @import("std").zig.c_translation.cast([*c]X509_NAME, OPENSSL_sk_pop(ossl_check_X509_NAME_sk_type(sk)));
+    return @import("std").zig.c_translation.helpers.cast([*c]X509_NAME, OPENSSL_sk_pop(ossl_check_X509_NAME_sk_type(sk)));
 }
 pub inline fn sk_X509_NAME_shift(sk: anytype) [*c]X509_NAME {
     _ = &sk;
-    return @import("std").zig.c_translation.cast([*c]X509_NAME, OPENSSL_sk_shift(ossl_check_X509_NAME_sk_type(sk)));
+    return @import("std").zig.c_translation.helpers.cast([*c]X509_NAME, OPENSSL_sk_shift(ossl_check_X509_NAME_sk_type(sk)));
 }
 pub inline fn sk_X509_NAME_pop_free(sk: anytype, freefunc: anytype) @TypeOf(OPENSSL_sk_pop_free(ossl_check_X509_NAME_sk_type(sk), ossl_check_X509_NAME_freefunc_type(freefunc))) {
     _ = &sk;
@@ -39890,7 +39890,7 @@ pub inline fn sk_X509_NAME_set(sk: anytype, idx: anytype, ptr: anytype) [*c]X509
     _ = &sk;
     _ = &idx;
     _ = &ptr;
-    return @import("std").zig.c_translation.cast([*c]X509_NAME, OPENSSL_sk_set(ossl_check_X509_NAME_sk_type(sk), idx, ossl_check_X509_NAME_type(ptr)));
+    return @import("std").zig.c_translation.helpers.cast([*c]X509_NAME, OPENSSL_sk_set(ossl_check_X509_NAME_sk_type(sk), idx, ossl_check_X509_NAME_type(ptr)));
 }
 pub inline fn sk_X509_NAME_find(sk: anytype, ptr: anytype) @TypeOf(OPENSSL_sk_find(ossl_check_X509_NAME_sk_type(sk), ossl_check_X509_NAME_type(ptr))) {
     _ = &sk;
@@ -39923,7 +39923,7 @@ pub const sk_X509_NAME_deep_copy = @compileError("unable to translate C expr: un
 pub inline fn sk_X509_NAME_set_cmp_func(sk: anytype, cmp: anytype) sk_X509_NAME_compfunc {
     _ = &sk;
     _ = &cmp;
-    return @import("std").zig.c_translation.cast(sk_X509_NAME_compfunc, OPENSSL_sk_set_cmp_func(ossl_check_X509_NAME_sk_type(sk), ossl_check_X509_NAME_compfunc_type(cmp)));
+    return @import("std").zig.c_translation.helpers.cast(sk_X509_NAME_compfunc, OPENSSL_sk_set_cmp_func(ossl_check_X509_NAME_sk_type(sk), ossl_check_X509_NAME_compfunc_type(cmp)));
 }
 pub inline fn sk_X509_num(sk: anytype) @TypeOf(OPENSSL_sk_num(ossl_check_const_X509_sk_type(sk))) {
     _ = &sk;
@@ -39932,7 +39932,7 @@ pub inline fn sk_X509_num(sk: anytype) @TypeOf(OPENSSL_sk_num(ossl_check_const_X
 pub inline fn sk_X509_value(sk: anytype, idx: anytype) [*c]X509 {
     _ = &sk;
     _ = &idx;
-    return @import("std").zig.c_translation.cast([*c]X509, OPENSSL_sk_value(ossl_check_const_X509_sk_type(sk), idx));
+    return @import("std").zig.c_translation.helpers.cast([*c]X509, OPENSSL_sk_value(ossl_check_const_X509_sk_type(sk), idx));
 }
 pub const sk_X509_new = @compileError("unable to translate C expr: unexpected token ')'");
 // /usr/include/openssl/x509.h:81:9
@@ -39956,12 +39956,12 @@ pub inline fn sk_X509_zero(sk: anytype) @TypeOf(OPENSSL_sk_zero(ossl_check_X509_
 pub inline fn sk_X509_delete(sk: anytype, i: anytype) [*c]X509 {
     _ = &sk;
     _ = &i;
-    return @import("std").zig.c_translation.cast([*c]X509, OPENSSL_sk_delete(ossl_check_X509_sk_type(sk), i));
+    return @import("std").zig.c_translation.helpers.cast([*c]X509, OPENSSL_sk_delete(ossl_check_X509_sk_type(sk), i));
 }
 pub inline fn sk_X509_delete_ptr(sk: anytype, ptr: anytype) [*c]X509 {
     _ = &sk;
     _ = &ptr;
-    return @import("std").zig.c_translation.cast([*c]X509, OPENSSL_sk_delete_ptr(ossl_check_X509_sk_type(sk), ossl_check_X509_type(ptr)));
+    return @import("std").zig.c_translation.helpers.cast([*c]X509, OPENSSL_sk_delete_ptr(ossl_check_X509_sk_type(sk), ossl_check_X509_type(ptr)));
 }
 pub inline fn sk_X509_push(sk: anytype, ptr: anytype) @TypeOf(OPENSSL_sk_push(ossl_check_X509_sk_type(sk), ossl_check_X509_type(ptr))) {
     _ = &sk;
@@ -39975,11 +39975,11 @@ pub inline fn sk_X509_unshift(sk: anytype, ptr: anytype) @TypeOf(OPENSSL_sk_unsh
 }
 pub inline fn sk_X509_pop(sk: anytype) [*c]X509 {
     _ = &sk;
-    return @import("std").zig.c_translation.cast([*c]X509, OPENSSL_sk_pop(ossl_check_X509_sk_type(sk)));
+    return @import("std").zig.c_translation.helpers.cast([*c]X509, OPENSSL_sk_pop(ossl_check_X509_sk_type(sk)));
 }
 pub inline fn sk_X509_shift(sk: anytype) [*c]X509 {
     _ = &sk;
-    return @import("std").zig.c_translation.cast([*c]X509, OPENSSL_sk_shift(ossl_check_X509_sk_type(sk)));
+    return @import("std").zig.c_translation.helpers.cast([*c]X509, OPENSSL_sk_shift(ossl_check_X509_sk_type(sk)));
 }
 pub inline fn sk_X509_pop_free(sk: anytype, freefunc: anytype) @TypeOf(OPENSSL_sk_pop_free(ossl_check_X509_sk_type(sk), ossl_check_X509_freefunc_type(freefunc))) {
     _ = &sk;
@@ -39996,7 +39996,7 @@ pub inline fn sk_X509_set(sk: anytype, idx: anytype, ptr: anytype) [*c]X509 {
     _ = &sk;
     _ = &idx;
     _ = &ptr;
-    return @import("std").zig.c_translation.cast([*c]X509, OPENSSL_sk_set(ossl_check_X509_sk_type(sk), idx, ossl_check_X509_type(ptr)));
+    return @import("std").zig.c_translation.helpers.cast([*c]X509, OPENSSL_sk_set(ossl_check_X509_sk_type(sk), idx, ossl_check_X509_type(ptr)));
 }
 pub inline fn sk_X509_find(sk: anytype, ptr: anytype) @TypeOf(OPENSSL_sk_find(ossl_check_X509_sk_type(sk), ossl_check_X509_type(ptr))) {
     _ = &sk;
@@ -40029,7 +40029,7 @@ pub const sk_X509_deep_copy = @compileError("unable to translate C expr: unexpec
 pub inline fn sk_X509_set_cmp_func(sk: anytype, cmp: anytype) sk_X509_compfunc {
     _ = &sk;
     _ = &cmp;
-    return @import("std").zig.c_translation.cast(sk_X509_compfunc, OPENSSL_sk_set_cmp_func(ossl_check_X509_sk_type(sk), ossl_check_X509_compfunc_type(cmp)));
+    return @import("std").zig.c_translation.helpers.cast(sk_X509_compfunc, OPENSSL_sk_set_cmp_func(ossl_check_X509_sk_type(sk), ossl_check_X509_compfunc_type(cmp)));
 }
 pub inline fn sk_X509_REVOKED_num(sk: anytype) @TypeOf(OPENSSL_sk_num(ossl_check_const_X509_REVOKED_sk_type(sk))) {
     _ = &sk;
@@ -40038,7 +40038,7 @@ pub inline fn sk_X509_REVOKED_num(sk: anytype) @TypeOf(OPENSSL_sk_num(ossl_check
 pub inline fn sk_X509_REVOKED_value(sk: anytype, idx: anytype) [*c]X509_REVOKED {
     _ = &sk;
     _ = &idx;
-    return @import("std").zig.c_translation.cast([*c]X509_REVOKED, OPENSSL_sk_value(ossl_check_const_X509_REVOKED_sk_type(sk), idx));
+    return @import("std").zig.c_translation.helpers.cast([*c]X509_REVOKED, OPENSSL_sk_value(ossl_check_const_X509_REVOKED_sk_type(sk), idx));
 }
 pub const sk_X509_REVOKED_new = @compileError("unable to translate C expr: unexpected token ')'");
 // /usr/include/openssl/x509.h:107:9
@@ -40062,12 +40062,12 @@ pub inline fn sk_X509_REVOKED_zero(sk: anytype) @TypeOf(OPENSSL_sk_zero(ossl_che
 pub inline fn sk_X509_REVOKED_delete(sk: anytype, i: anytype) [*c]X509_REVOKED {
     _ = &sk;
     _ = &i;
-    return @import("std").zig.c_translation.cast([*c]X509_REVOKED, OPENSSL_sk_delete(ossl_check_X509_REVOKED_sk_type(sk), i));
+    return @import("std").zig.c_translation.helpers.cast([*c]X509_REVOKED, OPENSSL_sk_delete(ossl_check_X509_REVOKED_sk_type(sk), i));
 }
 pub inline fn sk_X509_REVOKED_delete_ptr(sk: anytype, ptr: anytype) [*c]X509_REVOKED {
     _ = &sk;
     _ = &ptr;
-    return @import("std").zig.c_translation.cast([*c]X509_REVOKED, OPENSSL_sk_delete_ptr(ossl_check_X509_REVOKED_sk_type(sk), ossl_check_X509_REVOKED_type(ptr)));
+    return @import("std").zig.c_translation.helpers.cast([*c]X509_REVOKED, OPENSSL_sk_delete_ptr(ossl_check_X509_REVOKED_sk_type(sk), ossl_check_X509_REVOKED_type(ptr)));
 }
 pub inline fn sk_X509_REVOKED_push(sk: anytype, ptr: anytype) @TypeOf(OPENSSL_sk_push(ossl_check_X509_REVOKED_sk_type(sk), ossl_check_X509_REVOKED_type(ptr))) {
     _ = &sk;
@@ -40081,11 +40081,11 @@ pub inline fn sk_X509_REVOKED_unshift(sk: anytype, ptr: anytype) @TypeOf(OPENSSL
 }
 pub inline fn sk_X509_REVOKED_pop(sk: anytype) [*c]X509_REVOKED {
     _ = &sk;
-    return @import("std").zig.c_translation.cast([*c]X509_REVOKED, OPENSSL_sk_pop(ossl_check_X509_REVOKED_sk_type(sk)));
+    return @import("std").zig.c_translation.helpers.cast([*c]X509_REVOKED, OPENSSL_sk_pop(ossl_check_X509_REVOKED_sk_type(sk)));
 }
 pub inline fn sk_X509_REVOKED_shift(sk: anytype) [*c]X509_REVOKED {
     _ = &sk;
-    return @import("std").zig.c_translation.cast([*c]X509_REVOKED, OPENSSL_sk_shift(ossl_check_X509_REVOKED_sk_type(sk)));
+    return @import("std").zig.c_translation.helpers.cast([*c]X509_REVOKED, OPENSSL_sk_shift(ossl_check_X509_REVOKED_sk_type(sk)));
 }
 pub inline fn sk_X509_REVOKED_pop_free(sk: anytype, freefunc: anytype) @TypeOf(OPENSSL_sk_pop_free(ossl_check_X509_REVOKED_sk_type(sk), ossl_check_X509_REVOKED_freefunc_type(freefunc))) {
     _ = &sk;
@@ -40102,7 +40102,7 @@ pub inline fn sk_X509_REVOKED_set(sk: anytype, idx: anytype, ptr: anytype) [*c]X
     _ = &sk;
     _ = &idx;
     _ = &ptr;
-    return @import("std").zig.c_translation.cast([*c]X509_REVOKED, OPENSSL_sk_set(ossl_check_X509_REVOKED_sk_type(sk), idx, ossl_check_X509_REVOKED_type(ptr)));
+    return @import("std").zig.c_translation.helpers.cast([*c]X509_REVOKED, OPENSSL_sk_set(ossl_check_X509_REVOKED_sk_type(sk), idx, ossl_check_X509_REVOKED_type(ptr)));
 }
 pub inline fn sk_X509_REVOKED_find(sk: anytype, ptr: anytype) @TypeOf(OPENSSL_sk_find(ossl_check_X509_REVOKED_sk_type(sk), ossl_check_X509_REVOKED_type(ptr))) {
     _ = &sk;
@@ -40135,7 +40135,7 @@ pub const sk_X509_REVOKED_deep_copy = @compileError("unable to translate C expr:
 pub inline fn sk_X509_REVOKED_set_cmp_func(sk: anytype, cmp: anytype) sk_X509_REVOKED_compfunc {
     _ = &sk;
     _ = &cmp;
-    return @import("std").zig.c_translation.cast(sk_X509_REVOKED_compfunc, OPENSSL_sk_set_cmp_func(ossl_check_X509_REVOKED_sk_type(sk), ossl_check_X509_REVOKED_compfunc_type(cmp)));
+    return @import("std").zig.c_translation.helpers.cast(sk_X509_REVOKED_compfunc, OPENSSL_sk_set_cmp_func(ossl_check_X509_REVOKED_sk_type(sk), ossl_check_X509_REVOKED_compfunc_type(cmp)));
 }
 pub inline fn sk_X509_CRL_num(sk: anytype) @TypeOf(OPENSSL_sk_num(ossl_check_const_X509_CRL_sk_type(sk))) {
     _ = &sk;
@@ -40144,7 +40144,7 @@ pub inline fn sk_X509_CRL_num(sk: anytype) @TypeOf(OPENSSL_sk_num(ossl_check_con
 pub inline fn sk_X509_CRL_value(sk: anytype, idx: anytype) [*c]X509_CRL {
     _ = &sk;
     _ = &idx;
-    return @import("std").zig.c_translation.cast([*c]X509_CRL, OPENSSL_sk_value(ossl_check_const_X509_CRL_sk_type(sk), idx));
+    return @import("std").zig.c_translation.helpers.cast([*c]X509_CRL, OPENSSL_sk_value(ossl_check_const_X509_CRL_sk_type(sk), idx));
 }
 pub const sk_X509_CRL_new = @compileError("unable to translate C expr: unexpected token ')'");
 // /usr/include/openssl/x509.h:133:9
@@ -40168,12 +40168,12 @@ pub inline fn sk_X509_CRL_zero(sk: anytype) @TypeOf(OPENSSL_sk_zero(ossl_check_X
 pub inline fn sk_X509_CRL_delete(sk: anytype, i: anytype) [*c]X509_CRL {
     _ = &sk;
     _ = &i;
-    return @import("std").zig.c_translation.cast([*c]X509_CRL, OPENSSL_sk_delete(ossl_check_X509_CRL_sk_type(sk), i));
+    return @import("std").zig.c_translation.helpers.cast([*c]X509_CRL, OPENSSL_sk_delete(ossl_check_X509_CRL_sk_type(sk), i));
 }
 pub inline fn sk_X509_CRL_delete_ptr(sk: anytype, ptr: anytype) [*c]X509_CRL {
     _ = &sk;
     _ = &ptr;
-    return @import("std").zig.c_translation.cast([*c]X509_CRL, OPENSSL_sk_delete_ptr(ossl_check_X509_CRL_sk_type(sk), ossl_check_X509_CRL_type(ptr)));
+    return @import("std").zig.c_translation.helpers.cast([*c]X509_CRL, OPENSSL_sk_delete_ptr(ossl_check_X509_CRL_sk_type(sk), ossl_check_X509_CRL_type(ptr)));
 }
 pub inline fn sk_X509_CRL_push(sk: anytype, ptr: anytype) @TypeOf(OPENSSL_sk_push(ossl_check_X509_CRL_sk_type(sk), ossl_check_X509_CRL_type(ptr))) {
     _ = &sk;
@@ -40187,11 +40187,11 @@ pub inline fn sk_X509_CRL_unshift(sk: anytype, ptr: anytype) @TypeOf(OPENSSL_sk_
 }
 pub inline fn sk_X509_CRL_pop(sk: anytype) [*c]X509_CRL {
     _ = &sk;
-    return @import("std").zig.c_translation.cast([*c]X509_CRL, OPENSSL_sk_pop(ossl_check_X509_CRL_sk_type(sk)));
+    return @import("std").zig.c_translation.helpers.cast([*c]X509_CRL, OPENSSL_sk_pop(ossl_check_X509_CRL_sk_type(sk)));
 }
 pub inline fn sk_X509_CRL_shift(sk: anytype) [*c]X509_CRL {
     _ = &sk;
-    return @import("std").zig.c_translation.cast([*c]X509_CRL, OPENSSL_sk_shift(ossl_check_X509_CRL_sk_type(sk)));
+    return @import("std").zig.c_translation.helpers.cast([*c]X509_CRL, OPENSSL_sk_shift(ossl_check_X509_CRL_sk_type(sk)));
 }
 pub inline fn sk_X509_CRL_pop_free(sk: anytype, freefunc: anytype) @TypeOf(OPENSSL_sk_pop_free(ossl_check_X509_CRL_sk_type(sk), ossl_check_X509_CRL_freefunc_type(freefunc))) {
     _ = &sk;
@@ -40208,7 +40208,7 @@ pub inline fn sk_X509_CRL_set(sk: anytype, idx: anytype, ptr: anytype) [*c]X509_
     _ = &sk;
     _ = &idx;
     _ = &ptr;
-    return @import("std").zig.c_translation.cast([*c]X509_CRL, OPENSSL_sk_set(ossl_check_X509_CRL_sk_type(sk), idx, ossl_check_X509_CRL_type(ptr)));
+    return @import("std").zig.c_translation.helpers.cast([*c]X509_CRL, OPENSSL_sk_set(ossl_check_X509_CRL_sk_type(sk), idx, ossl_check_X509_CRL_type(ptr)));
 }
 pub inline fn sk_X509_CRL_find(sk: anytype, ptr: anytype) @TypeOf(OPENSSL_sk_find(ossl_check_X509_CRL_sk_type(sk), ossl_check_X509_CRL_type(ptr))) {
     _ = &sk;
@@ -40241,7 +40241,7 @@ pub const sk_X509_CRL_deep_copy = @compileError("unable to translate C expr: une
 pub inline fn sk_X509_CRL_set_cmp_func(sk: anytype, cmp: anytype) sk_X509_CRL_compfunc {
     _ = &sk;
     _ = &cmp;
-    return @import("std").zig.c_translation.cast(sk_X509_CRL_compfunc, OPENSSL_sk_set_cmp_func(ossl_check_X509_CRL_sk_type(sk), ossl_check_X509_CRL_compfunc_type(cmp)));
+    return @import("std").zig.c_translation.helpers.cast(sk_X509_CRL_compfunc, OPENSSL_sk_set_cmp_func(ossl_check_X509_CRL_sk_type(sk), ossl_check_X509_CRL_compfunc_type(cmp)));
 }
 pub const X509_SIG_INFO_VALID = @as(c_int, 0x1);
 pub const X509_SIG_INFO_TLS = @as(c_int, 0x2);
@@ -40256,8 +40256,8 @@ pub const X509v3_KU_KEY_AGREEMENT = @as(c_int, 0x0008);
 pub const X509v3_KU_KEY_CERT_SIGN = @as(c_int, 0x0004);
 pub const X509v3_KU_CRL_SIGN = @as(c_int, 0x0002);
 pub const X509v3_KU_ENCIPHER_ONLY = @as(c_int, 0x0001);
-pub const X509v3_KU_DECIPHER_ONLY = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x8000, .hex);
-pub const X509v3_KU_UNDEF = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0xffff, .hex);
+pub const X509v3_KU_DECIPHER_ONLY = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x8000, .hex);
+pub const X509v3_KU_UNDEF = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0xffff, .hex);
 pub inline fn sk_X509_NAME_ENTRY_num(sk: anytype) @TypeOf(OPENSSL_sk_num(ossl_check_const_X509_NAME_ENTRY_sk_type(sk))) {
     _ = &sk;
     return OPENSSL_sk_num(ossl_check_const_X509_NAME_ENTRY_sk_type(sk));
@@ -40265,7 +40265,7 @@ pub inline fn sk_X509_NAME_ENTRY_num(sk: anytype) @TypeOf(OPENSSL_sk_num(ossl_ch
 pub inline fn sk_X509_NAME_ENTRY_value(sk: anytype, idx: anytype) [*c]X509_NAME_ENTRY {
     _ = &sk;
     _ = &idx;
-    return @import("std").zig.c_translation.cast([*c]X509_NAME_ENTRY, OPENSSL_sk_value(ossl_check_const_X509_NAME_ENTRY_sk_type(sk), idx));
+    return @import("std").zig.c_translation.helpers.cast([*c]X509_NAME_ENTRY, OPENSSL_sk_value(ossl_check_const_X509_NAME_ENTRY_sk_type(sk), idx));
 }
 pub const sk_X509_NAME_ENTRY_new = @compileError("unable to translate C expr: unexpected token ')'");
 // /usr/include/openssl/x509.h:206:9
@@ -40289,12 +40289,12 @@ pub inline fn sk_X509_NAME_ENTRY_zero(sk: anytype) @TypeOf(OPENSSL_sk_zero(ossl_
 pub inline fn sk_X509_NAME_ENTRY_delete(sk: anytype, i: anytype) [*c]X509_NAME_ENTRY {
     _ = &sk;
     _ = &i;
-    return @import("std").zig.c_translation.cast([*c]X509_NAME_ENTRY, OPENSSL_sk_delete(ossl_check_X509_NAME_ENTRY_sk_type(sk), i));
+    return @import("std").zig.c_translation.helpers.cast([*c]X509_NAME_ENTRY, OPENSSL_sk_delete(ossl_check_X509_NAME_ENTRY_sk_type(sk), i));
 }
 pub inline fn sk_X509_NAME_ENTRY_delete_ptr(sk: anytype, ptr: anytype) [*c]X509_NAME_ENTRY {
     _ = &sk;
     _ = &ptr;
-    return @import("std").zig.c_translation.cast([*c]X509_NAME_ENTRY, OPENSSL_sk_delete_ptr(ossl_check_X509_NAME_ENTRY_sk_type(sk), ossl_check_X509_NAME_ENTRY_type(ptr)));
+    return @import("std").zig.c_translation.helpers.cast([*c]X509_NAME_ENTRY, OPENSSL_sk_delete_ptr(ossl_check_X509_NAME_ENTRY_sk_type(sk), ossl_check_X509_NAME_ENTRY_type(ptr)));
 }
 pub inline fn sk_X509_NAME_ENTRY_push(sk: anytype, ptr: anytype) @TypeOf(OPENSSL_sk_push(ossl_check_X509_NAME_ENTRY_sk_type(sk), ossl_check_X509_NAME_ENTRY_type(ptr))) {
     _ = &sk;
@@ -40308,11 +40308,11 @@ pub inline fn sk_X509_NAME_ENTRY_unshift(sk: anytype, ptr: anytype) @TypeOf(OPEN
 }
 pub inline fn sk_X509_NAME_ENTRY_pop(sk: anytype) [*c]X509_NAME_ENTRY {
     _ = &sk;
-    return @import("std").zig.c_translation.cast([*c]X509_NAME_ENTRY, OPENSSL_sk_pop(ossl_check_X509_NAME_ENTRY_sk_type(sk)));
+    return @import("std").zig.c_translation.helpers.cast([*c]X509_NAME_ENTRY, OPENSSL_sk_pop(ossl_check_X509_NAME_ENTRY_sk_type(sk)));
 }
 pub inline fn sk_X509_NAME_ENTRY_shift(sk: anytype) [*c]X509_NAME_ENTRY {
     _ = &sk;
-    return @import("std").zig.c_translation.cast([*c]X509_NAME_ENTRY, OPENSSL_sk_shift(ossl_check_X509_NAME_ENTRY_sk_type(sk)));
+    return @import("std").zig.c_translation.helpers.cast([*c]X509_NAME_ENTRY, OPENSSL_sk_shift(ossl_check_X509_NAME_ENTRY_sk_type(sk)));
 }
 pub inline fn sk_X509_NAME_ENTRY_pop_free(sk: anytype, freefunc: anytype) @TypeOf(OPENSSL_sk_pop_free(ossl_check_X509_NAME_ENTRY_sk_type(sk), ossl_check_X509_NAME_ENTRY_freefunc_type(freefunc))) {
     _ = &sk;
@@ -40329,7 +40329,7 @@ pub inline fn sk_X509_NAME_ENTRY_set(sk: anytype, idx: anytype, ptr: anytype) [*
     _ = &sk;
     _ = &idx;
     _ = &ptr;
-    return @import("std").zig.c_translation.cast([*c]X509_NAME_ENTRY, OPENSSL_sk_set(ossl_check_X509_NAME_ENTRY_sk_type(sk), idx, ossl_check_X509_NAME_ENTRY_type(ptr)));
+    return @import("std").zig.c_translation.helpers.cast([*c]X509_NAME_ENTRY, OPENSSL_sk_set(ossl_check_X509_NAME_ENTRY_sk_type(sk), idx, ossl_check_X509_NAME_ENTRY_type(ptr)));
 }
 pub inline fn sk_X509_NAME_ENTRY_find(sk: anytype, ptr: anytype) @TypeOf(OPENSSL_sk_find(ossl_check_X509_NAME_ENTRY_sk_type(sk), ossl_check_X509_NAME_ENTRY_type(ptr))) {
     _ = &sk;
@@ -40362,9 +40362,9 @@ pub const sk_X509_NAME_ENTRY_deep_copy = @compileError("unable to translate C ex
 pub inline fn sk_X509_NAME_ENTRY_set_cmp_func(sk: anytype, cmp: anytype) sk_X509_NAME_ENTRY_compfunc {
     _ = &sk;
     _ = &cmp;
-    return @import("std").zig.c_translation.cast(sk_X509_NAME_ENTRY_compfunc, OPENSSL_sk_set_cmp_func(ossl_check_X509_NAME_ENTRY_sk_type(sk), ossl_check_X509_NAME_ENTRY_compfunc_type(cmp)));
+    return @import("std").zig.c_translation.helpers.cast(sk_X509_NAME_ENTRY_compfunc, OPENSSL_sk_set_cmp_func(ossl_check_X509_NAME_ENTRY_sk_type(sk), ossl_check_X509_NAME_ENTRY_compfunc_type(cmp)));
 }
-pub const X509_EX_V_NETSCAPE_HACK = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x8000, .hex);
+pub const X509_EX_V_NETSCAPE_HACK = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x8000, .hex);
 pub const X509_EX_V_INIT = @as(c_int, 0x0001);
 pub inline fn sk_X509_EXTENSION_num(sk: anytype) @TypeOf(OPENSSL_sk_num(ossl_check_const_X509_EXTENSION_sk_type(sk))) {
     _ = &sk;
@@ -40373,7 +40373,7 @@ pub inline fn sk_X509_EXTENSION_num(sk: anytype) @TypeOf(OPENSSL_sk_num(ossl_che
 pub inline fn sk_X509_EXTENSION_value(sk: anytype, idx: anytype) [*c]X509_EXTENSION {
     _ = &sk;
     _ = &idx;
-    return @import("std").zig.c_translation.cast([*c]X509_EXTENSION, OPENSSL_sk_value(ossl_check_const_X509_EXTENSION_sk_type(sk), idx));
+    return @import("std").zig.c_translation.helpers.cast([*c]X509_EXTENSION, OPENSSL_sk_value(ossl_check_const_X509_EXTENSION_sk_type(sk), idx));
 }
 pub const sk_X509_EXTENSION_new = @compileError("unable to translate C expr: unexpected token ')'");
 // /usr/include/openssl/x509.h:237:9
@@ -40397,12 +40397,12 @@ pub inline fn sk_X509_EXTENSION_zero(sk: anytype) @TypeOf(OPENSSL_sk_zero(ossl_c
 pub inline fn sk_X509_EXTENSION_delete(sk: anytype, i: anytype) [*c]X509_EXTENSION {
     _ = &sk;
     _ = &i;
-    return @import("std").zig.c_translation.cast([*c]X509_EXTENSION, OPENSSL_sk_delete(ossl_check_X509_EXTENSION_sk_type(sk), i));
+    return @import("std").zig.c_translation.helpers.cast([*c]X509_EXTENSION, OPENSSL_sk_delete(ossl_check_X509_EXTENSION_sk_type(sk), i));
 }
 pub inline fn sk_X509_EXTENSION_delete_ptr(sk: anytype, ptr: anytype) [*c]X509_EXTENSION {
     _ = &sk;
     _ = &ptr;
-    return @import("std").zig.c_translation.cast([*c]X509_EXTENSION, OPENSSL_sk_delete_ptr(ossl_check_X509_EXTENSION_sk_type(sk), ossl_check_X509_EXTENSION_type(ptr)));
+    return @import("std").zig.c_translation.helpers.cast([*c]X509_EXTENSION, OPENSSL_sk_delete_ptr(ossl_check_X509_EXTENSION_sk_type(sk), ossl_check_X509_EXTENSION_type(ptr)));
 }
 pub inline fn sk_X509_EXTENSION_push(sk: anytype, ptr: anytype) @TypeOf(OPENSSL_sk_push(ossl_check_X509_EXTENSION_sk_type(sk), ossl_check_X509_EXTENSION_type(ptr))) {
     _ = &sk;
@@ -40416,11 +40416,11 @@ pub inline fn sk_X509_EXTENSION_unshift(sk: anytype, ptr: anytype) @TypeOf(OPENS
 }
 pub inline fn sk_X509_EXTENSION_pop(sk: anytype) [*c]X509_EXTENSION {
     _ = &sk;
-    return @import("std").zig.c_translation.cast([*c]X509_EXTENSION, OPENSSL_sk_pop(ossl_check_X509_EXTENSION_sk_type(sk)));
+    return @import("std").zig.c_translation.helpers.cast([*c]X509_EXTENSION, OPENSSL_sk_pop(ossl_check_X509_EXTENSION_sk_type(sk)));
 }
 pub inline fn sk_X509_EXTENSION_shift(sk: anytype) [*c]X509_EXTENSION {
     _ = &sk;
-    return @import("std").zig.c_translation.cast([*c]X509_EXTENSION, OPENSSL_sk_shift(ossl_check_X509_EXTENSION_sk_type(sk)));
+    return @import("std").zig.c_translation.helpers.cast([*c]X509_EXTENSION, OPENSSL_sk_shift(ossl_check_X509_EXTENSION_sk_type(sk)));
 }
 pub inline fn sk_X509_EXTENSION_pop_free(sk: anytype, freefunc: anytype) @TypeOf(OPENSSL_sk_pop_free(ossl_check_X509_EXTENSION_sk_type(sk), ossl_check_X509_EXTENSION_freefunc_type(freefunc))) {
     _ = &sk;
@@ -40437,7 +40437,7 @@ pub inline fn sk_X509_EXTENSION_set(sk: anytype, idx: anytype, ptr: anytype) [*c
     _ = &sk;
     _ = &idx;
     _ = &ptr;
-    return @import("std").zig.c_translation.cast([*c]X509_EXTENSION, OPENSSL_sk_set(ossl_check_X509_EXTENSION_sk_type(sk), idx, ossl_check_X509_EXTENSION_type(ptr)));
+    return @import("std").zig.c_translation.helpers.cast([*c]X509_EXTENSION, OPENSSL_sk_set(ossl_check_X509_EXTENSION_sk_type(sk), idx, ossl_check_X509_EXTENSION_type(ptr)));
 }
 pub inline fn sk_X509_EXTENSION_find(sk: anytype, ptr: anytype) @TypeOf(OPENSSL_sk_find(ossl_check_X509_EXTENSION_sk_type(sk), ossl_check_X509_EXTENSION_type(ptr))) {
     _ = &sk;
@@ -40470,7 +40470,7 @@ pub const sk_X509_EXTENSION_deep_copy = @compileError("unable to translate C exp
 pub inline fn sk_X509_EXTENSION_set_cmp_func(sk: anytype, cmp: anytype) sk_X509_EXTENSION_compfunc {
     _ = &sk;
     _ = &cmp;
-    return @import("std").zig.c_translation.cast(sk_X509_EXTENSION_compfunc, OPENSSL_sk_set_cmp_func(ossl_check_X509_EXTENSION_sk_type(sk), ossl_check_X509_EXTENSION_compfunc_type(cmp)));
+    return @import("std").zig.c_translation.helpers.cast(sk_X509_EXTENSION_compfunc, OPENSSL_sk_set_cmp_func(ossl_check_X509_EXTENSION_sk_type(sk), ossl_check_X509_EXTENSION_compfunc_type(cmp)));
 }
 pub inline fn sk_X509_ATTRIBUTE_num(sk: anytype) @TypeOf(OPENSSL_sk_num(ossl_check_const_X509_ATTRIBUTE_sk_type(sk))) {
     _ = &sk;
@@ -40479,7 +40479,7 @@ pub inline fn sk_X509_ATTRIBUTE_num(sk: anytype) @TypeOf(OPENSSL_sk_num(ossl_che
 pub inline fn sk_X509_ATTRIBUTE_value(sk: anytype, idx: anytype) [*c]X509_ATTRIBUTE {
     _ = &sk;
     _ = &idx;
-    return @import("std").zig.c_translation.cast([*c]X509_ATTRIBUTE, OPENSSL_sk_value(ossl_check_const_X509_ATTRIBUTE_sk_type(sk), idx));
+    return @import("std").zig.c_translation.helpers.cast([*c]X509_ATTRIBUTE, OPENSSL_sk_value(ossl_check_const_X509_ATTRIBUTE_sk_type(sk), idx));
 }
 pub const sk_X509_ATTRIBUTE_new = @compileError("unable to translate C expr: unexpected token ')'");
 // /usr/include/openssl/x509.h:266:9
@@ -40503,12 +40503,12 @@ pub inline fn sk_X509_ATTRIBUTE_zero(sk: anytype) @TypeOf(OPENSSL_sk_zero(ossl_c
 pub inline fn sk_X509_ATTRIBUTE_delete(sk: anytype, i: anytype) [*c]X509_ATTRIBUTE {
     _ = &sk;
     _ = &i;
-    return @import("std").zig.c_translation.cast([*c]X509_ATTRIBUTE, OPENSSL_sk_delete(ossl_check_X509_ATTRIBUTE_sk_type(sk), i));
+    return @import("std").zig.c_translation.helpers.cast([*c]X509_ATTRIBUTE, OPENSSL_sk_delete(ossl_check_X509_ATTRIBUTE_sk_type(sk), i));
 }
 pub inline fn sk_X509_ATTRIBUTE_delete_ptr(sk: anytype, ptr: anytype) [*c]X509_ATTRIBUTE {
     _ = &sk;
     _ = &ptr;
-    return @import("std").zig.c_translation.cast([*c]X509_ATTRIBUTE, OPENSSL_sk_delete_ptr(ossl_check_X509_ATTRIBUTE_sk_type(sk), ossl_check_X509_ATTRIBUTE_type(ptr)));
+    return @import("std").zig.c_translation.helpers.cast([*c]X509_ATTRIBUTE, OPENSSL_sk_delete_ptr(ossl_check_X509_ATTRIBUTE_sk_type(sk), ossl_check_X509_ATTRIBUTE_type(ptr)));
 }
 pub inline fn sk_X509_ATTRIBUTE_push(sk: anytype, ptr: anytype) @TypeOf(OPENSSL_sk_push(ossl_check_X509_ATTRIBUTE_sk_type(sk), ossl_check_X509_ATTRIBUTE_type(ptr))) {
     _ = &sk;
@@ -40522,11 +40522,11 @@ pub inline fn sk_X509_ATTRIBUTE_unshift(sk: anytype, ptr: anytype) @TypeOf(OPENS
 }
 pub inline fn sk_X509_ATTRIBUTE_pop(sk: anytype) [*c]X509_ATTRIBUTE {
     _ = &sk;
-    return @import("std").zig.c_translation.cast([*c]X509_ATTRIBUTE, OPENSSL_sk_pop(ossl_check_X509_ATTRIBUTE_sk_type(sk)));
+    return @import("std").zig.c_translation.helpers.cast([*c]X509_ATTRIBUTE, OPENSSL_sk_pop(ossl_check_X509_ATTRIBUTE_sk_type(sk)));
 }
 pub inline fn sk_X509_ATTRIBUTE_shift(sk: anytype) [*c]X509_ATTRIBUTE {
     _ = &sk;
-    return @import("std").zig.c_translation.cast([*c]X509_ATTRIBUTE, OPENSSL_sk_shift(ossl_check_X509_ATTRIBUTE_sk_type(sk)));
+    return @import("std").zig.c_translation.helpers.cast([*c]X509_ATTRIBUTE, OPENSSL_sk_shift(ossl_check_X509_ATTRIBUTE_sk_type(sk)));
 }
 pub inline fn sk_X509_ATTRIBUTE_pop_free(sk: anytype, freefunc: anytype) @TypeOf(OPENSSL_sk_pop_free(ossl_check_X509_ATTRIBUTE_sk_type(sk), ossl_check_X509_ATTRIBUTE_freefunc_type(freefunc))) {
     _ = &sk;
@@ -40543,7 +40543,7 @@ pub inline fn sk_X509_ATTRIBUTE_set(sk: anytype, idx: anytype, ptr: anytype) [*c
     _ = &sk;
     _ = &idx;
     _ = &ptr;
-    return @import("std").zig.c_translation.cast([*c]X509_ATTRIBUTE, OPENSSL_sk_set(ossl_check_X509_ATTRIBUTE_sk_type(sk), idx, ossl_check_X509_ATTRIBUTE_type(ptr)));
+    return @import("std").zig.c_translation.helpers.cast([*c]X509_ATTRIBUTE, OPENSSL_sk_set(ossl_check_X509_ATTRIBUTE_sk_type(sk), idx, ossl_check_X509_ATTRIBUTE_type(ptr)));
 }
 pub inline fn sk_X509_ATTRIBUTE_find(sk: anytype, ptr: anytype) @TypeOf(OPENSSL_sk_find(ossl_check_X509_ATTRIBUTE_sk_type(sk), ossl_check_X509_ATTRIBUTE_type(ptr))) {
     _ = &sk;
@@ -40576,7 +40576,7 @@ pub const sk_X509_ATTRIBUTE_deep_copy = @compileError("unable to translate C exp
 pub inline fn sk_X509_ATTRIBUTE_set_cmp_func(sk: anytype, cmp: anytype) sk_X509_ATTRIBUTE_compfunc {
     _ = &sk;
     _ = &cmp;
-    return @import("std").zig.c_translation.cast(sk_X509_ATTRIBUTE_compfunc, OPENSSL_sk_set_cmp_func(ossl_check_X509_ATTRIBUTE_sk_type(sk), ossl_check_X509_ATTRIBUTE_compfunc_type(cmp)));
+    return @import("std").zig.c_translation.helpers.cast(sk_X509_ATTRIBUTE_compfunc, OPENSSL_sk_set_cmp_func(ossl_check_X509_ATTRIBUTE_sk_type(sk), ossl_check_X509_ATTRIBUTE_compfunc_type(cmp)));
 }
 pub const X509_FLAG_COMPAT = @as(c_int, 0);
 pub const X509_FLAG_NO_HEADER = @as(c_long, 1);
@@ -40618,7 +40618,7 @@ pub inline fn sk_X509_INFO_num(sk: anytype) @TypeOf(OPENSSL_sk_num(ossl_check_co
 pub inline fn sk_X509_INFO_value(sk: anytype, idx: anytype) [*c]X509_INFO {
     _ = &sk;
     _ = &idx;
-    return @import("std").zig.c_translation.cast([*c]X509_INFO, OPENSSL_sk_value(ossl_check_const_X509_INFO_sk_type(sk), idx));
+    return @import("std").zig.c_translation.helpers.cast([*c]X509_INFO, OPENSSL_sk_value(ossl_check_const_X509_INFO_sk_type(sk), idx));
 }
 pub const sk_X509_INFO_new = @compileError("unable to translate C expr: unexpected token ')'");
 // /usr/include/openssl/x509.h:401:9
@@ -40642,12 +40642,12 @@ pub inline fn sk_X509_INFO_zero(sk: anytype) @TypeOf(OPENSSL_sk_zero(ossl_check_
 pub inline fn sk_X509_INFO_delete(sk: anytype, i: anytype) [*c]X509_INFO {
     _ = &sk;
     _ = &i;
-    return @import("std").zig.c_translation.cast([*c]X509_INFO, OPENSSL_sk_delete(ossl_check_X509_INFO_sk_type(sk), i));
+    return @import("std").zig.c_translation.helpers.cast([*c]X509_INFO, OPENSSL_sk_delete(ossl_check_X509_INFO_sk_type(sk), i));
 }
 pub inline fn sk_X509_INFO_delete_ptr(sk: anytype, ptr: anytype) [*c]X509_INFO {
     _ = &sk;
     _ = &ptr;
-    return @import("std").zig.c_translation.cast([*c]X509_INFO, OPENSSL_sk_delete_ptr(ossl_check_X509_INFO_sk_type(sk), ossl_check_X509_INFO_type(ptr)));
+    return @import("std").zig.c_translation.helpers.cast([*c]X509_INFO, OPENSSL_sk_delete_ptr(ossl_check_X509_INFO_sk_type(sk), ossl_check_X509_INFO_type(ptr)));
 }
 pub inline fn sk_X509_INFO_push(sk: anytype, ptr: anytype) @TypeOf(OPENSSL_sk_push(ossl_check_X509_INFO_sk_type(sk), ossl_check_X509_INFO_type(ptr))) {
     _ = &sk;
@@ -40661,11 +40661,11 @@ pub inline fn sk_X509_INFO_unshift(sk: anytype, ptr: anytype) @TypeOf(OPENSSL_sk
 }
 pub inline fn sk_X509_INFO_pop(sk: anytype) [*c]X509_INFO {
     _ = &sk;
-    return @import("std").zig.c_translation.cast([*c]X509_INFO, OPENSSL_sk_pop(ossl_check_X509_INFO_sk_type(sk)));
+    return @import("std").zig.c_translation.helpers.cast([*c]X509_INFO, OPENSSL_sk_pop(ossl_check_X509_INFO_sk_type(sk)));
 }
 pub inline fn sk_X509_INFO_shift(sk: anytype) [*c]X509_INFO {
     _ = &sk;
-    return @import("std").zig.c_translation.cast([*c]X509_INFO, OPENSSL_sk_shift(ossl_check_X509_INFO_sk_type(sk)));
+    return @import("std").zig.c_translation.helpers.cast([*c]X509_INFO, OPENSSL_sk_shift(ossl_check_X509_INFO_sk_type(sk)));
 }
 pub inline fn sk_X509_INFO_pop_free(sk: anytype, freefunc: anytype) @TypeOf(OPENSSL_sk_pop_free(ossl_check_X509_INFO_sk_type(sk), ossl_check_X509_INFO_freefunc_type(freefunc))) {
     _ = &sk;
@@ -40682,7 +40682,7 @@ pub inline fn sk_X509_INFO_set(sk: anytype, idx: anytype, ptr: anytype) [*c]X509
     _ = &sk;
     _ = &idx;
     _ = &ptr;
-    return @import("std").zig.c_translation.cast([*c]X509_INFO, OPENSSL_sk_set(ossl_check_X509_INFO_sk_type(sk), idx, ossl_check_X509_INFO_type(ptr)));
+    return @import("std").zig.c_translation.helpers.cast([*c]X509_INFO, OPENSSL_sk_set(ossl_check_X509_INFO_sk_type(sk), idx, ossl_check_X509_INFO_type(ptr)));
 }
 pub inline fn sk_X509_INFO_find(sk: anytype, ptr: anytype) @TypeOf(OPENSSL_sk_find(ossl_check_X509_INFO_sk_type(sk), ossl_check_X509_INFO_type(ptr))) {
     _ = &sk;
@@ -40715,7 +40715,7 @@ pub const sk_X509_INFO_deep_copy = @compileError("unable to translate C expr: un
 pub inline fn sk_X509_INFO_set_cmp_func(sk: anytype, cmp: anytype) sk_X509_INFO_compfunc {
     _ = &sk;
     _ = &cmp;
-    return @import("std").zig.c_translation.cast(sk_X509_INFO_compfunc, OPENSSL_sk_set_cmp_func(ossl_check_X509_INFO_sk_type(sk), ossl_check_X509_INFO_compfunc_type(cmp)));
+    return @import("std").zig.c_translation.helpers.cast(sk_X509_INFO_compfunc, OPENSSL_sk_set_cmp_func(ossl_check_X509_INFO_sk_type(sk), ossl_check_X509_INFO_compfunc_type(cmp)));
 }
 pub const OPENSSL_X509_VFY_H = "";
 pub const HEADER_X509_VFY_H = "";
@@ -40790,17 +40790,17 @@ pub inline fn lh_OPENSSL_STRING_flush(lh: anytype) @TypeOf(OPENSSL_LH_flush(ossl
 pub inline fn lh_OPENSSL_STRING_insert(lh: anytype, ptr: anytype) [*c]OPENSSL_STRING {
     _ = &lh;
     _ = &ptr;
-    return @import("std").zig.c_translation.cast([*c]OPENSSL_STRING, OPENSSL_LH_insert(ossl_check_OPENSSL_STRING_lh_type(lh), ossl_check_OPENSSL_STRING_lh_plain_type(ptr)));
+    return @import("std").zig.c_translation.helpers.cast([*c]OPENSSL_STRING, OPENSSL_LH_insert(ossl_check_OPENSSL_STRING_lh_type(lh), ossl_check_OPENSSL_STRING_lh_plain_type(ptr)));
 }
 pub inline fn lh_OPENSSL_STRING_delete(lh: anytype, ptr: anytype) [*c]OPENSSL_STRING {
     _ = &lh;
     _ = &ptr;
-    return @import("std").zig.c_translation.cast([*c]OPENSSL_STRING, OPENSSL_LH_delete(ossl_check_OPENSSL_STRING_lh_type(lh), ossl_check_const_OPENSSL_STRING_lh_plain_type(ptr)));
+    return @import("std").zig.c_translation.helpers.cast([*c]OPENSSL_STRING, OPENSSL_LH_delete(ossl_check_OPENSSL_STRING_lh_type(lh), ossl_check_const_OPENSSL_STRING_lh_plain_type(ptr)));
 }
 pub inline fn lh_OPENSSL_STRING_retrieve(lh: anytype, ptr: anytype) [*c]OPENSSL_STRING {
     _ = &lh;
     _ = &ptr;
-    return @import("std").zig.c_translation.cast([*c]OPENSSL_STRING, OPENSSL_LH_retrieve(ossl_check_OPENSSL_STRING_lh_type(lh), ossl_check_const_OPENSSL_STRING_lh_plain_type(ptr)));
+    return @import("std").zig.c_translation.helpers.cast([*c]OPENSSL_STRING, OPENSSL_LH_retrieve(ossl_check_OPENSSL_STRING_lh_type(lh), ossl_check_const_OPENSSL_STRING_lh_plain_type(ptr)));
 }
 pub inline fn lh_OPENSSL_STRING_error(lh: anytype) @TypeOf(OPENSSL_LH_error(ossl_check_OPENSSL_STRING_lh_type(lh))) {
     _ = &lh;
@@ -40852,17 +40852,17 @@ pub inline fn lh_OPENSSL_CSTRING_flush(lh: anytype) @TypeOf(OPENSSL_LH_flush(oss
 pub inline fn lh_OPENSSL_CSTRING_insert(lh: anytype, ptr: anytype) [*c]OPENSSL_CSTRING {
     _ = &lh;
     _ = &ptr;
-    return @import("std").zig.c_translation.cast([*c]OPENSSL_CSTRING, OPENSSL_LH_insert(ossl_check_OPENSSL_CSTRING_lh_type(lh), ossl_check_OPENSSL_CSTRING_lh_plain_type(ptr)));
+    return @import("std").zig.c_translation.helpers.cast([*c]OPENSSL_CSTRING, OPENSSL_LH_insert(ossl_check_OPENSSL_CSTRING_lh_type(lh), ossl_check_OPENSSL_CSTRING_lh_plain_type(ptr)));
 }
 pub inline fn lh_OPENSSL_CSTRING_delete(lh: anytype, ptr: anytype) [*c]OPENSSL_CSTRING {
     _ = &lh;
     _ = &ptr;
-    return @import("std").zig.c_translation.cast([*c]OPENSSL_CSTRING, OPENSSL_LH_delete(ossl_check_OPENSSL_CSTRING_lh_type(lh), ossl_check_const_OPENSSL_CSTRING_lh_plain_type(ptr)));
+    return @import("std").zig.c_translation.helpers.cast([*c]OPENSSL_CSTRING, OPENSSL_LH_delete(ossl_check_OPENSSL_CSTRING_lh_type(lh), ossl_check_const_OPENSSL_CSTRING_lh_plain_type(ptr)));
 }
 pub inline fn lh_OPENSSL_CSTRING_retrieve(lh: anytype, ptr: anytype) [*c]OPENSSL_CSTRING {
     _ = &lh;
     _ = &ptr;
-    return @import("std").zig.c_translation.cast([*c]OPENSSL_CSTRING, OPENSSL_LH_retrieve(ossl_check_OPENSSL_CSTRING_lh_type(lh), ossl_check_const_OPENSSL_CSTRING_lh_plain_type(ptr)));
+    return @import("std").zig.c_translation.helpers.cast([*c]OPENSSL_CSTRING, OPENSSL_LH_retrieve(ossl_check_OPENSSL_CSTRING_lh_type(lh), ossl_check_const_OPENSSL_CSTRING_lh_plain_type(ptr)));
 }
 pub inline fn lh_OPENSSL_CSTRING_error(lh: anytype) @TypeOf(OPENSSL_LH_error(ossl_check_OPENSSL_CSTRING_lh_type(lh))) {
     _ = &lh;
@@ -40910,7 +40910,7 @@ pub inline fn sk_X509_LOOKUP_num(sk: anytype) @TypeOf(OPENSSL_sk_num(ossl_check_
 pub inline fn sk_X509_LOOKUP_value(sk: anytype, idx: anytype) [*c]X509_LOOKUP {
     _ = &sk;
     _ = &idx;
-    return @import("std").zig.c_translation.cast([*c]X509_LOOKUP, OPENSSL_sk_value(ossl_check_const_X509_LOOKUP_sk_type(sk), idx));
+    return @import("std").zig.c_translation.helpers.cast([*c]X509_LOOKUP, OPENSSL_sk_value(ossl_check_const_X509_LOOKUP_sk_type(sk), idx));
 }
 pub const sk_X509_LOOKUP_new = @compileError("unable to translate C expr: unexpected token ')'");
 // /usr/include/openssl/x509_vfy.h:71:9
@@ -40934,12 +40934,12 @@ pub inline fn sk_X509_LOOKUP_zero(sk: anytype) @TypeOf(OPENSSL_sk_zero(ossl_chec
 pub inline fn sk_X509_LOOKUP_delete(sk: anytype, i: anytype) [*c]X509_LOOKUP {
     _ = &sk;
     _ = &i;
-    return @import("std").zig.c_translation.cast([*c]X509_LOOKUP, OPENSSL_sk_delete(ossl_check_X509_LOOKUP_sk_type(sk), i));
+    return @import("std").zig.c_translation.helpers.cast([*c]X509_LOOKUP, OPENSSL_sk_delete(ossl_check_X509_LOOKUP_sk_type(sk), i));
 }
 pub inline fn sk_X509_LOOKUP_delete_ptr(sk: anytype, ptr: anytype) [*c]X509_LOOKUP {
     _ = &sk;
     _ = &ptr;
-    return @import("std").zig.c_translation.cast([*c]X509_LOOKUP, OPENSSL_sk_delete_ptr(ossl_check_X509_LOOKUP_sk_type(sk), ossl_check_X509_LOOKUP_type(ptr)));
+    return @import("std").zig.c_translation.helpers.cast([*c]X509_LOOKUP, OPENSSL_sk_delete_ptr(ossl_check_X509_LOOKUP_sk_type(sk), ossl_check_X509_LOOKUP_type(ptr)));
 }
 pub inline fn sk_X509_LOOKUP_push(sk: anytype, ptr: anytype) @TypeOf(OPENSSL_sk_push(ossl_check_X509_LOOKUP_sk_type(sk), ossl_check_X509_LOOKUP_type(ptr))) {
     _ = &sk;
@@ -40953,11 +40953,11 @@ pub inline fn sk_X509_LOOKUP_unshift(sk: anytype, ptr: anytype) @TypeOf(OPENSSL_
 }
 pub inline fn sk_X509_LOOKUP_pop(sk: anytype) [*c]X509_LOOKUP {
     _ = &sk;
-    return @import("std").zig.c_translation.cast([*c]X509_LOOKUP, OPENSSL_sk_pop(ossl_check_X509_LOOKUP_sk_type(sk)));
+    return @import("std").zig.c_translation.helpers.cast([*c]X509_LOOKUP, OPENSSL_sk_pop(ossl_check_X509_LOOKUP_sk_type(sk)));
 }
 pub inline fn sk_X509_LOOKUP_shift(sk: anytype) [*c]X509_LOOKUP {
     _ = &sk;
-    return @import("std").zig.c_translation.cast([*c]X509_LOOKUP, OPENSSL_sk_shift(ossl_check_X509_LOOKUP_sk_type(sk)));
+    return @import("std").zig.c_translation.helpers.cast([*c]X509_LOOKUP, OPENSSL_sk_shift(ossl_check_X509_LOOKUP_sk_type(sk)));
 }
 pub inline fn sk_X509_LOOKUP_pop_free(sk: anytype, freefunc: anytype) @TypeOf(OPENSSL_sk_pop_free(ossl_check_X509_LOOKUP_sk_type(sk), ossl_check_X509_LOOKUP_freefunc_type(freefunc))) {
     _ = &sk;
@@ -40974,7 +40974,7 @@ pub inline fn sk_X509_LOOKUP_set(sk: anytype, idx: anytype, ptr: anytype) [*c]X5
     _ = &sk;
     _ = &idx;
     _ = &ptr;
-    return @import("std").zig.c_translation.cast([*c]X509_LOOKUP, OPENSSL_sk_set(ossl_check_X509_LOOKUP_sk_type(sk), idx, ossl_check_X509_LOOKUP_type(ptr)));
+    return @import("std").zig.c_translation.helpers.cast([*c]X509_LOOKUP, OPENSSL_sk_set(ossl_check_X509_LOOKUP_sk_type(sk), idx, ossl_check_X509_LOOKUP_type(ptr)));
 }
 pub inline fn sk_X509_LOOKUP_find(sk: anytype, ptr: anytype) @TypeOf(OPENSSL_sk_find(ossl_check_X509_LOOKUP_sk_type(sk), ossl_check_X509_LOOKUP_type(ptr))) {
     _ = &sk;
@@ -41007,7 +41007,7 @@ pub const sk_X509_LOOKUP_deep_copy = @compileError("unable to translate C expr: 
 pub inline fn sk_X509_LOOKUP_set_cmp_func(sk: anytype, cmp: anytype) sk_X509_LOOKUP_compfunc {
     _ = &sk;
     _ = &cmp;
-    return @import("std").zig.c_translation.cast(sk_X509_LOOKUP_compfunc, OPENSSL_sk_set_cmp_func(ossl_check_X509_LOOKUP_sk_type(sk), ossl_check_X509_LOOKUP_compfunc_type(cmp)));
+    return @import("std").zig.c_translation.helpers.cast(sk_X509_LOOKUP_compfunc, OPENSSL_sk_set_cmp_func(ossl_check_X509_LOOKUP_sk_type(sk), ossl_check_X509_LOOKUP_compfunc_type(cmp)));
 }
 pub inline fn sk_X509_OBJECT_num(sk: anytype) @TypeOf(OPENSSL_sk_num(ossl_check_const_X509_OBJECT_sk_type(sk))) {
     _ = &sk;
@@ -41016,7 +41016,7 @@ pub inline fn sk_X509_OBJECT_num(sk: anytype) @TypeOf(OPENSSL_sk_num(ossl_check_
 pub inline fn sk_X509_OBJECT_value(sk: anytype, idx: anytype) [*c]X509_OBJECT {
     _ = &sk;
     _ = &idx;
-    return @import("std").zig.c_translation.cast([*c]X509_OBJECT, OPENSSL_sk_value(ossl_check_const_X509_OBJECT_sk_type(sk), idx));
+    return @import("std").zig.c_translation.helpers.cast([*c]X509_OBJECT, OPENSSL_sk_value(ossl_check_const_X509_OBJECT_sk_type(sk), idx));
 }
 pub const sk_X509_OBJECT_new = @compileError("unable to translate C expr: unexpected token ')'");
 // /usr/include/openssl/x509_vfy.h:97:9
@@ -41040,12 +41040,12 @@ pub inline fn sk_X509_OBJECT_zero(sk: anytype) @TypeOf(OPENSSL_sk_zero(ossl_chec
 pub inline fn sk_X509_OBJECT_delete(sk: anytype, i: anytype) [*c]X509_OBJECT {
     _ = &sk;
     _ = &i;
-    return @import("std").zig.c_translation.cast([*c]X509_OBJECT, OPENSSL_sk_delete(ossl_check_X509_OBJECT_sk_type(sk), i));
+    return @import("std").zig.c_translation.helpers.cast([*c]X509_OBJECT, OPENSSL_sk_delete(ossl_check_X509_OBJECT_sk_type(sk), i));
 }
 pub inline fn sk_X509_OBJECT_delete_ptr(sk: anytype, ptr: anytype) [*c]X509_OBJECT {
     _ = &sk;
     _ = &ptr;
-    return @import("std").zig.c_translation.cast([*c]X509_OBJECT, OPENSSL_sk_delete_ptr(ossl_check_X509_OBJECT_sk_type(sk), ossl_check_X509_OBJECT_type(ptr)));
+    return @import("std").zig.c_translation.helpers.cast([*c]X509_OBJECT, OPENSSL_sk_delete_ptr(ossl_check_X509_OBJECT_sk_type(sk), ossl_check_X509_OBJECT_type(ptr)));
 }
 pub inline fn sk_X509_OBJECT_push(sk: anytype, ptr: anytype) @TypeOf(OPENSSL_sk_push(ossl_check_X509_OBJECT_sk_type(sk), ossl_check_X509_OBJECT_type(ptr))) {
     _ = &sk;
@@ -41059,11 +41059,11 @@ pub inline fn sk_X509_OBJECT_unshift(sk: anytype, ptr: anytype) @TypeOf(OPENSSL_
 }
 pub inline fn sk_X509_OBJECT_pop(sk: anytype) [*c]X509_OBJECT {
     _ = &sk;
-    return @import("std").zig.c_translation.cast([*c]X509_OBJECT, OPENSSL_sk_pop(ossl_check_X509_OBJECT_sk_type(sk)));
+    return @import("std").zig.c_translation.helpers.cast([*c]X509_OBJECT, OPENSSL_sk_pop(ossl_check_X509_OBJECT_sk_type(sk)));
 }
 pub inline fn sk_X509_OBJECT_shift(sk: anytype) [*c]X509_OBJECT {
     _ = &sk;
-    return @import("std").zig.c_translation.cast([*c]X509_OBJECT, OPENSSL_sk_shift(ossl_check_X509_OBJECT_sk_type(sk)));
+    return @import("std").zig.c_translation.helpers.cast([*c]X509_OBJECT, OPENSSL_sk_shift(ossl_check_X509_OBJECT_sk_type(sk)));
 }
 pub inline fn sk_X509_OBJECT_pop_free(sk: anytype, freefunc: anytype) @TypeOf(OPENSSL_sk_pop_free(ossl_check_X509_OBJECT_sk_type(sk), ossl_check_X509_OBJECT_freefunc_type(freefunc))) {
     _ = &sk;
@@ -41080,7 +41080,7 @@ pub inline fn sk_X509_OBJECT_set(sk: anytype, idx: anytype, ptr: anytype) [*c]X5
     _ = &sk;
     _ = &idx;
     _ = &ptr;
-    return @import("std").zig.c_translation.cast([*c]X509_OBJECT, OPENSSL_sk_set(ossl_check_X509_OBJECT_sk_type(sk), idx, ossl_check_X509_OBJECT_type(ptr)));
+    return @import("std").zig.c_translation.helpers.cast([*c]X509_OBJECT, OPENSSL_sk_set(ossl_check_X509_OBJECT_sk_type(sk), idx, ossl_check_X509_OBJECT_type(ptr)));
 }
 pub inline fn sk_X509_OBJECT_find(sk: anytype, ptr: anytype) @TypeOf(OPENSSL_sk_find(ossl_check_X509_OBJECT_sk_type(sk), ossl_check_X509_OBJECT_type(ptr))) {
     _ = &sk;
@@ -41113,7 +41113,7 @@ pub const sk_X509_OBJECT_deep_copy = @compileError("unable to translate C expr: 
 pub inline fn sk_X509_OBJECT_set_cmp_func(sk: anytype, cmp: anytype) sk_X509_OBJECT_compfunc {
     _ = &sk;
     _ = &cmp;
-    return @import("std").zig.c_translation.cast(sk_X509_OBJECT_compfunc, OPENSSL_sk_set_cmp_func(ossl_check_X509_OBJECT_sk_type(sk), ossl_check_X509_OBJECT_compfunc_type(cmp)));
+    return @import("std").zig.c_translation.helpers.cast(sk_X509_OBJECT_compfunc, OPENSSL_sk_set_cmp_func(ossl_check_X509_OBJECT_sk_type(sk), ossl_check_X509_OBJECT_compfunc_type(cmp)));
 }
 pub inline fn sk_X509_VERIFY_PARAM_num(sk: anytype) @TypeOf(OPENSSL_sk_num(ossl_check_const_X509_VERIFY_PARAM_sk_type(sk))) {
     _ = &sk;
@@ -41122,7 +41122,7 @@ pub inline fn sk_X509_VERIFY_PARAM_num(sk: anytype) @TypeOf(OPENSSL_sk_num(ossl_
 pub inline fn sk_X509_VERIFY_PARAM_value(sk: anytype, idx: anytype) [*c]X509_VERIFY_PARAM {
     _ = &sk;
     _ = &idx;
-    return @import("std").zig.c_translation.cast([*c]X509_VERIFY_PARAM, OPENSSL_sk_value(ossl_check_const_X509_VERIFY_PARAM_sk_type(sk), idx));
+    return @import("std").zig.c_translation.helpers.cast([*c]X509_VERIFY_PARAM, OPENSSL_sk_value(ossl_check_const_X509_VERIFY_PARAM_sk_type(sk), idx));
 }
 pub const sk_X509_VERIFY_PARAM_new = @compileError("unable to translate C expr: unexpected token ')'");
 // /usr/include/openssl/x509_vfy.h:123:9
@@ -41146,12 +41146,12 @@ pub inline fn sk_X509_VERIFY_PARAM_zero(sk: anytype) @TypeOf(OPENSSL_sk_zero(oss
 pub inline fn sk_X509_VERIFY_PARAM_delete(sk: anytype, i: anytype) [*c]X509_VERIFY_PARAM {
     _ = &sk;
     _ = &i;
-    return @import("std").zig.c_translation.cast([*c]X509_VERIFY_PARAM, OPENSSL_sk_delete(ossl_check_X509_VERIFY_PARAM_sk_type(sk), i));
+    return @import("std").zig.c_translation.helpers.cast([*c]X509_VERIFY_PARAM, OPENSSL_sk_delete(ossl_check_X509_VERIFY_PARAM_sk_type(sk), i));
 }
 pub inline fn sk_X509_VERIFY_PARAM_delete_ptr(sk: anytype, ptr: anytype) [*c]X509_VERIFY_PARAM {
     _ = &sk;
     _ = &ptr;
-    return @import("std").zig.c_translation.cast([*c]X509_VERIFY_PARAM, OPENSSL_sk_delete_ptr(ossl_check_X509_VERIFY_PARAM_sk_type(sk), ossl_check_X509_VERIFY_PARAM_type(ptr)));
+    return @import("std").zig.c_translation.helpers.cast([*c]X509_VERIFY_PARAM, OPENSSL_sk_delete_ptr(ossl_check_X509_VERIFY_PARAM_sk_type(sk), ossl_check_X509_VERIFY_PARAM_type(ptr)));
 }
 pub inline fn sk_X509_VERIFY_PARAM_push(sk: anytype, ptr: anytype) @TypeOf(OPENSSL_sk_push(ossl_check_X509_VERIFY_PARAM_sk_type(sk), ossl_check_X509_VERIFY_PARAM_type(ptr))) {
     _ = &sk;
@@ -41165,11 +41165,11 @@ pub inline fn sk_X509_VERIFY_PARAM_unshift(sk: anytype, ptr: anytype) @TypeOf(OP
 }
 pub inline fn sk_X509_VERIFY_PARAM_pop(sk: anytype) [*c]X509_VERIFY_PARAM {
     _ = &sk;
-    return @import("std").zig.c_translation.cast([*c]X509_VERIFY_PARAM, OPENSSL_sk_pop(ossl_check_X509_VERIFY_PARAM_sk_type(sk)));
+    return @import("std").zig.c_translation.helpers.cast([*c]X509_VERIFY_PARAM, OPENSSL_sk_pop(ossl_check_X509_VERIFY_PARAM_sk_type(sk)));
 }
 pub inline fn sk_X509_VERIFY_PARAM_shift(sk: anytype) [*c]X509_VERIFY_PARAM {
     _ = &sk;
-    return @import("std").zig.c_translation.cast([*c]X509_VERIFY_PARAM, OPENSSL_sk_shift(ossl_check_X509_VERIFY_PARAM_sk_type(sk)));
+    return @import("std").zig.c_translation.helpers.cast([*c]X509_VERIFY_PARAM, OPENSSL_sk_shift(ossl_check_X509_VERIFY_PARAM_sk_type(sk)));
 }
 pub inline fn sk_X509_VERIFY_PARAM_pop_free(sk: anytype, freefunc: anytype) @TypeOf(OPENSSL_sk_pop_free(ossl_check_X509_VERIFY_PARAM_sk_type(sk), ossl_check_X509_VERIFY_PARAM_freefunc_type(freefunc))) {
     _ = &sk;
@@ -41186,7 +41186,7 @@ pub inline fn sk_X509_VERIFY_PARAM_set(sk: anytype, idx: anytype, ptr: anytype) 
     _ = &sk;
     _ = &idx;
     _ = &ptr;
-    return @import("std").zig.c_translation.cast([*c]X509_VERIFY_PARAM, OPENSSL_sk_set(ossl_check_X509_VERIFY_PARAM_sk_type(sk), idx, ossl_check_X509_VERIFY_PARAM_type(ptr)));
+    return @import("std").zig.c_translation.helpers.cast([*c]X509_VERIFY_PARAM, OPENSSL_sk_set(ossl_check_X509_VERIFY_PARAM_sk_type(sk), idx, ossl_check_X509_VERIFY_PARAM_type(ptr)));
 }
 pub inline fn sk_X509_VERIFY_PARAM_find(sk: anytype, ptr: anytype) @TypeOf(OPENSSL_sk_find(ossl_check_X509_VERIFY_PARAM_sk_type(sk), ossl_check_X509_VERIFY_PARAM_type(ptr))) {
     _ = &sk;
@@ -41219,7 +41219,7 @@ pub const sk_X509_VERIFY_PARAM_deep_copy = @compileError("unable to translate C 
 pub inline fn sk_X509_VERIFY_PARAM_set_cmp_func(sk: anytype, cmp: anytype) sk_X509_VERIFY_PARAM_compfunc {
     _ = &sk;
     _ = &cmp;
-    return @import("std").zig.c_translation.cast(sk_X509_VERIFY_PARAM_compfunc, OPENSSL_sk_set_cmp_func(ossl_check_X509_VERIFY_PARAM_sk_type(sk), ossl_check_X509_VERIFY_PARAM_compfunc_type(cmp)));
+    return @import("std").zig.c_translation.helpers.cast(sk_X509_VERIFY_PARAM_compfunc, OPENSSL_sk_set_cmp_func(ossl_check_X509_VERIFY_PARAM_sk_type(sk), ossl_check_X509_VERIFY_PARAM_compfunc_type(cmp)));
 }
 pub inline fn sk_X509_TRUST_num(sk: anytype) @TypeOf(OPENSSL_sk_num(ossl_check_const_X509_TRUST_sk_type(sk))) {
     _ = &sk;
@@ -41228,7 +41228,7 @@ pub inline fn sk_X509_TRUST_num(sk: anytype) @TypeOf(OPENSSL_sk_num(ossl_check_c
 pub inline fn sk_X509_TRUST_value(sk: anytype, idx: anytype) [*c]X509_TRUST {
     _ = &sk;
     _ = &idx;
-    return @import("std").zig.c_translation.cast([*c]X509_TRUST, OPENSSL_sk_value(ossl_check_const_X509_TRUST_sk_type(sk), idx));
+    return @import("std").zig.c_translation.helpers.cast([*c]X509_TRUST, OPENSSL_sk_value(ossl_check_const_X509_TRUST_sk_type(sk), idx));
 }
 pub const sk_X509_TRUST_new = @compileError("unable to translate C expr: unexpected token ')'");
 // /usr/include/openssl/x509_vfy.h:160:9
@@ -41252,12 +41252,12 @@ pub inline fn sk_X509_TRUST_zero(sk: anytype) @TypeOf(OPENSSL_sk_zero(ossl_check
 pub inline fn sk_X509_TRUST_delete(sk: anytype, i: anytype) [*c]X509_TRUST {
     _ = &sk;
     _ = &i;
-    return @import("std").zig.c_translation.cast([*c]X509_TRUST, OPENSSL_sk_delete(ossl_check_X509_TRUST_sk_type(sk), i));
+    return @import("std").zig.c_translation.helpers.cast([*c]X509_TRUST, OPENSSL_sk_delete(ossl_check_X509_TRUST_sk_type(sk), i));
 }
 pub inline fn sk_X509_TRUST_delete_ptr(sk: anytype, ptr: anytype) [*c]X509_TRUST {
     _ = &sk;
     _ = &ptr;
-    return @import("std").zig.c_translation.cast([*c]X509_TRUST, OPENSSL_sk_delete_ptr(ossl_check_X509_TRUST_sk_type(sk), ossl_check_X509_TRUST_type(ptr)));
+    return @import("std").zig.c_translation.helpers.cast([*c]X509_TRUST, OPENSSL_sk_delete_ptr(ossl_check_X509_TRUST_sk_type(sk), ossl_check_X509_TRUST_type(ptr)));
 }
 pub inline fn sk_X509_TRUST_push(sk: anytype, ptr: anytype) @TypeOf(OPENSSL_sk_push(ossl_check_X509_TRUST_sk_type(sk), ossl_check_X509_TRUST_type(ptr))) {
     _ = &sk;
@@ -41271,11 +41271,11 @@ pub inline fn sk_X509_TRUST_unshift(sk: anytype, ptr: anytype) @TypeOf(OPENSSL_s
 }
 pub inline fn sk_X509_TRUST_pop(sk: anytype) [*c]X509_TRUST {
     _ = &sk;
-    return @import("std").zig.c_translation.cast([*c]X509_TRUST, OPENSSL_sk_pop(ossl_check_X509_TRUST_sk_type(sk)));
+    return @import("std").zig.c_translation.helpers.cast([*c]X509_TRUST, OPENSSL_sk_pop(ossl_check_X509_TRUST_sk_type(sk)));
 }
 pub inline fn sk_X509_TRUST_shift(sk: anytype) [*c]X509_TRUST {
     _ = &sk;
-    return @import("std").zig.c_translation.cast([*c]X509_TRUST, OPENSSL_sk_shift(ossl_check_X509_TRUST_sk_type(sk)));
+    return @import("std").zig.c_translation.helpers.cast([*c]X509_TRUST, OPENSSL_sk_shift(ossl_check_X509_TRUST_sk_type(sk)));
 }
 pub inline fn sk_X509_TRUST_pop_free(sk: anytype, freefunc: anytype) @TypeOf(OPENSSL_sk_pop_free(ossl_check_X509_TRUST_sk_type(sk), ossl_check_X509_TRUST_freefunc_type(freefunc))) {
     _ = &sk;
@@ -41292,7 +41292,7 @@ pub inline fn sk_X509_TRUST_set(sk: anytype, idx: anytype, ptr: anytype) [*c]X50
     _ = &sk;
     _ = &idx;
     _ = &ptr;
-    return @import("std").zig.c_translation.cast([*c]X509_TRUST, OPENSSL_sk_set(ossl_check_X509_TRUST_sk_type(sk), idx, ossl_check_X509_TRUST_type(ptr)));
+    return @import("std").zig.c_translation.helpers.cast([*c]X509_TRUST, OPENSSL_sk_set(ossl_check_X509_TRUST_sk_type(sk), idx, ossl_check_X509_TRUST_type(ptr)));
 }
 pub inline fn sk_X509_TRUST_find(sk: anytype, ptr: anytype) @TypeOf(OPENSSL_sk_find(ossl_check_X509_TRUST_sk_type(sk), ossl_check_X509_TRUST_type(ptr))) {
     _ = &sk;
@@ -41325,7 +41325,7 @@ pub const sk_X509_TRUST_deep_copy = @compileError("unable to translate C expr: u
 pub inline fn sk_X509_TRUST_set_cmp_func(sk: anytype, cmp: anytype) sk_X509_TRUST_compfunc {
     _ = &sk;
     _ = &cmp;
-    return @import("std").zig.c_translation.cast(sk_X509_TRUST_compfunc, OPENSSL_sk_set_cmp_func(ossl_check_X509_TRUST_sk_type(sk), ossl_check_X509_TRUST_compfunc_type(cmp)));
+    return @import("std").zig.c_translation.helpers.cast(sk_X509_TRUST_compfunc, OPENSSL_sk_set_cmp_func(ossl_check_X509_TRUST_sk_type(sk), ossl_check_X509_TRUST_compfunc_type(cmp)));
 }
 pub const X509_TRUST_DEFAULT = @as(c_int, 0);
 pub const X509_TRUST_COMPAT = @as(c_int, 1);
@@ -41359,17 +41359,17 @@ pub const X509_L_FILE_LOAD = @as(c_int, 1);
 pub const X509_L_ADD_DIR = @as(c_int, 2);
 pub const X509_L_ADD_STORE = @as(c_int, 3);
 pub const X509_L_LOAD_STORE = @as(c_int, 4);
-pub inline fn X509_LOOKUP_load_file(x: anytype, name: anytype, @"type": anytype) @TypeOf(X509_LOOKUP_ctrl(x, X509_L_FILE_LOAD, name, @import("std").zig.c_translation.cast(c_long, @"type"), NULL)) {
+pub inline fn X509_LOOKUP_load_file(x: anytype, name: anytype, @"type": anytype) @TypeOf(X509_LOOKUP_ctrl(x, X509_L_FILE_LOAD, name, @import("std").zig.c_translation.helpers.cast(c_long, @"type"), NULL)) {
     _ = &x;
     _ = &name;
     _ = &@"type";
-    return X509_LOOKUP_ctrl(x, X509_L_FILE_LOAD, name, @import("std").zig.c_translation.cast(c_long, @"type"), NULL);
+    return X509_LOOKUP_ctrl(x, X509_L_FILE_LOAD, name, @import("std").zig.c_translation.helpers.cast(c_long, @"type"), NULL);
 }
-pub inline fn X509_LOOKUP_add_dir(x: anytype, name: anytype, @"type": anytype) @TypeOf(X509_LOOKUP_ctrl(x, X509_L_ADD_DIR, name, @import("std").zig.c_translation.cast(c_long, @"type"), NULL)) {
+pub inline fn X509_LOOKUP_add_dir(x: anytype, name: anytype, @"type": anytype) @TypeOf(X509_LOOKUP_ctrl(x, X509_L_ADD_DIR, name, @import("std").zig.c_translation.helpers.cast(c_long, @"type"), NULL)) {
     _ = &x;
     _ = &name;
     _ = &@"type";
-    return X509_LOOKUP_ctrl(x, X509_L_ADD_DIR, name, @import("std").zig.c_translation.cast(c_long, @"type"), NULL);
+    return X509_LOOKUP_ctrl(x, X509_L_ADD_DIR, name, @import("std").zig.c_translation.helpers.cast(c_long, @"type"), NULL);
 }
 pub inline fn X509_LOOKUP_add_store(x: anytype, name: anytype) @TypeOf(X509_LOOKUP_ctrl(x, X509_L_ADD_STORE, name, @as(c_int, 0), NULL)) {
     _ = &x;
@@ -41381,13 +41381,13 @@ pub inline fn X509_LOOKUP_load_store(x: anytype, name: anytype) @TypeOf(X509_LOO
     _ = &name;
     return X509_LOOKUP_ctrl(x, X509_L_LOAD_STORE, name, @as(c_int, 0), NULL);
 }
-pub inline fn X509_LOOKUP_load_file_ex(x: anytype, name: anytype, @"type": anytype, libctx: anytype, propq: anytype) @TypeOf(X509_LOOKUP_ctrl_ex(x, X509_L_FILE_LOAD, name, @import("std").zig.c_translation.cast(c_long, @"type"), NULL, libctx, propq)) {
+pub inline fn X509_LOOKUP_load_file_ex(x: anytype, name: anytype, @"type": anytype, libctx: anytype, propq: anytype) @TypeOf(X509_LOOKUP_ctrl_ex(x, X509_L_FILE_LOAD, name, @import("std").zig.c_translation.helpers.cast(c_long, @"type"), NULL, libctx, propq)) {
     _ = &x;
     _ = &name;
     _ = &@"type";
     _ = &libctx;
     _ = &propq;
-    return X509_LOOKUP_ctrl_ex(x, X509_L_FILE_LOAD, name, @import("std").zig.c_translation.cast(c_long, @"type"), NULL, libctx, propq);
+    return X509_LOOKUP_ctrl_ex(x, X509_L_FILE_LOAD, name, @import("std").zig.c_translation.helpers.cast(c_long, @"type"), NULL, libctx, propq);
 }
 pub inline fn X509_LOOKUP_load_store_ex(x: anytype, name: anytype, libctx: anytype, propq: anytype) @TypeOf(X509_LOOKUP_ctrl_ex(x, X509_L_LOAD_STORE, name, @as(c_int, 0), NULL, libctx, propq)) {
     _ = &x;
@@ -41514,13 +41514,13 @@ pub const X509_V_FLAG_NOTIFY_POLICY = @as(c_int, 0x800);
 pub const X509_V_FLAG_EXTENDED_CRL_SUPPORT = @as(c_int, 0x1000);
 pub const X509_V_FLAG_USE_DELTAS = @as(c_int, 0x2000);
 pub const X509_V_FLAG_CHECK_SS_SIGNATURE = @as(c_int, 0x4000);
-pub const X509_V_FLAG_TRUSTED_FIRST = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x8000, .hex);
-pub const X509_V_FLAG_SUITEB_128_LOS_ONLY = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x10000, .hex);
-pub const X509_V_FLAG_SUITEB_192_LOS = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x20000, .hex);
-pub const X509_V_FLAG_SUITEB_128_LOS = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x30000, .hex);
-pub const X509_V_FLAG_PARTIAL_CHAIN = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x80000, .hex);
-pub const X509_V_FLAG_NO_ALT_CHAINS = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x100000, .hex);
-pub const X509_V_FLAG_NO_CHECK_TIME = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x200000, .hex);
+pub const X509_V_FLAG_TRUSTED_FIRST = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x8000, .hex);
+pub const X509_V_FLAG_SUITEB_128_LOS_ONLY = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x10000, .hex);
+pub const X509_V_FLAG_SUITEB_192_LOS = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x20000, .hex);
+pub const X509_V_FLAG_SUITEB_128_LOS = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x30000, .hex);
+pub const X509_V_FLAG_PARTIAL_CHAIN = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x80000, .hex);
+pub const X509_V_FLAG_NO_ALT_CHAINS = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x100000, .hex);
+pub const X509_V_FLAG_NO_CHECK_TIME = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x200000, .hex);
 pub const X509_VP_FLAG_DEFAULT = @as(c_int, 0x1);
 pub const X509_VP_FLAG_OVERWRITE = @as(c_int, 0x2);
 pub const X509_VP_FLAG_RESET_FLAGS = @as(c_int, 0x4);
@@ -41621,7 +41621,7 @@ pub inline fn sk_PKCS7_SIGNER_INFO_num(sk: anytype) @TypeOf(OPENSSL_sk_num(ossl_
 pub inline fn sk_PKCS7_SIGNER_INFO_value(sk: anytype, idx: anytype) [*c]PKCS7_SIGNER_INFO {
     _ = &sk;
     _ = &idx;
-    return @import("std").zig.c_translation.cast([*c]PKCS7_SIGNER_INFO, OPENSSL_sk_value(ossl_check_const_PKCS7_SIGNER_INFO_sk_type(sk), idx));
+    return @import("std").zig.c_translation.helpers.cast([*c]PKCS7_SIGNER_INFO, OPENSSL_sk_value(ossl_check_const_PKCS7_SIGNER_INFO_sk_type(sk), idx));
 }
 pub const sk_PKCS7_SIGNER_INFO_new = @compileError("unable to translate C expr: unexpected token ')'");
 // /usr/include/openssl/pkcs7.h:72:9
@@ -41645,12 +41645,12 @@ pub inline fn sk_PKCS7_SIGNER_INFO_zero(sk: anytype) @TypeOf(OPENSSL_sk_zero(oss
 pub inline fn sk_PKCS7_SIGNER_INFO_delete(sk: anytype, i: anytype) [*c]PKCS7_SIGNER_INFO {
     _ = &sk;
     _ = &i;
-    return @import("std").zig.c_translation.cast([*c]PKCS7_SIGNER_INFO, OPENSSL_sk_delete(ossl_check_PKCS7_SIGNER_INFO_sk_type(sk), i));
+    return @import("std").zig.c_translation.helpers.cast([*c]PKCS7_SIGNER_INFO, OPENSSL_sk_delete(ossl_check_PKCS7_SIGNER_INFO_sk_type(sk), i));
 }
 pub inline fn sk_PKCS7_SIGNER_INFO_delete_ptr(sk: anytype, ptr: anytype) [*c]PKCS7_SIGNER_INFO {
     _ = &sk;
     _ = &ptr;
-    return @import("std").zig.c_translation.cast([*c]PKCS7_SIGNER_INFO, OPENSSL_sk_delete_ptr(ossl_check_PKCS7_SIGNER_INFO_sk_type(sk), ossl_check_PKCS7_SIGNER_INFO_type(ptr)));
+    return @import("std").zig.c_translation.helpers.cast([*c]PKCS7_SIGNER_INFO, OPENSSL_sk_delete_ptr(ossl_check_PKCS7_SIGNER_INFO_sk_type(sk), ossl_check_PKCS7_SIGNER_INFO_type(ptr)));
 }
 pub inline fn sk_PKCS7_SIGNER_INFO_push(sk: anytype, ptr: anytype) @TypeOf(OPENSSL_sk_push(ossl_check_PKCS7_SIGNER_INFO_sk_type(sk), ossl_check_PKCS7_SIGNER_INFO_type(ptr))) {
     _ = &sk;
@@ -41664,11 +41664,11 @@ pub inline fn sk_PKCS7_SIGNER_INFO_unshift(sk: anytype, ptr: anytype) @TypeOf(OP
 }
 pub inline fn sk_PKCS7_SIGNER_INFO_pop(sk: anytype) [*c]PKCS7_SIGNER_INFO {
     _ = &sk;
-    return @import("std").zig.c_translation.cast([*c]PKCS7_SIGNER_INFO, OPENSSL_sk_pop(ossl_check_PKCS7_SIGNER_INFO_sk_type(sk)));
+    return @import("std").zig.c_translation.helpers.cast([*c]PKCS7_SIGNER_INFO, OPENSSL_sk_pop(ossl_check_PKCS7_SIGNER_INFO_sk_type(sk)));
 }
 pub inline fn sk_PKCS7_SIGNER_INFO_shift(sk: anytype) [*c]PKCS7_SIGNER_INFO {
     _ = &sk;
-    return @import("std").zig.c_translation.cast([*c]PKCS7_SIGNER_INFO, OPENSSL_sk_shift(ossl_check_PKCS7_SIGNER_INFO_sk_type(sk)));
+    return @import("std").zig.c_translation.helpers.cast([*c]PKCS7_SIGNER_INFO, OPENSSL_sk_shift(ossl_check_PKCS7_SIGNER_INFO_sk_type(sk)));
 }
 pub inline fn sk_PKCS7_SIGNER_INFO_pop_free(sk: anytype, freefunc: anytype) @TypeOf(OPENSSL_sk_pop_free(ossl_check_PKCS7_SIGNER_INFO_sk_type(sk), ossl_check_PKCS7_SIGNER_INFO_freefunc_type(freefunc))) {
     _ = &sk;
@@ -41685,7 +41685,7 @@ pub inline fn sk_PKCS7_SIGNER_INFO_set(sk: anytype, idx: anytype, ptr: anytype) 
     _ = &sk;
     _ = &idx;
     _ = &ptr;
-    return @import("std").zig.c_translation.cast([*c]PKCS7_SIGNER_INFO, OPENSSL_sk_set(ossl_check_PKCS7_SIGNER_INFO_sk_type(sk), idx, ossl_check_PKCS7_SIGNER_INFO_type(ptr)));
+    return @import("std").zig.c_translation.helpers.cast([*c]PKCS7_SIGNER_INFO, OPENSSL_sk_set(ossl_check_PKCS7_SIGNER_INFO_sk_type(sk), idx, ossl_check_PKCS7_SIGNER_INFO_type(ptr)));
 }
 pub inline fn sk_PKCS7_SIGNER_INFO_find(sk: anytype, ptr: anytype) @TypeOf(OPENSSL_sk_find(ossl_check_PKCS7_SIGNER_INFO_sk_type(sk), ossl_check_PKCS7_SIGNER_INFO_type(ptr))) {
     _ = &sk;
@@ -41718,7 +41718,7 @@ pub const sk_PKCS7_SIGNER_INFO_deep_copy = @compileError("unable to translate C 
 pub inline fn sk_PKCS7_SIGNER_INFO_set_cmp_func(sk: anytype, cmp: anytype) sk_PKCS7_SIGNER_INFO_compfunc {
     _ = &sk;
     _ = &cmp;
-    return @import("std").zig.c_translation.cast(sk_PKCS7_SIGNER_INFO_compfunc, OPENSSL_sk_set_cmp_func(ossl_check_PKCS7_SIGNER_INFO_sk_type(sk), ossl_check_PKCS7_SIGNER_INFO_compfunc_type(cmp)));
+    return @import("std").zig.c_translation.helpers.cast(sk_PKCS7_SIGNER_INFO_compfunc, OPENSSL_sk_set_cmp_func(ossl_check_PKCS7_SIGNER_INFO_sk_type(sk), ossl_check_PKCS7_SIGNER_INFO_compfunc_type(cmp)));
 }
 pub inline fn sk_PKCS7_RECIP_INFO_num(sk: anytype) @TypeOf(OPENSSL_sk_num(ossl_check_const_PKCS7_RECIP_INFO_sk_type(sk))) {
     _ = &sk;
@@ -41727,7 +41727,7 @@ pub inline fn sk_PKCS7_RECIP_INFO_num(sk: anytype) @TypeOf(OPENSSL_sk_num(ossl_c
 pub inline fn sk_PKCS7_RECIP_INFO_value(sk: anytype, idx: anytype) [*c]PKCS7_RECIP_INFO {
     _ = &sk;
     _ = &idx;
-    return @import("std").zig.c_translation.cast([*c]PKCS7_RECIP_INFO, OPENSSL_sk_value(ossl_check_const_PKCS7_RECIP_INFO_sk_type(sk), idx));
+    return @import("std").zig.c_translation.helpers.cast([*c]PKCS7_RECIP_INFO, OPENSSL_sk_value(ossl_check_const_PKCS7_RECIP_INFO_sk_type(sk), idx));
 }
 pub const sk_PKCS7_RECIP_INFO_new = @compileError("unable to translate C expr: unexpected token ')'");
 // /usr/include/openssl/pkcs7.h:108:9
@@ -41751,12 +41751,12 @@ pub inline fn sk_PKCS7_RECIP_INFO_zero(sk: anytype) @TypeOf(OPENSSL_sk_zero(ossl
 pub inline fn sk_PKCS7_RECIP_INFO_delete(sk: anytype, i: anytype) [*c]PKCS7_RECIP_INFO {
     _ = &sk;
     _ = &i;
-    return @import("std").zig.c_translation.cast([*c]PKCS7_RECIP_INFO, OPENSSL_sk_delete(ossl_check_PKCS7_RECIP_INFO_sk_type(sk), i));
+    return @import("std").zig.c_translation.helpers.cast([*c]PKCS7_RECIP_INFO, OPENSSL_sk_delete(ossl_check_PKCS7_RECIP_INFO_sk_type(sk), i));
 }
 pub inline fn sk_PKCS7_RECIP_INFO_delete_ptr(sk: anytype, ptr: anytype) [*c]PKCS7_RECIP_INFO {
     _ = &sk;
     _ = &ptr;
-    return @import("std").zig.c_translation.cast([*c]PKCS7_RECIP_INFO, OPENSSL_sk_delete_ptr(ossl_check_PKCS7_RECIP_INFO_sk_type(sk), ossl_check_PKCS7_RECIP_INFO_type(ptr)));
+    return @import("std").zig.c_translation.helpers.cast([*c]PKCS7_RECIP_INFO, OPENSSL_sk_delete_ptr(ossl_check_PKCS7_RECIP_INFO_sk_type(sk), ossl_check_PKCS7_RECIP_INFO_type(ptr)));
 }
 pub inline fn sk_PKCS7_RECIP_INFO_push(sk: anytype, ptr: anytype) @TypeOf(OPENSSL_sk_push(ossl_check_PKCS7_RECIP_INFO_sk_type(sk), ossl_check_PKCS7_RECIP_INFO_type(ptr))) {
     _ = &sk;
@@ -41770,11 +41770,11 @@ pub inline fn sk_PKCS7_RECIP_INFO_unshift(sk: anytype, ptr: anytype) @TypeOf(OPE
 }
 pub inline fn sk_PKCS7_RECIP_INFO_pop(sk: anytype) [*c]PKCS7_RECIP_INFO {
     _ = &sk;
-    return @import("std").zig.c_translation.cast([*c]PKCS7_RECIP_INFO, OPENSSL_sk_pop(ossl_check_PKCS7_RECIP_INFO_sk_type(sk)));
+    return @import("std").zig.c_translation.helpers.cast([*c]PKCS7_RECIP_INFO, OPENSSL_sk_pop(ossl_check_PKCS7_RECIP_INFO_sk_type(sk)));
 }
 pub inline fn sk_PKCS7_RECIP_INFO_shift(sk: anytype) [*c]PKCS7_RECIP_INFO {
     _ = &sk;
-    return @import("std").zig.c_translation.cast([*c]PKCS7_RECIP_INFO, OPENSSL_sk_shift(ossl_check_PKCS7_RECIP_INFO_sk_type(sk)));
+    return @import("std").zig.c_translation.helpers.cast([*c]PKCS7_RECIP_INFO, OPENSSL_sk_shift(ossl_check_PKCS7_RECIP_INFO_sk_type(sk)));
 }
 pub inline fn sk_PKCS7_RECIP_INFO_pop_free(sk: anytype, freefunc: anytype) @TypeOf(OPENSSL_sk_pop_free(ossl_check_PKCS7_RECIP_INFO_sk_type(sk), ossl_check_PKCS7_RECIP_INFO_freefunc_type(freefunc))) {
     _ = &sk;
@@ -41791,7 +41791,7 @@ pub inline fn sk_PKCS7_RECIP_INFO_set(sk: anytype, idx: anytype, ptr: anytype) [
     _ = &sk;
     _ = &idx;
     _ = &ptr;
-    return @import("std").zig.c_translation.cast([*c]PKCS7_RECIP_INFO, OPENSSL_sk_set(ossl_check_PKCS7_RECIP_INFO_sk_type(sk), idx, ossl_check_PKCS7_RECIP_INFO_type(ptr)));
+    return @import("std").zig.c_translation.helpers.cast([*c]PKCS7_RECIP_INFO, OPENSSL_sk_set(ossl_check_PKCS7_RECIP_INFO_sk_type(sk), idx, ossl_check_PKCS7_RECIP_INFO_type(ptr)));
 }
 pub inline fn sk_PKCS7_RECIP_INFO_find(sk: anytype, ptr: anytype) @TypeOf(OPENSSL_sk_find(ossl_check_PKCS7_RECIP_INFO_sk_type(sk), ossl_check_PKCS7_RECIP_INFO_type(ptr))) {
     _ = &sk;
@@ -41824,7 +41824,7 @@ pub const sk_PKCS7_RECIP_INFO_deep_copy = @compileError("unable to translate C e
 pub inline fn sk_PKCS7_RECIP_INFO_set_cmp_func(sk: anytype, cmp: anytype) sk_PKCS7_RECIP_INFO_compfunc {
     _ = &sk;
     _ = &cmp;
-    return @import("std").zig.c_translation.cast(sk_PKCS7_RECIP_INFO_compfunc, OPENSSL_sk_set_cmp_func(ossl_check_PKCS7_RECIP_INFO_sk_type(sk), ossl_check_PKCS7_RECIP_INFO_compfunc_type(cmp)));
+    return @import("std").zig.c_translation.helpers.cast(sk_PKCS7_RECIP_INFO_compfunc, OPENSSL_sk_set_cmp_func(ossl_check_PKCS7_RECIP_INFO_sk_type(sk), ossl_check_PKCS7_RECIP_INFO_compfunc_type(cmp)));
 }
 pub const PKCS7_S_HEADER = @as(c_int, 0);
 pub const PKCS7_S_BODY = @as(c_int, 1);
@@ -41836,7 +41836,7 @@ pub inline fn sk_PKCS7_num(sk: anytype) @TypeOf(OPENSSL_sk_num(ossl_check_const_
 pub inline fn sk_PKCS7_value(sk: anytype, idx: anytype) [*c]PKCS7 {
     _ = &sk;
     _ = &idx;
-    return @import("std").zig.c_translation.cast([*c]PKCS7, OPENSSL_sk_value(ossl_check_const_PKCS7_sk_type(sk), idx));
+    return @import("std").zig.c_translation.helpers.cast([*c]PKCS7, OPENSSL_sk_value(ossl_check_const_PKCS7_sk_type(sk), idx));
 }
 pub const sk_PKCS7_new = @compileError("unable to translate C expr: unexpected token ')'");
 // /usr/include/openssl/pkcs7.h:223:9
@@ -41860,12 +41860,12 @@ pub inline fn sk_PKCS7_zero(sk: anytype) @TypeOf(OPENSSL_sk_zero(ossl_check_PKCS
 pub inline fn sk_PKCS7_delete(sk: anytype, i: anytype) [*c]PKCS7 {
     _ = &sk;
     _ = &i;
-    return @import("std").zig.c_translation.cast([*c]PKCS7, OPENSSL_sk_delete(ossl_check_PKCS7_sk_type(sk), i));
+    return @import("std").zig.c_translation.helpers.cast([*c]PKCS7, OPENSSL_sk_delete(ossl_check_PKCS7_sk_type(sk), i));
 }
 pub inline fn sk_PKCS7_delete_ptr(sk: anytype, ptr: anytype) [*c]PKCS7 {
     _ = &sk;
     _ = &ptr;
-    return @import("std").zig.c_translation.cast([*c]PKCS7, OPENSSL_sk_delete_ptr(ossl_check_PKCS7_sk_type(sk), ossl_check_PKCS7_type(ptr)));
+    return @import("std").zig.c_translation.helpers.cast([*c]PKCS7, OPENSSL_sk_delete_ptr(ossl_check_PKCS7_sk_type(sk), ossl_check_PKCS7_type(ptr)));
 }
 pub inline fn sk_PKCS7_push(sk: anytype, ptr: anytype) @TypeOf(OPENSSL_sk_push(ossl_check_PKCS7_sk_type(sk), ossl_check_PKCS7_type(ptr))) {
     _ = &sk;
@@ -41879,11 +41879,11 @@ pub inline fn sk_PKCS7_unshift(sk: anytype, ptr: anytype) @TypeOf(OPENSSL_sk_uns
 }
 pub inline fn sk_PKCS7_pop(sk: anytype) [*c]PKCS7 {
     _ = &sk;
-    return @import("std").zig.c_translation.cast([*c]PKCS7, OPENSSL_sk_pop(ossl_check_PKCS7_sk_type(sk)));
+    return @import("std").zig.c_translation.helpers.cast([*c]PKCS7, OPENSSL_sk_pop(ossl_check_PKCS7_sk_type(sk)));
 }
 pub inline fn sk_PKCS7_shift(sk: anytype) [*c]PKCS7 {
     _ = &sk;
-    return @import("std").zig.c_translation.cast([*c]PKCS7, OPENSSL_sk_shift(ossl_check_PKCS7_sk_type(sk)));
+    return @import("std").zig.c_translation.helpers.cast([*c]PKCS7, OPENSSL_sk_shift(ossl_check_PKCS7_sk_type(sk)));
 }
 pub inline fn sk_PKCS7_pop_free(sk: anytype, freefunc: anytype) @TypeOf(OPENSSL_sk_pop_free(ossl_check_PKCS7_sk_type(sk), ossl_check_PKCS7_freefunc_type(freefunc))) {
     _ = &sk;
@@ -41900,7 +41900,7 @@ pub inline fn sk_PKCS7_set(sk: anytype, idx: anytype, ptr: anytype) [*c]PKCS7 {
     _ = &sk;
     _ = &idx;
     _ = &ptr;
-    return @import("std").zig.c_translation.cast([*c]PKCS7, OPENSSL_sk_set(ossl_check_PKCS7_sk_type(sk), idx, ossl_check_PKCS7_type(ptr)));
+    return @import("std").zig.c_translation.helpers.cast([*c]PKCS7, OPENSSL_sk_set(ossl_check_PKCS7_sk_type(sk), idx, ossl_check_PKCS7_type(ptr)));
 }
 pub inline fn sk_PKCS7_find(sk: anytype, ptr: anytype) @TypeOf(OPENSSL_sk_find(ossl_check_PKCS7_sk_type(sk), ossl_check_PKCS7_type(ptr))) {
     _ = &sk;
@@ -41933,7 +41933,7 @@ pub const sk_PKCS7_deep_copy = @compileError("unable to translate C expr: unexpe
 pub inline fn sk_PKCS7_set_cmp_func(sk: anytype, cmp: anytype) sk_PKCS7_compfunc {
     _ = &sk;
     _ = &cmp;
-    return @import("std").zig.c_translation.cast(sk_PKCS7_compfunc, OPENSSL_sk_set_cmp_func(ossl_check_PKCS7_sk_type(sk), ossl_check_PKCS7_compfunc_type(cmp)));
+    return @import("std").zig.c_translation.helpers.cast(sk_PKCS7_compfunc, OPENSSL_sk_set_cmp_func(ossl_check_PKCS7_sk_type(sk), ossl_check_PKCS7_compfunc_type(cmp)));
 }
 pub const PKCS7_OP_SET_DETACHED_SIGNATURE = @as(c_int, 1);
 pub const PKCS7_OP_GET_DETACHED_SIGNATURE = @as(c_int, 2);
@@ -41997,8 +41997,8 @@ pub const PKCS7_CRLFEOL = @as(c_int, 0x800);
 pub const PKCS7_STREAM = @as(c_int, 0x1000);
 pub const PKCS7_NOCRL = @as(c_int, 0x2000);
 pub const PKCS7_PARTIAL = @as(c_int, 0x4000);
-pub const PKCS7_REUSE_DIGEST = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x8000, .hex);
-pub const PKCS7_NO_DUAL_CONTENT = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x10000, .hex);
+pub const PKCS7_REUSE_DIGEST = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x8000, .hex);
+pub const PKCS7_NO_DUAL_CONTENT = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x10000, .hex);
 pub const SMIME_TEXT = PKCS7_TEXT;
 pub const SMIME_NOCERTS = PKCS7_NOCERTS;
 pub const SMIME_NOSIGS = PKCS7_NOSIGS;
@@ -42008,7 +42008,7 @@ pub const SMIME_NOVERIFY = PKCS7_NOVERIFY;
 pub const SMIME_DETACHED = PKCS7_DETACHED;
 pub const SMIME_BINARY = PKCS7_BINARY;
 pub const SMIME_NOATTR = PKCS7_NOATTR;
-pub const SMIME_ASCIICRLF = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x80000, .hex);
+pub const SMIME_ASCIICRLF = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x80000, .hex);
 pub const X509_EXT_PACK_UNKNOWN = @as(c_int, 1);
 pub const X509_EXT_PACK_STRING = @as(c_int, 2);
 pub inline fn X509_extract_key(x: anytype) @TypeOf(X509_get_pubkey(x)) {
@@ -42062,7 +42062,7 @@ pub inline fn sk_CONF_VALUE_num(sk: anytype) @TypeOf(OPENSSL_sk_num(ossl_check_c
 pub inline fn sk_CONF_VALUE_value(sk: anytype, idx: anytype) [*c]CONF_VALUE {
     _ = &sk;
     _ = &idx;
-    return @import("std").zig.c_translation.cast([*c]CONF_VALUE, OPENSSL_sk_value(ossl_check_const_CONF_VALUE_sk_type(sk), idx));
+    return @import("std").zig.c_translation.helpers.cast([*c]CONF_VALUE, OPENSSL_sk_value(ossl_check_const_CONF_VALUE_sk_type(sk), idx));
 }
 pub const sk_CONF_VALUE_new = @compileError("unable to translate C expr: unexpected token ')'");
 // /usr/include/openssl/conf.h:47:9
@@ -42086,12 +42086,12 @@ pub inline fn sk_CONF_VALUE_zero(sk: anytype) @TypeOf(OPENSSL_sk_zero(ossl_check
 pub inline fn sk_CONF_VALUE_delete(sk: anytype, i: anytype) [*c]CONF_VALUE {
     _ = &sk;
     _ = &i;
-    return @import("std").zig.c_translation.cast([*c]CONF_VALUE, OPENSSL_sk_delete(ossl_check_CONF_VALUE_sk_type(sk), i));
+    return @import("std").zig.c_translation.helpers.cast([*c]CONF_VALUE, OPENSSL_sk_delete(ossl_check_CONF_VALUE_sk_type(sk), i));
 }
 pub inline fn sk_CONF_VALUE_delete_ptr(sk: anytype, ptr: anytype) [*c]CONF_VALUE {
     _ = &sk;
     _ = &ptr;
-    return @import("std").zig.c_translation.cast([*c]CONF_VALUE, OPENSSL_sk_delete_ptr(ossl_check_CONF_VALUE_sk_type(sk), ossl_check_CONF_VALUE_type(ptr)));
+    return @import("std").zig.c_translation.helpers.cast([*c]CONF_VALUE, OPENSSL_sk_delete_ptr(ossl_check_CONF_VALUE_sk_type(sk), ossl_check_CONF_VALUE_type(ptr)));
 }
 pub inline fn sk_CONF_VALUE_push(sk: anytype, ptr: anytype) @TypeOf(OPENSSL_sk_push(ossl_check_CONF_VALUE_sk_type(sk), ossl_check_CONF_VALUE_type(ptr))) {
     _ = &sk;
@@ -42105,11 +42105,11 @@ pub inline fn sk_CONF_VALUE_unshift(sk: anytype, ptr: anytype) @TypeOf(OPENSSL_s
 }
 pub inline fn sk_CONF_VALUE_pop(sk: anytype) [*c]CONF_VALUE {
     _ = &sk;
-    return @import("std").zig.c_translation.cast([*c]CONF_VALUE, OPENSSL_sk_pop(ossl_check_CONF_VALUE_sk_type(sk)));
+    return @import("std").zig.c_translation.helpers.cast([*c]CONF_VALUE, OPENSSL_sk_pop(ossl_check_CONF_VALUE_sk_type(sk)));
 }
 pub inline fn sk_CONF_VALUE_shift(sk: anytype) [*c]CONF_VALUE {
     _ = &sk;
-    return @import("std").zig.c_translation.cast([*c]CONF_VALUE, OPENSSL_sk_shift(ossl_check_CONF_VALUE_sk_type(sk)));
+    return @import("std").zig.c_translation.helpers.cast([*c]CONF_VALUE, OPENSSL_sk_shift(ossl_check_CONF_VALUE_sk_type(sk)));
 }
 pub inline fn sk_CONF_VALUE_pop_free(sk: anytype, freefunc: anytype) @TypeOf(OPENSSL_sk_pop_free(ossl_check_CONF_VALUE_sk_type(sk), ossl_check_CONF_VALUE_freefunc_type(freefunc))) {
     _ = &sk;
@@ -42126,7 +42126,7 @@ pub inline fn sk_CONF_VALUE_set(sk: anytype, idx: anytype, ptr: anytype) [*c]CON
     _ = &sk;
     _ = &idx;
     _ = &ptr;
-    return @import("std").zig.c_translation.cast([*c]CONF_VALUE, OPENSSL_sk_set(ossl_check_CONF_VALUE_sk_type(sk), idx, ossl_check_CONF_VALUE_type(ptr)));
+    return @import("std").zig.c_translation.helpers.cast([*c]CONF_VALUE, OPENSSL_sk_set(ossl_check_CONF_VALUE_sk_type(sk), idx, ossl_check_CONF_VALUE_type(ptr)));
 }
 pub inline fn sk_CONF_VALUE_find(sk: anytype, ptr: anytype) @TypeOf(OPENSSL_sk_find(ossl_check_CONF_VALUE_sk_type(sk), ossl_check_CONF_VALUE_type(ptr))) {
     _ = &sk;
@@ -42159,7 +42159,7 @@ pub const sk_CONF_VALUE_deep_copy = @compileError("unable to translate C expr: u
 pub inline fn sk_CONF_VALUE_set_cmp_func(sk: anytype, cmp: anytype) sk_CONF_VALUE_compfunc {
     _ = &sk;
     _ = &cmp;
-    return @import("std").zig.c_translation.cast(sk_CONF_VALUE_compfunc, OPENSSL_sk_set_cmp_func(ossl_check_CONF_VALUE_sk_type(sk), ossl_check_CONF_VALUE_compfunc_type(cmp)));
+    return @import("std").zig.c_translation.helpers.cast(sk_CONF_VALUE_compfunc, OPENSSL_sk_set_cmp_func(ossl_check_CONF_VALUE_sk_type(sk), ossl_check_CONF_VALUE_compfunc_type(cmp)));
 }
 pub const lh_CONF_VALUE_new = @compileError("unable to translate C expr: unexpected token ')'");
 // /usr/include/openssl/conf.h:71:9
@@ -42174,17 +42174,17 @@ pub inline fn lh_CONF_VALUE_flush(lh: anytype) @TypeOf(OPENSSL_LH_flush(ossl_che
 pub inline fn lh_CONF_VALUE_insert(lh: anytype, ptr: anytype) [*c]CONF_VALUE {
     _ = &lh;
     _ = &ptr;
-    return @import("std").zig.c_translation.cast([*c]CONF_VALUE, OPENSSL_LH_insert(ossl_check_CONF_VALUE_lh_type(lh), ossl_check_CONF_VALUE_lh_plain_type(ptr)));
+    return @import("std").zig.c_translation.helpers.cast([*c]CONF_VALUE, OPENSSL_LH_insert(ossl_check_CONF_VALUE_lh_type(lh), ossl_check_CONF_VALUE_lh_plain_type(ptr)));
 }
 pub inline fn lh_CONF_VALUE_delete(lh: anytype, ptr: anytype) [*c]CONF_VALUE {
     _ = &lh;
     _ = &ptr;
-    return @import("std").zig.c_translation.cast([*c]CONF_VALUE, OPENSSL_LH_delete(ossl_check_CONF_VALUE_lh_type(lh), ossl_check_const_CONF_VALUE_lh_plain_type(ptr)));
+    return @import("std").zig.c_translation.helpers.cast([*c]CONF_VALUE, OPENSSL_LH_delete(ossl_check_CONF_VALUE_lh_type(lh), ossl_check_const_CONF_VALUE_lh_plain_type(ptr)));
 }
 pub inline fn lh_CONF_VALUE_retrieve(lh: anytype, ptr: anytype) [*c]CONF_VALUE {
     _ = &lh;
     _ = &ptr;
-    return @import("std").zig.c_translation.cast([*c]CONF_VALUE, OPENSSL_LH_retrieve(ossl_check_CONF_VALUE_lh_type(lh), ossl_check_const_CONF_VALUE_lh_plain_type(ptr)));
+    return @import("std").zig.c_translation.helpers.cast([*c]CONF_VALUE, OPENSSL_LH_retrieve(ossl_check_CONF_VALUE_lh_type(lh), ossl_check_const_CONF_VALUE_lh_plain_type(ptr)));
 }
 pub inline fn lh_CONF_VALUE_error(lh: anytype) @TypeOf(OPENSSL_LH_error(ossl_check_CONF_VALUE_lh_type(lh))) {
     _ = &lh;
@@ -42668,7 +42668,7 @@ pub inline fn sk_SCT_num(sk: anytype) @TypeOf(OPENSSL_sk_num(ossl_check_const_SC
 pub inline fn sk_SCT_value(sk: anytype, idx: anytype) [*c]SCT {
     _ = &sk;
     _ = &idx;
-    return @import("std").zig.c_translation.cast([*c]SCT, OPENSSL_sk_value(ossl_check_const_SCT_sk_type(sk), idx));
+    return @import("std").zig.c_translation.helpers.cast([*c]SCT, OPENSSL_sk_value(ossl_check_const_SCT_sk_type(sk), idx));
 }
 pub const sk_SCT_new = @compileError("unable to translate C expr: unexpected token ')'");
 // /usr/include/openssl/ct.h:45:9
@@ -42692,12 +42692,12 @@ pub inline fn sk_SCT_zero(sk: anytype) @TypeOf(OPENSSL_sk_zero(ossl_check_SCT_sk
 pub inline fn sk_SCT_delete(sk: anytype, i: anytype) [*c]SCT {
     _ = &sk;
     _ = &i;
-    return @import("std").zig.c_translation.cast([*c]SCT, OPENSSL_sk_delete(ossl_check_SCT_sk_type(sk), i));
+    return @import("std").zig.c_translation.helpers.cast([*c]SCT, OPENSSL_sk_delete(ossl_check_SCT_sk_type(sk), i));
 }
 pub inline fn sk_SCT_delete_ptr(sk: anytype, ptr: anytype) [*c]SCT {
     _ = &sk;
     _ = &ptr;
-    return @import("std").zig.c_translation.cast([*c]SCT, OPENSSL_sk_delete_ptr(ossl_check_SCT_sk_type(sk), ossl_check_SCT_type(ptr)));
+    return @import("std").zig.c_translation.helpers.cast([*c]SCT, OPENSSL_sk_delete_ptr(ossl_check_SCT_sk_type(sk), ossl_check_SCT_type(ptr)));
 }
 pub inline fn sk_SCT_push(sk: anytype, ptr: anytype) @TypeOf(OPENSSL_sk_push(ossl_check_SCT_sk_type(sk), ossl_check_SCT_type(ptr))) {
     _ = &sk;
@@ -42711,11 +42711,11 @@ pub inline fn sk_SCT_unshift(sk: anytype, ptr: anytype) @TypeOf(OPENSSL_sk_unshi
 }
 pub inline fn sk_SCT_pop(sk: anytype) [*c]SCT {
     _ = &sk;
-    return @import("std").zig.c_translation.cast([*c]SCT, OPENSSL_sk_pop(ossl_check_SCT_sk_type(sk)));
+    return @import("std").zig.c_translation.helpers.cast([*c]SCT, OPENSSL_sk_pop(ossl_check_SCT_sk_type(sk)));
 }
 pub inline fn sk_SCT_shift(sk: anytype) [*c]SCT {
     _ = &sk;
-    return @import("std").zig.c_translation.cast([*c]SCT, OPENSSL_sk_shift(ossl_check_SCT_sk_type(sk)));
+    return @import("std").zig.c_translation.helpers.cast([*c]SCT, OPENSSL_sk_shift(ossl_check_SCT_sk_type(sk)));
 }
 pub inline fn sk_SCT_pop_free(sk: anytype, freefunc: anytype) @TypeOf(OPENSSL_sk_pop_free(ossl_check_SCT_sk_type(sk), ossl_check_SCT_freefunc_type(freefunc))) {
     _ = &sk;
@@ -42732,7 +42732,7 @@ pub inline fn sk_SCT_set(sk: anytype, idx: anytype, ptr: anytype) [*c]SCT {
     _ = &sk;
     _ = &idx;
     _ = &ptr;
-    return @import("std").zig.c_translation.cast([*c]SCT, OPENSSL_sk_set(ossl_check_SCT_sk_type(sk), idx, ossl_check_SCT_type(ptr)));
+    return @import("std").zig.c_translation.helpers.cast([*c]SCT, OPENSSL_sk_set(ossl_check_SCT_sk_type(sk), idx, ossl_check_SCT_type(ptr)));
 }
 pub inline fn sk_SCT_find(sk: anytype, ptr: anytype) @TypeOf(OPENSSL_sk_find(ossl_check_SCT_sk_type(sk), ossl_check_SCT_type(ptr))) {
     _ = &sk;
@@ -42765,7 +42765,7 @@ pub const sk_SCT_deep_copy = @compileError("unable to translate C expr: unexpect
 pub inline fn sk_SCT_set_cmp_func(sk: anytype, cmp: anytype) sk_SCT_compfunc {
     _ = &sk;
     _ = &cmp;
-    return @import("std").zig.c_translation.cast(sk_SCT_compfunc, OPENSSL_sk_set_cmp_func(ossl_check_SCT_sk_type(sk), ossl_check_SCT_compfunc_type(cmp)));
+    return @import("std").zig.c_translation.helpers.cast(sk_SCT_compfunc, OPENSSL_sk_set_cmp_func(ossl_check_SCT_sk_type(sk), ossl_check_SCT_compfunc_type(cmp)));
 }
 pub inline fn sk_CTLOG_num(sk: anytype) @TypeOf(OPENSSL_sk_num(ossl_check_const_CTLOG_sk_type(sk))) {
     _ = &sk;
@@ -42774,7 +42774,7 @@ pub inline fn sk_CTLOG_num(sk: anytype) @TypeOf(OPENSSL_sk_num(ossl_check_const_
 pub inline fn sk_CTLOG_value(sk: anytype, idx: anytype) [*c]CTLOG {
     _ = &sk;
     _ = &idx;
-    return @import("std").zig.c_translation.cast([*c]CTLOG, OPENSSL_sk_value(ossl_check_const_CTLOG_sk_type(sk), idx));
+    return @import("std").zig.c_translation.helpers.cast([*c]CTLOG, OPENSSL_sk_value(ossl_check_const_CTLOG_sk_type(sk), idx));
 }
 pub const sk_CTLOG_new = @compileError("unable to translate C expr: unexpected token ')'");
 // /usr/include/openssl/ct.h:71:9
@@ -42798,12 +42798,12 @@ pub inline fn sk_CTLOG_zero(sk: anytype) @TypeOf(OPENSSL_sk_zero(ossl_check_CTLO
 pub inline fn sk_CTLOG_delete(sk: anytype, i: anytype) [*c]CTLOG {
     _ = &sk;
     _ = &i;
-    return @import("std").zig.c_translation.cast([*c]CTLOG, OPENSSL_sk_delete(ossl_check_CTLOG_sk_type(sk), i));
+    return @import("std").zig.c_translation.helpers.cast([*c]CTLOG, OPENSSL_sk_delete(ossl_check_CTLOG_sk_type(sk), i));
 }
 pub inline fn sk_CTLOG_delete_ptr(sk: anytype, ptr: anytype) [*c]CTLOG {
     _ = &sk;
     _ = &ptr;
-    return @import("std").zig.c_translation.cast([*c]CTLOG, OPENSSL_sk_delete_ptr(ossl_check_CTLOG_sk_type(sk), ossl_check_CTLOG_type(ptr)));
+    return @import("std").zig.c_translation.helpers.cast([*c]CTLOG, OPENSSL_sk_delete_ptr(ossl_check_CTLOG_sk_type(sk), ossl_check_CTLOG_type(ptr)));
 }
 pub inline fn sk_CTLOG_push(sk: anytype, ptr: anytype) @TypeOf(OPENSSL_sk_push(ossl_check_CTLOG_sk_type(sk), ossl_check_CTLOG_type(ptr))) {
     _ = &sk;
@@ -42817,11 +42817,11 @@ pub inline fn sk_CTLOG_unshift(sk: anytype, ptr: anytype) @TypeOf(OPENSSL_sk_uns
 }
 pub inline fn sk_CTLOG_pop(sk: anytype) [*c]CTLOG {
     _ = &sk;
-    return @import("std").zig.c_translation.cast([*c]CTLOG, OPENSSL_sk_pop(ossl_check_CTLOG_sk_type(sk)));
+    return @import("std").zig.c_translation.helpers.cast([*c]CTLOG, OPENSSL_sk_pop(ossl_check_CTLOG_sk_type(sk)));
 }
 pub inline fn sk_CTLOG_shift(sk: anytype) [*c]CTLOG {
     _ = &sk;
-    return @import("std").zig.c_translation.cast([*c]CTLOG, OPENSSL_sk_shift(ossl_check_CTLOG_sk_type(sk)));
+    return @import("std").zig.c_translation.helpers.cast([*c]CTLOG, OPENSSL_sk_shift(ossl_check_CTLOG_sk_type(sk)));
 }
 pub inline fn sk_CTLOG_pop_free(sk: anytype, freefunc: anytype) @TypeOf(OPENSSL_sk_pop_free(ossl_check_CTLOG_sk_type(sk), ossl_check_CTLOG_freefunc_type(freefunc))) {
     _ = &sk;
@@ -42838,7 +42838,7 @@ pub inline fn sk_CTLOG_set(sk: anytype, idx: anytype, ptr: anytype) [*c]CTLOG {
     _ = &sk;
     _ = &idx;
     _ = &ptr;
-    return @import("std").zig.c_translation.cast([*c]CTLOG, OPENSSL_sk_set(ossl_check_CTLOG_sk_type(sk), idx, ossl_check_CTLOG_type(ptr)));
+    return @import("std").zig.c_translation.helpers.cast([*c]CTLOG, OPENSSL_sk_set(ossl_check_CTLOG_sk_type(sk), idx, ossl_check_CTLOG_type(ptr)));
 }
 pub inline fn sk_CTLOG_find(sk: anytype, ptr: anytype) @TypeOf(OPENSSL_sk_find(ossl_check_CTLOG_sk_type(sk), ossl_check_CTLOG_type(ptr))) {
     _ = &sk;
@@ -42871,7 +42871,7 @@ pub const sk_CTLOG_deep_copy = @compileError("unable to translate C expr: unexpe
 pub inline fn sk_CTLOG_set_cmp_func(sk: anytype, cmp: anytype) sk_CTLOG_compfunc {
     _ = &sk;
     _ = &cmp;
-    return @import("std").zig.c_translation.cast(sk_CTLOG_compfunc, OPENSSL_sk_set_cmp_func(ossl_check_CTLOG_sk_type(sk), ossl_check_CTLOG_compfunc_type(cmp)));
+    return @import("std").zig.c_translation.helpers.cast(sk_CTLOG_compfunc, OPENSSL_sk_set_cmp_func(ossl_check_CTLOG_sk_type(sk), ossl_check_CTLOG_compfunc_type(cmp)));
 }
 pub const OPENSSL_SSLERR_H = "";
 pub const OPENSSL_SSLERR_LEGACY_H = "";
@@ -43662,14 +43662,14 @@ pub const TLS1_VERSION = @as(c_int, 0x0301);
 pub const TLS1_1_VERSION = @as(c_int, 0x0302);
 pub const TLS1_2_VERSION = @as(c_int, 0x0303);
 pub const TLS1_3_VERSION = @as(c_int, 0x0304);
-pub const DTLS1_VERSION = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0xFEFF, .hex);
-pub const DTLS1_2_VERSION = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0xFEFD, .hex);
+pub const DTLS1_VERSION = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0xFEFF, .hex);
+pub const DTLS1_2_VERSION = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0xFEFD, .hex);
 pub const DTLS1_BAD_VER = @as(c_int, 0x0100);
 pub const OSSL_QUIC1_VERSION = @as(c_int, 0x0000001);
 pub const SSL_SESSION_ASN1_VERSION = @as(c_int, 0x0001);
 pub const SSL_MAX_SSL_SESSION_ID_LENGTH = @as(c_int, 32);
 pub const SSL_MAX_SID_CTX_LENGTH = @as(c_int, 32);
-pub const SSL_MIN_RSA_MODULUS_LENGTH_IN_BYTES = @import("std").zig.c_translation.MacroArithmetic.div(@as(c_int, 512), @as(c_int, 8));
+pub const SSL_MIN_RSA_MODULUS_LENGTH_IN_BYTES = @import("std").zig.c_translation.helpers.div(@as(c_int, 512), @as(c_int, 8));
 pub const SSL_MAX_KEY_ARG_LENGTH = @as(c_int, 8);
 pub const SSL_MAX_PIPELINES = @as(c_int, 32);
 pub const SSL_TXT_LOW = "LOW";
@@ -43773,7 +43773,7 @@ pub inline fn sk_SRTP_PROTECTION_PROFILE_num(sk: anytype) @TypeOf(OPENSSL_sk_num
 pub inline fn sk_SRTP_PROTECTION_PROFILE_value(sk: anytype, idx: anytype) [*c]SRTP_PROTECTION_PROFILE {
     _ = &sk;
     _ = &idx;
-    return @import("std").zig.c_translation.cast([*c]SRTP_PROTECTION_PROFILE, OPENSSL_sk_value(ossl_check_const_SRTP_PROTECTION_PROFILE_sk_type(sk), idx));
+    return @import("std").zig.c_translation.helpers.cast([*c]SRTP_PROTECTION_PROFILE, OPENSSL_sk_value(ossl_check_const_SRTP_PROTECTION_PROFILE_sk_type(sk), idx));
 }
 pub const sk_SRTP_PROTECTION_PROFILE_new = @compileError("unable to translate C expr: unexpected token ')'");
 // /usr/include/openssl/ssl.h:249:9
@@ -43797,12 +43797,12 @@ pub inline fn sk_SRTP_PROTECTION_PROFILE_zero(sk: anytype) @TypeOf(OPENSSL_sk_ze
 pub inline fn sk_SRTP_PROTECTION_PROFILE_delete(sk: anytype, i: anytype) [*c]SRTP_PROTECTION_PROFILE {
     _ = &sk;
     _ = &i;
-    return @import("std").zig.c_translation.cast([*c]SRTP_PROTECTION_PROFILE, OPENSSL_sk_delete(ossl_check_SRTP_PROTECTION_PROFILE_sk_type(sk), i));
+    return @import("std").zig.c_translation.helpers.cast([*c]SRTP_PROTECTION_PROFILE, OPENSSL_sk_delete(ossl_check_SRTP_PROTECTION_PROFILE_sk_type(sk), i));
 }
 pub inline fn sk_SRTP_PROTECTION_PROFILE_delete_ptr(sk: anytype, ptr: anytype) [*c]SRTP_PROTECTION_PROFILE {
     _ = &sk;
     _ = &ptr;
-    return @import("std").zig.c_translation.cast([*c]SRTP_PROTECTION_PROFILE, OPENSSL_sk_delete_ptr(ossl_check_SRTP_PROTECTION_PROFILE_sk_type(sk), ossl_check_SRTP_PROTECTION_PROFILE_type(ptr)));
+    return @import("std").zig.c_translation.helpers.cast([*c]SRTP_PROTECTION_PROFILE, OPENSSL_sk_delete_ptr(ossl_check_SRTP_PROTECTION_PROFILE_sk_type(sk), ossl_check_SRTP_PROTECTION_PROFILE_type(ptr)));
 }
 pub inline fn sk_SRTP_PROTECTION_PROFILE_push(sk: anytype, ptr: anytype) @TypeOf(OPENSSL_sk_push(ossl_check_SRTP_PROTECTION_PROFILE_sk_type(sk), ossl_check_SRTP_PROTECTION_PROFILE_type(ptr))) {
     _ = &sk;
@@ -43816,11 +43816,11 @@ pub inline fn sk_SRTP_PROTECTION_PROFILE_unshift(sk: anytype, ptr: anytype) @Typ
 }
 pub inline fn sk_SRTP_PROTECTION_PROFILE_pop(sk: anytype) [*c]SRTP_PROTECTION_PROFILE {
     _ = &sk;
-    return @import("std").zig.c_translation.cast([*c]SRTP_PROTECTION_PROFILE, OPENSSL_sk_pop(ossl_check_SRTP_PROTECTION_PROFILE_sk_type(sk)));
+    return @import("std").zig.c_translation.helpers.cast([*c]SRTP_PROTECTION_PROFILE, OPENSSL_sk_pop(ossl_check_SRTP_PROTECTION_PROFILE_sk_type(sk)));
 }
 pub inline fn sk_SRTP_PROTECTION_PROFILE_shift(sk: anytype) [*c]SRTP_PROTECTION_PROFILE {
     _ = &sk;
-    return @import("std").zig.c_translation.cast([*c]SRTP_PROTECTION_PROFILE, OPENSSL_sk_shift(ossl_check_SRTP_PROTECTION_PROFILE_sk_type(sk)));
+    return @import("std").zig.c_translation.helpers.cast([*c]SRTP_PROTECTION_PROFILE, OPENSSL_sk_shift(ossl_check_SRTP_PROTECTION_PROFILE_sk_type(sk)));
 }
 pub inline fn sk_SRTP_PROTECTION_PROFILE_pop_free(sk: anytype, freefunc: anytype) @TypeOf(OPENSSL_sk_pop_free(ossl_check_SRTP_PROTECTION_PROFILE_sk_type(sk), ossl_check_SRTP_PROTECTION_PROFILE_freefunc_type(freefunc))) {
     _ = &sk;
@@ -43837,7 +43837,7 @@ pub inline fn sk_SRTP_PROTECTION_PROFILE_set(sk: anytype, idx: anytype, ptr: any
     _ = &sk;
     _ = &idx;
     _ = &ptr;
-    return @import("std").zig.c_translation.cast([*c]SRTP_PROTECTION_PROFILE, OPENSSL_sk_set(ossl_check_SRTP_PROTECTION_PROFILE_sk_type(sk), idx, ossl_check_SRTP_PROTECTION_PROFILE_type(ptr)));
+    return @import("std").zig.c_translation.helpers.cast([*c]SRTP_PROTECTION_PROFILE, OPENSSL_sk_set(ossl_check_SRTP_PROTECTION_PROFILE_sk_type(sk), idx, ossl_check_SRTP_PROTECTION_PROFILE_type(ptr)));
 }
 pub inline fn sk_SRTP_PROTECTION_PROFILE_find(sk: anytype, ptr: anytype) @TypeOf(OPENSSL_sk_find(ossl_check_SRTP_PROTECTION_PROFILE_sk_type(sk), ossl_check_SRTP_PROTECTION_PROFILE_type(ptr))) {
     _ = &sk;
@@ -43870,7 +43870,7 @@ pub const sk_SRTP_PROTECTION_PROFILE_deep_copy = @compileError("unable to transl
 pub inline fn sk_SRTP_PROTECTION_PROFILE_set_cmp_func(sk: anytype, cmp: anytype) sk_SRTP_PROTECTION_PROFILE_compfunc {
     _ = &sk;
     _ = &cmp;
-    return @import("std").zig.c_translation.cast(sk_SRTP_PROTECTION_PROFILE_compfunc, OPENSSL_sk_set_cmp_func(ossl_check_SRTP_PROTECTION_PROFILE_sk_type(sk), ossl_check_SRTP_PROTECTION_PROFILE_compfunc_type(cmp)));
+    return @import("std").zig.c_translation.helpers.cast(sk_SRTP_PROTECTION_PROFILE_compfunc, OPENSSL_sk_set_cmp_func(ossl_check_SRTP_PROTECTION_PROFILE_sk_type(sk), ossl_check_SRTP_PROTECTION_PROFILE_compfunc_type(cmp)));
 }
 pub const SSL_EXT_TLS_ONLY = @as(c_int, 0x00001);
 pub const SSL_EXT_DTLS_ONLY = @as(c_int, 0x00002);
@@ -43887,11 +43887,11 @@ pub const SSL_EXT_TLS1_3_HELLO_RETRY_REQUEST = @as(c_int, 0x00800);
 pub const SSL_EXT_TLS1_3_CERTIFICATE = @as(c_int, 0x01000);
 pub const SSL_EXT_TLS1_3_NEW_SESSION_TICKET = @as(c_int, 0x02000);
 pub const SSL_EXT_TLS1_3_CERTIFICATE_REQUEST = @as(c_int, 0x04000);
-pub const SSL_EXT_TLS1_3_CERTIFICATE_COMPRESSION = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x08000, .hex);
-pub const SSL_EXT_TLS1_3_RAW_PUBLIC_KEY = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x10000, .hex);
-pub inline fn SSL_OP_BIT(n: anytype) @TypeOf(@import("std").zig.c_translation.cast(u64, @as(c_int, 1)) << @import("std").zig.c_translation.cast(u64, n)) {
+pub const SSL_EXT_TLS1_3_CERTIFICATE_COMPRESSION = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x08000, .hex);
+pub const SSL_EXT_TLS1_3_RAW_PUBLIC_KEY = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x10000, .hex);
+pub inline fn SSL_OP_BIT(n: anytype) @TypeOf(@import("std").zig.c_translation.helpers.cast(u64, @as(c_int, 1)) << @import("std").zig.c_translation.helpers.cast(u64, n)) {
     _ = &n;
-    return @import("std").zig.c_translation.cast(u64, @as(c_int, 1)) << @import("std").zig.c_translation.cast(u64, n);
+    return @import("std").zig.c_translation.helpers.cast(u64, @as(c_int, 1)) << @import("std").zig.c_translation.helpers.cast(u64, n);
 }
 pub const SSL_OP_NO_EXTENDED_MASTER_SECRET = SSL_OP_BIT(@as(c_int, 0));
 pub const SSL_OP_CLEANSE_PLAINTEXT = SSL_OP_BIT(@as(c_int, 1));
@@ -43961,10 +43961,10 @@ pub const SSL_MODE_SEND_FALLBACK_SCSV = @as(c_uint, 0x00000080);
 pub const SSL_MODE_ASYNC = @as(c_uint, 0x00000100);
 pub const SSL_MODE_DTLS_SCTP_LABEL_LENGTH_BUG = @as(c_uint, 0x00000400);
 pub const SSL_CERT_FLAG_TLS_STRICT = @as(c_uint, 0x00000001);
-pub const SSL_CERT_FLAG_SUITEB_128_LOS_ONLY = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x10000, .hex);
-pub const SSL_CERT_FLAG_SUITEB_192_LOS = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x20000, .hex);
-pub const SSL_CERT_FLAG_SUITEB_128_LOS = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x30000, .hex);
-pub const SSL_CERT_FLAG_BROKEN_PROTOCOL = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x10000000, .hex);
+pub const SSL_CERT_FLAG_SUITEB_128_LOS_ONLY = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x10000, .hex);
+pub const SSL_CERT_FLAG_SUITEB_192_LOS = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x20000, .hex);
+pub const SSL_CERT_FLAG_SUITEB_128_LOS = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x30000, .hex);
+pub const SSL_CERT_FLAG_BROKEN_PROTOCOL = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x10000000, .hex);
 pub const SSL_BUILD_CHAIN_FLAG_UNTRUSTED = @as(c_int, 0x1);
 pub const SSL_BUILD_CHAIN_FLAG_NO_ROOT = @as(c_int, 0x2);
 pub const SSL_BUILD_CHAIN_FLAG_CHECK = @as(c_int, 0x4);
@@ -44192,41 +44192,41 @@ pub const SSL2_VERSION = @as(c_int, 0x0002);
 pub const SSL2_MT_CLIENT_HELLO = @as(c_int, 1);
 pub const OPENSSL_SSL3_H = "";
 pub const HEADER_SSL3_H = "";
-pub const SSL3_CK_SCSV = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x030000FF, .hex);
-pub const SSL3_CK_FALLBACK_SCSV = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x03005600, .hex);
-pub const SSL3_CK_RSA_NULL_MD5 = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x03000001, .hex);
-pub const SSL3_CK_RSA_NULL_SHA = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x03000002, .hex);
-pub const SSL3_CK_RSA_RC4_40_MD5 = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x03000003, .hex);
-pub const SSL3_CK_RSA_RC4_128_MD5 = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x03000004, .hex);
-pub const SSL3_CK_RSA_RC4_128_SHA = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x03000005, .hex);
-pub const SSL3_CK_RSA_RC2_40_MD5 = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x03000006, .hex);
-pub const SSL3_CK_RSA_IDEA_128_SHA = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x03000007, .hex);
-pub const SSL3_CK_RSA_DES_40_CBC_SHA = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x03000008, .hex);
-pub const SSL3_CK_RSA_DES_64_CBC_SHA = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x03000009, .hex);
-pub const SSL3_CK_RSA_DES_192_CBC3_SHA = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x0300000A, .hex);
-pub const SSL3_CK_DH_DSS_DES_40_CBC_SHA = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x0300000B, .hex);
-pub const SSL3_CK_DH_DSS_DES_64_CBC_SHA = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x0300000C, .hex);
-pub const SSL3_CK_DH_DSS_DES_192_CBC3_SHA = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x0300000D, .hex);
-pub const SSL3_CK_DH_RSA_DES_40_CBC_SHA = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x0300000E, .hex);
-pub const SSL3_CK_DH_RSA_DES_64_CBC_SHA = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x0300000F, .hex);
-pub const SSL3_CK_DH_RSA_DES_192_CBC3_SHA = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x03000010, .hex);
-pub const SSL3_CK_DHE_DSS_DES_40_CBC_SHA = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x03000011, .hex);
+pub const SSL3_CK_SCSV = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x030000FF, .hex);
+pub const SSL3_CK_FALLBACK_SCSV = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x03005600, .hex);
+pub const SSL3_CK_RSA_NULL_MD5 = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x03000001, .hex);
+pub const SSL3_CK_RSA_NULL_SHA = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x03000002, .hex);
+pub const SSL3_CK_RSA_RC4_40_MD5 = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x03000003, .hex);
+pub const SSL3_CK_RSA_RC4_128_MD5 = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x03000004, .hex);
+pub const SSL3_CK_RSA_RC4_128_SHA = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x03000005, .hex);
+pub const SSL3_CK_RSA_RC2_40_MD5 = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x03000006, .hex);
+pub const SSL3_CK_RSA_IDEA_128_SHA = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x03000007, .hex);
+pub const SSL3_CK_RSA_DES_40_CBC_SHA = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x03000008, .hex);
+pub const SSL3_CK_RSA_DES_64_CBC_SHA = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x03000009, .hex);
+pub const SSL3_CK_RSA_DES_192_CBC3_SHA = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x0300000A, .hex);
+pub const SSL3_CK_DH_DSS_DES_40_CBC_SHA = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x0300000B, .hex);
+pub const SSL3_CK_DH_DSS_DES_64_CBC_SHA = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x0300000C, .hex);
+pub const SSL3_CK_DH_DSS_DES_192_CBC3_SHA = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x0300000D, .hex);
+pub const SSL3_CK_DH_RSA_DES_40_CBC_SHA = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x0300000E, .hex);
+pub const SSL3_CK_DH_RSA_DES_64_CBC_SHA = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x0300000F, .hex);
+pub const SSL3_CK_DH_RSA_DES_192_CBC3_SHA = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x03000010, .hex);
+pub const SSL3_CK_DHE_DSS_DES_40_CBC_SHA = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x03000011, .hex);
 pub const SSL3_CK_EDH_DSS_DES_40_CBC_SHA = SSL3_CK_DHE_DSS_DES_40_CBC_SHA;
-pub const SSL3_CK_DHE_DSS_DES_64_CBC_SHA = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x03000012, .hex);
+pub const SSL3_CK_DHE_DSS_DES_64_CBC_SHA = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x03000012, .hex);
 pub const SSL3_CK_EDH_DSS_DES_64_CBC_SHA = SSL3_CK_DHE_DSS_DES_64_CBC_SHA;
-pub const SSL3_CK_DHE_DSS_DES_192_CBC3_SHA = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x03000013, .hex);
+pub const SSL3_CK_DHE_DSS_DES_192_CBC3_SHA = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x03000013, .hex);
 pub const SSL3_CK_EDH_DSS_DES_192_CBC3_SHA = SSL3_CK_DHE_DSS_DES_192_CBC3_SHA;
-pub const SSL3_CK_DHE_RSA_DES_40_CBC_SHA = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x03000014, .hex);
+pub const SSL3_CK_DHE_RSA_DES_40_CBC_SHA = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x03000014, .hex);
 pub const SSL3_CK_EDH_RSA_DES_40_CBC_SHA = SSL3_CK_DHE_RSA_DES_40_CBC_SHA;
-pub const SSL3_CK_DHE_RSA_DES_64_CBC_SHA = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x03000015, .hex);
+pub const SSL3_CK_DHE_RSA_DES_64_CBC_SHA = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x03000015, .hex);
 pub const SSL3_CK_EDH_RSA_DES_64_CBC_SHA = SSL3_CK_DHE_RSA_DES_64_CBC_SHA;
-pub const SSL3_CK_DHE_RSA_DES_192_CBC3_SHA = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x03000016, .hex);
+pub const SSL3_CK_DHE_RSA_DES_192_CBC3_SHA = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x03000016, .hex);
 pub const SSL3_CK_EDH_RSA_DES_192_CBC3_SHA = SSL3_CK_DHE_RSA_DES_192_CBC3_SHA;
-pub const SSL3_CK_ADH_RC4_40_MD5 = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x03000017, .hex);
-pub const SSL3_CK_ADH_RC4_128_MD5 = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x03000018, .hex);
-pub const SSL3_CK_ADH_DES_40_CBC_SHA = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x03000019, .hex);
-pub const SSL3_CK_ADH_DES_64_CBC_SHA = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x0300001A, .hex);
-pub const SSL3_CK_ADH_DES_192_CBC_SHA = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x0300001B, .hex);
+pub const SSL3_CK_ADH_RC4_40_MD5 = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x03000017, .hex);
+pub const SSL3_CK_ADH_RC4_128_MD5 = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x03000018, .hex);
+pub const SSL3_CK_ADH_DES_40_CBC_SHA = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x03000019, .hex);
+pub const SSL3_CK_ADH_DES_64_CBC_SHA = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x0300001A, .hex);
+pub const SSL3_CK_ADH_DES_192_CBC_SHA = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x0300001B, .hex);
 pub const SSL3_RFC_RSA_NULL_MD5 = "TLS_RSA_WITH_NULL_MD5";
 pub const SSL3_RFC_RSA_NULL_SHA = "TLS_RSA_WITH_NULL_SHA";
 pub const SSL3_RFC_RSA_DES_192_CBC3_SHA = "TLS_RSA_WITH_3DES_EDE_CBC_SHA";
@@ -44387,7 +44387,7 @@ pub const OPENSSL_TLS1_H = "";
 pub const HEADER_TLS1_H = "";
 pub const OPENSSL_TLS_SECURITY_LEVEL = @as(c_int, 2);
 pub const TLS_MAX_VERSION = TLS1_3_VERSION;
-pub const TLS_ANY_VERSION = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x10000, .hex);
+pub const TLS_ANY_VERSION = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x10000, .hex);
 pub const TLS1_VERSION_MAJOR = @as(c_int, 0x03);
 pub const TLS1_VERSION_MINOR = @as(c_int, 0x01);
 pub const TLS1_1_VERSION_MAJOR = @as(c_int, 0x03);
@@ -44459,7 +44459,7 @@ pub const TLSEXT_TYPE_post_handshake_auth = @as(c_int, 49);
 pub const TLSEXT_TYPE_signature_algorithms_cert = @as(c_int, 50);
 pub const TLSEXT_TYPE_key_share = @as(c_int, 51);
 pub const TLSEXT_TYPE_quic_transport_parameters = @as(c_int, 57);
-pub const TLSEXT_TYPE_renegotiate = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0xff01, .hex);
+pub const TLSEXT_TYPE_renegotiate = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0xff01, .hex);
 pub const TLSEXT_TYPE_next_proto_neg = @as(c_int, 13172);
 pub const TLSEXT_NAMETYPE_host_name = @as(c_int, 0);
 pub const TLSEXT_STATUSTYPE_ocsp = @as(c_int, 1);
@@ -44492,7 +44492,7 @@ pub const TLSEXT_comp_cert_zlib = @as(c_int, 1);
 pub const TLSEXT_comp_cert_brotli = @as(c_int, 2);
 pub const TLSEXT_comp_cert_zstd = @as(c_int, 3);
 pub const TLSEXT_comp_cert_limit = @as(c_int, 4);
-pub const TLSEXT_nid_unknown = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x1000000, .hex);
+pub const TLSEXT_nid_unknown = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x1000000, .hex);
 pub const TLSEXT_curve_P_256 = @as(c_int, 23);
 pub const TLSEXT_curve_P_384 = @as(c_int, 24);
 pub const TLSEXT_max_fragment_length_DISABLED = @as(c_int, 0);
@@ -44506,10 +44506,10 @@ pub const TLSEXT_cert_type_pgp = @as(c_int, 1);
 pub const TLSEXT_cert_type_rpk = @as(c_int, 2);
 pub const TLSEXT_cert_type_1609dot2 = @as(c_int, 3);
 pub const TLSEXT_MAXLEN_host_name = @as(c_int, 255);
-pub inline fn SSL_set_tlsext_host_name(s: anytype, name: anytype) @TypeOf(SSL_ctrl(s, SSL_CTRL_SET_TLSEXT_HOSTNAME, TLSEXT_NAMETYPE_host_name, @import("std").zig.c_translation.cast(?*anyopaque, name))) {
+pub inline fn SSL_set_tlsext_host_name(s: anytype, name: anytype) @TypeOf(SSL_ctrl(s, SSL_CTRL_SET_TLSEXT_HOSTNAME, TLSEXT_NAMETYPE_host_name, @import("std").zig.c_translation.helpers.cast(?*anyopaque, name))) {
     _ = &s;
     _ = &name;
-    return SSL_ctrl(s, SSL_CTRL_SET_TLSEXT_HOSTNAME, TLSEXT_NAMETYPE_host_name, @import("std").zig.c_translation.cast(?*anyopaque, name));
+    return SSL_ctrl(s, SSL_CTRL_SET_TLSEXT_HOSTNAME, TLSEXT_NAMETYPE_host_name, @import("std").zig.c_translation.helpers.cast(?*anyopaque, name));
 }
 pub const SSL_set_tlsext_debug_callback = @compileError("unable to translate C expr: expected ')' instead got '('");
 // /usr/include/openssl/tls1.h:297:10
@@ -44581,10 +44581,10 @@ pub inline fn SSL_CTX_set_tlsext_ticket_keys(ctx: anytype, keys: anytype, keylen
     _ = &keylen;
     return SSL_CTX_ctrl(ctx, SSL_CTRL_SET_TLSEXT_TICKET_KEYS, keylen, keys);
 }
-pub inline fn SSL_CTX_get_tlsext_status_cb(ssl: anytype, cb: anytype) @TypeOf(SSL_CTX_ctrl(ssl, SSL_CTRL_GET_TLSEXT_STATUS_REQ_CB, @as(c_int, 0), @import("std").zig.c_translation.cast(?*anyopaque, cb))) {
+pub inline fn SSL_CTX_get_tlsext_status_cb(ssl: anytype, cb: anytype) @TypeOf(SSL_CTX_ctrl(ssl, SSL_CTRL_GET_TLSEXT_STATUS_REQ_CB, @as(c_int, 0), @import("std").zig.c_translation.helpers.cast(?*anyopaque, cb))) {
     _ = &ssl;
     _ = &cb;
-    return SSL_CTX_ctrl(ssl, SSL_CTRL_GET_TLSEXT_STATUS_REQ_CB, @as(c_int, 0), @import("std").zig.c_translation.cast(?*anyopaque, cb));
+    return SSL_CTX_ctrl(ssl, SSL_CTRL_GET_TLSEXT_STATUS_REQ_CB, @as(c_int, 0), @import("std").zig.c_translation.helpers.cast(?*anyopaque, cb));
 }
 pub const SSL_CTX_set_tlsext_status_cb = @compileError("unable to translate C expr: expected ')' instead got '('");
 // /usr/include/openssl/tls1.h:347:10
@@ -44609,241 +44609,241 @@ pub inline fn SSL_CTX_get_tlsext_status_type(ssl: anytype) @TypeOf(SSL_CTX_ctrl(
 }
 pub const SSL_CTX_set_tlsext_ticket_key_cb = @compileError("unable to translate C expr: expected ')' instead got '('");
 // /usr/include/openssl/tls1.h:363:11
-pub const TLS1_CK_PSK_WITH_RC4_128_SHA = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x0300008A, .hex);
-pub const TLS1_CK_PSK_WITH_3DES_EDE_CBC_SHA = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x0300008B, .hex);
-pub const TLS1_CK_PSK_WITH_AES_128_CBC_SHA = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x0300008C, .hex);
-pub const TLS1_CK_PSK_WITH_AES_256_CBC_SHA = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x0300008D, .hex);
-pub const TLS1_CK_DHE_PSK_WITH_RC4_128_SHA = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x0300008E, .hex);
-pub const TLS1_CK_DHE_PSK_WITH_3DES_EDE_CBC_SHA = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x0300008F, .hex);
-pub const TLS1_CK_DHE_PSK_WITH_AES_128_CBC_SHA = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x03000090, .hex);
-pub const TLS1_CK_DHE_PSK_WITH_AES_256_CBC_SHA = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x03000091, .hex);
-pub const TLS1_CK_RSA_PSK_WITH_RC4_128_SHA = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x03000092, .hex);
-pub const TLS1_CK_RSA_PSK_WITH_3DES_EDE_CBC_SHA = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x03000093, .hex);
-pub const TLS1_CK_RSA_PSK_WITH_AES_128_CBC_SHA = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x03000094, .hex);
-pub const TLS1_CK_RSA_PSK_WITH_AES_256_CBC_SHA = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x03000095, .hex);
-pub const TLS1_CK_PSK_WITH_AES_128_GCM_SHA256 = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x030000A8, .hex);
-pub const TLS1_CK_PSK_WITH_AES_256_GCM_SHA384 = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x030000A9, .hex);
-pub const TLS1_CK_DHE_PSK_WITH_AES_128_GCM_SHA256 = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x030000AA, .hex);
-pub const TLS1_CK_DHE_PSK_WITH_AES_256_GCM_SHA384 = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x030000AB, .hex);
-pub const TLS1_CK_RSA_PSK_WITH_AES_128_GCM_SHA256 = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x030000AC, .hex);
-pub const TLS1_CK_RSA_PSK_WITH_AES_256_GCM_SHA384 = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x030000AD, .hex);
-pub const TLS1_CK_PSK_WITH_AES_128_CBC_SHA256 = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x030000AE, .hex);
-pub const TLS1_CK_PSK_WITH_AES_256_CBC_SHA384 = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x030000AF, .hex);
-pub const TLS1_CK_PSK_WITH_NULL_SHA256 = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x030000B0, .hex);
-pub const TLS1_CK_PSK_WITH_NULL_SHA384 = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x030000B1, .hex);
-pub const TLS1_CK_DHE_PSK_WITH_AES_128_CBC_SHA256 = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x030000B2, .hex);
-pub const TLS1_CK_DHE_PSK_WITH_AES_256_CBC_SHA384 = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x030000B3, .hex);
-pub const TLS1_CK_DHE_PSK_WITH_NULL_SHA256 = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x030000B4, .hex);
-pub const TLS1_CK_DHE_PSK_WITH_NULL_SHA384 = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x030000B5, .hex);
-pub const TLS1_CK_RSA_PSK_WITH_AES_128_CBC_SHA256 = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x030000B6, .hex);
-pub const TLS1_CK_RSA_PSK_WITH_AES_256_CBC_SHA384 = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x030000B7, .hex);
-pub const TLS1_CK_RSA_PSK_WITH_NULL_SHA256 = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x030000B8, .hex);
-pub const TLS1_CK_RSA_PSK_WITH_NULL_SHA384 = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x030000B9, .hex);
-pub const TLS1_CK_PSK_WITH_NULL_SHA = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x0300002C, .hex);
-pub const TLS1_CK_DHE_PSK_WITH_NULL_SHA = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x0300002D, .hex);
-pub const TLS1_CK_RSA_PSK_WITH_NULL_SHA = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x0300002E, .hex);
-pub const TLS1_CK_RSA_WITH_AES_128_SHA = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x0300002F, .hex);
-pub const TLS1_CK_DH_DSS_WITH_AES_128_SHA = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x03000030, .hex);
-pub const TLS1_CK_DH_RSA_WITH_AES_128_SHA = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x03000031, .hex);
-pub const TLS1_CK_DHE_DSS_WITH_AES_128_SHA = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x03000032, .hex);
-pub const TLS1_CK_DHE_RSA_WITH_AES_128_SHA = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x03000033, .hex);
-pub const TLS1_CK_ADH_WITH_AES_128_SHA = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x03000034, .hex);
-pub const TLS1_CK_RSA_WITH_AES_256_SHA = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x03000035, .hex);
-pub const TLS1_CK_DH_DSS_WITH_AES_256_SHA = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x03000036, .hex);
-pub const TLS1_CK_DH_RSA_WITH_AES_256_SHA = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x03000037, .hex);
-pub const TLS1_CK_DHE_DSS_WITH_AES_256_SHA = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x03000038, .hex);
-pub const TLS1_CK_DHE_RSA_WITH_AES_256_SHA = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x03000039, .hex);
-pub const TLS1_CK_ADH_WITH_AES_256_SHA = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x0300003A, .hex);
-pub const TLS1_CK_RSA_WITH_NULL_SHA256 = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x0300003B, .hex);
-pub const TLS1_CK_RSA_WITH_AES_128_SHA256 = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x0300003C, .hex);
-pub const TLS1_CK_RSA_WITH_AES_256_SHA256 = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x0300003D, .hex);
-pub const TLS1_CK_DH_DSS_WITH_AES_128_SHA256 = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x0300003E, .hex);
-pub const TLS1_CK_DH_RSA_WITH_AES_128_SHA256 = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x0300003F, .hex);
-pub const TLS1_CK_DHE_DSS_WITH_AES_128_SHA256 = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x03000040, .hex);
-pub const TLS1_CK_RSA_WITH_CAMELLIA_128_CBC_SHA = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x03000041, .hex);
-pub const TLS1_CK_DH_DSS_WITH_CAMELLIA_128_CBC_SHA = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x03000042, .hex);
-pub const TLS1_CK_DH_RSA_WITH_CAMELLIA_128_CBC_SHA = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x03000043, .hex);
-pub const TLS1_CK_DHE_DSS_WITH_CAMELLIA_128_CBC_SHA = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x03000044, .hex);
-pub const TLS1_CK_DHE_RSA_WITH_CAMELLIA_128_CBC_SHA = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x03000045, .hex);
-pub const TLS1_CK_ADH_WITH_CAMELLIA_128_CBC_SHA = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x03000046, .hex);
-pub const TLS1_CK_DHE_RSA_WITH_AES_128_SHA256 = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x03000067, .hex);
-pub const TLS1_CK_DH_DSS_WITH_AES_256_SHA256 = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x03000068, .hex);
-pub const TLS1_CK_DH_RSA_WITH_AES_256_SHA256 = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x03000069, .hex);
-pub const TLS1_CK_DHE_DSS_WITH_AES_256_SHA256 = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x0300006A, .hex);
-pub const TLS1_CK_DHE_RSA_WITH_AES_256_SHA256 = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x0300006B, .hex);
-pub const TLS1_CK_ADH_WITH_AES_128_SHA256 = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x0300006C, .hex);
-pub const TLS1_CK_ADH_WITH_AES_256_SHA256 = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x0300006D, .hex);
-pub const TLS1_CK_RSA_WITH_CAMELLIA_256_CBC_SHA = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x03000084, .hex);
-pub const TLS1_CK_DH_DSS_WITH_CAMELLIA_256_CBC_SHA = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x03000085, .hex);
-pub const TLS1_CK_DH_RSA_WITH_CAMELLIA_256_CBC_SHA = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x03000086, .hex);
-pub const TLS1_CK_DHE_DSS_WITH_CAMELLIA_256_CBC_SHA = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x03000087, .hex);
-pub const TLS1_CK_DHE_RSA_WITH_CAMELLIA_256_CBC_SHA = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x03000088, .hex);
-pub const TLS1_CK_ADH_WITH_CAMELLIA_256_CBC_SHA = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x03000089, .hex);
-pub const TLS1_CK_RSA_WITH_SEED_SHA = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x03000096, .hex);
-pub const TLS1_CK_DH_DSS_WITH_SEED_SHA = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x03000097, .hex);
-pub const TLS1_CK_DH_RSA_WITH_SEED_SHA = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x03000098, .hex);
-pub const TLS1_CK_DHE_DSS_WITH_SEED_SHA = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x03000099, .hex);
-pub const TLS1_CK_DHE_RSA_WITH_SEED_SHA = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x0300009A, .hex);
-pub const TLS1_CK_ADH_WITH_SEED_SHA = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x0300009B, .hex);
-pub const TLS1_CK_RSA_WITH_AES_128_GCM_SHA256 = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x0300009C, .hex);
-pub const TLS1_CK_RSA_WITH_AES_256_GCM_SHA384 = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x0300009D, .hex);
-pub const TLS1_CK_DHE_RSA_WITH_AES_128_GCM_SHA256 = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x0300009E, .hex);
-pub const TLS1_CK_DHE_RSA_WITH_AES_256_GCM_SHA384 = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x0300009F, .hex);
-pub const TLS1_CK_DH_RSA_WITH_AES_128_GCM_SHA256 = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x030000A0, .hex);
-pub const TLS1_CK_DH_RSA_WITH_AES_256_GCM_SHA384 = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x030000A1, .hex);
-pub const TLS1_CK_DHE_DSS_WITH_AES_128_GCM_SHA256 = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x030000A2, .hex);
-pub const TLS1_CK_DHE_DSS_WITH_AES_256_GCM_SHA384 = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x030000A3, .hex);
-pub const TLS1_CK_DH_DSS_WITH_AES_128_GCM_SHA256 = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x030000A4, .hex);
-pub const TLS1_CK_DH_DSS_WITH_AES_256_GCM_SHA384 = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x030000A5, .hex);
-pub const TLS1_CK_ADH_WITH_AES_128_GCM_SHA256 = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x030000A6, .hex);
-pub const TLS1_CK_ADH_WITH_AES_256_GCM_SHA384 = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x030000A7, .hex);
-pub const TLS1_CK_RSA_WITH_AES_128_CCM = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x0300C09C, .hex);
-pub const TLS1_CK_RSA_WITH_AES_256_CCM = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x0300C09D, .hex);
-pub const TLS1_CK_DHE_RSA_WITH_AES_128_CCM = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x0300C09E, .hex);
-pub const TLS1_CK_DHE_RSA_WITH_AES_256_CCM = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x0300C09F, .hex);
-pub const TLS1_CK_RSA_WITH_AES_128_CCM_8 = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x0300C0A0, .hex);
-pub const TLS1_CK_RSA_WITH_AES_256_CCM_8 = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x0300C0A1, .hex);
-pub const TLS1_CK_DHE_RSA_WITH_AES_128_CCM_8 = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x0300C0A2, .hex);
-pub const TLS1_CK_DHE_RSA_WITH_AES_256_CCM_8 = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x0300C0A3, .hex);
-pub const TLS1_CK_PSK_WITH_AES_128_CCM = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x0300C0A4, .hex);
-pub const TLS1_CK_PSK_WITH_AES_256_CCM = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x0300C0A5, .hex);
-pub const TLS1_CK_DHE_PSK_WITH_AES_128_CCM = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x0300C0A6, .hex);
-pub const TLS1_CK_DHE_PSK_WITH_AES_256_CCM = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x0300C0A7, .hex);
-pub const TLS1_CK_PSK_WITH_AES_128_CCM_8 = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x0300C0A8, .hex);
-pub const TLS1_CK_PSK_WITH_AES_256_CCM_8 = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x0300C0A9, .hex);
-pub const TLS1_CK_DHE_PSK_WITH_AES_128_CCM_8 = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x0300C0AA, .hex);
-pub const TLS1_CK_DHE_PSK_WITH_AES_256_CCM_8 = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x0300C0AB, .hex);
-pub const TLS1_CK_ECDHE_ECDSA_WITH_AES_128_CCM = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x0300C0AC, .hex);
-pub const TLS1_CK_ECDHE_ECDSA_WITH_AES_256_CCM = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x0300C0AD, .hex);
-pub const TLS1_CK_ECDHE_ECDSA_WITH_AES_128_CCM_8 = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x0300C0AE, .hex);
-pub const TLS1_CK_ECDHE_ECDSA_WITH_AES_256_CCM_8 = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x0300C0AF, .hex);
-pub const TLS1_CK_RSA_WITH_CAMELLIA_128_CBC_SHA256 = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x030000BA, .hex);
-pub const TLS1_CK_DH_DSS_WITH_CAMELLIA_128_CBC_SHA256 = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x030000BB, .hex);
-pub const TLS1_CK_DH_RSA_WITH_CAMELLIA_128_CBC_SHA256 = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x030000BC, .hex);
-pub const TLS1_CK_DHE_DSS_WITH_CAMELLIA_128_CBC_SHA256 = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x030000BD, .hex);
-pub const TLS1_CK_DHE_RSA_WITH_CAMELLIA_128_CBC_SHA256 = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x030000BE, .hex);
-pub const TLS1_CK_ADH_WITH_CAMELLIA_128_CBC_SHA256 = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x030000BF, .hex);
-pub const TLS1_CK_RSA_WITH_CAMELLIA_256_CBC_SHA256 = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x030000C0, .hex);
-pub const TLS1_CK_DH_DSS_WITH_CAMELLIA_256_CBC_SHA256 = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x030000C1, .hex);
-pub const TLS1_CK_DH_RSA_WITH_CAMELLIA_256_CBC_SHA256 = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x030000C2, .hex);
-pub const TLS1_CK_DHE_DSS_WITH_CAMELLIA_256_CBC_SHA256 = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x030000C3, .hex);
-pub const TLS1_CK_DHE_RSA_WITH_CAMELLIA_256_CBC_SHA256 = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x030000C4, .hex);
-pub const TLS1_CK_ADH_WITH_CAMELLIA_256_CBC_SHA256 = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x030000C5, .hex);
-pub const TLS1_CK_ECDH_ECDSA_WITH_NULL_SHA = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x0300C001, .hex);
-pub const TLS1_CK_ECDH_ECDSA_WITH_RC4_128_SHA = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x0300C002, .hex);
-pub const TLS1_CK_ECDH_ECDSA_WITH_DES_192_CBC3_SHA = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x0300C003, .hex);
-pub const TLS1_CK_ECDH_ECDSA_WITH_AES_128_CBC_SHA = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x0300C004, .hex);
-pub const TLS1_CK_ECDH_ECDSA_WITH_AES_256_CBC_SHA = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x0300C005, .hex);
-pub const TLS1_CK_ECDHE_ECDSA_WITH_NULL_SHA = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x0300C006, .hex);
-pub const TLS1_CK_ECDHE_ECDSA_WITH_RC4_128_SHA = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x0300C007, .hex);
-pub const TLS1_CK_ECDHE_ECDSA_WITH_DES_192_CBC3_SHA = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x0300C008, .hex);
-pub const TLS1_CK_ECDHE_ECDSA_WITH_AES_128_CBC_SHA = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x0300C009, .hex);
-pub const TLS1_CK_ECDHE_ECDSA_WITH_AES_256_CBC_SHA = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x0300C00A, .hex);
-pub const TLS1_CK_ECDH_RSA_WITH_NULL_SHA = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x0300C00B, .hex);
-pub const TLS1_CK_ECDH_RSA_WITH_RC4_128_SHA = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x0300C00C, .hex);
-pub const TLS1_CK_ECDH_RSA_WITH_DES_192_CBC3_SHA = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x0300C00D, .hex);
-pub const TLS1_CK_ECDH_RSA_WITH_AES_128_CBC_SHA = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x0300C00E, .hex);
-pub const TLS1_CK_ECDH_RSA_WITH_AES_256_CBC_SHA = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x0300C00F, .hex);
-pub const TLS1_CK_ECDHE_RSA_WITH_NULL_SHA = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x0300C010, .hex);
-pub const TLS1_CK_ECDHE_RSA_WITH_RC4_128_SHA = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x0300C011, .hex);
-pub const TLS1_CK_ECDHE_RSA_WITH_DES_192_CBC3_SHA = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x0300C012, .hex);
-pub const TLS1_CK_ECDHE_RSA_WITH_AES_128_CBC_SHA = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x0300C013, .hex);
-pub const TLS1_CK_ECDHE_RSA_WITH_AES_256_CBC_SHA = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x0300C014, .hex);
-pub const TLS1_CK_ECDH_anon_WITH_NULL_SHA = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x0300C015, .hex);
-pub const TLS1_CK_ECDH_anon_WITH_RC4_128_SHA = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x0300C016, .hex);
-pub const TLS1_CK_ECDH_anon_WITH_DES_192_CBC3_SHA = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x0300C017, .hex);
-pub const TLS1_CK_ECDH_anon_WITH_AES_128_CBC_SHA = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x0300C018, .hex);
-pub const TLS1_CK_ECDH_anon_WITH_AES_256_CBC_SHA = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x0300C019, .hex);
-pub const TLS1_CK_SRP_SHA_WITH_3DES_EDE_CBC_SHA = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x0300C01A, .hex);
-pub const TLS1_CK_SRP_SHA_RSA_WITH_3DES_EDE_CBC_SHA = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x0300C01B, .hex);
-pub const TLS1_CK_SRP_SHA_DSS_WITH_3DES_EDE_CBC_SHA = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x0300C01C, .hex);
-pub const TLS1_CK_SRP_SHA_WITH_AES_128_CBC_SHA = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x0300C01D, .hex);
-pub const TLS1_CK_SRP_SHA_RSA_WITH_AES_128_CBC_SHA = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x0300C01E, .hex);
-pub const TLS1_CK_SRP_SHA_DSS_WITH_AES_128_CBC_SHA = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x0300C01F, .hex);
-pub const TLS1_CK_SRP_SHA_WITH_AES_256_CBC_SHA = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x0300C020, .hex);
-pub const TLS1_CK_SRP_SHA_RSA_WITH_AES_256_CBC_SHA = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x0300C021, .hex);
-pub const TLS1_CK_SRP_SHA_DSS_WITH_AES_256_CBC_SHA = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x0300C022, .hex);
-pub const TLS1_CK_ECDHE_ECDSA_WITH_AES_128_SHA256 = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x0300C023, .hex);
-pub const TLS1_CK_ECDHE_ECDSA_WITH_AES_256_SHA384 = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x0300C024, .hex);
-pub const TLS1_CK_ECDH_ECDSA_WITH_AES_128_SHA256 = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x0300C025, .hex);
-pub const TLS1_CK_ECDH_ECDSA_WITH_AES_256_SHA384 = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x0300C026, .hex);
-pub const TLS1_CK_ECDHE_RSA_WITH_AES_128_SHA256 = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x0300C027, .hex);
-pub const TLS1_CK_ECDHE_RSA_WITH_AES_256_SHA384 = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x0300C028, .hex);
-pub const TLS1_CK_ECDH_RSA_WITH_AES_128_SHA256 = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x0300C029, .hex);
-pub const TLS1_CK_ECDH_RSA_WITH_AES_256_SHA384 = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x0300C02A, .hex);
-pub const TLS1_CK_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256 = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x0300C02B, .hex);
-pub const TLS1_CK_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384 = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x0300C02C, .hex);
-pub const TLS1_CK_ECDH_ECDSA_WITH_AES_128_GCM_SHA256 = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x0300C02D, .hex);
-pub const TLS1_CK_ECDH_ECDSA_WITH_AES_256_GCM_SHA384 = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x0300C02E, .hex);
-pub const TLS1_CK_ECDHE_RSA_WITH_AES_128_GCM_SHA256 = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x0300C02F, .hex);
-pub const TLS1_CK_ECDHE_RSA_WITH_AES_256_GCM_SHA384 = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x0300C030, .hex);
-pub const TLS1_CK_ECDH_RSA_WITH_AES_128_GCM_SHA256 = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x0300C031, .hex);
-pub const TLS1_CK_ECDH_RSA_WITH_AES_256_GCM_SHA384 = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x0300C032, .hex);
-pub const TLS1_CK_ECDHE_PSK_WITH_RC4_128_SHA = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x0300C033, .hex);
-pub const TLS1_CK_ECDHE_PSK_WITH_3DES_EDE_CBC_SHA = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x0300C034, .hex);
-pub const TLS1_CK_ECDHE_PSK_WITH_AES_128_CBC_SHA = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x0300C035, .hex);
-pub const TLS1_CK_ECDHE_PSK_WITH_AES_256_CBC_SHA = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x0300C036, .hex);
-pub const TLS1_CK_ECDHE_PSK_WITH_AES_128_CBC_SHA256 = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x0300C037, .hex);
-pub const TLS1_CK_ECDHE_PSK_WITH_AES_256_CBC_SHA384 = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x0300C038, .hex);
-pub const TLS1_CK_ECDHE_PSK_WITH_NULL_SHA = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x0300C039, .hex);
-pub const TLS1_CK_ECDHE_PSK_WITH_NULL_SHA256 = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x0300C03A, .hex);
-pub const TLS1_CK_ECDHE_PSK_WITH_NULL_SHA384 = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x0300C03B, .hex);
-pub const TLS1_CK_ECDHE_ECDSA_WITH_CAMELLIA_128_CBC_SHA256 = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x0300C072, .hex);
-pub const TLS1_CK_ECDHE_ECDSA_WITH_CAMELLIA_256_CBC_SHA384 = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x0300C073, .hex);
-pub const TLS1_CK_ECDH_ECDSA_WITH_CAMELLIA_128_CBC_SHA256 = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x0300C074, .hex);
-pub const TLS1_CK_ECDH_ECDSA_WITH_CAMELLIA_256_CBC_SHA384 = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x0300C075, .hex);
-pub const TLS1_CK_ECDHE_RSA_WITH_CAMELLIA_128_CBC_SHA256 = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x0300C076, .hex);
-pub const TLS1_CK_ECDHE_RSA_WITH_CAMELLIA_256_CBC_SHA384 = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x0300C077, .hex);
-pub const TLS1_CK_ECDH_RSA_WITH_CAMELLIA_128_CBC_SHA256 = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x0300C078, .hex);
-pub const TLS1_CK_ECDH_RSA_WITH_CAMELLIA_256_CBC_SHA384 = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x0300C079, .hex);
-pub const TLS1_CK_PSK_WITH_CAMELLIA_128_CBC_SHA256 = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x0300C094, .hex);
-pub const TLS1_CK_PSK_WITH_CAMELLIA_256_CBC_SHA384 = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x0300C095, .hex);
-pub const TLS1_CK_DHE_PSK_WITH_CAMELLIA_128_CBC_SHA256 = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x0300C096, .hex);
-pub const TLS1_CK_DHE_PSK_WITH_CAMELLIA_256_CBC_SHA384 = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x0300C097, .hex);
-pub const TLS1_CK_RSA_PSK_WITH_CAMELLIA_128_CBC_SHA256 = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x0300C098, .hex);
-pub const TLS1_CK_RSA_PSK_WITH_CAMELLIA_256_CBC_SHA384 = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x0300C099, .hex);
-pub const TLS1_CK_ECDHE_PSK_WITH_CAMELLIA_128_CBC_SHA256 = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x0300C09A, .hex);
-pub const TLS1_CK_ECDHE_PSK_WITH_CAMELLIA_256_CBC_SHA384 = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x0300C09B, .hex);
-pub const TLS1_CK_ECDHE_RSA_WITH_CHACHA20_POLY1305 = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x0300CCA8, .hex);
-pub const TLS1_CK_ECDHE_ECDSA_WITH_CHACHA20_POLY1305 = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x0300CCA9, .hex);
-pub const TLS1_CK_DHE_RSA_WITH_CHACHA20_POLY1305 = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x0300CCAA, .hex);
-pub const TLS1_CK_PSK_WITH_CHACHA20_POLY1305 = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x0300CCAB, .hex);
-pub const TLS1_CK_ECDHE_PSK_WITH_CHACHA20_POLY1305 = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x0300CCAC, .hex);
-pub const TLS1_CK_DHE_PSK_WITH_CHACHA20_POLY1305 = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x0300CCAD, .hex);
-pub const TLS1_CK_RSA_PSK_WITH_CHACHA20_POLY1305 = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x0300CCAE, .hex);
-pub const TLS1_3_CK_AES_128_GCM_SHA256 = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x03001301, .hex);
-pub const TLS1_3_CK_AES_256_GCM_SHA384 = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x03001302, .hex);
-pub const TLS1_3_CK_CHACHA20_POLY1305_SHA256 = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x03001303, .hex);
-pub const TLS1_3_CK_AES_128_CCM_SHA256 = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x03001304, .hex);
-pub const TLS1_3_CK_AES_128_CCM_8_SHA256 = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x03001305, .hex);
-pub const TLS1_3_CK_SHA256_SHA256 = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x0300C0B4, .hex);
-pub const TLS1_3_CK_SHA384_SHA384 = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x0300C0B5, .hex);
-pub const TLS1_CK_RSA_WITH_ARIA_128_GCM_SHA256 = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x0300C050, .hex);
-pub const TLS1_CK_RSA_WITH_ARIA_256_GCM_SHA384 = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x0300C051, .hex);
-pub const TLS1_CK_DHE_RSA_WITH_ARIA_128_GCM_SHA256 = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x0300C052, .hex);
-pub const TLS1_CK_DHE_RSA_WITH_ARIA_256_GCM_SHA384 = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x0300C053, .hex);
-pub const TLS1_CK_DH_RSA_WITH_ARIA_128_GCM_SHA256 = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x0300C054, .hex);
-pub const TLS1_CK_DH_RSA_WITH_ARIA_256_GCM_SHA384 = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x0300C055, .hex);
-pub const TLS1_CK_DHE_DSS_WITH_ARIA_128_GCM_SHA256 = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x0300C056, .hex);
-pub const TLS1_CK_DHE_DSS_WITH_ARIA_256_GCM_SHA384 = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x0300C057, .hex);
-pub const TLS1_CK_DH_DSS_WITH_ARIA_128_GCM_SHA256 = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x0300C058, .hex);
-pub const TLS1_CK_DH_DSS_WITH_ARIA_256_GCM_SHA384 = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x0300C059, .hex);
-pub const TLS1_CK_DH_anon_WITH_ARIA_128_GCM_SHA256 = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x0300C05A, .hex);
-pub const TLS1_CK_DH_anon_WITH_ARIA_256_GCM_SHA384 = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x0300C05B, .hex);
-pub const TLS1_CK_ECDHE_ECDSA_WITH_ARIA_128_GCM_SHA256 = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x0300C05C, .hex);
-pub const TLS1_CK_ECDHE_ECDSA_WITH_ARIA_256_GCM_SHA384 = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x0300C05D, .hex);
-pub const TLS1_CK_ECDH_ECDSA_WITH_ARIA_128_GCM_SHA256 = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x0300C05E, .hex);
-pub const TLS1_CK_ECDH_ECDSA_WITH_ARIA_256_GCM_SHA384 = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x0300C05F, .hex);
-pub const TLS1_CK_ECDHE_RSA_WITH_ARIA_128_GCM_SHA256 = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x0300C060, .hex);
-pub const TLS1_CK_ECDHE_RSA_WITH_ARIA_256_GCM_SHA384 = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x0300C061, .hex);
-pub const TLS1_CK_ECDH_RSA_WITH_ARIA_128_GCM_SHA256 = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x0300C062, .hex);
-pub const TLS1_CK_ECDH_RSA_WITH_ARIA_256_GCM_SHA384 = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x0300C063, .hex);
-pub const TLS1_CK_PSK_WITH_ARIA_128_GCM_SHA256 = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x0300C06A, .hex);
-pub const TLS1_CK_PSK_WITH_ARIA_256_GCM_SHA384 = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x0300C06B, .hex);
-pub const TLS1_CK_DHE_PSK_WITH_ARIA_128_GCM_SHA256 = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x0300C06C, .hex);
-pub const TLS1_CK_DHE_PSK_WITH_ARIA_256_GCM_SHA384 = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x0300C06D, .hex);
-pub const TLS1_CK_RSA_PSK_WITH_ARIA_128_GCM_SHA256 = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x0300C06E, .hex);
-pub const TLS1_CK_RSA_PSK_WITH_ARIA_256_GCM_SHA384 = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x0300C06F, .hex);
+pub const TLS1_CK_PSK_WITH_RC4_128_SHA = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x0300008A, .hex);
+pub const TLS1_CK_PSK_WITH_3DES_EDE_CBC_SHA = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x0300008B, .hex);
+pub const TLS1_CK_PSK_WITH_AES_128_CBC_SHA = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x0300008C, .hex);
+pub const TLS1_CK_PSK_WITH_AES_256_CBC_SHA = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x0300008D, .hex);
+pub const TLS1_CK_DHE_PSK_WITH_RC4_128_SHA = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x0300008E, .hex);
+pub const TLS1_CK_DHE_PSK_WITH_3DES_EDE_CBC_SHA = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x0300008F, .hex);
+pub const TLS1_CK_DHE_PSK_WITH_AES_128_CBC_SHA = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x03000090, .hex);
+pub const TLS1_CK_DHE_PSK_WITH_AES_256_CBC_SHA = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x03000091, .hex);
+pub const TLS1_CK_RSA_PSK_WITH_RC4_128_SHA = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x03000092, .hex);
+pub const TLS1_CK_RSA_PSK_WITH_3DES_EDE_CBC_SHA = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x03000093, .hex);
+pub const TLS1_CK_RSA_PSK_WITH_AES_128_CBC_SHA = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x03000094, .hex);
+pub const TLS1_CK_RSA_PSK_WITH_AES_256_CBC_SHA = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x03000095, .hex);
+pub const TLS1_CK_PSK_WITH_AES_128_GCM_SHA256 = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x030000A8, .hex);
+pub const TLS1_CK_PSK_WITH_AES_256_GCM_SHA384 = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x030000A9, .hex);
+pub const TLS1_CK_DHE_PSK_WITH_AES_128_GCM_SHA256 = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x030000AA, .hex);
+pub const TLS1_CK_DHE_PSK_WITH_AES_256_GCM_SHA384 = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x030000AB, .hex);
+pub const TLS1_CK_RSA_PSK_WITH_AES_128_GCM_SHA256 = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x030000AC, .hex);
+pub const TLS1_CK_RSA_PSK_WITH_AES_256_GCM_SHA384 = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x030000AD, .hex);
+pub const TLS1_CK_PSK_WITH_AES_128_CBC_SHA256 = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x030000AE, .hex);
+pub const TLS1_CK_PSK_WITH_AES_256_CBC_SHA384 = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x030000AF, .hex);
+pub const TLS1_CK_PSK_WITH_NULL_SHA256 = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x030000B0, .hex);
+pub const TLS1_CK_PSK_WITH_NULL_SHA384 = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x030000B1, .hex);
+pub const TLS1_CK_DHE_PSK_WITH_AES_128_CBC_SHA256 = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x030000B2, .hex);
+pub const TLS1_CK_DHE_PSK_WITH_AES_256_CBC_SHA384 = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x030000B3, .hex);
+pub const TLS1_CK_DHE_PSK_WITH_NULL_SHA256 = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x030000B4, .hex);
+pub const TLS1_CK_DHE_PSK_WITH_NULL_SHA384 = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x030000B5, .hex);
+pub const TLS1_CK_RSA_PSK_WITH_AES_128_CBC_SHA256 = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x030000B6, .hex);
+pub const TLS1_CK_RSA_PSK_WITH_AES_256_CBC_SHA384 = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x030000B7, .hex);
+pub const TLS1_CK_RSA_PSK_WITH_NULL_SHA256 = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x030000B8, .hex);
+pub const TLS1_CK_RSA_PSK_WITH_NULL_SHA384 = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x030000B9, .hex);
+pub const TLS1_CK_PSK_WITH_NULL_SHA = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x0300002C, .hex);
+pub const TLS1_CK_DHE_PSK_WITH_NULL_SHA = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x0300002D, .hex);
+pub const TLS1_CK_RSA_PSK_WITH_NULL_SHA = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x0300002E, .hex);
+pub const TLS1_CK_RSA_WITH_AES_128_SHA = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x0300002F, .hex);
+pub const TLS1_CK_DH_DSS_WITH_AES_128_SHA = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x03000030, .hex);
+pub const TLS1_CK_DH_RSA_WITH_AES_128_SHA = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x03000031, .hex);
+pub const TLS1_CK_DHE_DSS_WITH_AES_128_SHA = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x03000032, .hex);
+pub const TLS1_CK_DHE_RSA_WITH_AES_128_SHA = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x03000033, .hex);
+pub const TLS1_CK_ADH_WITH_AES_128_SHA = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x03000034, .hex);
+pub const TLS1_CK_RSA_WITH_AES_256_SHA = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x03000035, .hex);
+pub const TLS1_CK_DH_DSS_WITH_AES_256_SHA = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x03000036, .hex);
+pub const TLS1_CK_DH_RSA_WITH_AES_256_SHA = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x03000037, .hex);
+pub const TLS1_CK_DHE_DSS_WITH_AES_256_SHA = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x03000038, .hex);
+pub const TLS1_CK_DHE_RSA_WITH_AES_256_SHA = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x03000039, .hex);
+pub const TLS1_CK_ADH_WITH_AES_256_SHA = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x0300003A, .hex);
+pub const TLS1_CK_RSA_WITH_NULL_SHA256 = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x0300003B, .hex);
+pub const TLS1_CK_RSA_WITH_AES_128_SHA256 = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x0300003C, .hex);
+pub const TLS1_CK_RSA_WITH_AES_256_SHA256 = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x0300003D, .hex);
+pub const TLS1_CK_DH_DSS_WITH_AES_128_SHA256 = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x0300003E, .hex);
+pub const TLS1_CK_DH_RSA_WITH_AES_128_SHA256 = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x0300003F, .hex);
+pub const TLS1_CK_DHE_DSS_WITH_AES_128_SHA256 = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x03000040, .hex);
+pub const TLS1_CK_RSA_WITH_CAMELLIA_128_CBC_SHA = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x03000041, .hex);
+pub const TLS1_CK_DH_DSS_WITH_CAMELLIA_128_CBC_SHA = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x03000042, .hex);
+pub const TLS1_CK_DH_RSA_WITH_CAMELLIA_128_CBC_SHA = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x03000043, .hex);
+pub const TLS1_CK_DHE_DSS_WITH_CAMELLIA_128_CBC_SHA = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x03000044, .hex);
+pub const TLS1_CK_DHE_RSA_WITH_CAMELLIA_128_CBC_SHA = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x03000045, .hex);
+pub const TLS1_CK_ADH_WITH_CAMELLIA_128_CBC_SHA = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x03000046, .hex);
+pub const TLS1_CK_DHE_RSA_WITH_AES_128_SHA256 = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x03000067, .hex);
+pub const TLS1_CK_DH_DSS_WITH_AES_256_SHA256 = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x03000068, .hex);
+pub const TLS1_CK_DH_RSA_WITH_AES_256_SHA256 = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x03000069, .hex);
+pub const TLS1_CK_DHE_DSS_WITH_AES_256_SHA256 = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x0300006A, .hex);
+pub const TLS1_CK_DHE_RSA_WITH_AES_256_SHA256 = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x0300006B, .hex);
+pub const TLS1_CK_ADH_WITH_AES_128_SHA256 = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x0300006C, .hex);
+pub const TLS1_CK_ADH_WITH_AES_256_SHA256 = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x0300006D, .hex);
+pub const TLS1_CK_RSA_WITH_CAMELLIA_256_CBC_SHA = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x03000084, .hex);
+pub const TLS1_CK_DH_DSS_WITH_CAMELLIA_256_CBC_SHA = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x03000085, .hex);
+pub const TLS1_CK_DH_RSA_WITH_CAMELLIA_256_CBC_SHA = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x03000086, .hex);
+pub const TLS1_CK_DHE_DSS_WITH_CAMELLIA_256_CBC_SHA = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x03000087, .hex);
+pub const TLS1_CK_DHE_RSA_WITH_CAMELLIA_256_CBC_SHA = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x03000088, .hex);
+pub const TLS1_CK_ADH_WITH_CAMELLIA_256_CBC_SHA = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x03000089, .hex);
+pub const TLS1_CK_RSA_WITH_SEED_SHA = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x03000096, .hex);
+pub const TLS1_CK_DH_DSS_WITH_SEED_SHA = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x03000097, .hex);
+pub const TLS1_CK_DH_RSA_WITH_SEED_SHA = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x03000098, .hex);
+pub const TLS1_CK_DHE_DSS_WITH_SEED_SHA = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x03000099, .hex);
+pub const TLS1_CK_DHE_RSA_WITH_SEED_SHA = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x0300009A, .hex);
+pub const TLS1_CK_ADH_WITH_SEED_SHA = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x0300009B, .hex);
+pub const TLS1_CK_RSA_WITH_AES_128_GCM_SHA256 = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x0300009C, .hex);
+pub const TLS1_CK_RSA_WITH_AES_256_GCM_SHA384 = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x0300009D, .hex);
+pub const TLS1_CK_DHE_RSA_WITH_AES_128_GCM_SHA256 = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x0300009E, .hex);
+pub const TLS1_CK_DHE_RSA_WITH_AES_256_GCM_SHA384 = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x0300009F, .hex);
+pub const TLS1_CK_DH_RSA_WITH_AES_128_GCM_SHA256 = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x030000A0, .hex);
+pub const TLS1_CK_DH_RSA_WITH_AES_256_GCM_SHA384 = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x030000A1, .hex);
+pub const TLS1_CK_DHE_DSS_WITH_AES_128_GCM_SHA256 = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x030000A2, .hex);
+pub const TLS1_CK_DHE_DSS_WITH_AES_256_GCM_SHA384 = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x030000A3, .hex);
+pub const TLS1_CK_DH_DSS_WITH_AES_128_GCM_SHA256 = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x030000A4, .hex);
+pub const TLS1_CK_DH_DSS_WITH_AES_256_GCM_SHA384 = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x030000A5, .hex);
+pub const TLS1_CK_ADH_WITH_AES_128_GCM_SHA256 = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x030000A6, .hex);
+pub const TLS1_CK_ADH_WITH_AES_256_GCM_SHA384 = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x030000A7, .hex);
+pub const TLS1_CK_RSA_WITH_AES_128_CCM = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x0300C09C, .hex);
+pub const TLS1_CK_RSA_WITH_AES_256_CCM = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x0300C09D, .hex);
+pub const TLS1_CK_DHE_RSA_WITH_AES_128_CCM = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x0300C09E, .hex);
+pub const TLS1_CK_DHE_RSA_WITH_AES_256_CCM = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x0300C09F, .hex);
+pub const TLS1_CK_RSA_WITH_AES_128_CCM_8 = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x0300C0A0, .hex);
+pub const TLS1_CK_RSA_WITH_AES_256_CCM_8 = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x0300C0A1, .hex);
+pub const TLS1_CK_DHE_RSA_WITH_AES_128_CCM_8 = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x0300C0A2, .hex);
+pub const TLS1_CK_DHE_RSA_WITH_AES_256_CCM_8 = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x0300C0A3, .hex);
+pub const TLS1_CK_PSK_WITH_AES_128_CCM = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x0300C0A4, .hex);
+pub const TLS1_CK_PSK_WITH_AES_256_CCM = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x0300C0A5, .hex);
+pub const TLS1_CK_DHE_PSK_WITH_AES_128_CCM = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x0300C0A6, .hex);
+pub const TLS1_CK_DHE_PSK_WITH_AES_256_CCM = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x0300C0A7, .hex);
+pub const TLS1_CK_PSK_WITH_AES_128_CCM_8 = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x0300C0A8, .hex);
+pub const TLS1_CK_PSK_WITH_AES_256_CCM_8 = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x0300C0A9, .hex);
+pub const TLS1_CK_DHE_PSK_WITH_AES_128_CCM_8 = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x0300C0AA, .hex);
+pub const TLS1_CK_DHE_PSK_WITH_AES_256_CCM_8 = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x0300C0AB, .hex);
+pub const TLS1_CK_ECDHE_ECDSA_WITH_AES_128_CCM = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x0300C0AC, .hex);
+pub const TLS1_CK_ECDHE_ECDSA_WITH_AES_256_CCM = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x0300C0AD, .hex);
+pub const TLS1_CK_ECDHE_ECDSA_WITH_AES_128_CCM_8 = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x0300C0AE, .hex);
+pub const TLS1_CK_ECDHE_ECDSA_WITH_AES_256_CCM_8 = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x0300C0AF, .hex);
+pub const TLS1_CK_RSA_WITH_CAMELLIA_128_CBC_SHA256 = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x030000BA, .hex);
+pub const TLS1_CK_DH_DSS_WITH_CAMELLIA_128_CBC_SHA256 = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x030000BB, .hex);
+pub const TLS1_CK_DH_RSA_WITH_CAMELLIA_128_CBC_SHA256 = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x030000BC, .hex);
+pub const TLS1_CK_DHE_DSS_WITH_CAMELLIA_128_CBC_SHA256 = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x030000BD, .hex);
+pub const TLS1_CK_DHE_RSA_WITH_CAMELLIA_128_CBC_SHA256 = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x030000BE, .hex);
+pub const TLS1_CK_ADH_WITH_CAMELLIA_128_CBC_SHA256 = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x030000BF, .hex);
+pub const TLS1_CK_RSA_WITH_CAMELLIA_256_CBC_SHA256 = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x030000C0, .hex);
+pub const TLS1_CK_DH_DSS_WITH_CAMELLIA_256_CBC_SHA256 = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x030000C1, .hex);
+pub const TLS1_CK_DH_RSA_WITH_CAMELLIA_256_CBC_SHA256 = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x030000C2, .hex);
+pub const TLS1_CK_DHE_DSS_WITH_CAMELLIA_256_CBC_SHA256 = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x030000C3, .hex);
+pub const TLS1_CK_DHE_RSA_WITH_CAMELLIA_256_CBC_SHA256 = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x030000C4, .hex);
+pub const TLS1_CK_ADH_WITH_CAMELLIA_256_CBC_SHA256 = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x030000C5, .hex);
+pub const TLS1_CK_ECDH_ECDSA_WITH_NULL_SHA = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x0300C001, .hex);
+pub const TLS1_CK_ECDH_ECDSA_WITH_RC4_128_SHA = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x0300C002, .hex);
+pub const TLS1_CK_ECDH_ECDSA_WITH_DES_192_CBC3_SHA = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x0300C003, .hex);
+pub const TLS1_CK_ECDH_ECDSA_WITH_AES_128_CBC_SHA = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x0300C004, .hex);
+pub const TLS1_CK_ECDH_ECDSA_WITH_AES_256_CBC_SHA = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x0300C005, .hex);
+pub const TLS1_CK_ECDHE_ECDSA_WITH_NULL_SHA = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x0300C006, .hex);
+pub const TLS1_CK_ECDHE_ECDSA_WITH_RC4_128_SHA = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x0300C007, .hex);
+pub const TLS1_CK_ECDHE_ECDSA_WITH_DES_192_CBC3_SHA = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x0300C008, .hex);
+pub const TLS1_CK_ECDHE_ECDSA_WITH_AES_128_CBC_SHA = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x0300C009, .hex);
+pub const TLS1_CK_ECDHE_ECDSA_WITH_AES_256_CBC_SHA = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x0300C00A, .hex);
+pub const TLS1_CK_ECDH_RSA_WITH_NULL_SHA = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x0300C00B, .hex);
+pub const TLS1_CK_ECDH_RSA_WITH_RC4_128_SHA = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x0300C00C, .hex);
+pub const TLS1_CK_ECDH_RSA_WITH_DES_192_CBC3_SHA = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x0300C00D, .hex);
+pub const TLS1_CK_ECDH_RSA_WITH_AES_128_CBC_SHA = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x0300C00E, .hex);
+pub const TLS1_CK_ECDH_RSA_WITH_AES_256_CBC_SHA = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x0300C00F, .hex);
+pub const TLS1_CK_ECDHE_RSA_WITH_NULL_SHA = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x0300C010, .hex);
+pub const TLS1_CK_ECDHE_RSA_WITH_RC4_128_SHA = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x0300C011, .hex);
+pub const TLS1_CK_ECDHE_RSA_WITH_DES_192_CBC3_SHA = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x0300C012, .hex);
+pub const TLS1_CK_ECDHE_RSA_WITH_AES_128_CBC_SHA = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x0300C013, .hex);
+pub const TLS1_CK_ECDHE_RSA_WITH_AES_256_CBC_SHA = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x0300C014, .hex);
+pub const TLS1_CK_ECDH_anon_WITH_NULL_SHA = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x0300C015, .hex);
+pub const TLS1_CK_ECDH_anon_WITH_RC4_128_SHA = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x0300C016, .hex);
+pub const TLS1_CK_ECDH_anon_WITH_DES_192_CBC3_SHA = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x0300C017, .hex);
+pub const TLS1_CK_ECDH_anon_WITH_AES_128_CBC_SHA = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x0300C018, .hex);
+pub const TLS1_CK_ECDH_anon_WITH_AES_256_CBC_SHA = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x0300C019, .hex);
+pub const TLS1_CK_SRP_SHA_WITH_3DES_EDE_CBC_SHA = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x0300C01A, .hex);
+pub const TLS1_CK_SRP_SHA_RSA_WITH_3DES_EDE_CBC_SHA = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x0300C01B, .hex);
+pub const TLS1_CK_SRP_SHA_DSS_WITH_3DES_EDE_CBC_SHA = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x0300C01C, .hex);
+pub const TLS1_CK_SRP_SHA_WITH_AES_128_CBC_SHA = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x0300C01D, .hex);
+pub const TLS1_CK_SRP_SHA_RSA_WITH_AES_128_CBC_SHA = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x0300C01E, .hex);
+pub const TLS1_CK_SRP_SHA_DSS_WITH_AES_128_CBC_SHA = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x0300C01F, .hex);
+pub const TLS1_CK_SRP_SHA_WITH_AES_256_CBC_SHA = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x0300C020, .hex);
+pub const TLS1_CK_SRP_SHA_RSA_WITH_AES_256_CBC_SHA = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x0300C021, .hex);
+pub const TLS1_CK_SRP_SHA_DSS_WITH_AES_256_CBC_SHA = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x0300C022, .hex);
+pub const TLS1_CK_ECDHE_ECDSA_WITH_AES_128_SHA256 = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x0300C023, .hex);
+pub const TLS1_CK_ECDHE_ECDSA_WITH_AES_256_SHA384 = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x0300C024, .hex);
+pub const TLS1_CK_ECDH_ECDSA_WITH_AES_128_SHA256 = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x0300C025, .hex);
+pub const TLS1_CK_ECDH_ECDSA_WITH_AES_256_SHA384 = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x0300C026, .hex);
+pub const TLS1_CK_ECDHE_RSA_WITH_AES_128_SHA256 = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x0300C027, .hex);
+pub const TLS1_CK_ECDHE_RSA_WITH_AES_256_SHA384 = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x0300C028, .hex);
+pub const TLS1_CK_ECDH_RSA_WITH_AES_128_SHA256 = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x0300C029, .hex);
+pub const TLS1_CK_ECDH_RSA_WITH_AES_256_SHA384 = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x0300C02A, .hex);
+pub const TLS1_CK_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256 = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x0300C02B, .hex);
+pub const TLS1_CK_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384 = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x0300C02C, .hex);
+pub const TLS1_CK_ECDH_ECDSA_WITH_AES_128_GCM_SHA256 = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x0300C02D, .hex);
+pub const TLS1_CK_ECDH_ECDSA_WITH_AES_256_GCM_SHA384 = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x0300C02E, .hex);
+pub const TLS1_CK_ECDHE_RSA_WITH_AES_128_GCM_SHA256 = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x0300C02F, .hex);
+pub const TLS1_CK_ECDHE_RSA_WITH_AES_256_GCM_SHA384 = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x0300C030, .hex);
+pub const TLS1_CK_ECDH_RSA_WITH_AES_128_GCM_SHA256 = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x0300C031, .hex);
+pub const TLS1_CK_ECDH_RSA_WITH_AES_256_GCM_SHA384 = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x0300C032, .hex);
+pub const TLS1_CK_ECDHE_PSK_WITH_RC4_128_SHA = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x0300C033, .hex);
+pub const TLS1_CK_ECDHE_PSK_WITH_3DES_EDE_CBC_SHA = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x0300C034, .hex);
+pub const TLS1_CK_ECDHE_PSK_WITH_AES_128_CBC_SHA = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x0300C035, .hex);
+pub const TLS1_CK_ECDHE_PSK_WITH_AES_256_CBC_SHA = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x0300C036, .hex);
+pub const TLS1_CK_ECDHE_PSK_WITH_AES_128_CBC_SHA256 = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x0300C037, .hex);
+pub const TLS1_CK_ECDHE_PSK_WITH_AES_256_CBC_SHA384 = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x0300C038, .hex);
+pub const TLS1_CK_ECDHE_PSK_WITH_NULL_SHA = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x0300C039, .hex);
+pub const TLS1_CK_ECDHE_PSK_WITH_NULL_SHA256 = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x0300C03A, .hex);
+pub const TLS1_CK_ECDHE_PSK_WITH_NULL_SHA384 = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x0300C03B, .hex);
+pub const TLS1_CK_ECDHE_ECDSA_WITH_CAMELLIA_128_CBC_SHA256 = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x0300C072, .hex);
+pub const TLS1_CK_ECDHE_ECDSA_WITH_CAMELLIA_256_CBC_SHA384 = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x0300C073, .hex);
+pub const TLS1_CK_ECDH_ECDSA_WITH_CAMELLIA_128_CBC_SHA256 = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x0300C074, .hex);
+pub const TLS1_CK_ECDH_ECDSA_WITH_CAMELLIA_256_CBC_SHA384 = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x0300C075, .hex);
+pub const TLS1_CK_ECDHE_RSA_WITH_CAMELLIA_128_CBC_SHA256 = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x0300C076, .hex);
+pub const TLS1_CK_ECDHE_RSA_WITH_CAMELLIA_256_CBC_SHA384 = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x0300C077, .hex);
+pub const TLS1_CK_ECDH_RSA_WITH_CAMELLIA_128_CBC_SHA256 = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x0300C078, .hex);
+pub const TLS1_CK_ECDH_RSA_WITH_CAMELLIA_256_CBC_SHA384 = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x0300C079, .hex);
+pub const TLS1_CK_PSK_WITH_CAMELLIA_128_CBC_SHA256 = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x0300C094, .hex);
+pub const TLS1_CK_PSK_WITH_CAMELLIA_256_CBC_SHA384 = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x0300C095, .hex);
+pub const TLS1_CK_DHE_PSK_WITH_CAMELLIA_128_CBC_SHA256 = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x0300C096, .hex);
+pub const TLS1_CK_DHE_PSK_WITH_CAMELLIA_256_CBC_SHA384 = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x0300C097, .hex);
+pub const TLS1_CK_RSA_PSK_WITH_CAMELLIA_128_CBC_SHA256 = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x0300C098, .hex);
+pub const TLS1_CK_RSA_PSK_WITH_CAMELLIA_256_CBC_SHA384 = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x0300C099, .hex);
+pub const TLS1_CK_ECDHE_PSK_WITH_CAMELLIA_128_CBC_SHA256 = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x0300C09A, .hex);
+pub const TLS1_CK_ECDHE_PSK_WITH_CAMELLIA_256_CBC_SHA384 = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x0300C09B, .hex);
+pub const TLS1_CK_ECDHE_RSA_WITH_CHACHA20_POLY1305 = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x0300CCA8, .hex);
+pub const TLS1_CK_ECDHE_ECDSA_WITH_CHACHA20_POLY1305 = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x0300CCA9, .hex);
+pub const TLS1_CK_DHE_RSA_WITH_CHACHA20_POLY1305 = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x0300CCAA, .hex);
+pub const TLS1_CK_PSK_WITH_CHACHA20_POLY1305 = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x0300CCAB, .hex);
+pub const TLS1_CK_ECDHE_PSK_WITH_CHACHA20_POLY1305 = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x0300CCAC, .hex);
+pub const TLS1_CK_DHE_PSK_WITH_CHACHA20_POLY1305 = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x0300CCAD, .hex);
+pub const TLS1_CK_RSA_PSK_WITH_CHACHA20_POLY1305 = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x0300CCAE, .hex);
+pub const TLS1_3_CK_AES_128_GCM_SHA256 = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x03001301, .hex);
+pub const TLS1_3_CK_AES_256_GCM_SHA384 = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x03001302, .hex);
+pub const TLS1_3_CK_CHACHA20_POLY1305_SHA256 = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x03001303, .hex);
+pub const TLS1_3_CK_AES_128_CCM_SHA256 = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x03001304, .hex);
+pub const TLS1_3_CK_AES_128_CCM_8_SHA256 = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x03001305, .hex);
+pub const TLS1_3_CK_SHA256_SHA256 = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x0300C0B4, .hex);
+pub const TLS1_3_CK_SHA384_SHA384 = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x0300C0B5, .hex);
+pub const TLS1_CK_RSA_WITH_ARIA_128_GCM_SHA256 = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x0300C050, .hex);
+pub const TLS1_CK_RSA_WITH_ARIA_256_GCM_SHA384 = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x0300C051, .hex);
+pub const TLS1_CK_DHE_RSA_WITH_ARIA_128_GCM_SHA256 = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x0300C052, .hex);
+pub const TLS1_CK_DHE_RSA_WITH_ARIA_256_GCM_SHA384 = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x0300C053, .hex);
+pub const TLS1_CK_DH_RSA_WITH_ARIA_128_GCM_SHA256 = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x0300C054, .hex);
+pub const TLS1_CK_DH_RSA_WITH_ARIA_256_GCM_SHA384 = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x0300C055, .hex);
+pub const TLS1_CK_DHE_DSS_WITH_ARIA_128_GCM_SHA256 = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x0300C056, .hex);
+pub const TLS1_CK_DHE_DSS_WITH_ARIA_256_GCM_SHA384 = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x0300C057, .hex);
+pub const TLS1_CK_DH_DSS_WITH_ARIA_128_GCM_SHA256 = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x0300C058, .hex);
+pub const TLS1_CK_DH_DSS_WITH_ARIA_256_GCM_SHA384 = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x0300C059, .hex);
+pub const TLS1_CK_DH_anon_WITH_ARIA_128_GCM_SHA256 = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x0300C05A, .hex);
+pub const TLS1_CK_DH_anon_WITH_ARIA_256_GCM_SHA384 = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x0300C05B, .hex);
+pub const TLS1_CK_ECDHE_ECDSA_WITH_ARIA_128_GCM_SHA256 = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x0300C05C, .hex);
+pub const TLS1_CK_ECDHE_ECDSA_WITH_ARIA_256_GCM_SHA384 = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x0300C05D, .hex);
+pub const TLS1_CK_ECDH_ECDSA_WITH_ARIA_128_GCM_SHA256 = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x0300C05E, .hex);
+pub const TLS1_CK_ECDH_ECDSA_WITH_ARIA_256_GCM_SHA384 = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x0300C05F, .hex);
+pub const TLS1_CK_ECDHE_RSA_WITH_ARIA_128_GCM_SHA256 = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x0300C060, .hex);
+pub const TLS1_CK_ECDHE_RSA_WITH_ARIA_256_GCM_SHA384 = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x0300C061, .hex);
+pub const TLS1_CK_ECDH_RSA_WITH_ARIA_128_GCM_SHA256 = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x0300C062, .hex);
+pub const TLS1_CK_ECDH_RSA_WITH_ARIA_256_GCM_SHA384 = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x0300C063, .hex);
+pub const TLS1_CK_PSK_WITH_ARIA_128_GCM_SHA256 = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x0300C06A, .hex);
+pub const TLS1_CK_PSK_WITH_ARIA_256_GCM_SHA384 = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x0300C06B, .hex);
+pub const TLS1_CK_DHE_PSK_WITH_ARIA_128_GCM_SHA256 = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x0300C06C, .hex);
+pub const TLS1_CK_DHE_PSK_WITH_ARIA_256_GCM_SHA384 = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x0300C06D, .hex);
+pub const TLS1_CK_RSA_PSK_WITH_ARIA_128_GCM_SHA256 = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x0300C06E, .hex);
+pub const TLS1_CK_RSA_PSK_WITH_ARIA_256_GCM_SHA384 = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x0300C06F, .hex);
 pub const TLS1_RFC_RSA_WITH_AES_128_SHA = "TLS_RSA_WITH_AES_128_CBC_SHA";
 pub const TLS1_RFC_DHE_DSS_WITH_AES_128_SHA = "TLS_DHE_DSS_WITH_AES_128_CBC_SHA";
 pub const TLS1_RFC_DHE_RSA_WITH_AES_128_SHA = "TLS_DHE_RSA_WITH_AES_128_CBC_SHA";
@@ -45302,7 +45302,7 @@ pub const HEADER_DTLS1_H = "";
 pub const DTLS_MIN_VERSION = DTLS1_VERSION;
 pub const DTLS_MAX_VERSION = DTLS1_2_VERSION;
 pub const DTLS1_VERSION_MAJOR = @as(c_int, 0xFE);
-pub const DTLS_ANY_VERSION = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x1FFFF, .hex);
+pub const DTLS_ANY_VERSION = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x1FFFF, .hex);
 pub const DTLS1_COOKIE_LENGTH = @as(c_int, 255);
 pub const DTLS1_RT_HEADER_LENGTH = @as(c_int, 13);
 pub const DTLS1_HM_HEADER_LENGTH = @as(c_int, 12);
@@ -45353,7 +45353,7 @@ pub inline fn OSSL_QUIC_ERR_CRYPTO_ERR(X: anytype) @TypeOf(OSSL_QUIC_ERR_CRYPTO_
     _ = &X;
     return OSSL_QUIC_ERR_CRYPTO_ERR_BEGIN + X;
 }
-pub const OSSL_QUIC_LOCAL_ERR_IDLE_TIMEOUT = @import("std").zig.c_translation.cast(u64, @as(c_ulonglong, 0xFFFFFFFFFFFFFFFF));
+pub const OSSL_QUIC_LOCAL_ERR_IDLE_TIMEOUT = @import("std").zig.c_translation.helpers.cast(u64, @as(c_ulonglong, 0xFFFFFFFFFFFFFFFF));
 pub inline fn sk_SSL_CIPHER_num(sk: anytype) @TypeOf(OPENSSL_sk_num(ossl_check_const_SSL_CIPHER_sk_type(sk))) {
     _ = &sk;
     return OPENSSL_sk_num(ossl_check_const_SSL_CIPHER_sk_type(sk));
@@ -45441,21 +45441,21 @@ pub const sk_SSL_CIPHER_deep_copy = @compileError("unable to translate C expr: u
 pub inline fn sk_SSL_CIPHER_set_cmp_func(sk: anytype, cmp: anytype) sk_SSL_CIPHER_compfunc {
     _ = &sk;
     _ = &cmp;
-    return @import("std").zig.c_translation.cast(sk_SSL_CIPHER_compfunc, OPENSSL_sk_set_cmp_func(ossl_check_SSL_CIPHER_sk_type(sk), ossl_check_SSL_CIPHER_compfunc_type(cmp)));
+    return @import("std").zig.c_translation.helpers.cast(sk_SSL_CIPHER_compfunc, OPENSSL_sk_set_cmp_func(ossl_check_SSL_CIPHER_sk_type(sk), ossl_check_SSL_CIPHER_compfunc_type(cmp)));
 }
-pub inline fn SSL_set_app_data(s: anytype, arg: anytype) @TypeOf(SSL_set_ex_data(s, @as(c_int, 0), @import("std").zig.c_translation.cast([*c]u8, arg))) {
+pub inline fn SSL_set_app_data(s: anytype, arg: anytype) @TypeOf(SSL_set_ex_data(s, @as(c_int, 0), @import("std").zig.c_translation.helpers.cast([*c]u8, arg))) {
     _ = &s;
     _ = &arg;
-    return SSL_set_ex_data(s, @as(c_int, 0), @import("std").zig.c_translation.cast([*c]u8, arg));
+    return SSL_set_ex_data(s, @as(c_int, 0), @import("std").zig.c_translation.helpers.cast([*c]u8, arg));
 }
 pub inline fn SSL_get_app_data(s: anytype) @TypeOf(SSL_get_ex_data(s, @as(c_int, 0))) {
     _ = &s;
     return SSL_get_ex_data(s, @as(c_int, 0));
 }
-pub inline fn SSL_SESSION_set_app_data(s: anytype, a: anytype) @TypeOf(SSL_SESSION_set_ex_data(s, @as(c_int, 0), @import("std").zig.c_translation.cast([*c]u8, a))) {
+pub inline fn SSL_SESSION_set_app_data(s: anytype, a: anytype) @TypeOf(SSL_SESSION_set_ex_data(s, @as(c_int, 0), @import("std").zig.c_translation.helpers.cast([*c]u8, a))) {
     _ = &s;
     _ = &a;
-    return SSL_SESSION_set_ex_data(s, @as(c_int, 0), @import("std").zig.c_translation.cast([*c]u8, a));
+    return SSL_SESSION_set_ex_data(s, @as(c_int, 0), @import("std").zig.c_translation.helpers.cast([*c]u8, a));
 }
 pub inline fn SSL_SESSION_get_app_data(s: anytype) @TypeOf(SSL_SESSION_get_ex_data(s, @as(c_int, 0))) {
     _ = &s;
@@ -45465,10 +45465,10 @@ pub inline fn SSL_CTX_get_app_data(ctx: anytype) @TypeOf(SSL_CTX_get_ex_data(ctx
     _ = &ctx;
     return SSL_CTX_get_ex_data(ctx, @as(c_int, 0));
 }
-pub inline fn SSL_CTX_set_app_data(ctx: anytype, arg: anytype) @TypeOf(SSL_CTX_set_ex_data(ctx, @as(c_int, 0), @import("std").zig.c_translation.cast([*c]u8, arg))) {
+pub inline fn SSL_CTX_set_app_data(ctx: anytype, arg: anytype) @TypeOf(SSL_CTX_set_ex_data(ctx, @as(c_int, 0), @import("std").zig.c_translation.helpers.cast([*c]u8, arg))) {
     _ = &ctx;
     _ = &arg;
-    return SSL_CTX_set_ex_data(ctx, @as(c_int, 0), @import("std").zig.c_translation.cast([*c]u8, arg));
+    return SSL_CTX_set_ex_data(ctx, @as(c_int, 0), @import("std").zig.c_translation.helpers.cast([*c]u8, arg));
 }
 pub const SSL_KEY_UPDATE_NONE = -@as(c_int, 1);
 pub const SSL_KEY_UPDATE_NOT_REQUESTED = @as(c_int, 0);
@@ -45716,10 +45716,10 @@ pub const SSL_CTRL_GET_CHAIN_CERT_STORE = @as(c_int, 138);
 pub const SSL_CERT_SET_FIRST = @as(c_int, 1);
 pub const SSL_CERT_SET_NEXT = @as(c_int, 2);
 pub const SSL_CERT_SET_SERVER = @as(c_int, 3);
-pub inline fn DTLSv1_get_timeout(ssl: anytype, arg: anytype) @TypeOf(SSL_ctrl(ssl, DTLS_CTRL_GET_TIMEOUT, @as(c_int, 0), @import("std").zig.c_translation.cast(?*anyopaque, arg))) {
+pub inline fn DTLSv1_get_timeout(ssl: anytype, arg: anytype) @TypeOf(SSL_ctrl(ssl, DTLS_CTRL_GET_TIMEOUT, @as(c_int, 0), @import("std").zig.c_translation.helpers.cast(?*anyopaque, arg))) {
     _ = &ssl;
     _ = &arg;
-    return SSL_ctrl(ssl, DTLS_CTRL_GET_TIMEOUT, @as(c_int, 0), @import("std").zig.c_translation.cast(?*anyopaque, arg));
+    return SSL_ctrl(ssl, DTLS_CTRL_GET_TIMEOUT, @as(c_int, 0), @import("std").zig.c_translation.helpers.cast(?*anyopaque, arg));
 }
 pub inline fn DTLSv1_handle_timeout(ssl: anytype) @TypeOf(SSL_ctrl(ssl, DTLS_CTRL_HANDLE_TIMEOUT, @as(c_int, 0), NULL)) {
     _ = &ssl;
@@ -45737,10 +45737,10 @@ pub inline fn SSL_total_renegotiations(ssl: anytype) @TypeOf(SSL_ctrl(ssl, SSL_C
     _ = &ssl;
     return SSL_ctrl(ssl, SSL_CTRL_GET_TOTAL_RENEGOTIATIONS, @as(c_int, 0), NULL);
 }
-pub inline fn SSL_CTX_set_tmp_dh(ctx: anytype, dh: anytype) @TypeOf(SSL_CTX_ctrl(ctx, SSL_CTRL_SET_TMP_DH, @as(c_int, 0), @import("std").zig.c_translation.cast([*c]u8, dh))) {
+pub inline fn SSL_CTX_set_tmp_dh(ctx: anytype, dh: anytype) @TypeOf(SSL_CTX_ctrl(ctx, SSL_CTRL_SET_TMP_DH, @as(c_int, 0), @import("std").zig.c_translation.helpers.cast([*c]u8, dh))) {
     _ = &ctx;
     _ = &dh;
-    return SSL_CTX_ctrl(ctx, SSL_CTRL_SET_TMP_DH, @as(c_int, 0), @import("std").zig.c_translation.cast([*c]u8, dh));
+    return SSL_CTX_ctrl(ctx, SSL_CTRL_SET_TMP_DH, @as(c_int, 0), @import("std").zig.c_translation.helpers.cast([*c]u8, dh));
 }
 pub inline fn SSL_CTX_set_dh_auto(ctx: anytype, onoff: anytype) @TypeOf(SSL_CTX_ctrl(ctx, SSL_CTRL_SET_DH_AUTO, onoff, NULL)) {
     _ = &ctx;
@@ -45752,25 +45752,25 @@ pub inline fn SSL_set_dh_auto(s: anytype, onoff: anytype) @TypeOf(SSL_ctrl(s, SS
     _ = &onoff;
     return SSL_ctrl(s, SSL_CTRL_SET_DH_AUTO, onoff, NULL);
 }
-pub inline fn SSL_set_tmp_dh(ssl: anytype, dh: anytype) @TypeOf(SSL_ctrl(ssl, SSL_CTRL_SET_TMP_DH, @as(c_int, 0), @import("std").zig.c_translation.cast([*c]u8, dh))) {
+pub inline fn SSL_set_tmp_dh(ssl: anytype, dh: anytype) @TypeOf(SSL_ctrl(ssl, SSL_CTRL_SET_TMP_DH, @as(c_int, 0), @import("std").zig.c_translation.helpers.cast([*c]u8, dh))) {
     _ = &ssl;
     _ = &dh;
-    return SSL_ctrl(ssl, SSL_CTRL_SET_TMP_DH, @as(c_int, 0), @import("std").zig.c_translation.cast([*c]u8, dh));
+    return SSL_ctrl(ssl, SSL_CTRL_SET_TMP_DH, @as(c_int, 0), @import("std").zig.c_translation.helpers.cast([*c]u8, dh));
 }
-pub inline fn SSL_CTX_set_tmp_ecdh(ctx: anytype, ecdh: anytype) @TypeOf(SSL_CTX_ctrl(ctx, SSL_CTRL_SET_TMP_ECDH, @as(c_int, 0), @import("std").zig.c_translation.cast([*c]u8, ecdh))) {
+pub inline fn SSL_CTX_set_tmp_ecdh(ctx: anytype, ecdh: anytype) @TypeOf(SSL_CTX_ctrl(ctx, SSL_CTRL_SET_TMP_ECDH, @as(c_int, 0), @import("std").zig.c_translation.helpers.cast([*c]u8, ecdh))) {
     _ = &ctx;
     _ = &ecdh;
-    return SSL_CTX_ctrl(ctx, SSL_CTRL_SET_TMP_ECDH, @as(c_int, 0), @import("std").zig.c_translation.cast([*c]u8, ecdh));
+    return SSL_CTX_ctrl(ctx, SSL_CTRL_SET_TMP_ECDH, @as(c_int, 0), @import("std").zig.c_translation.helpers.cast([*c]u8, ecdh));
 }
-pub inline fn SSL_set_tmp_ecdh(ssl: anytype, ecdh: anytype) @TypeOf(SSL_ctrl(ssl, SSL_CTRL_SET_TMP_ECDH, @as(c_int, 0), @import("std").zig.c_translation.cast([*c]u8, ecdh))) {
+pub inline fn SSL_set_tmp_ecdh(ssl: anytype, ecdh: anytype) @TypeOf(SSL_ctrl(ssl, SSL_CTRL_SET_TMP_ECDH, @as(c_int, 0), @import("std").zig.c_translation.helpers.cast([*c]u8, ecdh))) {
     _ = &ssl;
     _ = &ecdh;
-    return SSL_ctrl(ssl, SSL_CTRL_SET_TMP_ECDH, @as(c_int, 0), @import("std").zig.c_translation.cast([*c]u8, ecdh));
+    return SSL_ctrl(ssl, SSL_CTRL_SET_TMP_ECDH, @as(c_int, 0), @import("std").zig.c_translation.helpers.cast([*c]u8, ecdh));
 }
-pub inline fn SSL_CTX_add_extra_chain_cert(ctx: anytype, x509: anytype) @TypeOf(SSL_CTX_ctrl(ctx, SSL_CTRL_EXTRA_CHAIN_CERT, @as(c_int, 0), @import("std").zig.c_translation.cast([*c]u8, x509))) {
+pub inline fn SSL_CTX_add_extra_chain_cert(ctx: anytype, x509: anytype) @TypeOf(SSL_CTX_ctrl(ctx, SSL_CTRL_EXTRA_CHAIN_CERT, @as(c_int, 0), @import("std").zig.c_translation.helpers.cast([*c]u8, x509))) {
     _ = &ctx;
     _ = &x509;
-    return SSL_CTX_ctrl(ctx, SSL_CTRL_EXTRA_CHAIN_CERT, @as(c_int, 0), @import("std").zig.c_translation.cast([*c]u8, x509));
+    return SSL_CTX_ctrl(ctx, SSL_CTRL_EXTRA_CHAIN_CERT, @as(c_int, 0), @import("std").zig.c_translation.helpers.cast([*c]u8, x509));
 }
 pub inline fn SSL_CTX_get_extra_chain_certs(ctx: anytype, px509: anytype) @TypeOf(SSL_CTX_ctrl(ctx, SSL_CTRL_GET_EXTRA_CHAIN_CERTS, @as(c_int, 0), px509)) {
     _ = &ctx;
@@ -45786,25 +45786,25 @@ pub inline fn SSL_CTX_clear_extra_chain_certs(ctx: anytype) @TypeOf(SSL_CTX_ctrl
     _ = &ctx;
     return SSL_CTX_ctrl(ctx, SSL_CTRL_CLEAR_EXTRA_CHAIN_CERTS, @as(c_int, 0), NULL);
 }
-pub inline fn SSL_CTX_set0_chain(ctx: anytype, sk: anytype) @TypeOf(SSL_CTX_ctrl(ctx, SSL_CTRL_CHAIN, @as(c_int, 0), @import("std").zig.c_translation.cast([*c]u8, sk))) {
+pub inline fn SSL_CTX_set0_chain(ctx: anytype, sk: anytype) @TypeOf(SSL_CTX_ctrl(ctx, SSL_CTRL_CHAIN, @as(c_int, 0), @import("std").zig.c_translation.helpers.cast([*c]u8, sk))) {
     _ = &ctx;
     _ = &sk;
-    return SSL_CTX_ctrl(ctx, SSL_CTRL_CHAIN, @as(c_int, 0), @import("std").zig.c_translation.cast([*c]u8, sk));
+    return SSL_CTX_ctrl(ctx, SSL_CTRL_CHAIN, @as(c_int, 0), @import("std").zig.c_translation.helpers.cast([*c]u8, sk));
 }
-pub inline fn SSL_CTX_set1_chain(ctx: anytype, sk: anytype) @TypeOf(SSL_CTX_ctrl(ctx, SSL_CTRL_CHAIN, @as(c_int, 1), @import("std").zig.c_translation.cast([*c]u8, sk))) {
+pub inline fn SSL_CTX_set1_chain(ctx: anytype, sk: anytype) @TypeOf(SSL_CTX_ctrl(ctx, SSL_CTRL_CHAIN, @as(c_int, 1), @import("std").zig.c_translation.helpers.cast([*c]u8, sk))) {
     _ = &ctx;
     _ = &sk;
-    return SSL_CTX_ctrl(ctx, SSL_CTRL_CHAIN, @as(c_int, 1), @import("std").zig.c_translation.cast([*c]u8, sk));
+    return SSL_CTX_ctrl(ctx, SSL_CTRL_CHAIN, @as(c_int, 1), @import("std").zig.c_translation.helpers.cast([*c]u8, sk));
 }
-pub inline fn SSL_CTX_add0_chain_cert(ctx: anytype, x509: anytype) @TypeOf(SSL_CTX_ctrl(ctx, SSL_CTRL_CHAIN_CERT, @as(c_int, 0), @import("std").zig.c_translation.cast([*c]u8, x509))) {
+pub inline fn SSL_CTX_add0_chain_cert(ctx: anytype, x509: anytype) @TypeOf(SSL_CTX_ctrl(ctx, SSL_CTRL_CHAIN_CERT, @as(c_int, 0), @import("std").zig.c_translation.helpers.cast([*c]u8, x509))) {
     _ = &ctx;
     _ = &x509;
-    return SSL_CTX_ctrl(ctx, SSL_CTRL_CHAIN_CERT, @as(c_int, 0), @import("std").zig.c_translation.cast([*c]u8, x509));
+    return SSL_CTX_ctrl(ctx, SSL_CTRL_CHAIN_CERT, @as(c_int, 0), @import("std").zig.c_translation.helpers.cast([*c]u8, x509));
 }
-pub inline fn SSL_CTX_add1_chain_cert(ctx: anytype, x509: anytype) @TypeOf(SSL_CTX_ctrl(ctx, SSL_CTRL_CHAIN_CERT, @as(c_int, 1), @import("std").zig.c_translation.cast([*c]u8, x509))) {
+pub inline fn SSL_CTX_add1_chain_cert(ctx: anytype, x509: anytype) @TypeOf(SSL_CTX_ctrl(ctx, SSL_CTRL_CHAIN_CERT, @as(c_int, 1), @import("std").zig.c_translation.helpers.cast([*c]u8, x509))) {
     _ = &ctx;
     _ = &x509;
-    return SSL_CTX_ctrl(ctx, SSL_CTRL_CHAIN_CERT, @as(c_int, 1), @import("std").zig.c_translation.cast([*c]u8, x509));
+    return SSL_CTX_ctrl(ctx, SSL_CTRL_CHAIN_CERT, @as(c_int, 1), @import("std").zig.c_translation.helpers.cast([*c]u8, x509));
 }
 pub inline fn SSL_CTX_get0_chain_certs(ctx: anytype, px509: anytype) @TypeOf(SSL_CTX_ctrl(ctx, SSL_CTRL_GET_CHAIN_CERTS, @as(c_int, 0), px509)) {
     _ = &ctx;
@@ -45820,65 +45820,65 @@ pub inline fn SSL_CTX_build_cert_chain(ctx: anytype, flags: anytype) @TypeOf(SSL
     _ = &flags;
     return SSL_CTX_ctrl(ctx, SSL_CTRL_BUILD_CERT_CHAIN, flags, NULL);
 }
-pub inline fn SSL_CTX_select_current_cert(ctx: anytype, x509: anytype) @TypeOf(SSL_CTX_ctrl(ctx, SSL_CTRL_SELECT_CURRENT_CERT, @as(c_int, 0), @import("std").zig.c_translation.cast([*c]u8, x509))) {
+pub inline fn SSL_CTX_select_current_cert(ctx: anytype, x509: anytype) @TypeOf(SSL_CTX_ctrl(ctx, SSL_CTRL_SELECT_CURRENT_CERT, @as(c_int, 0), @import("std").zig.c_translation.helpers.cast([*c]u8, x509))) {
     _ = &ctx;
     _ = &x509;
-    return SSL_CTX_ctrl(ctx, SSL_CTRL_SELECT_CURRENT_CERT, @as(c_int, 0), @import("std").zig.c_translation.cast([*c]u8, x509));
+    return SSL_CTX_ctrl(ctx, SSL_CTRL_SELECT_CURRENT_CERT, @as(c_int, 0), @import("std").zig.c_translation.helpers.cast([*c]u8, x509));
 }
 pub inline fn SSL_CTX_set_current_cert(ctx: anytype, op: anytype) @TypeOf(SSL_CTX_ctrl(ctx, SSL_CTRL_SET_CURRENT_CERT, op, NULL)) {
     _ = &ctx;
     _ = &op;
     return SSL_CTX_ctrl(ctx, SSL_CTRL_SET_CURRENT_CERT, op, NULL);
 }
-pub inline fn SSL_CTX_set0_verify_cert_store(ctx: anytype, st: anytype) @TypeOf(SSL_CTX_ctrl(ctx, SSL_CTRL_SET_VERIFY_CERT_STORE, @as(c_int, 0), @import("std").zig.c_translation.cast([*c]u8, st))) {
+pub inline fn SSL_CTX_set0_verify_cert_store(ctx: anytype, st: anytype) @TypeOf(SSL_CTX_ctrl(ctx, SSL_CTRL_SET_VERIFY_CERT_STORE, @as(c_int, 0), @import("std").zig.c_translation.helpers.cast([*c]u8, st))) {
     _ = &ctx;
     _ = &st;
-    return SSL_CTX_ctrl(ctx, SSL_CTRL_SET_VERIFY_CERT_STORE, @as(c_int, 0), @import("std").zig.c_translation.cast([*c]u8, st));
+    return SSL_CTX_ctrl(ctx, SSL_CTRL_SET_VERIFY_CERT_STORE, @as(c_int, 0), @import("std").zig.c_translation.helpers.cast([*c]u8, st));
 }
-pub inline fn SSL_CTX_set1_verify_cert_store(ctx: anytype, st: anytype) @TypeOf(SSL_CTX_ctrl(ctx, SSL_CTRL_SET_VERIFY_CERT_STORE, @as(c_int, 1), @import("std").zig.c_translation.cast([*c]u8, st))) {
+pub inline fn SSL_CTX_set1_verify_cert_store(ctx: anytype, st: anytype) @TypeOf(SSL_CTX_ctrl(ctx, SSL_CTRL_SET_VERIFY_CERT_STORE, @as(c_int, 1), @import("std").zig.c_translation.helpers.cast([*c]u8, st))) {
     _ = &ctx;
     _ = &st;
-    return SSL_CTX_ctrl(ctx, SSL_CTRL_SET_VERIFY_CERT_STORE, @as(c_int, 1), @import("std").zig.c_translation.cast([*c]u8, st));
+    return SSL_CTX_ctrl(ctx, SSL_CTRL_SET_VERIFY_CERT_STORE, @as(c_int, 1), @import("std").zig.c_translation.helpers.cast([*c]u8, st));
 }
-pub inline fn SSL_CTX_get0_verify_cert_store(ctx: anytype, st: anytype) @TypeOf(SSL_CTX_ctrl(ctx, SSL_CTRL_GET_VERIFY_CERT_STORE, @as(c_int, 0), @import("std").zig.c_translation.cast([*c]u8, st))) {
+pub inline fn SSL_CTX_get0_verify_cert_store(ctx: anytype, st: anytype) @TypeOf(SSL_CTX_ctrl(ctx, SSL_CTRL_GET_VERIFY_CERT_STORE, @as(c_int, 0), @import("std").zig.c_translation.helpers.cast([*c]u8, st))) {
     _ = &ctx;
     _ = &st;
-    return SSL_CTX_ctrl(ctx, SSL_CTRL_GET_VERIFY_CERT_STORE, @as(c_int, 0), @import("std").zig.c_translation.cast([*c]u8, st));
+    return SSL_CTX_ctrl(ctx, SSL_CTRL_GET_VERIFY_CERT_STORE, @as(c_int, 0), @import("std").zig.c_translation.helpers.cast([*c]u8, st));
 }
-pub inline fn SSL_CTX_set0_chain_cert_store(ctx: anytype, st: anytype) @TypeOf(SSL_CTX_ctrl(ctx, SSL_CTRL_SET_CHAIN_CERT_STORE, @as(c_int, 0), @import("std").zig.c_translation.cast([*c]u8, st))) {
+pub inline fn SSL_CTX_set0_chain_cert_store(ctx: anytype, st: anytype) @TypeOf(SSL_CTX_ctrl(ctx, SSL_CTRL_SET_CHAIN_CERT_STORE, @as(c_int, 0), @import("std").zig.c_translation.helpers.cast([*c]u8, st))) {
     _ = &ctx;
     _ = &st;
-    return SSL_CTX_ctrl(ctx, SSL_CTRL_SET_CHAIN_CERT_STORE, @as(c_int, 0), @import("std").zig.c_translation.cast([*c]u8, st));
+    return SSL_CTX_ctrl(ctx, SSL_CTRL_SET_CHAIN_CERT_STORE, @as(c_int, 0), @import("std").zig.c_translation.helpers.cast([*c]u8, st));
 }
-pub inline fn SSL_CTX_set1_chain_cert_store(ctx: anytype, st: anytype) @TypeOf(SSL_CTX_ctrl(ctx, SSL_CTRL_SET_CHAIN_CERT_STORE, @as(c_int, 1), @import("std").zig.c_translation.cast([*c]u8, st))) {
+pub inline fn SSL_CTX_set1_chain_cert_store(ctx: anytype, st: anytype) @TypeOf(SSL_CTX_ctrl(ctx, SSL_CTRL_SET_CHAIN_CERT_STORE, @as(c_int, 1), @import("std").zig.c_translation.helpers.cast([*c]u8, st))) {
     _ = &ctx;
     _ = &st;
-    return SSL_CTX_ctrl(ctx, SSL_CTRL_SET_CHAIN_CERT_STORE, @as(c_int, 1), @import("std").zig.c_translation.cast([*c]u8, st));
+    return SSL_CTX_ctrl(ctx, SSL_CTRL_SET_CHAIN_CERT_STORE, @as(c_int, 1), @import("std").zig.c_translation.helpers.cast([*c]u8, st));
 }
-pub inline fn SSL_CTX_get0_chain_cert_store(ctx: anytype, st: anytype) @TypeOf(SSL_CTX_ctrl(ctx, SSL_CTRL_GET_CHAIN_CERT_STORE, @as(c_int, 0), @import("std").zig.c_translation.cast([*c]u8, st))) {
+pub inline fn SSL_CTX_get0_chain_cert_store(ctx: anytype, st: anytype) @TypeOf(SSL_CTX_ctrl(ctx, SSL_CTRL_GET_CHAIN_CERT_STORE, @as(c_int, 0), @import("std").zig.c_translation.helpers.cast([*c]u8, st))) {
     _ = &ctx;
     _ = &st;
-    return SSL_CTX_ctrl(ctx, SSL_CTRL_GET_CHAIN_CERT_STORE, @as(c_int, 0), @import("std").zig.c_translation.cast([*c]u8, st));
+    return SSL_CTX_ctrl(ctx, SSL_CTRL_GET_CHAIN_CERT_STORE, @as(c_int, 0), @import("std").zig.c_translation.helpers.cast([*c]u8, st));
 }
-pub inline fn SSL_set0_chain(s: anytype, sk: anytype) @TypeOf(SSL_ctrl(s, SSL_CTRL_CHAIN, @as(c_int, 0), @import("std").zig.c_translation.cast([*c]u8, sk))) {
+pub inline fn SSL_set0_chain(s: anytype, sk: anytype) @TypeOf(SSL_ctrl(s, SSL_CTRL_CHAIN, @as(c_int, 0), @import("std").zig.c_translation.helpers.cast([*c]u8, sk))) {
     _ = &s;
     _ = &sk;
-    return SSL_ctrl(s, SSL_CTRL_CHAIN, @as(c_int, 0), @import("std").zig.c_translation.cast([*c]u8, sk));
+    return SSL_ctrl(s, SSL_CTRL_CHAIN, @as(c_int, 0), @import("std").zig.c_translation.helpers.cast([*c]u8, sk));
 }
-pub inline fn SSL_set1_chain(s: anytype, sk: anytype) @TypeOf(SSL_ctrl(s, SSL_CTRL_CHAIN, @as(c_int, 1), @import("std").zig.c_translation.cast([*c]u8, sk))) {
+pub inline fn SSL_set1_chain(s: anytype, sk: anytype) @TypeOf(SSL_ctrl(s, SSL_CTRL_CHAIN, @as(c_int, 1), @import("std").zig.c_translation.helpers.cast([*c]u8, sk))) {
     _ = &s;
     _ = &sk;
-    return SSL_ctrl(s, SSL_CTRL_CHAIN, @as(c_int, 1), @import("std").zig.c_translation.cast([*c]u8, sk));
+    return SSL_ctrl(s, SSL_CTRL_CHAIN, @as(c_int, 1), @import("std").zig.c_translation.helpers.cast([*c]u8, sk));
 }
-pub inline fn SSL_add0_chain_cert(s: anytype, x509: anytype) @TypeOf(SSL_ctrl(s, SSL_CTRL_CHAIN_CERT, @as(c_int, 0), @import("std").zig.c_translation.cast([*c]u8, x509))) {
+pub inline fn SSL_add0_chain_cert(s: anytype, x509: anytype) @TypeOf(SSL_ctrl(s, SSL_CTRL_CHAIN_CERT, @as(c_int, 0), @import("std").zig.c_translation.helpers.cast([*c]u8, x509))) {
     _ = &s;
     _ = &x509;
-    return SSL_ctrl(s, SSL_CTRL_CHAIN_CERT, @as(c_int, 0), @import("std").zig.c_translation.cast([*c]u8, x509));
+    return SSL_ctrl(s, SSL_CTRL_CHAIN_CERT, @as(c_int, 0), @import("std").zig.c_translation.helpers.cast([*c]u8, x509));
 }
-pub inline fn SSL_add1_chain_cert(s: anytype, x509: anytype) @TypeOf(SSL_ctrl(s, SSL_CTRL_CHAIN_CERT, @as(c_int, 1), @import("std").zig.c_translation.cast([*c]u8, x509))) {
+pub inline fn SSL_add1_chain_cert(s: anytype, x509: anytype) @TypeOf(SSL_ctrl(s, SSL_CTRL_CHAIN_CERT, @as(c_int, 1), @import("std").zig.c_translation.helpers.cast([*c]u8, x509))) {
     _ = &s;
     _ = &x509;
-    return SSL_ctrl(s, SSL_CTRL_CHAIN_CERT, @as(c_int, 1), @import("std").zig.c_translation.cast([*c]u8, x509));
+    return SSL_ctrl(s, SSL_CTRL_CHAIN_CERT, @as(c_int, 1), @import("std").zig.c_translation.helpers.cast([*c]u8, x509));
 }
 pub inline fn SSL_get0_chain_certs(s: anytype, px509: anytype) @TypeOf(SSL_ctrl(s, SSL_CTRL_GET_CHAIN_CERTS, @as(c_int, 0), px509)) {
     _ = &s;
@@ -45894,74 +45894,74 @@ pub inline fn SSL_build_cert_chain(s: anytype, flags: anytype) @TypeOf(SSL_ctrl(
     _ = &flags;
     return SSL_ctrl(s, SSL_CTRL_BUILD_CERT_CHAIN, flags, NULL);
 }
-pub inline fn SSL_select_current_cert(s: anytype, x509: anytype) @TypeOf(SSL_ctrl(s, SSL_CTRL_SELECT_CURRENT_CERT, @as(c_int, 0), @import("std").zig.c_translation.cast([*c]u8, x509))) {
+pub inline fn SSL_select_current_cert(s: anytype, x509: anytype) @TypeOf(SSL_ctrl(s, SSL_CTRL_SELECT_CURRENT_CERT, @as(c_int, 0), @import("std").zig.c_translation.helpers.cast([*c]u8, x509))) {
     _ = &s;
     _ = &x509;
-    return SSL_ctrl(s, SSL_CTRL_SELECT_CURRENT_CERT, @as(c_int, 0), @import("std").zig.c_translation.cast([*c]u8, x509));
+    return SSL_ctrl(s, SSL_CTRL_SELECT_CURRENT_CERT, @as(c_int, 0), @import("std").zig.c_translation.helpers.cast([*c]u8, x509));
 }
 pub inline fn SSL_set_current_cert(s: anytype, op: anytype) @TypeOf(SSL_ctrl(s, SSL_CTRL_SET_CURRENT_CERT, op, NULL)) {
     _ = &s;
     _ = &op;
     return SSL_ctrl(s, SSL_CTRL_SET_CURRENT_CERT, op, NULL);
 }
-pub inline fn SSL_set0_verify_cert_store(s: anytype, st: anytype) @TypeOf(SSL_ctrl(s, SSL_CTRL_SET_VERIFY_CERT_STORE, @as(c_int, 0), @import("std").zig.c_translation.cast([*c]u8, st))) {
+pub inline fn SSL_set0_verify_cert_store(s: anytype, st: anytype) @TypeOf(SSL_ctrl(s, SSL_CTRL_SET_VERIFY_CERT_STORE, @as(c_int, 0), @import("std").zig.c_translation.helpers.cast([*c]u8, st))) {
     _ = &s;
     _ = &st;
-    return SSL_ctrl(s, SSL_CTRL_SET_VERIFY_CERT_STORE, @as(c_int, 0), @import("std").zig.c_translation.cast([*c]u8, st));
+    return SSL_ctrl(s, SSL_CTRL_SET_VERIFY_CERT_STORE, @as(c_int, 0), @import("std").zig.c_translation.helpers.cast([*c]u8, st));
 }
-pub inline fn SSL_set1_verify_cert_store(s: anytype, st: anytype) @TypeOf(SSL_ctrl(s, SSL_CTRL_SET_VERIFY_CERT_STORE, @as(c_int, 1), @import("std").zig.c_translation.cast([*c]u8, st))) {
+pub inline fn SSL_set1_verify_cert_store(s: anytype, st: anytype) @TypeOf(SSL_ctrl(s, SSL_CTRL_SET_VERIFY_CERT_STORE, @as(c_int, 1), @import("std").zig.c_translation.helpers.cast([*c]u8, st))) {
     _ = &s;
     _ = &st;
-    return SSL_ctrl(s, SSL_CTRL_SET_VERIFY_CERT_STORE, @as(c_int, 1), @import("std").zig.c_translation.cast([*c]u8, st));
+    return SSL_ctrl(s, SSL_CTRL_SET_VERIFY_CERT_STORE, @as(c_int, 1), @import("std").zig.c_translation.helpers.cast([*c]u8, st));
 }
-pub inline fn SSL_get0_verify_cert_store(s: anytype, st: anytype) @TypeOf(SSL_ctrl(s, SSL_CTRL_GET_VERIFY_CERT_STORE, @as(c_int, 0), @import("std").zig.c_translation.cast([*c]u8, st))) {
+pub inline fn SSL_get0_verify_cert_store(s: anytype, st: anytype) @TypeOf(SSL_ctrl(s, SSL_CTRL_GET_VERIFY_CERT_STORE, @as(c_int, 0), @import("std").zig.c_translation.helpers.cast([*c]u8, st))) {
     _ = &s;
     _ = &st;
-    return SSL_ctrl(s, SSL_CTRL_GET_VERIFY_CERT_STORE, @as(c_int, 0), @import("std").zig.c_translation.cast([*c]u8, st));
+    return SSL_ctrl(s, SSL_CTRL_GET_VERIFY_CERT_STORE, @as(c_int, 0), @import("std").zig.c_translation.helpers.cast([*c]u8, st));
 }
-pub inline fn SSL_set0_chain_cert_store(s: anytype, st: anytype) @TypeOf(SSL_ctrl(s, SSL_CTRL_SET_CHAIN_CERT_STORE, @as(c_int, 0), @import("std").zig.c_translation.cast([*c]u8, st))) {
+pub inline fn SSL_set0_chain_cert_store(s: anytype, st: anytype) @TypeOf(SSL_ctrl(s, SSL_CTRL_SET_CHAIN_CERT_STORE, @as(c_int, 0), @import("std").zig.c_translation.helpers.cast([*c]u8, st))) {
     _ = &s;
     _ = &st;
-    return SSL_ctrl(s, SSL_CTRL_SET_CHAIN_CERT_STORE, @as(c_int, 0), @import("std").zig.c_translation.cast([*c]u8, st));
+    return SSL_ctrl(s, SSL_CTRL_SET_CHAIN_CERT_STORE, @as(c_int, 0), @import("std").zig.c_translation.helpers.cast([*c]u8, st));
 }
-pub inline fn SSL_set1_chain_cert_store(s: anytype, st: anytype) @TypeOf(SSL_ctrl(s, SSL_CTRL_SET_CHAIN_CERT_STORE, @as(c_int, 1), @import("std").zig.c_translation.cast([*c]u8, st))) {
+pub inline fn SSL_set1_chain_cert_store(s: anytype, st: anytype) @TypeOf(SSL_ctrl(s, SSL_CTRL_SET_CHAIN_CERT_STORE, @as(c_int, 1), @import("std").zig.c_translation.helpers.cast([*c]u8, st))) {
     _ = &s;
     _ = &st;
-    return SSL_ctrl(s, SSL_CTRL_SET_CHAIN_CERT_STORE, @as(c_int, 1), @import("std").zig.c_translation.cast([*c]u8, st));
+    return SSL_ctrl(s, SSL_CTRL_SET_CHAIN_CERT_STORE, @as(c_int, 1), @import("std").zig.c_translation.helpers.cast([*c]u8, st));
 }
-pub inline fn SSL_get0_chain_cert_store(s: anytype, st: anytype) @TypeOf(SSL_ctrl(s, SSL_CTRL_GET_CHAIN_CERT_STORE, @as(c_int, 0), @import("std").zig.c_translation.cast([*c]u8, st))) {
+pub inline fn SSL_get0_chain_cert_store(s: anytype, st: anytype) @TypeOf(SSL_ctrl(s, SSL_CTRL_GET_CHAIN_CERT_STORE, @as(c_int, 0), @import("std").zig.c_translation.helpers.cast([*c]u8, st))) {
     _ = &s;
     _ = &st;
-    return SSL_ctrl(s, SSL_CTRL_GET_CHAIN_CERT_STORE, @as(c_int, 0), @import("std").zig.c_translation.cast([*c]u8, st));
+    return SSL_ctrl(s, SSL_CTRL_GET_CHAIN_CERT_STORE, @as(c_int, 0), @import("std").zig.c_translation.helpers.cast([*c]u8, st));
 }
-pub inline fn SSL_get1_groups(s: anytype, glist: anytype) @TypeOf(SSL_ctrl(s, SSL_CTRL_GET_GROUPS, @as(c_int, 0), @import("std").zig.c_translation.cast([*c]c_int, glist))) {
+pub inline fn SSL_get1_groups(s: anytype, glist: anytype) @TypeOf(SSL_ctrl(s, SSL_CTRL_GET_GROUPS, @as(c_int, 0), @import("std").zig.c_translation.helpers.cast([*c]c_int, glist))) {
     _ = &s;
     _ = &glist;
-    return SSL_ctrl(s, SSL_CTRL_GET_GROUPS, @as(c_int, 0), @import("std").zig.c_translation.cast([*c]c_int, glist));
+    return SSL_ctrl(s, SSL_CTRL_GET_GROUPS, @as(c_int, 0), @import("std").zig.c_translation.helpers.cast([*c]c_int, glist));
 }
 pub const SSL_get0_iana_groups = @compileError("unable to translate C expr: expected ')' instead got '*'");
 // /usr/include/openssl/ssl.h:1488:10
-pub inline fn SSL_CTX_set1_groups(ctx: anytype, glist: anytype, glistlen: anytype) @TypeOf(SSL_CTX_ctrl(ctx, SSL_CTRL_SET_GROUPS, glistlen, @import("std").zig.c_translation.cast([*c]c_int, glist))) {
+pub inline fn SSL_CTX_set1_groups(ctx: anytype, glist: anytype, glistlen: anytype) @TypeOf(SSL_CTX_ctrl(ctx, SSL_CTRL_SET_GROUPS, glistlen, @import("std").zig.c_translation.helpers.cast([*c]c_int, glist))) {
     _ = &ctx;
     _ = &glist;
     _ = &glistlen;
-    return SSL_CTX_ctrl(ctx, SSL_CTRL_SET_GROUPS, glistlen, @import("std").zig.c_translation.cast([*c]c_int, glist));
+    return SSL_CTX_ctrl(ctx, SSL_CTRL_SET_GROUPS, glistlen, @import("std").zig.c_translation.helpers.cast([*c]c_int, glist));
 }
-pub inline fn SSL_CTX_set1_groups_list(ctx: anytype, s: anytype) @TypeOf(SSL_CTX_ctrl(ctx, SSL_CTRL_SET_GROUPS_LIST, @as(c_int, 0), @import("std").zig.c_translation.cast([*c]u8, s))) {
+pub inline fn SSL_CTX_set1_groups_list(ctx: anytype, s: anytype) @TypeOf(SSL_CTX_ctrl(ctx, SSL_CTRL_SET_GROUPS_LIST, @as(c_int, 0), @import("std").zig.c_translation.helpers.cast([*c]u8, s))) {
     _ = &ctx;
     _ = &s;
-    return SSL_CTX_ctrl(ctx, SSL_CTRL_SET_GROUPS_LIST, @as(c_int, 0), @import("std").zig.c_translation.cast([*c]u8, s));
+    return SSL_CTX_ctrl(ctx, SSL_CTRL_SET_GROUPS_LIST, @as(c_int, 0), @import("std").zig.c_translation.helpers.cast([*c]u8, s));
 }
-pub inline fn SSL_set1_groups(s: anytype, glist: anytype, glistlen: anytype) @TypeOf(SSL_ctrl(s, SSL_CTRL_SET_GROUPS, glistlen, @import("std").zig.c_translation.cast([*c]u8, glist))) {
+pub inline fn SSL_set1_groups(s: anytype, glist: anytype, glistlen: anytype) @TypeOf(SSL_ctrl(s, SSL_CTRL_SET_GROUPS, glistlen, @import("std").zig.c_translation.helpers.cast([*c]u8, glist))) {
     _ = &s;
     _ = &glist;
     _ = &glistlen;
-    return SSL_ctrl(s, SSL_CTRL_SET_GROUPS, glistlen, @import("std").zig.c_translation.cast([*c]u8, glist));
+    return SSL_ctrl(s, SSL_CTRL_SET_GROUPS, glistlen, @import("std").zig.c_translation.helpers.cast([*c]u8, glist));
 }
-pub inline fn SSL_set1_groups_list(s: anytype, str: anytype) @TypeOf(SSL_ctrl(s, SSL_CTRL_SET_GROUPS_LIST, @as(c_int, 0), @import("std").zig.c_translation.cast([*c]u8, str))) {
+pub inline fn SSL_set1_groups_list(s: anytype, str: anytype) @TypeOf(SSL_ctrl(s, SSL_CTRL_SET_GROUPS_LIST, @as(c_int, 0), @import("std").zig.c_translation.helpers.cast([*c]u8, str))) {
     _ = &s;
     _ = &str;
-    return SSL_ctrl(s, SSL_CTRL_SET_GROUPS_LIST, @as(c_int, 0), @import("std").zig.c_translation.cast([*c]u8, str));
+    return SSL_ctrl(s, SSL_CTRL_SET_GROUPS_LIST, @as(c_int, 0), @import("std").zig.c_translation.helpers.cast([*c]u8, str));
 }
 pub inline fn SSL_get_shared_group(s: anytype, n: anytype) @TypeOf(SSL_ctrl(s, SSL_CTRL_GET_SHARED_GROUP, n, NULL)) {
     _ = &s;
@@ -45972,66 +45972,66 @@ pub inline fn SSL_get_negotiated_group(s: anytype) @TypeOf(SSL_ctrl(s, SSL_CTRL_
     _ = &s;
     return SSL_ctrl(s, SSL_CTRL_GET_NEGOTIATED_GROUP, @as(c_int, 0), NULL);
 }
-pub inline fn SSL_CTX_set1_sigalgs(ctx: anytype, slist: anytype, slistlen: anytype) @TypeOf(SSL_CTX_ctrl(ctx, SSL_CTRL_SET_SIGALGS, slistlen, @import("std").zig.c_translation.cast([*c]c_int, slist))) {
+pub inline fn SSL_CTX_set1_sigalgs(ctx: anytype, slist: anytype, slistlen: anytype) @TypeOf(SSL_CTX_ctrl(ctx, SSL_CTRL_SET_SIGALGS, slistlen, @import("std").zig.c_translation.helpers.cast([*c]c_int, slist))) {
     _ = &ctx;
     _ = &slist;
     _ = &slistlen;
-    return SSL_CTX_ctrl(ctx, SSL_CTRL_SET_SIGALGS, slistlen, @import("std").zig.c_translation.cast([*c]c_int, slist));
+    return SSL_CTX_ctrl(ctx, SSL_CTRL_SET_SIGALGS, slistlen, @import("std").zig.c_translation.helpers.cast([*c]c_int, slist));
 }
-pub inline fn SSL_CTX_set1_sigalgs_list(ctx: anytype, s: anytype) @TypeOf(SSL_CTX_ctrl(ctx, SSL_CTRL_SET_SIGALGS_LIST, @as(c_int, 0), @import("std").zig.c_translation.cast([*c]u8, s))) {
+pub inline fn SSL_CTX_set1_sigalgs_list(ctx: anytype, s: anytype) @TypeOf(SSL_CTX_ctrl(ctx, SSL_CTRL_SET_SIGALGS_LIST, @as(c_int, 0), @import("std").zig.c_translation.helpers.cast([*c]u8, s))) {
     _ = &ctx;
     _ = &s;
-    return SSL_CTX_ctrl(ctx, SSL_CTRL_SET_SIGALGS_LIST, @as(c_int, 0), @import("std").zig.c_translation.cast([*c]u8, s));
+    return SSL_CTX_ctrl(ctx, SSL_CTRL_SET_SIGALGS_LIST, @as(c_int, 0), @import("std").zig.c_translation.helpers.cast([*c]u8, s));
 }
-pub inline fn SSL_set1_sigalgs(s: anytype, slist: anytype, slistlen: anytype) @TypeOf(SSL_ctrl(s, SSL_CTRL_SET_SIGALGS, slistlen, @import("std").zig.c_translation.cast([*c]c_int, slist))) {
+pub inline fn SSL_set1_sigalgs(s: anytype, slist: anytype, slistlen: anytype) @TypeOf(SSL_ctrl(s, SSL_CTRL_SET_SIGALGS, slistlen, @import("std").zig.c_translation.helpers.cast([*c]c_int, slist))) {
     _ = &s;
     _ = &slist;
     _ = &slistlen;
-    return SSL_ctrl(s, SSL_CTRL_SET_SIGALGS, slistlen, @import("std").zig.c_translation.cast([*c]c_int, slist));
+    return SSL_ctrl(s, SSL_CTRL_SET_SIGALGS, slistlen, @import("std").zig.c_translation.helpers.cast([*c]c_int, slist));
 }
-pub inline fn SSL_set1_sigalgs_list(s: anytype, str: anytype) @TypeOf(SSL_ctrl(s, SSL_CTRL_SET_SIGALGS_LIST, @as(c_int, 0), @import("std").zig.c_translation.cast([*c]u8, str))) {
+pub inline fn SSL_set1_sigalgs_list(s: anytype, str: anytype) @TypeOf(SSL_ctrl(s, SSL_CTRL_SET_SIGALGS_LIST, @as(c_int, 0), @import("std").zig.c_translation.helpers.cast([*c]u8, str))) {
     _ = &s;
     _ = &str;
-    return SSL_ctrl(s, SSL_CTRL_SET_SIGALGS_LIST, @as(c_int, 0), @import("std").zig.c_translation.cast([*c]u8, str));
+    return SSL_ctrl(s, SSL_CTRL_SET_SIGALGS_LIST, @as(c_int, 0), @import("std").zig.c_translation.helpers.cast([*c]u8, str));
 }
-pub inline fn SSL_CTX_set1_client_sigalgs(ctx: anytype, slist: anytype, slistlen: anytype) @TypeOf(SSL_CTX_ctrl(ctx, SSL_CTRL_SET_CLIENT_SIGALGS, slistlen, @import("std").zig.c_translation.cast([*c]c_int, slist))) {
+pub inline fn SSL_CTX_set1_client_sigalgs(ctx: anytype, slist: anytype, slistlen: anytype) @TypeOf(SSL_CTX_ctrl(ctx, SSL_CTRL_SET_CLIENT_SIGALGS, slistlen, @import("std").zig.c_translation.helpers.cast([*c]c_int, slist))) {
     _ = &ctx;
     _ = &slist;
     _ = &slistlen;
-    return SSL_CTX_ctrl(ctx, SSL_CTRL_SET_CLIENT_SIGALGS, slistlen, @import("std").zig.c_translation.cast([*c]c_int, slist));
+    return SSL_CTX_ctrl(ctx, SSL_CTRL_SET_CLIENT_SIGALGS, slistlen, @import("std").zig.c_translation.helpers.cast([*c]c_int, slist));
 }
-pub inline fn SSL_CTX_set1_client_sigalgs_list(ctx: anytype, s: anytype) @TypeOf(SSL_CTX_ctrl(ctx, SSL_CTRL_SET_CLIENT_SIGALGS_LIST, @as(c_int, 0), @import("std").zig.c_translation.cast([*c]u8, s))) {
+pub inline fn SSL_CTX_set1_client_sigalgs_list(ctx: anytype, s: anytype) @TypeOf(SSL_CTX_ctrl(ctx, SSL_CTRL_SET_CLIENT_SIGALGS_LIST, @as(c_int, 0), @import("std").zig.c_translation.helpers.cast([*c]u8, s))) {
     _ = &ctx;
     _ = &s;
-    return SSL_CTX_ctrl(ctx, SSL_CTRL_SET_CLIENT_SIGALGS_LIST, @as(c_int, 0), @import("std").zig.c_translation.cast([*c]u8, s));
+    return SSL_CTX_ctrl(ctx, SSL_CTRL_SET_CLIENT_SIGALGS_LIST, @as(c_int, 0), @import("std").zig.c_translation.helpers.cast([*c]u8, s));
 }
-pub inline fn SSL_set1_client_sigalgs(s: anytype, slist: anytype, slistlen: anytype) @TypeOf(SSL_ctrl(s, SSL_CTRL_SET_CLIENT_SIGALGS, slistlen, @import("std").zig.c_translation.cast([*c]c_int, slist))) {
+pub inline fn SSL_set1_client_sigalgs(s: anytype, slist: anytype, slistlen: anytype) @TypeOf(SSL_ctrl(s, SSL_CTRL_SET_CLIENT_SIGALGS, slistlen, @import("std").zig.c_translation.helpers.cast([*c]c_int, slist))) {
     _ = &s;
     _ = &slist;
     _ = &slistlen;
-    return SSL_ctrl(s, SSL_CTRL_SET_CLIENT_SIGALGS, slistlen, @import("std").zig.c_translation.cast([*c]c_int, slist));
+    return SSL_ctrl(s, SSL_CTRL_SET_CLIENT_SIGALGS, slistlen, @import("std").zig.c_translation.helpers.cast([*c]c_int, slist));
 }
-pub inline fn SSL_set1_client_sigalgs_list(s: anytype, str: anytype) @TypeOf(SSL_ctrl(s, SSL_CTRL_SET_CLIENT_SIGALGS_LIST, @as(c_int, 0), @import("std").zig.c_translation.cast([*c]u8, str))) {
+pub inline fn SSL_set1_client_sigalgs_list(s: anytype, str: anytype) @TypeOf(SSL_ctrl(s, SSL_CTRL_SET_CLIENT_SIGALGS_LIST, @as(c_int, 0), @import("std").zig.c_translation.helpers.cast([*c]u8, str))) {
     _ = &s;
     _ = &str;
-    return SSL_ctrl(s, SSL_CTRL_SET_CLIENT_SIGALGS_LIST, @as(c_int, 0), @import("std").zig.c_translation.cast([*c]u8, str));
+    return SSL_ctrl(s, SSL_CTRL_SET_CLIENT_SIGALGS_LIST, @as(c_int, 0), @import("std").zig.c_translation.helpers.cast([*c]u8, str));
 }
-pub inline fn SSL_get0_certificate_types(s: anytype, clist: anytype) @TypeOf(SSL_ctrl(s, SSL_CTRL_GET_CLIENT_CERT_TYPES, @as(c_int, 0), @import("std").zig.c_translation.cast([*c]u8, clist))) {
+pub inline fn SSL_get0_certificate_types(s: anytype, clist: anytype) @TypeOf(SSL_ctrl(s, SSL_CTRL_GET_CLIENT_CERT_TYPES, @as(c_int, 0), @import("std").zig.c_translation.helpers.cast([*c]u8, clist))) {
     _ = &s;
     _ = &clist;
-    return SSL_ctrl(s, SSL_CTRL_GET_CLIENT_CERT_TYPES, @as(c_int, 0), @import("std").zig.c_translation.cast([*c]u8, clist));
+    return SSL_ctrl(s, SSL_CTRL_GET_CLIENT_CERT_TYPES, @as(c_int, 0), @import("std").zig.c_translation.helpers.cast([*c]u8, clist));
 }
-pub inline fn SSL_CTX_set1_client_certificate_types(ctx: anytype, clist: anytype, clistlen: anytype) @TypeOf(SSL_CTX_ctrl(ctx, SSL_CTRL_SET_CLIENT_CERT_TYPES, clistlen, @import("std").zig.c_translation.cast([*c]u8, clist))) {
+pub inline fn SSL_CTX_set1_client_certificate_types(ctx: anytype, clist: anytype, clistlen: anytype) @TypeOf(SSL_CTX_ctrl(ctx, SSL_CTRL_SET_CLIENT_CERT_TYPES, clistlen, @import("std").zig.c_translation.helpers.cast([*c]u8, clist))) {
     _ = &ctx;
     _ = &clist;
     _ = &clistlen;
-    return SSL_CTX_ctrl(ctx, SSL_CTRL_SET_CLIENT_CERT_TYPES, clistlen, @import("std").zig.c_translation.cast([*c]u8, clist));
+    return SSL_CTX_ctrl(ctx, SSL_CTRL_SET_CLIENT_CERT_TYPES, clistlen, @import("std").zig.c_translation.helpers.cast([*c]u8, clist));
 }
-pub inline fn SSL_set1_client_certificate_types(s: anytype, clist: anytype, clistlen: anytype) @TypeOf(SSL_ctrl(s, SSL_CTRL_SET_CLIENT_CERT_TYPES, clistlen, @import("std").zig.c_translation.cast([*c]u8, clist))) {
+pub inline fn SSL_set1_client_certificate_types(s: anytype, clist: anytype, clistlen: anytype) @TypeOf(SSL_ctrl(s, SSL_CTRL_SET_CLIENT_CERT_TYPES, clistlen, @import("std").zig.c_translation.helpers.cast([*c]u8, clist))) {
     _ = &s;
     _ = &clist;
     _ = &clistlen;
-    return SSL_ctrl(s, SSL_CTRL_SET_CLIENT_CERT_TYPES, clistlen, @import("std").zig.c_translation.cast([*c]u8, clist));
+    return SSL_ctrl(s, SSL_CTRL_SET_CLIENT_CERT_TYPES, clistlen, @import("std").zig.c_translation.helpers.cast([*c]u8, clist));
 }
 pub inline fn SSL_get_signature_nid(s: anytype, pn: anytype) @TypeOf(SSL_ctrl(s, SSL_CTRL_GET_SIGNATURE_NID, @as(c_int, 0), pn)) {
     _ = &s;
@@ -46442,7 +46442,7 @@ pub const SSL_disable_ct = @compileError("unable to translate macro: undefined i
 // /usr/include/openssl/ssl.h:2609:9
 pub const SSL_CTX_disable_ct = @compileError("unable to translate macro: undefined identifier `SSL_CTX_set_validation_callback`");
 // /usr/include/openssl/ssl.h:2611:9
-pub const SSL_SECOP_OTHER_TYPE = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0xffff0000, .hex);
+pub const SSL_SECOP_OTHER_TYPE = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0xffff0000, .hex);
 pub const SSL_SECOP_OTHER_NONE = @as(c_int, 0);
 pub const SSL_SECOP_OTHER_CIPHER = @as(c_int, 1) << @as(c_int, 16);
 pub const SSL_SECOP_OTHER_CURVE = @as(c_int, 2) << @as(c_int, 16);
@@ -46757,24 +46757,24 @@ pub inline fn X509err(f: anytype, r: anytype) @TypeOf(ERR_raise_data(ERR_LIB_X50
     _ = &r;
     return ERR_raise_data(ERR_LIB_X509, r, NULL);
 }
-pub const ERR_SYSTEM_FLAG = @import("std").zig.c_translation.cast(c_uint, INT_MAX) + @as(c_int, 1);
-pub const ERR_SYSTEM_MASK = @import("std").zig.c_translation.cast(c_uint, INT_MAX);
+pub const ERR_SYSTEM_FLAG = @import("std").zig.c_translation.helpers.cast(c_uint, INT_MAX) + @as(c_int, 1);
+pub const ERR_SYSTEM_MASK = @import("std").zig.c_translation.helpers.cast(c_uint, INT_MAX);
 pub const ERR_LIB_OFFSET = @as(c_long, 23);
 pub const ERR_LIB_MASK = @as(c_int, 0xFF);
 pub const ERR_RFLAGS_OFFSET = @as(c_long, 18);
 pub const ERR_RFLAGS_MASK = @as(c_int, 0x1F);
-pub const ERR_REASON_MASK = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x7FFFFF, .hex);
+pub const ERR_REASON_MASK = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x7FFFFF, .hex);
 pub const ERR_RFLAG_FATAL = @as(c_int, 0x1) << ERR_RFLAGS_OFFSET;
 pub const ERR_RFLAG_COMMON = @as(c_int, 0x2) << ERR_RFLAGS_OFFSET;
 pub inline fn ERR_SYSTEM_ERROR(errcode: anytype) @TypeOf((errcode & ERR_SYSTEM_FLAG) != @as(c_int, 0)) {
     _ = &errcode;
     return (errcode & ERR_SYSTEM_FLAG) != @as(c_int, 0);
 }
-pub inline fn ERR_PACK(lib: anytype, func: anytype, reason: anytype) @TypeOf(((@import("std").zig.c_translation.cast(c_ulong, lib) & ERR_LIB_MASK) << ERR_LIB_OFFSET) | (@import("std").zig.c_translation.cast(c_ulong, reason) & ERR_REASON_MASK)) {
+pub inline fn ERR_PACK(lib: anytype, func: anytype, reason: anytype) @TypeOf(((@import("std").zig.c_translation.helpers.cast(c_ulong, lib) & ERR_LIB_MASK) << ERR_LIB_OFFSET) | (@import("std").zig.c_translation.helpers.cast(c_ulong, reason) & ERR_REASON_MASK)) {
     _ = &lib;
     _ = &func;
     _ = &reason;
-    return ((@import("std").zig.c_translation.cast(c_ulong, lib) & ERR_LIB_MASK) << ERR_LIB_OFFSET) | (@import("std").zig.c_translation.cast(c_ulong, reason) & ERR_REASON_MASK);
+    return ((@import("std").zig.c_translation.helpers.cast(c_ulong, lib) & ERR_LIB_MASK) << ERR_LIB_OFFSET) | (@import("std").zig.c_translation.helpers.cast(c_ulong, reason) & ERR_REASON_MASK);
 }
 pub const SYS_F_FOPEN = @as(c_int, 0);
 pub const SYS_F_CONNECT = @as(c_int, 0);
@@ -46865,17 +46865,17 @@ pub inline fn lh_ERR_STRING_DATA_flush(lh: anytype) @TypeOf(OPENSSL_LH_flush(oss
 pub inline fn lh_ERR_STRING_DATA_insert(lh: anytype, ptr: anytype) [*c]ERR_STRING_DATA {
     _ = &lh;
     _ = &ptr;
-    return @import("std").zig.c_translation.cast([*c]ERR_STRING_DATA, OPENSSL_LH_insert(ossl_check_ERR_STRING_DATA_lh_type(lh), ossl_check_ERR_STRING_DATA_lh_plain_type(ptr)));
+    return @import("std").zig.c_translation.helpers.cast([*c]ERR_STRING_DATA, OPENSSL_LH_insert(ossl_check_ERR_STRING_DATA_lh_type(lh), ossl_check_ERR_STRING_DATA_lh_plain_type(ptr)));
 }
 pub inline fn lh_ERR_STRING_DATA_delete(lh: anytype, ptr: anytype) [*c]ERR_STRING_DATA {
     _ = &lh;
     _ = &ptr;
-    return @import("std").zig.c_translation.cast([*c]ERR_STRING_DATA, OPENSSL_LH_delete(ossl_check_ERR_STRING_DATA_lh_type(lh), ossl_check_const_ERR_STRING_DATA_lh_plain_type(ptr)));
+    return @import("std").zig.c_translation.helpers.cast([*c]ERR_STRING_DATA, OPENSSL_LH_delete(ossl_check_ERR_STRING_DATA_lh_type(lh), ossl_check_const_ERR_STRING_DATA_lh_plain_type(ptr)));
 }
 pub inline fn lh_ERR_STRING_DATA_retrieve(lh: anytype, ptr: anytype) [*c]ERR_STRING_DATA {
     _ = &lh;
     _ = &ptr;
-    return @import("std").zig.c_translation.cast([*c]ERR_STRING_DATA, OPENSSL_LH_retrieve(ossl_check_ERR_STRING_DATA_lh_type(lh), ossl_check_const_ERR_STRING_DATA_lh_plain_type(ptr)));
+    return @import("std").zig.c_translation.helpers.cast([*c]ERR_STRING_DATA, OPENSSL_LH_retrieve(ossl_check_ERR_STRING_DATA_lh_type(lh), ossl_check_const_ERR_STRING_DATA_lh_plain_type(ptr)));
 }
 pub inline fn lh_ERR_STRING_DATA_error(lh: anytype) @TypeOf(OPENSSL_LH_error(ossl_check_ERR_STRING_DATA_lh_type(lh))) {
     _ = &lh;
@@ -47029,7 +47029,7 @@ pub inline fn sk_UI_STRING_num(sk: anytype) @TypeOf(OPENSSL_sk_num(ossl_check_co
 pub inline fn sk_UI_STRING_value(sk: anytype, idx: anytype) [*c]UI_STRING {
     _ = &sk;
     _ = &idx;
-    return @import("std").zig.c_translation.cast([*c]UI_STRING, OPENSSL_sk_value(ossl_check_const_UI_STRING_sk_type(sk), idx));
+    return @import("std").zig.c_translation.helpers.cast([*c]UI_STRING, OPENSSL_sk_value(ossl_check_const_UI_STRING_sk_type(sk), idx));
 }
 pub const sk_UI_STRING_new = @compileError("unable to translate C expr: unexpected token ')'");
 // /usr/include/openssl/ui.h:296:9
@@ -47053,12 +47053,12 @@ pub inline fn sk_UI_STRING_zero(sk: anytype) @TypeOf(OPENSSL_sk_zero(ossl_check_
 pub inline fn sk_UI_STRING_delete(sk: anytype, i: anytype) [*c]UI_STRING {
     _ = &sk;
     _ = &i;
-    return @import("std").zig.c_translation.cast([*c]UI_STRING, OPENSSL_sk_delete(ossl_check_UI_STRING_sk_type(sk), i));
+    return @import("std").zig.c_translation.helpers.cast([*c]UI_STRING, OPENSSL_sk_delete(ossl_check_UI_STRING_sk_type(sk), i));
 }
 pub inline fn sk_UI_STRING_delete_ptr(sk: anytype, ptr: anytype) [*c]UI_STRING {
     _ = &sk;
     _ = &ptr;
-    return @import("std").zig.c_translation.cast([*c]UI_STRING, OPENSSL_sk_delete_ptr(ossl_check_UI_STRING_sk_type(sk), ossl_check_UI_STRING_type(ptr)));
+    return @import("std").zig.c_translation.helpers.cast([*c]UI_STRING, OPENSSL_sk_delete_ptr(ossl_check_UI_STRING_sk_type(sk), ossl_check_UI_STRING_type(ptr)));
 }
 pub inline fn sk_UI_STRING_push(sk: anytype, ptr: anytype) @TypeOf(OPENSSL_sk_push(ossl_check_UI_STRING_sk_type(sk), ossl_check_UI_STRING_type(ptr))) {
     _ = &sk;
@@ -47072,11 +47072,11 @@ pub inline fn sk_UI_STRING_unshift(sk: anytype, ptr: anytype) @TypeOf(OPENSSL_sk
 }
 pub inline fn sk_UI_STRING_pop(sk: anytype) [*c]UI_STRING {
     _ = &sk;
-    return @import("std").zig.c_translation.cast([*c]UI_STRING, OPENSSL_sk_pop(ossl_check_UI_STRING_sk_type(sk)));
+    return @import("std").zig.c_translation.helpers.cast([*c]UI_STRING, OPENSSL_sk_pop(ossl_check_UI_STRING_sk_type(sk)));
 }
 pub inline fn sk_UI_STRING_shift(sk: anytype) [*c]UI_STRING {
     _ = &sk;
-    return @import("std").zig.c_translation.cast([*c]UI_STRING, OPENSSL_sk_shift(ossl_check_UI_STRING_sk_type(sk)));
+    return @import("std").zig.c_translation.helpers.cast([*c]UI_STRING, OPENSSL_sk_shift(ossl_check_UI_STRING_sk_type(sk)));
 }
 pub inline fn sk_UI_STRING_pop_free(sk: anytype, freefunc: anytype) @TypeOf(OPENSSL_sk_pop_free(ossl_check_UI_STRING_sk_type(sk), ossl_check_UI_STRING_freefunc_type(freefunc))) {
     _ = &sk;
@@ -47093,7 +47093,7 @@ pub inline fn sk_UI_STRING_set(sk: anytype, idx: anytype, ptr: anytype) [*c]UI_S
     _ = &sk;
     _ = &idx;
     _ = &ptr;
-    return @import("std").zig.c_translation.cast([*c]UI_STRING, OPENSSL_sk_set(ossl_check_UI_STRING_sk_type(sk), idx, ossl_check_UI_STRING_type(ptr)));
+    return @import("std").zig.c_translation.helpers.cast([*c]UI_STRING, OPENSSL_sk_set(ossl_check_UI_STRING_sk_type(sk), idx, ossl_check_UI_STRING_type(ptr)));
 }
 pub inline fn sk_UI_STRING_find(sk: anytype, ptr: anytype) @TypeOf(OPENSSL_sk_find(ossl_check_UI_STRING_sk_type(sk), ossl_check_UI_STRING_type(ptr))) {
     _ = &sk;
@@ -47126,7 +47126,7 @@ pub const sk_UI_STRING_deep_copy = @compileError("unable to translate C expr: un
 pub inline fn sk_UI_STRING_set_cmp_func(sk: anytype, cmp: anytype) sk_UI_STRING_compfunc {
     _ = &sk;
     _ = &cmp;
-    return @import("std").zig.c_translation.cast(sk_UI_STRING_compfunc, OPENSSL_sk_set_cmp_func(ossl_check_UI_STRING_sk_type(sk), ossl_check_UI_STRING_compfunc_type(cmp)));
+    return @import("std").zig.c_translation.helpers.cast(sk_UI_STRING_compfunc, OPENSSL_sk_set_cmp_func(ossl_check_UI_STRING_sk_type(sk), ossl_check_UI_STRING_compfunc_type(cmp)));
 }
 pub const OPENSSL_ENGINEERR_H = "";
 pub const ENGINE_R_ALREADY_LOADED = @as(c_int, 100);
@@ -47164,25 +47164,25 @@ pub const ENGINE_R_UNIMPLEMENTED_CIPHER = @as(c_int, 146);
 pub const ENGINE_R_UNIMPLEMENTED_DIGEST = @as(c_int, 147);
 pub const ENGINE_R_UNIMPLEMENTED_PUBLIC_KEY_METHOD = @as(c_int, 101);
 pub const ENGINE_R_VERSION_INCOMPATIBILITY = @as(c_int, 145);
-pub const ENGINE_METHOD_RSA = @import("std").zig.c_translation.cast(c_uint, @as(c_int, 0x0001));
-pub const ENGINE_METHOD_DSA = @import("std").zig.c_translation.cast(c_uint, @as(c_int, 0x0002));
-pub const ENGINE_METHOD_DH = @import("std").zig.c_translation.cast(c_uint, @as(c_int, 0x0004));
-pub const ENGINE_METHOD_RAND = @import("std").zig.c_translation.cast(c_uint, @as(c_int, 0x0008));
-pub const ENGINE_METHOD_CIPHERS = @import("std").zig.c_translation.cast(c_uint, @as(c_int, 0x0040));
-pub const ENGINE_METHOD_DIGESTS = @import("std").zig.c_translation.cast(c_uint, @as(c_int, 0x0080));
-pub const ENGINE_METHOD_PKEY_METHS = @import("std").zig.c_translation.cast(c_uint, @as(c_int, 0x0200));
-pub const ENGINE_METHOD_PKEY_ASN1_METHS = @import("std").zig.c_translation.cast(c_uint, @as(c_int, 0x0400));
-pub const ENGINE_METHOD_EC = @import("std").zig.c_translation.cast(c_uint, @as(c_int, 0x0800));
-pub const ENGINE_METHOD_ALL = @import("std").zig.c_translation.cast(c_uint, @import("std").zig.c_translation.promoteIntLiteral(c_int, 0xFFFF, .hex));
-pub const ENGINE_METHOD_NONE = @import("std").zig.c_translation.cast(c_uint, @as(c_int, 0x0000));
-pub const ENGINE_TABLE_FLAG_NOINIT = @import("std").zig.c_translation.cast(c_uint, @as(c_int, 0x0001));
-pub const ENGINE_FLAGS_MANUAL_CMD_CTRL = @import("std").zig.c_translation.cast(c_int, @as(c_int, 0x0002));
-pub const ENGINE_FLAGS_BY_ID_COPY = @import("std").zig.c_translation.cast(c_int, @as(c_int, 0x0004));
-pub const ENGINE_FLAGS_NO_REGISTER_ALL = @import("std").zig.c_translation.cast(c_int, @as(c_int, 0x0008));
-pub const ENGINE_CMD_FLAG_NUMERIC = @import("std").zig.c_translation.cast(c_uint, @as(c_int, 0x0001));
-pub const ENGINE_CMD_FLAG_STRING = @import("std").zig.c_translation.cast(c_uint, @as(c_int, 0x0002));
-pub const ENGINE_CMD_FLAG_NO_INPUT = @import("std").zig.c_translation.cast(c_uint, @as(c_int, 0x0004));
-pub const ENGINE_CMD_FLAG_INTERNAL = @import("std").zig.c_translation.cast(c_uint, @as(c_int, 0x0008));
+pub const ENGINE_METHOD_RSA = @import("std").zig.c_translation.helpers.cast(c_uint, @as(c_int, 0x0001));
+pub const ENGINE_METHOD_DSA = @import("std").zig.c_translation.helpers.cast(c_uint, @as(c_int, 0x0002));
+pub const ENGINE_METHOD_DH = @import("std").zig.c_translation.helpers.cast(c_uint, @as(c_int, 0x0004));
+pub const ENGINE_METHOD_RAND = @import("std").zig.c_translation.helpers.cast(c_uint, @as(c_int, 0x0008));
+pub const ENGINE_METHOD_CIPHERS = @import("std").zig.c_translation.helpers.cast(c_uint, @as(c_int, 0x0040));
+pub const ENGINE_METHOD_DIGESTS = @import("std").zig.c_translation.helpers.cast(c_uint, @as(c_int, 0x0080));
+pub const ENGINE_METHOD_PKEY_METHS = @import("std").zig.c_translation.helpers.cast(c_uint, @as(c_int, 0x0200));
+pub const ENGINE_METHOD_PKEY_ASN1_METHS = @import("std").zig.c_translation.helpers.cast(c_uint, @as(c_int, 0x0400));
+pub const ENGINE_METHOD_EC = @import("std").zig.c_translation.helpers.cast(c_uint, @as(c_int, 0x0800));
+pub const ENGINE_METHOD_ALL = @import("std").zig.c_translation.helpers.cast(c_uint, @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0xFFFF, .hex));
+pub const ENGINE_METHOD_NONE = @import("std").zig.c_translation.helpers.cast(c_uint, @as(c_int, 0x0000));
+pub const ENGINE_TABLE_FLAG_NOINIT = @import("std").zig.c_translation.helpers.cast(c_uint, @as(c_int, 0x0001));
+pub const ENGINE_FLAGS_MANUAL_CMD_CTRL = @import("std").zig.c_translation.helpers.cast(c_int, @as(c_int, 0x0002));
+pub const ENGINE_FLAGS_BY_ID_COPY = @import("std").zig.c_translation.helpers.cast(c_int, @as(c_int, 0x0004));
+pub const ENGINE_FLAGS_NO_REGISTER_ALL = @import("std").zig.c_translation.helpers.cast(c_int, @as(c_int, 0x0008));
+pub const ENGINE_CMD_FLAG_NUMERIC = @import("std").zig.c_translation.helpers.cast(c_uint, @as(c_int, 0x0001));
+pub const ENGINE_CMD_FLAG_STRING = @import("std").zig.c_translation.helpers.cast(c_uint, @as(c_int, 0x0002));
+pub const ENGINE_CMD_FLAG_NO_INPUT = @import("std").zig.c_translation.helpers.cast(c_uint, @as(c_int, 0x0004));
+pub const ENGINE_CMD_FLAG_INTERNAL = @import("std").zig.c_translation.helpers.cast(c_uint, @as(c_int, 0x0008));
 pub const ENGINE_CTRL_SET_LOGSTREAM = @as(c_int, 1);
 pub const ENGINE_CTRL_SET_PASSWORD_CALLBACK = @as(c_int, 2);
 pub const ENGINE_CTRL_HUP = @as(c_int, 3);
@@ -47224,8 +47224,8 @@ pub inline fn ENGINE_get_ex_new_index(l: anytype, p: anytype, newf: anytype, dup
 }
 pub const ENGINE_cleanup = @compileError("unable to translate C expr: unexpected token 'while'");
 // /usr/include/openssl/engine.h:542:12
-pub const OSSL_DYNAMIC_VERSION = @import("std").zig.c_translation.cast(c_ulong, @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x00030000, .hex));
-pub const OSSL_DYNAMIC_OLDEST = @import("std").zig.c_translation.cast(c_ulong, @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x00030000, .hex));
+pub const OSSL_DYNAMIC_VERSION = @import("std").zig.c_translation.helpers.cast(c_ulong, @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x00030000, .hex));
+pub const OSSL_DYNAMIC_OLDEST = @import("std").zig.c_translation.helpers.cast(c_ulong, @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x00030000, .hex));
 pub const IMPLEMENT_DYNAMIC_CHECK_FN = @compileError("unable to translate macro: undefined identifier `v_check`");
 // /usr/include/openssl/engine.h:769:11
 pub const IMPLEMENT_DYNAMIC_BIND_FN = @compileError("unable to translate macro: undefined identifier `bind_engine`");
@@ -47327,7 +47327,7 @@ pub inline fn sk_X509V3_EXT_METHOD_num(sk: anytype) @TypeOf(OPENSSL_sk_num(ossl_
 pub inline fn sk_X509V3_EXT_METHOD_value(sk: anytype, idx: anytype) [*c]X509V3_EXT_METHOD {
     _ = &sk;
     _ = &idx;
-    return @import("std").zig.c_translation.cast([*c]X509V3_EXT_METHOD, OPENSSL_sk_value(ossl_check_const_X509V3_EXT_METHOD_sk_type(sk), idx));
+    return @import("std").zig.c_translation.helpers.cast([*c]X509V3_EXT_METHOD, OPENSSL_sk_value(ossl_check_const_X509V3_EXT_METHOD_sk_type(sk), idx));
 }
 pub const sk_X509V3_EXT_METHOD_new = @compileError("unable to translate C expr: unexpected token ')'");
 // /usr/include/openssl/x509v3.h:115:9
@@ -47351,12 +47351,12 @@ pub inline fn sk_X509V3_EXT_METHOD_zero(sk: anytype) @TypeOf(OPENSSL_sk_zero(oss
 pub inline fn sk_X509V3_EXT_METHOD_delete(sk: anytype, i: anytype) [*c]X509V3_EXT_METHOD {
     _ = &sk;
     _ = &i;
-    return @import("std").zig.c_translation.cast([*c]X509V3_EXT_METHOD, OPENSSL_sk_delete(ossl_check_X509V3_EXT_METHOD_sk_type(sk), i));
+    return @import("std").zig.c_translation.helpers.cast([*c]X509V3_EXT_METHOD, OPENSSL_sk_delete(ossl_check_X509V3_EXT_METHOD_sk_type(sk), i));
 }
 pub inline fn sk_X509V3_EXT_METHOD_delete_ptr(sk: anytype, ptr: anytype) [*c]X509V3_EXT_METHOD {
     _ = &sk;
     _ = &ptr;
-    return @import("std").zig.c_translation.cast([*c]X509V3_EXT_METHOD, OPENSSL_sk_delete_ptr(ossl_check_X509V3_EXT_METHOD_sk_type(sk), ossl_check_X509V3_EXT_METHOD_type(ptr)));
+    return @import("std").zig.c_translation.helpers.cast([*c]X509V3_EXT_METHOD, OPENSSL_sk_delete_ptr(ossl_check_X509V3_EXT_METHOD_sk_type(sk), ossl_check_X509V3_EXT_METHOD_type(ptr)));
 }
 pub inline fn sk_X509V3_EXT_METHOD_push(sk: anytype, ptr: anytype) @TypeOf(OPENSSL_sk_push(ossl_check_X509V3_EXT_METHOD_sk_type(sk), ossl_check_X509V3_EXT_METHOD_type(ptr))) {
     _ = &sk;
@@ -47370,11 +47370,11 @@ pub inline fn sk_X509V3_EXT_METHOD_unshift(sk: anytype, ptr: anytype) @TypeOf(OP
 }
 pub inline fn sk_X509V3_EXT_METHOD_pop(sk: anytype) [*c]X509V3_EXT_METHOD {
     _ = &sk;
-    return @import("std").zig.c_translation.cast([*c]X509V3_EXT_METHOD, OPENSSL_sk_pop(ossl_check_X509V3_EXT_METHOD_sk_type(sk)));
+    return @import("std").zig.c_translation.helpers.cast([*c]X509V3_EXT_METHOD, OPENSSL_sk_pop(ossl_check_X509V3_EXT_METHOD_sk_type(sk)));
 }
 pub inline fn sk_X509V3_EXT_METHOD_shift(sk: anytype) [*c]X509V3_EXT_METHOD {
     _ = &sk;
-    return @import("std").zig.c_translation.cast([*c]X509V3_EXT_METHOD, OPENSSL_sk_shift(ossl_check_X509V3_EXT_METHOD_sk_type(sk)));
+    return @import("std").zig.c_translation.helpers.cast([*c]X509V3_EXT_METHOD, OPENSSL_sk_shift(ossl_check_X509V3_EXT_METHOD_sk_type(sk)));
 }
 pub inline fn sk_X509V3_EXT_METHOD_pop_free(sk: anytype, freefunc: anytype) @TypeOf(OPENSSL_sk_pop_free(ossl_check_X509V3_EXT_METHOD_sk_type(sk), ossl_check_X509V3_EXT_METHOD_freefunc_type(freefunc))) {
     _ = &sk;
@@ -47391,7 +47391,7 @@ pub inline fn sk_X509V3_EXT_METHOD_set(sk: anytype, idx: anytype, ptr: anytype) 
     _ = &sk;
     _ = &idx;
     _ = &ptr;
-    return @import("std").zig.c_translation.cast([*c]X509V3_EXT_METHOD, OPENSSL_sk_set(ossl_check_X509V3_EXT_METHOD_sk_type(sk), idx, ossl_check_X509V3_EXT_METHOD_type(ptr)));
+    return @import("std").zig.c_translation.helpers.cast([*c]X509V3_EXT_METHOD, OPENSSL_sk_set(ossl_check_X509V3_EXT_METHOD_sk_type(sk), idx, ossl_check_X509V3_EXT_METHOD_type(ptr)));
 }
 pub inline fn sk_X509V3_EXT_METHOD_find(sk: anytype, ptr: anytype) @TypeOf(OPENSSL_sk_find(ossl_check_X509V3_EXT_METHOD_sk_type(sk), ossl_check_X509V3_EXT_METHOD_type(ptr))) {
     _ = &sk;
@@ -47424,7 +47424,7 @@ pub const sk_X509V3_EXT_METHOD_deep_copy = @compileError("unable to translate C 
 pub inline fn sk_X509V3_EXT_METHOD_set_cmp_func(sk: anytype, cmp: anytype) sk_X509V3_EXT_METHOD_compfunc {
     _ = &sk;
     _ = &cmp;
-    return @import("std").zig.c_translation.cast(sk_X509V3_EXT_METHOD_compfunc, OPENSSL_sk_set_cmp_func(ossl_check_X509V3_EXT_METHOD_sk_type(sk), ossl_check_X509V3_EXT_METHOD_compfunc_type(cmp)));
+    return @import("std").zig.c_translation.helpers.cast(sk_X509V3_EXT_METHOD_compfunc, OPENSSL_sk_set_cmp_func(ossl_check_X509V3_EXT_METHOD_sk_type(sk), ossl_check_X509V3_EXT_METHOD_compfunc_type(cmp)));
 }
 pub const X509V3_EXT_DYNAMIC = @as(c_int, 0x1);
 pub const X509V3_EXT_CTX_DEP = @as(c_int, 0x2);
@@ -47445,7 +47445,7 @@ pub inline fn sk_ACCESS_DESCRIPTION_num(sk: anytype) @TypeOf(OPENSSL_sk_num(ossl
 pub inline fn sk_ACCESS_DESCRIPTION_value(sk: anytype, idx: anytype) [*c]ACCESS_DESCRIPTION {
     _ = &sk;
     _ = &idx;
-    return @import("std").zig.c_translation.cast([*c]ACCESS_DESCRIPTION, OPENSSL_sk_value(ossl_check_const_ACCESS_DESCRIPTION_sk_type(sk), idx));
+    return @import("std").zig.c_translation.helpers.cast([*c]ACCESS_DESCRIPTION, OPENSSL_sk_value(ossl_check_const_ACCESS_DESCRIPTION_sk_type(sk), idx));
 }
 pub const sk_ACCESS_DESCRIPTION_new = @compileError("unable to translate C expr: unexpected token ')'");
 // /usr/include/openssl/x509v3.h:214:9
@@ -47469,12 +47469,12 @@ pub inline fn sk_ACCESS_DESCRIPTION_zero(sk: anytype) @TypeOf(OPENSSL_sk_zero(os
 pub inline fn sk_ACCESS_DESCRIPTION_delete(sk: anytype, i: anytype) [*c]ACCESS_DESCRIPTION {
     _ = &sk;
     _ = &i;
-    return @import("std").zig.c_translation.cast([*c]ACCESS_DESCRIPTION, OPENSSL_sk_delete(ossl_check_ACCESS_DESCRIPTION_sk_type(sk), i));
+    return @import("std").zig.c_translation.helpers.cast([*c]ACCESS_DESCRIPTION, OPENSSL_sk_delete(ossl_check_ACCESS_DESCRIPTION_sk_type(sk), i));
 }
 pub inline fn sk_ACCESS_DESCRIPTION_delete_ptr(sk: anytype, ptr: anytype) [*c]ACCESS_DESCRIPTION {
     _ = &sk;
     _ = &ptr;
-    return @import("std").zig.c_translation.cast([*c]ACCESS_DESCRIPTION, OPENSSL_sk_delete_ptr(ossl_check_ACCESS_DESCRIPTION_sk_type(sk), ossl_check_ACCESS_DESCRIPTION_type(ptr)));
+    return @import("std").zig.c_translation.helpers.cast([*c]ACCESS_DESCRIPTION, OPENSSL_sk_delete_ptr(ossl_check_ACCESS_DESCRIPTION_sk_type(sk), ossl_check_ACCESS_DESCRIPTION_type(ptr)));
 }
 pub inline fn sk_ACCESS_DESCRIPTION_push(sk: anytype, ptr: anytype) @TypeOf(OPENSSL_sk_push(ossl_check_ACCESS_DESCRIPTION_sk_type(sk), ossl_check_ACCESS_DESCRIPTION_type(ptr))) {
     _ = &sk;
@@ -47488,11 +47488,11 @@ pub inline fn sk_ACCESS_DESCRIPTION_unshift(sk: anytype, ptr: anytype) @TypeOf(O
 }
 pub inline fn sk_ACCESS_DESCRIPTION_pop(sk: anytype) [*c]ACCESS_DESCRIPTION {
     _ = &sk;
-    return @import("std").zig.c_translation.cast([*c]ACCESS_DESCRIPTION, OPENSSL_sk_pop(ossl_check_ACCESS_DESCRIPTION_sk_type(sk)));
+    return @import("std").zig.c_translation.helpers.cast([*c]ACCESS_DESCRIPTION, OPENSSL_sk_pop(ossl_check_ACCESS_DESCRIPTION_sk_type(sk)));
 }
 pub inline fn sk_ACCESS_DESCRIPTION_shift(sk: anytype) [*c]ACCESS_DESCRIPTION {
     _ = &sk;
-    return @import("std").zig.c_translation.cast([*c]ACCESS_DESCRIPTION, OPENSSL_sk_shift(ossl_check_ACCESS_DESCRIPTION_sk_type(sk)));
+    return @import("std").zig.c_translation.helpers.cast([*c]ACCESS_DESCRIPTION, OPENSSL_sk_shift(ossl_check_ACCESS_DESCRIPTION_sk_type(sk)));
 }
 pub inline fn sk_ACCESS_DESCRIPTION_pop_free(sk: anytype, freefunc: anytype) @TypeOf(OPENSSL_sk_pop_free(ossl_check_ACCESS_DESCRIPTION_sk_type(sk), ossl_check_ACCESS_DESCRIPTION_freefunc_type(freefunc))) {
     _ = &sk;
@@ -47509,7 +47509,7 @@ pub inline fn sk_ACCESS_DESCRIPTION_set(sk: anytype, idx: anytype, ptr: anytype)
     _ = &sk;
     _ = &idx;
     _ = &ptr;
-    return @import("std").zig.c_translation.cast([*c]ACCESS_DESCRIPTION, OPENSSL_sk_set(ossl_check_ACCESS_DESCRIPTION_sk_type(sk), idx, ossl_check_ACCESS_DESCRIPTION_type(ptr)));
+    return @import("std").zig.c_translation.helpers.cast([*c]ACCESS_DESCRIPTION, OPENSSL_sk_set(ossl_check_ACCESS_DESCRIPTION_sk_type(sk), idx, ossl_check_ACCESS_DESCRIPTION_type(ptr)));
 }
 pub inline fn sk_ACCESS_DESCRIPTION_find(sk: anytype, ptr: anytype) @TypeOf(OPENSSL_sk_find(ossl_check_ACCESS_DESCRIPTION_sk_type(sk), ossl_check_ACCESS_DESCRIPTION_type(ptr))) {
     _ = &sk;
@@ -47542,7 +47542,7 @@ pub const sk_ACCESS_DESCRIPTION_deep_copy = @compileError("unable to translate C
 pub inline fn sk_ACCESS_DESCRIPTION_set_cmp_func(sk: anytype, cmp: anytype) sk_ACCESS_DESCRIPTION_compfunc {
     _ = &sk;
     _ = &cmp;
-    return @import("std").zig.c_translation.cast(sk_ACCESS_DESCRIPTION_compfunc, OPENSSL_sk_set_cmp_func(ossl_check_ACCESS_DESCRIPTION_sk_type(sk), ossl_check_ACCESS_DESCRIPTION_compfunc_type(cmp)));
+    return @import("std").zig.c_translation.helpers.cast(sk_ACCESS_DESCRIPTION_compfunc, OPENSSL_sk_set_cmp_func(ossl_check_ACCESS_DESCRIPTION_sk_type(sk), ossl_check_ACCESS_DESCRIPTION_compfunc_type(cmp)));
 }
 pub inline fn sk_GENERAL_NAME_num(sk: anytype) @TypeOf(OPENSSL_sk_num(ossl_check_const_GENERAL_NAME_sk_type(sk))) {
     _ = &sk;
@@ -47551,7 +47551,7 @@ pub inline fn sk_GENERAL_NAME_num(sk: anytype) @TypeOf(OPENSSL_sk_num(ossl_check
 pub inline fn sk_GENERAL_NAME_value(sk: anytype, idx: anytype) [*c]GENERAL_NAME {
     _ = &sk;
     _ = &idx;
-    return @import("std").zig.c_translation.cast([*c]GENERAL_NAME, OPENSSL_sk_value(ossl_check_const_GENERAL_NAME_sk_type(sk), idx));
+    return @import("std").zig.c_translation.helpers.cast([*c]GENERAL_NAME, OPENSSL_sk_value(ossl_check_const_GENERAL_NAME_sk_type(sk), idx));
 }
 pub const sk_GENERAL_NAME_new = @compileError("unable to translate C expr: unexpected token ')'");
 // /usr/include/openssl/x509v3.h:240:9
@@ -47575,12 +47575,12 @@ pub inline fn sk_GENERAL_NAME_zero(sk: anytype) @TypeOf(OPENSSL_sk_zero(ossl_che
 pub inline fn sk_GENERAL_NAME_delete(sk: anytype, i: anytype) [*c]GENERAL_NAME {
     _ = &sk;
     _ = &i;
-    return @import("std").zig.c_translation.cast([*c]GENERAL_NAME, OPENSSL_sk_delete(ossl_check_GENERAL_NAME_sk_type(sk), i));
+    return @import("std").zig.c_translation.helpers.cast([*c]GENERAL_NAME, OPENSSL_sk_delete(ossl_check_GENERAL_NAME_sk_type(sk), i));
 }
 pub inline fn sk_GENERAL_NAME_delete_ptr(sk: anytype, ptr: anytype) [*c]GENERAL_NAME {
     _ = &sk;
     _ = &ptr;
-    return @import("std").zig.c_translation.cast([*c]GENERAL_NAME, OPENSSL_sk_delete_ptr(ossl_check_GENERAL_NAME_sk_type(sk), ossl_check_GENERAL_NAME_type(ptr)));
+    return @import("std").zig.c_translation.helpers.cast([*c]GENERAL_NAME, OPENSSL_sk_delete_ptr(ossl_check_GENERAL_NAME_sk_type(sk), ossl_check_GENERAL_NAME_type(ptr)));
 }
 pub inline fn sk_GENERAL_NAME_push(sk: anytype, ptr: anytype) @TypeOf(OPENSSL_sk_push(ossl_check_GENERAL_NAME_sk_type(sk), ossl_check_GENERAL_NAME_type(ptr))) {
     _ = &sk;
@@ -47594,11 +47594,11 @@ pub inline fn sk_GENERAL_NAME_unshift(sk: anytype, ptr: anytype) @TypeOf(OPENSSL
 }
 pub inline fn sk_GENERAL_NAME_pop(sk: anytype) [*c]GENERAL_NAME {
     _ = &sk;
-    return @import("std").zig.c_translation.cast([*c]GENERAL_NAME, OPENSSL_sk_pop(ossl_check_GENERAL_NAME_sk_type(sk)));
+    return @import("std").zig.c_translation.helpers.cast([*c]GENERAL_NAME, OPENSSL_sk_pop(ossl_check_GENERAL_NAME_sk_type(sk)));
 }
 pub inline fn sk_GENERAL_NAME_shift(sk: anytype) [*c]GENERAL_NAME {
     _ = &sk;
-    return @import("std").zig.c_translation.cast([*c]GENERAL_NAME, OPENSSL_sk_shift(ossl_check_GENERAL_NAME_sk_type(sk)));
+    return @import("std").zig.c_translation.helpers.cast([*c]GENERAL_NAME, OPENSSL_sk_shift(ossl_check_GENERAL_NAME_sk_type(sk)));
 }
 pub inline fn sk_GENERAL_NAME_pop_free(sk: anytype, freefunc: anytype) @TypeOf(OPENSSL_sk_pop_free(ossl_check_GENERAL_NAME_sk_type(sk), ossl_check_GENERAL_NAME_freefunc_type(freefunc))) {
     _ = &sk;
@@ -47615,7 +47615,7 @@ pub inline fn sk_GENERAL_NAME_set(sk: anytype, idx: anytype, ptr: anytype) [*c]G
     _ = &sk;
     _ = &idx;
     _ = &ptr;
-    return @import("std").zig.c_translation.cast([*c]GENERAL_NAME, OPENSSL_sk_set(ossl_check_GENERAL_NAME_sk_type(sk), idx, ossl_check_GENERAL_NAME_type(ptr)));
+    return @import("std").zig.c_translation.helpers.cast([*c]GENERAL_NAME, OPENSSL_sk_set(ossl_check_GENERAL_NAME_sk_type(sk), idx, ossl_check_GENERAL_NAME_type(ptr)));
 }
 pub inline fn sk_GENERAL_NAME_find(sk: anytype, ptr: anytype) @TypeOf(OPENSSL_sk_find(ossl_check_GENERAL_NAME_sk_type(sk), ossl_check_GENERAL_NAME_type(ptr))) {
     _ = &sk;
@@ -47648,7 +47648,7 @@ pub const sk_GENERAL_NAME_deep_copy = @compileError("unable to translate C expr:
 pub inline fn sk_GENERAL_NAME_set_cmp_func(sk: anytype, cmp: anytype) sk_GENERAL_NAME_compfunc {
     _ = &sk;
     _ = &cmp;
-    return @import("std").zig.c_translation.cast(sk_GENERAL_NAME_compfunc, OPENSSL_sk_set_cmp_func(ossl_check_GENERAL_NAME_sk_type(sk), ossl_check_GENERAL_NAME_compfunc_type(cmp)));
+    return @import("std").zig.c_translation.helpers.cast(sk_GENERAL_NAME_compfunc, OPENSSL_sk_set_cmp_func(ossl_check_GENERAL_NAME_sk_type(sk), ossl_check_GENERAL_NAME_compfunc_type(cmp)));
 }
 pub inline fn sk_GENERAL_NAMES_num(sk: anytype) @TypeOf(OPENSSL_sk_num(ossl_check_const_GENERAL_NAMES_sk_type(sk))) {
     _ = &sk;
@@ -47657,7 +47657,7 @@ pub inline fn sk_GENERAL_NAMES_num(sk: anytype) @TypeOf(OPENSSL_sk_num(ossl_chec
 pub inline fn sk_GENERAL_NAMES_value(sk: anytype, idx: anytype) [*c]GENERAL_NAMES {
     _ = &sk;
     _ = &idx;
-    return @import("std").zig.c_translation.cast([*c]GENERAL_NAMES, OPENSSL_sk_value(ossl_check_const_GENERAL_NAMES_sk_type(sk), idx));
+    return @import("std").zig.c_translation.helpers.cast([*c]GENERAL_NAMES, OPENSSL_sk_value(ossl_check_const_GENERAL_NAMES_sk_type(sk), idx));
 }
 pub const sk_GENERAL_NAMES_new = @compileError("unable to translate C expr: unexpected token ')'");
 // /usr/include/openssl/x509v3.h:273:9
@@ -47681,12 +47681,12 @@ pub inline fn sk_GENERAL_NAMES_zero(sk: anytype) @TypeOf(OPENSSL_sk_zero(ossl_ch
 pub inline fn sk_GENERAL_NAMES_delete(sk: anytype, i: anytype) [*c]GENERAL_NAMES {
     _ = &sk;
     _ = &i;
-    return @import("std").zig.c_translation.cast([*c]GENERAL_NAMES, OPENSSL_sk_delete(ossl_check_GENERAL_NAMES_sk_type(sk), i));
+    return @import("std").zig.c_translation.helpers.cast([*c]GENERAL_NAMES, OPENSSL_sk_delete(ossl_check_GENERAL_NAMES_sk_type(sk), i));
 }
 pub inline fn sk_GENERAL_NAMES_delete_ptr(sk: anytype, ptr: anytype) [*c]GENERAL_NAMES {
     _ = &sk;
     _ = &ptr;
-    return @import("std").zig.c_translation.cast([*c]GENERAL_NAMES, OPENSSL_sk_delete_ptr(ossl_check_GENERAL_NAMES_sk_type(sk), ossl_check_GENERAL_NAMES_type(ptr)));
+    return @import("std").zig.c_translation.helpers.cast([*c]GENERAL_NAMES, OPENSSL_sk_delete_ptr(ossl_check_GENERAL_NAMES_sk_type(sk), ossl_check_GENERAL_NAMES_type(ptr)));
 }
 pub inline fn sk_GENERAL_NAMES_push(sk: anytype, ptr: anytype) @TypeOf(OPENSSL_sk_push(ossl_check_GENERAL_NAMES_sk_type(sk), ossl_check_GENERAL_NAMES_type(ptr))) {
     _ = &sk;
@@ -47700,11 +47700,11 @@ pub inline fn sk_GENERAL_NAMES_unshift(sk: anytype, ptr: anytype) @TypeOf(OPENSS
 }
 pub inline fn sk_GENERAL_NAMES_pop(sk: anytype) [*c]GENERAL_NAMES {
     _ = &sk;
-    return @import("std").zig.c_translation.cast([*c]GENERAL_NAMES, OPENSSL_sk_pop(ossl_check_GENERAL_NAMES_sk_type(sk)));
+    return @import("std").zig.c_translation.helpers.cast([*c]GENERAL_NAMES, OPENSSL_sk_pop(ossl_check_GENERAL_NAMES_sk_type(sk)));
 }
 pub inline fn sk_GENERAL_NAMES_shift(sk: anytype) [*c]GENERAL_NAMES {
     _ = &sk;
-    return @import("std").zig.c_translation.cast([*c]GENERAL_NAMES, OPENSSL_sk_shift(ossl_check_GENERAL_NAMES_sk_type(sk)));
+    return @import("std").zig.c_translation.helpers.cast([*c]GENERAL_NAMES, OPENSSL_sk_shift(ossl_check_GENERAL_NAMES_sk_type(sk)));
 }
 pub inline fn sk_GENERAL_NAMES_pop_free(sk: anytype, freefunc: anytype) @TypeOf(OPENSSL_sk_pop_free(ossl_check_GENERAL_NAMES_sk_type(sk), ossl_check_GENERAL_NAMES_freefunc_type(freefunc))) {
     _ = &sk;
@@ -47721,7 +47721,7 @@ pub inline fn sk_GENERAL_NAMES_set(sk: anytype, idx: anytype, ptr: anytype) [*c]
     _ = &sk;
     _ = &idx;
     _ = &ptr;
-    return @import("std").zig.c_translation.cast([*c]GENERAL_NAMES, OPENSSL_sk_set(ossl_check_GENERAL_NAMES_sk_type(sk), idx, ossl_check_GENERAL_NAMES_type(ptr)));
+    return @import("std").zig.c_translation.helpers.cast([*c]GENERAL_NAMES, OPENSSL_sk_set(ossl_check_GENERAL_NAMES_sk_type(sk), idx, ossl_check_GENERAL_NAMES_type(ptr)));
 }
 pub inline fn sk_GENERAL_NAMES_find(sk: anytype, ptr: anytype) @TypeOf(OPENSSL_sk_find(ossl_check_GENERAL_NAMES_sk_type(sk), ossl_check_GENERAL_NAMES_type(ptr))) {
     _ = &sk;
@@ -47754,9 +47754,9 @@ pub const sk_GENERAL_NAMES_deep_copy = @compileError("unable to translate C expr
 pub inline fn sk_GENERAL_NAMES_set_cmp_func(sk: anytype, cmp: anytype) sk_GENERAL_NAMES_compfunc {
     _ = &sk;
     _ = &cmp;
-    return @import("std").zig.c_translation.cast(sk_GENERAL_NAMES_compfunc, OPENSSL_sk_set_cmp_func(ossl_check_GENERAL_NAMES_sk_type(sk), ossl_check_GENERAL_NAMES_compfunc_type(cmp)));
+    return @import("std").zig.c_translation.helpers.cast(sk_GENERAL_NAMES_compfunc, OPENSSL_sk_set_cmp_func(ossl_check_GENERAL_NAMES_sk_type(sk), ossl_check_GENERAL_NAMES_compfunc_type(cmp)));
 }
-pub const CRLDP_ALL_REASONS = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x807f, .hex);
+pub const CRLDP_ALL_REASONS = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x807f, .hex);
 pub const CRL_REASON_NONE = -@as(c_int, 1);
 pub const CRL_REASON_UNSPECIFIED = @as(c_int, 0);
 pub const CRL_REASON_KEY_COMPROMISE = @as(c_int, 1);
@@ -47775,7 +47775,7 @@ pub inline fn sk_DIST_POINT_num(sk: anytype) @TypeOf(OPENSSL_sk_num(ossl_check_c
 pub inline fn sk_DIST_POINT_value(sk: anytype, idx: anytype) [*c]DIST_POINT {
     _ = &sk;
     _ = &idx;
-    return @import("std").zig.c_translation.cast([*c]DIST_POINT, OPENSSL_sk_value(ossl_check_const_DIST_POINT_sk_type(sk), idx));
+    return @import("std").zig.c_translation.helpers.cast([*c]DIST_POINT, OPENSSL_sk_value(ossl_check_const_DIST_POINT_sk_type(sk), idx));
 }
 pub const sk_DIST_POINT_new = @compileError("unable to translate C expr: unexpected token ')'");
 // /usr/include/openssl/x509v3.h:333:9
@@ -47799,12 +47799,12 @@ pub inline fn sk_DIST_POINT_zero(sk: anytype) @TypeOf(OPENSSL_sk_zero(ossl_check
 pub inline fn sk_DIST_POINT_delete(sk: anytype, i: anytype) [*c]DIST_POINT {
     _ = &sk;
     _ = &i;
-    return @import("std").zig.c_translation.cast([*c]DIST_POINT, OPENSSL_sk_delete(ossl_check_DIST_POINT_sk_type(sk), i));
+    return @import("std").zig.c_translation.helpers.cast([*c]DIST_POINT, OPENSSL_sk_delete(ossl_check_DIST_POINT_sk_type(sk), i));
 }
 pub inline fn sk_DIST_POINT_delete_ptr(sk: anytype, ptr: anytype) [*c]DIST_POINT {
     _ = &sk;
     _ = &ptr;
-    return @import("std").zig.c_translation.cast([*c]DIST_POINT, OPENSSL_sk_delete_ptr(ossl_check_DIST_POINT_sk_type(sk), ossl_check_DIST_POINT_type(ptr)));
+    return @import("std").zig.c_translation.helpers.cast([*c]DIST_POINT, OPENSSL_sk_delete_ptr(ossl_check_DIST_POINT_sk_type(sk), ossl_check_DIST_POINT_type(ptr)));
 }
 pub inline fn sk_DIST_POINT_push(sk: anytype, ptr: anytype) @TypeOf(OPENSSL_sk_push(ossl_check_DIST_POINT_sk_type(sk), ossl_check_DIST_POINT_type(ptr))) {
     _ = &sk;
@@ -47818,11 +47818,11 @@ pub inline fn sk_DIST_POINT_unshift(sk: anytype, ptr: anytype) @TypeOf(OPENSSL_s
 }
 pub inline fn sk_DIST_POINT_pop(sk: anytype) [*c]DIST_POINT {
     _ = &sk;
-    return @import("std").zig.c_translation.cast([*c]DIST_POINT, OPENSSL_sk_pop(ossl_check_DIST_POINT_sk_type(sk)));
+    return @import("std").zig.c_translation.helpers.cast([*c]DIST_POINT, OPENSSL_sk_pop(ossl_check_DIST_POINT_sk_type(sk)));
 }
 pub inline fn sk_DIST_POINT_shift(sk: anytype) [*c]DIST_POINT {
     _ = &sk;
-    return @import("std").zig.c_translation.cast([*c]DIST_POINT, OPENSSL_sk_shift(ossl_check_DIST_POINT_sk_type(sk)));
+    return @import("std").zig.c_translation.helpers.cast([*c]DIST_POINT, OPENSSL_sk_shift(ossl_check_DIST_POINT_sk_type(sk)));
 }
 pub inline fn sk_DIST_POINT_pop_free(sk: anytype, freefunc: anytype) @TypeOf(OPENSSL_sk_pop_free(ossl_check_DIST_POINT_sk_type(sk), ossl_check_DIST_POINT_freefunc_type(freefunc))) {
     _ = &sk;
@@ -47839,7 +47839,7 @@ pub inline fn sk_DIST_POINT_set(sk: anytype, idx: anytype, ptr: anytype) [*c]DIS
     _ = &sk;
     _ = &idx;
     _ = &ptr;
-    return @import("std").zig.c_translation.cast([*c]DIST_POINT, OPENSSL_sk_set(ossl_check_DIST_POINT_sk_type(sk), idx, ossl_check_DIST_POINT_type(ptr)));
+    return @import("std").zig.c_translation.helpers.cast([*c]DIST_POINT, OPENSSL_sk_set(ossl_check_DIST_POINT_sk_type(sk), idx, ossl_check_DIST_POINT_type(ptr)));
 }
 pub inline fn sk_DIST_POINT_find(sk: anytype, ptr: anytype) @TypeOf(OPENSSL_sk_find(ossl_check_DIST_POINT_sk_type(sk), ossl_check_DIST_POINT_type(ptr))) {
     _ = &sk;
@@ -47872,7 +47872,7 @@ pub const sk_DIST_POINT_deep_copy = @compileError("unable to translate C expr: u
 pub inline fn sk_DIST_POINT_set_cmp_func(sk: anytype, cmp: anytype) sk_DIST_POINT_compfunc {
     _ = &sk;
     _ = &cmp;
-    return @import("std").zig.c_translation.cast(sk_DIST_POINT_compfunc, OPENSSL_sk_set_cmp_func(ossl_check_DIST_POINT_sk_type(sk), ossl_check_DIST_POINT_compfunc_type(cmp)));
+    return @import("std").zig.c_translation.helpers.cast(sk_DIST_POINT_compfunc, OPENSSL_sk_set_cmp_func(ossl_check_DIST_POINT_sk_type(sk), ossl_check_DIST_POINT_compfunc_type(cmp)));
 }
 pub inline fn sk_SXNETID_num(sk: anytype) @TypeOf(OPENSSL_sk_num(ossl_check_const_SXNETID_sk_type(sk))) {
     _ = &sk;
@@ -47881,7 +47881,7 @@ pub inline fn sk_SXNETID_num(sk: anytype) @TypeOf(OPENSSL_sk_num(ossl_check_cons
 pub inline fn sk_SXNETID_value(sk: anytype, idx: anytype) [*c]SXNETID {
     _ = &sk;
     _ = &idx;
-    return @import("std").zig.c_translation.cast([*c]SXNETID, OPENSSL_sk_value(ossl_check_const_SXNETID_sk_type(sk), idx));
+    return @import("std").zig.c_translation.helpers.cast([*c]SXNETID, OPENSSL_sk_value(ossl_check_const_SXNETID_sk_type(sk), idx));
 }
 pub const sk_SXNETID_new = @compileError("unable to translate C expr: unexpected token ')'");
 // /usr/include/openssl/x509v3.h:376:9
@@ -47905,12 +47905,12 @@ pub inline fn sk_SXNETID_zero(sk: anytype) @TypeOf(OPENSSL_sk_zero(ossl_check_SX
 pub inline fn sk_SXNETID_delete(sk: anytype, i: anytype) [*c]SXNETID {
     _ = &sk;
     _ = &i;
-    return @import("std").zig.c_translation.cast([*c]SXNETID, OPENSSL_sk_delete(ossl_check_SXNETID_sk_type(sk), i));
+    return @import("std").zig.c_translation.helpers.cast([*c]SXNETID, OPENSSL_sk_delete(ossl_check_SXNETID_sk_type(sk), i));
 }
 pub inline fn sk_SXNETID_delete_ptr(sk: anytype, ptr: anytype) [*c]SXNETID {
     _ = &sk;
     _ = &ptr;
-    return @import("std").zig.c_translation.cast([*c]SXNETID, OPENSSL_sk_delete_ptr(ossl_check_SXNETID_sk_type(sk), ossl_check_SXNETID_type(ptr)));
+    return @import("std").zig.c_translation.helpers.cast([*c]SXNETID, OPENSSL_sk_delete_ptr(ossl_check_SXNETID_sk_type(sk), ossl_check_SXNETID_type(ptr)));
 }
 pub inline fn sk_SXNETID_push(sk: anytype, ptr: anytype) @TypeOf(OPENSSL_sk_push(ossl_check_SXNETID_sk_type(sk), ossl_check_SXNETID_type(ptr))) {
     _ = &sk;
@@ -47924,11 +47924,11 @@ pub inline fn sk_SXNETID_unshift(sk: anytype, ptr: anytype) @TypeOf(OPENSSL_sk_u
 }
 pub inline fn sk_SXNETID_pop(sk: anytype) [*c]SXNETID {
     _ = &sk;
-    return @import("std").zig.c_translation.cast([*c]SXNETID, OPENSSL_sk_pop(ossl_check_SXNETID_sk_type(sk)));
+    return @import("std").zig.c_translation.helpers.cast([*c]SXNETID, OPENSSL_sk_pop(ossl_check_SXNETID_sk_type(sk)));
 }
 pub inline fn sk_SXNETID_shift(sk: anytype) [*c]SXNETID {
     _ = &sk;
-    return @import("std").zig.c_translation.cast([*c]SXNETID, OPENSSL_sk_shift(ossl_check_SXNETID_sk_type(sk)));
+    return @import("std").zig.c_translation.helpers.cast([*c]SXNETID, OPENSSL_sk_shift(ossl_check_SXNETID_sk_type(sk)));
 }
 pub inline fn sk_SXNETID_pop_free(sk: anytype, freefunc: anytype) @TypeOf(OPENSSL_sk_pop_free(ossl_check_SXNETID_sk_type(sk), ossl_check_SXNETID_freefunc_type(freefunc))) {
     _ = &sk;
@@ -47945,7 +47945,7 @@ pub inline fn sk_SXNETID_set(sk: anytype, idx: anytype, ptr: anytype) [*c]SXNETI
     _ = &sk;
     _ = &idx;
     _ = &ptr;
-    return @import("std").zig.c_translation.cast([*c]SXNETID, OPENSSL_sk_set(ossl_check_SXNETID_sk_type(sk), idx, ossl_check_SXNETID_type(ptr)));
+    return @import("std").zig.c_translation.helpers.cast([*c]SXNETID, OPENSSL_sk_set(ossl_check_SXNETID_sk_type(sk), idx, ossl_check_SXNETID_type(ptr)));
 }
 pub inline fn sk_SXNETID_find(sk: anytype, ptr: anytype) @TypeOf(OPENSSL_sk_find(ossl_check_SXNETID_sk_type(sk), ossl_check_SXNETID_type(ptr))) {
     _ = &sk;
@@ -47978,7 +47978,7 @@ pub const sk_SXNETID_deep_copy = @compileError("unable to translate C expr: unex
 pub inline fn sk_SXNETID_set_cmp_func(sk: anytype, cmp: anytype) sk_SXNETID_compfunc {
     _ = &sk;
     _ = &cmp;
-    return @import("std").zig.c_translation.cast(sk_SXNETID_compfunc, OPENSSL_sk_set_cmp_func(ossl_check_SXNETID_sk_type(sk), ossl_check_SXNETID_compfunc_type(cmp)));
+    return @import("std").zig.c_translation.helpers.cast(sk_SXNETID_compfunc, OPENSSL_sk_set_cmp_func(ossl_check_SXNETID_sk_type(sk), ossl_check_SXNETID_compfunc_type(cmp)));
 }
 pub inline fn sk_POLICYQUALINFO_num(sk: anytype) @TypeOf(OPENSSL_sk_num(ossl_check_const_POLICYQUALINFO_sk_type(sk))) {
     _ = &sk;
@@ -47987,7 +47987,7 @@ pub inline fn sk_POLICYQUALINFO_num(sk: anytype) @TypeOf(OPENSSL_sk_num(ossl_che
 pub inline fn sk_POLICYQUALINFO_value(sk: anytype, idx: anytype) [*c]POLICYQUALINFO {
     _ = &sk;
     _ = &idx;
-    return @import("std").zig.c_translation.cast([*c]POLICYQUALINFO, OPENSSL_sk_value(ossl_check_const_POLICYQUALINFO_sk_type(sk), idx));
+    return @import("std").zig.c_translation.helpers.cast([*c]POLICYQUALINFO, OPENSSL_sk_value(ossl_check_const_POLICYQUALINFO_sk_type(sk), idx));
 }
 pub const sk_POLICYQUALINFO_new = @compileError("unable to translate C expr: unexpected token ')'");
 // /usr/include/openssl/x509v3.h:436:9
@@ -48011,12 +48011,12 @@ pub inline fn sk_POLICYQUALINFO_zero(sk: anytype) @TypeOf(OPENSSL_sk_zero(ossl_c
 pub inline fn sk_POLICYQUALINFO_delete(sk: anytype, i: anytype) [*c]POLICYQUALINFO {
     _ = &sk;
     _ = &i;
-    return @import("std").zig.c_translation.cast([*c]POLICYQUALINFO, OPENSSL_sk_delete(ossl_check_POLICYQUALINFO_sk_type(sk), i));
+    return @import("std").zig.c_translation.helpers.cast([*c]POLICYQUALINFO, OPENSSL_sk_delete(ossl_check_POLICYQUALINFO_sk_type(sk), i));
 }
 pub inline fn sk_POLICYQUALINFO_delete_ptr(sk: anytype, ptr: anytype) [*c]POLICYQUALINFO {
     _ = &sk;
     _ = &ptr;
-    return @import("std").zig.c_translation.cast([*c]POLICYQUALINFO, OPENSSL_sk_delete_ptr(ossl_check_POLICYQUALINFO_sk_type(sk), ossl_check_POLICYQUALINFO_type(ptr)));
+    return @import("std").zig.c_translation.helpers.cast([*c]POLICYQUALINFO, OPENSSL_sk_delete_ptr(ossl_check_POLICYQUALINFO_sk_type(sk), ossl_check_POLICYQUALINFO_type(ptr)));
 }
 pub inline fn sk_POLICYQUALINFO_push(sk: anytype, ptr: anytype) @TypeOf(OPENSSL_sk_push(ossl_check_POLICYQUALINFO_sk_type(sk), ossl_check_POLICYQUALINFO_type(ptr))) {
     _ = &sk;
@@ -48030,11 +48030,11 @@ pub inline fn sk_POLICYQUALINFO_unshift(sk: anytype, ptr: anytype) @TypeOf(OPENS
 }
 pub inline fn sk_POLICYQUALINFO_pop(sk: anytype) [*c]POLICYQUALINFO {
     _ = &sk;
-    return @import("std").zig.c_translation.cast([*c]POLICYQUALINFO, OPENSSL_sk_pop(ossl_check_POLICYQUALINFO_sk_type(sk)));
+    return @import("std").zig.c_translation.helpers.cast([*c]POLICYQUALINFO, OPENSSL_sk_pop(ossl_check_POLICYQUALINFO_sk_type(sk)));
 }
 pub inline fn sk_POLICYQUALINFO_shift(sk: anytype) [*c]POLICYQUALINFO {
     _ = &sk;
-    return @import("std").zig.c_translation.cast([*c]POLICYQUALINFO, OPENSSL_sk_shift(ossl_check_POLICYQUALINFO_sk_type(sk)));
+    return @import("std").zig.c_translation.helpers.cast([*c]POLICYQUALINFO, OPENSSL_sk_shift(ossl_check_POLICYQUALINFO_sk_type(sk)));
 }
 pub inline fn sk_POLICYQUALINFO_pop_free(sk: anytype, freefunc: anytype) @TypeOf(OPENSSL_sk_pop_free(ossl_check_POLICYQUALINFO_sk_type(sk), ossl_check_POLICYQUALINFO_freefunc_type(freefunc))) {
     _ = &sk;
@@ -48051,7 +48051,7 @@ pub inline fn sk_POLICYQUALINFO_set(sk: anytype, idx: anytype, ptr: anytype) [*c
     _ = &sk;
     _ = &idx;
     _ = &ptr;
-    return @import("std").zig.c_translation.cast([*c]POLICYQUALINFO, OPENSSL_sk_set(ossl_check_POLICYQUALINFO_sk_type(sk), idx, ossl_check_POLICYQUALINFO_type(ptr)));
+    return @import("std").zig.c_translation.helpers.cast([*c]POLICYQUALINFO, OPENSSL_sk_set(ossl_check_POLICYQUALINFO_sk_type(sk), idx, ossl_check_POLICYQUALINFO_type(ptr)));
 }
 pub inline fn sk_POLICYQUALINFO_find(sk: anytype, ptr: anytype) @TypeOf(OPENSSL_sk_find(ossl_check_POLICYQUALINFO_sk_type(sk), ossl_check_POLICYQUALINFO_type(ptr))) {
     _ = &sk;
@@ -48084,7 +48084,7 @@ pub const sk_POLICYQUALINFO_deep_copy = @compileError("unable to translate C exp
 pub inline fn sk_POLICYQUALINFO_set_cmp_func(sk: anytype, cmp: anytype) sk_POLICYQUALINFO_compfunc {
     _ = &sk;
     _ = &cmp;
-    return @import("std").zig.c_translation.cast(sk_POLICYQUALINFO_compfunc, OPENSSL_sk_set_cmp_func(ossl_check_POLICYQUALINFO_sk_type(sk), ossl_check_POLICYQUALINFO_compfunc_type(cmp)));
+    return @import("std").zig.c_translation.helpers.cast(sk_POLICYQUALINFO_compfunc, OPENSSL_sk_set_cmp_func(ossl_check_POLICYQUALINFO_sk_type(sk), ossl_check_POLICYQUALINFO_compfunc_type(cmp)));
 }
 pub inline fn sk_POLICYINFO_num(sk: anytype) @TypeOf(OPENSSL_sk_num(ossl_check_const_POLICYINFO_sk_type(sk))) {
     _ = &sk;
@@ -48093,7 +48093,7 @@ pub inline fn sk_POLICYINFO_num(sk: anytype) @TypeOf(OPENSSL_sk_num(ossl_check_c
 pub inline fn sk_POLICYINFO_value(sk: anytype, idx: anytype) [*c]POLICYINFO {
     _ = &sk;
     _ = &idx;
-    return @import("std").zig.c_translation.cast([*c]POLICYINFO, OPENSSL_sk_value(ossl_check_const_POLICYINFO_sk_type(sk), idx));
+    return @import("std").zig.c_translation.helpers.cast([*c]POLICYINFO, OPENSSL_sk_value(ossl_check_const_POLICYINFO_sk_type(sk), idx));
 }
 pub const sk_POLICYINFO_new = @compileError("unable to translate C expr: unexpected token ')'");
 // /usr/include/openssl/x509v3.h:470:9
@@ -48117,12 +48117,12 @@ pub inline fn sk_POLICYINFO_zero(sk: anytype) @TypeOf(OPENSSL_sk_zero(ossl_check
 pub inline fn sk_POLICYINFO_delete(sk: anytype, i: anytype) [*c]POLICYINFO {
     _ = &sk;
     _ = &i;
-    return @import("std").zig.c_translation.cast([*c]POLICYINFO, OPENSSL_sk_delete(ossl_check_POLICYINFO_sk_type(sk), i));
+    return @import("std").zig.c_translation.helpers.cast([*c]POLICYINFO, OPENSSL_sk_delete(ossl_check_POLICYINFO_sk_type(sk), i));
 }
 pub inline fn sk_POLICYINFO_delete_ptr(sk: anytype, ptr: anytype) [*c]POLICYINFO {
     _ = &sk;
     _ = &ptr;
-    return @import("std").zig.c_translation.cast([*c]POLICYINFO, OPENSSL_sk_delete_ptr(ossl_check_POLICYINFO_sk_type(sk), ossl_check_POLICYINFO_type(ptr)));
+    return @import("std").zig.c_translation.helpers.cast([*c]POLICYINFO, OPENSSL_sk_delete_ptr(ossl_check_POLICYINFO_sk_type(sk), ossl_check_POLICYINFO_type(ptr)));
 }
 pub inline fn sk_POLICYINFO_push(sk: anytype, ptr: anytype) @TypeOf(OPENSSL_sk_push(ossl_check_POLICYINFO_sk_type(sk), ossl_check_POLICYINFO_type(ptr))) {
     _ = &sk;
@@ -48136,11 +48136,11 @@ pub inline fn sk_POLICYINFO_unshift(sk: anytype, ptr: anytype) @TypeOf(OPENSSL_s
 }
 pub inline fn sk_POLICYINFO_pop(sk: anytype) [*c]POLICYINFO {
     _ = &sk;
-    return @import("std").zig.c_translation.cast([*c]POLICYINFO, OPENSSL_sk_pop(ossl_check_POLICYINFO_sk_type(sk)));
+    return @import("std").zig.c_translation.helpers.cast([*c]POLICYINFO, OPENSSL_sk_pop(ossl_check_POLICYINFO_sk_type(sk)));
 }
 pub inline fn sk_POLICYINFO_shift(sk: anytype) [*c]POLICYINFO {
     _ = &sk;
-    return @import("std").zig.c_translation.cast([*c]POLICYINFO, OPENSSL_sk_shift(ossl_check_POLICYINFO_sk_type(sk)));
+    return @import("std").zig.c_translation.helpers.cast([*c]POLICYINFO, OPENSSL_sk_shift(ossl_check_POLICYINFO_sk_type(sk)));
 }
 pub inline fn sk_POLICYINFO_pop_free(sk: anytype, freefunc: anytype) @TypeOf(OPENSSL_sk_pop_free(ossl_check_POLICYINFO_sk_type(sk), ossl_check_POLICYINFO_freefunc_type(freefunc))) {
     _ = &sk;
@@ -48157,7 +48157,7 @@ pub inline fn sk_POLICYINFO_set(sk: anytype, idx: anytype, ptr: anytype) [*c]POL
     _ = &sk;
     _ = &idx;
     _ = &ptr;
-    return @import("std").zig.c_translation.cast([*c]POLICYINFO, OPENSSL_sk_set(ossl_check_POLICYINFO_sk_type(sk), idx, ossl_check_POLICYINFO_type(ptr)));
+    return @import("std").zig.c_translation.helpers.cast([*c]POLICYINFO, OPENSSL_sk_set(ossl_check_POLICYINFO_sk_type(sk), idx, ossl_check_POLICYINFO_type(ptr)));
 }
 pub inline fn sk_POLICYINFO_find(sk: anytype, ptr: anytype) @TypeOf(OPENSSL_sk_find(ossl_check_POLICYINFO_sk_type(sk), ossl_check_POLICYINFO_type(ptr))) {
     _ = &sk;
@@ -48190,7 +48190,7 @@ pub const sk_POLICYINFO_deep_copy = @compileError("unable to translate C expr: u
 pub inline fn sk_POLICYINFO_set_cmp_func(sk: anytype, cmp: anytype) sk_POLICYINFO_compfunc {
     _ = &sk;
     _ = &cmp;
-    return @import("std").zig.c_translation.cast(sk_POLICYINFO_compfunc, OPENSSL_sk_set_cmp_func(ossl_check_POLICYINFO_sk_type(sk), ossl_check_POLICYINFO_compfunc_type(cmp)));
+    return @import("std").zig.c_translation.helpers.cast(sk_POLICYINFO_compfunc, OPENSSL_sk_set_cmp_func(ossl_check_POLICYINFO_sk_type(sk), ossl_check_POLICYINFO_compfunc_type(cmp)));
 }
 pub inline fn sk_POLICY_MAPPING_num(sk: anytype) @TypeOf(OPENSSL_sk_num(ossl_check_const_POLICY_MAPPING_sk_type(sk))) {
     _ = &sk;
@@ -48199,7 +48199,7 @@ pub inline fn sk_POLICY_MAPPING_num(sk: anytype) @TypeOf(OPENSSL_sk_num(ossl_che
 pub inline fn sk_POLICY_MAPPING_value(sk: anytype, idx: anytype) [*c]POLICY_MAPPING {
     _ = &sk;
     _ = &idx;
-    return @import("std").zig.c_translation.cast([*c]POLICY_MAPPING, OPENSSL_sk_value(ossl_check_const_POLICY_MAPPING_sk_type(sk), idx));
+    return @import("std").zig.c_translation.helpers.cast([*c]POLICY_MAPPING, OPENSSL_sk_value(ossl_check_const_POLICY_MAPPING_sk_type(sk), idx));
 }
 pub const sk_POLICY_MAPPING_new = @compileError("unable to translate C expr: unexpected token ')'");
 // /usr/include/openssl/x509v3.h:505:9
@@ -48223,12 +48223,12 @@ pub inline fn sk_POLICY_MAPPING_zero(sk: anytype) @TypeOf(OPENSSL_sk_zero(ossl_c
 pub inline fn sk_POLICY_MAPPING_delete(sk: anytype, i: anytype) [*c]POLICY_MAPPING {
     _ = &sk;
     _ = &i;
-    return @import("std").zig.c_translation.cast([*c]POLICY_MAPPING, OPENSSL_sk_delete(ossl_check_POLICY_MAPPING_sk_type(sk), i));
+    return @import("std").zig.c_translation.helpers.cast([*c]POLICY_MAPPING, OPENSSL_sk_delete(ossl_check_POLICY_MAPPING_sk_type(sk), i));
 }
 pub inline fn sk_POLICY_MAPPING_delete_ptr(sk: anytype, ptr: anytype) [*c]POLICY_MAPPING {
     _ = &sk;
     _ = &ptr;
-    return @import("std").zig.c_translation.cast([*c]POLICY_MAPPING, OPENSSL_sk_delete_ptr(ossl_check_POLICY_MAPPING_sk_type(sk), ossl_check_POLICY_MAPPING_type(ptr)));
+    return @import("std").zig.c_translation.helpers.cast([*c]POLICY_MAPPING, OPENSSL_sk_delete_ptr(ossl_check_POLICY_MAPPING_sk_type(sk), ossl_check_POLICY_MAPPING_type(ptr)));
 }
 pub inline fn sk_POLICY_MAPPING_push(sk: anytype, ptr: anytype) @TypeOf(OPENSSL_sk_push(ossl_check_POLICY_MAPPING_sk_type(sk), ossl_check_POLICY_MAPPING_type(ptr))) {
     _ = &sk;
@@ -48242,11 +48242,11 @@ pub inline fn sk_POLICY_MAPPING_unshift(sk: anytype, ptr: anytype) @TypeOf(OPENS
 }
 pub inline fn sk_POLICY_MAPPING_pop(sk: anytype) [*c]POLICY_MAPPING {
     _ = &sk;
-    return @import("std").zig.c_translation.cast([*c]POLICY_MAPPING, OPENSSL_sk_pop(ossl_check_POLICY_MAPPING_sk_type(sk)));
+    return @import("std").zig.c_translation.helpers.cast([*c]POLICY_MAPPING, OPENSSL_sk_pop(ossl_check_POLICY_MAPPING_sk_type(sk)));
 }
 pub inline fn sk_POLICY_MAPPING_shift(sk: anytype) [*c]POLICY_MAPPING {
     _ = &sk;
-    return @import("std").zig.c_translation.cast([*c]POLICY_MAPPING, OPENSSL_sk_shift(ossl_check_POLICY_MAPPING_sk_type(sk)));
+    return @import("std").zig.c_translation.helpers.cast([*c]POLICY_MAPPING, OPENSSL_sk_shift(ossl_check_POLICY_MAPPING_sk_type(sk)));
 }
 pub inline fn sk_POLICY_MAPPING_pop_free(sk: anytype, freefunc: anytype) @TypeOf(OPENSSL_sk_pop_free(ossl_check_POLICY_MAPPING_sk_type(sk), ossl_check_POLICY_MAPPING_freefunc_type(freefunc))) {
     _ = &sk;
@@ -48263,7 +48263,7 @@ pub inline fn sk_POLICY_MAPPING_set(sk: anytype, idx: anytype, ptr: anytype) [*c
     _ = &sk;
     _ = &idx;
     _ = &ptr;
-    return @import("std").zig.c_translation.cast([*c]POLICY_MAPPING, OPENSSL_sk_set(ossl_check_POLICY_MAPPING_sk_type(sk), idx, ossl_check_POLICY_MAPPING_type(ptr)));
+    return @import("std").zig.c_translation.helpers.cast([*c]POLICY_MAPPING, OPENSSL_sk_set(ossl_check_POLICY_MAPPING_sk_type(sk), idx, ossl_check_POLICY_MAPPING_type(ptr)));
 }
 pub inline fn sk_POLICY_MAPPING_find(sk: anytype, ptr: anytype) @TypeOf(OPENSSL_sk_find(ossl_check_POLICY_MAPPING_sk_type(sk), ossl_check_POLICY_MAPPING_type(ptr))) {
     _ = &sk;
@@ -48296,7 +48296,7 @@ pub const sk_POLICY_MAPPING_deep_copy = @compileError("unable to translate C exp
 pub inline fn sk_POLICY_MAPPING_set_cmp_func(sk: anytype, cmp: anytype) sk_POLICY_MAPPING_compfunc {
     _ = &sk;
     _ = &cmp;
-    return @import("std").zig.c_translation.cast(sk_POLICY_MAPPING_compfunc, OPENSSL_sk_set_cmp_func(ossl_check_POLICY_MAPPING_sk_type(sk), ossl_check_POLICY_MAPPING_compfunc_type(cmp)));
+    return @import("std").zig.c_translation.helpers.cast(sk_POLICY_MAPPING_compfunc, OPENSSL_sk_set_cmp_func(ossl_check_POLICY_MAPPING_sk_type(sk), ossl_check_POLICY_MAPPING_compfunc_type(cmp)));
 }
 pub inline fn sk_GENERAL_SUBTREE_num(sk: anytype) @TypeOf(OPENSSL_sk_num(ossl_check_const_GENERAL_SUBTREE_sk_type(sk))) {
     _ = &sk;
@@ -48305,7 +48305,7 @@ pub inline fn sk_GENERAL_SUBTREE_num(sk: anytype) @TypeOf(OPENSSL_sk_num(ossl_ch
 pub inline fn sk_GENERAL_SUBTREE_value(sk: anytype, idx: anytype) [*c]GENERAL_SUBTREE {
     _ = &sk;
     _ = &idx;
-    return @import("std").zig.c_translation.cast([*c]GENERAL_SUBTREE, OPENSSL_sk_value(ossl_check_const_GENERAL_SUBTREE_sk_type(sk), idx));
+    return @import("std").zig.c_translation.helpers.cast([*c]GENERAL_SUBTREE, OPENSSL_sk_value(ossl_check_const_GENERAL_SUBTREE_sk_type(sk), idx));
 }
 pub const sk_GENERAL_SUBTREE_new = @compileError("unable to translate C expr: unexpected token ')'");
 // /usr/include/openssl/x509v3.h:541:9
@@ -48329,12 +48329,12 @@ pub inline fn sk_GENERAL_SUBTREE_zero(sk: anytype) @TypeOf(OPENSSL_sk_zero(ossl_
 pub inline fn sk_GENERAL_SUBTREE_delete(sk: anytype, i: anytype) [*c]GENERAL_SUBTREE {
     _ = &sk;
     _ = &i;
-    return @import("std").zig.c_translation.cast([*c]GENERAL_SUBTREE, OPENSSL_sk_delete(ossl_check_GENERAL_SUBTREE_sk_type(sk), i));
+    return @import("std").zig.c_translation.helpers.cast([*c]GENERAL_SUBTREE, OPENSSL_sk_delete(ossl_check_GENERAL_SUBTREE_sk_type(sk), i));
 }
 pub inline fn sk_GENERAL_SUBTREE_delete_ptr(sk: anytype, ptr: anytype) [*c]GENERAL_SUBTREE {
     _ = &sk;
     _ = &ptr;
-    return @import("std").zig.c_translation.cast([*c]GENERAL_SUBTREE, OPENSSL_sk_delete_ptr(ossl_check_GENERAL_SUBTREE_sk_type(sk), ossl_check_GENERAL_SUBTREE_type(ptr)));
+    return @import("std").zig.c_translation.helpers.cast([*c]GENERAL_SUBTREE, OPENSSL_sk_delete_ptr(ossl_check_GENERAL_SUBTREE_sk_type(sk), ossl_check_GENERAL_SUBTREE_type(ptr)));
 }
 pub inline fn sk_GENERAL_SUBTREE_push(sk: anytype, ptr: anytype) @TypeOf(OPENSSL_sk_push(ossl_check_GENERAL_SUBTREE_sk_type(sk), ossl_check_GENERAL_SUBTREE_type(ptr))) {
     _ = &sk;
@@ -48348,11 +48348,11 @@ pub inline fn sk_GENERAL_SUBTREE_unshift(sk: anytype, ptr: anytype) @TypeOf(OPEN
 }
 pub inline fn sk_GENERAL_SUBTREE_pop(sk: anytype) [*c]GENERAL_SUBTREE {
     _ = &sk;
-    return @import("std").zig.c_translation.cast([*c]GENERAL_SUBTREE, OPENSSL_sk_pop(ossl_check_GENERAL_SUBTREE_sk_type(sk)));
+    return @import("std").zig.c_translation.helpers.cast([*c]GENERAL_SUBTREE, OPENSSL_sk_pop(ossl_check_GENERAL_SUBTREE_sk_type(sk)));
 }
 pub inline fn sk_GENERAL_SUBTREE_shift(sk: anytype) [*c]GENERAL_SUBTREE {
     _ = &sk;
-    return @import("std").zig.c_translation.cast([*c]GENERAL_SUBTREE, OPENSSL_sk_shift(ossl_check_GENERAL_SUBTREE_sk_type(sk)));
+    return @import("std").zig.c_translation.helpers.cast([*c]GENERAL_SUBTREE, OPENSSL_sk_shift(ossl_check_GENERAL_SUBTREE_sk_type(sk)));
 }
 pub inline fn sk_GENERAL_SUBTREE_pop_free(sk: anytype, freefunc: anytype) @TypeOf(OPENSSL_sk_pop_free(ossl_check_GENERAL_SUBTREE_sk_type(sk), ossl_check_GENERAL_SUBTREE_freefunc_type(freefunc))) {
     _ = &sk;
@@ -48369,7 +48369,7 @@ pub inline fn sk_GENERAL_SUBTREE_set(sk: anytype, idx: anytype, ptr: anytype) [*
     _ = &sk;
     _ = &idx;
     _ = &ptr;
-    return @import("std").zig.c_translation.cast([*c]GENERAL_SUBTREE, OPENSSL_sk_set(ossl_check_GENERAL_SUBTREE_sk_type(sk), idx, ossl_check_GENERAL_SUBTREE_type(ptr)));
+    return @import("std").zig.c_translation.helpers.cast([*c]GENERAL_SUBTREE, OPENSSL_sk_set(ossl_check_GENERAL_SUBTREE_sk_type(sk), idx, ossl_check_GENERAL_SUBTREE_type(ptr)));
 }
 pub inline fn sk_GENERAL_SUBTREE_find(sk: anytype, ptr: anytype) @TypeOf(OPENSSL_sk_find(ossl_check_GENERAL_SUBTREE_sk_type(sk), ossl_check_GENERAL_SUBTREE_type(ptr))) {
     _ = &sk;
@@ -48402,7 +48402,7 @@ pub const sk_GENERAL_SUBTREE_deep_copy = @compileError("unable to translate C ex
 pub inline fn sk_GENERAL_SUBTREE_set_cmp_func(sk: anytype, cmp: anytype) sk_GENERAL_SUBTREE_compfunc {
     _ = &sk;
     _ = &cmp;
-    return @import("std").zig.c_translation.cast(sk_GENERAL_SUBTREE_compfunc, OPENSSL_sk_set_cmp_func(ossl_check_GENERAL_SUBTREE_sk_type(sk), ossl_check_GENERAL_SUBTREE_compfunc_type(cmp)));
+    return @import("std").zig.c_translation.helpers.cast(sk_GENERAL_SUBTREE_compfunc, OPENSSL_sk_set_cmp_func(ossl_check_GENERAL_SUBTREE_sk_type(sk), ossl_check_GENERAL_SUBTREE_compfunc_type(cmp)));
 }
 pub const IDP_PRESENT = @as(c_int, 0x1);
 pub const IDP_INVALID = @as(c_int, 0x2);
@@ -48443,11 +48443,11 @@ pub const EXFLAG_PROXY = @as(c_int, 0x400);
 pub const EXFLAG_INVALID_POLICY = @as(c_int, 0x800);
 pub const EXFLAG_FRESHEST = @as(c_int, 0x1000);
 pub const EXFLAG_SS = @as(c_int, 0x2000);
-pub const EXFLAG_BCONS_CRITICAL = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x10000, .hex);
-pub const EXFLAG_AKID_CRITICAL = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x20000, .hex);
-pub const EXFLAG_SKID_CRITICAL = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x40000, .hex);
-pub const EXFLAG_SAN_CRITICAL = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x80000, .hex);
-pub const EXFLAG_NO_FINGERPRINT = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x100000, .hex);
+pub const EXFLAG_BCONS_CRITICAL = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x10000, .hex);
+pub const EXFLAG_AKID_CRITICAL = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x20000, .hex);
+pub const EXFLAG_SKID_CRITICAL = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x40000, .hex);
+pub const EXFLAG_SAN_CRITICAL = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x80000, .hex);
+pub const EXFLAG_NO_FINGERPRINT = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x100000, .hex);
 pub const KU_DIGITAL_SIGNATURE = X509v3_KU_DIGITAL_SIGNATURE;
 pub const KU_NON_REPUDIATION = X509v3_KU_NON_REPUDIATION;
 pub const KU_KEY_ENCIPHERMENT = X509v3_KU_KEY_ENCIPHERMENT;
@@ -48483,7 +48483,7 @@ pub inline fn sk_X509_PURPOSE_num(sk: anytype) @TypeOf(OPENSSL_sk_num(ossl_check
 pub inline fn sk_X509_PURPOSE_value(sk: anytype, idx: anytype) [*c]X509_PURPOSE {
     _ = &sk;
     _ = &idx;
-    return @import("std").zig.c_translation.cast([*c]X509_PURPOSE, OPENSSL_sk_value(ossl_check_const_X509_PURPOSE_sk_type(sk), idx));
+    return @import("std").zig.c_translation.helpers.cast([*c]X509_PURPOSE, OPENSSL_sk_value(ossl_check_const_X509_PURPOSE_sk_type(sk), idx));
 }
 pub const sk_X509_PURPOSE_new = @compileError("unable to translate C expr: unexpected token ')'");
 // /usr/include/openssl/x509v3.h:719:9
@@ -48507,12 +48507,12 @@ pub inline fn sk_X509_PURPOSE_zero(sk: anytype) @TypeOf(OPENSSL_sk_zero(ossl_che
 pub inline fn sk_X509_PURPOSE_delete(sk: anytype, i: anytype) [*c]X509_PURPOSE {
     _ = &sk;
     _ = &i;
-    return @import("std").zig.c_translation.cast([*c]X509_PURPOSE, OPENSSL_sk_delete(ossl_check_X509_PURPOSE_sk_type(sk), i));
+    return @import("std").zig.c_translation.helpers.cast([*c]X509_PURPOSE, OPENSSL_sk_delete(ossl_check_X509_PURPOSE_sk_type(sk), i));
 }
 pub inline fn sk_X509_PURPOSE_delete_ptr(sk: anytype, ptr: anytype) [*c]X509_PURPOSE {
     _ = &sk;
     _ = &ptr;
-    return @import("std").zig.c_translation.cast([*c]X509_PURPOSE, OPENSSL_sk_delete_ptr(ossl_check_X509_PURPOSE_sk_type(sk), ossl_check_X509_PURPOSE_type(ptr)));
+    return @import("std").zig.c_translation.helpers.cast([*c]X509_PURPOSE, OPENSSL_sk_delete_ptr(ossl_check_X509_PURPOSE_sk_type(sk), ossl_check_X509_PURPOSE_type(ptr)));
 }
 pub inline fn sk_X509_PURPOSE_push(sk: anytype, ptr: anytype) @TypeOf(OPENSSL_sk_push(ossl_check_X509_PURPOSE_sk_type(sk), ossl_check_X509_PURPOSE_type(ptr))) {
     _ = &sk;
@@ -48526,11 +48526,11 @@ pub inline fn sk_X509_PURPOSE_unshift(sk: anytype, ptr: anytype) @TypeOf(OPENSSL
 }
 pub inline fn sk_X509_PURPOSE_pop(sk: anytype) [*c]X509_PURPOSE {
     _ = &sk;
-    return @import("std").zig.c_translation.cast([*c]X509_PURPOSE, OPENSSL_sk_pop(ossl_check_X509_PURPOSE_sk_type(sk)));
+    return @import("std").zig.c_translation.helpers.cast([*c]X509_PURPOSE, OPENSSL_sk_pop(ossl_check_X509_PURPOSE_sk_type(sk)));
 }
 pub inline fn sk_X509_PURPOSE_shift(sk: anytype) [*c]X509_PURPOSE {
     _ = &sk;
-    return @import("std").zig.c_translation.cast([*c]X509_PURPOSE, OPENSSL_sk_shift(ossl_check_X509_PURPOSE_sk_type(sk)));
+    return @import("std").zig.c_translation.helpers.cast([*c]X509_PURPOSE, OPENSSL_sk_shift(ossl_check_X509_PURPOSE_sk_type(sk)));
 }
 pub inline fn sk_X509_PURPOSE_pop_free(sk: anytype, freefunc: anytype) @TypeOf(OPENSSL_sk_pop_free(ossl_check_X509_PURPOSE_sk_type(sk), ossl_check_X509_PURPOSE_freefunc_type(freefunc))) {
     _ = &sk;
@@ -48547,7 +48547,7 @@ pub inline fn sk_X509_PURPOSE_set(sk: anytype, idx: anytype, ptr: anytype) [*c]X
     _ = &sk;
     _ = &idx;
     _ = &ptr;
-    return @import("std").zig.c_translation.cast([*c]X509_PURPOSE, OPENSSL_sk_set(ossl_check_X509_PURPOSE_sk_type(sk), idx, ossl_check_X509_PURPOSE_type(ptr)));
+    return @import("std").zig.c_translation.helpers.cast([*c]X509_PURPOSE, OPENSSL_sk_set(ossl_check_X509_PURPOSE_sk_type(sk), idx, ossl_check_X509_PURPOSE_type(ptr)));
 }
 pub inline fn sk_X509_PURPOSE_find(sk: anytype, ptr: anytype) @TypeOf(OPENSSL_sk_find(ossl_check_X509_PURPOSE_sk_type(sk), ossl_check_X509_PURPOSE_type(ptr))) {
     _ = &sk;
@@ -48580,7 +48580,7 @@ pub const sk_X509_PURPOSE_deep_copy = @compileError("unable to translate C expr:
 pub inline fn sk_X509_PURPOSE_set_cmp_func(sk: anytype, cmp: anytype) sk_X509_PURPOSE_compfunc {
     _ = &sk;
     _ = &cmp;
-    return @import("std").zig.c_translation.cast(sk_X509_PURPOSE_compfunc, OPENSSL_sk_set_cmp_func(ossl_check_X509_PURPOSE_sk_type(sk), ossl_check_X509_PURPOSE_compfunc_type(cmp)));
+    return @import("std").zig.c_translation.helpers.cast(sk_X509_PURPOSE_compfunc, OPENSSL_sk_set_cmp_func(ossl_check_X509_PURPOSE_sk_type(sk), ossl_check_X509_PURPOSE_compfunc_type(cmp)));
 }
 pub const X509_PURPOSE_SSL_CLIENT = @as(c_int, 1);
 pub const X509_PURPOSE_SSL_SERVER = @as(c_int, 2);
@@ -48615,7 +48615,7 @@ pub const X509_CHECK_FLAG_NO_PARTIAL_WILDCARDS = @as(c_int, 0x4);
 pub const X509_CHECK_FLAG_MULTI_LABEL_WILDCARDS = @as(c_int, 0x8);
 pub const X509_CHECK_FLAG_SINGLE_LABEL_SUBDOMAINS = @as(c_int, 0x10);
 pub const X509_CHECK_FLAG_NEVER_CHECK_SUBJECT = @as(c_int, 0x20);
-pub const _X509_CHECK_FLAG_DOT_SUBDOMAINS = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x8000, .hex);
+pub const _X509_CHECK_FLAG_DOT_SUBDOMAINS = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x8000, .hex);
 pub inline fn sk_X509_POLICY_NODE_num(sk: anytype) @TypeOf(OPENSSL_sk_num(ossl_check_const_X509_POLICY_NODE_sk_type(sk))) {
     _ = &sk;
     return OPENSSL_sk_num(ossl_check_const_X509_POLICY_NODE_sk_type(sk));
@@ -48623,7 +48623,7 @@ pub inline fn sk_X509_POLICY_NODE_num(sk: anytype) @TypeOf(OPENSSL_sk_num(ossl_c
 pub inline fn sk_X509_POLICY_NODE_value(sk: anytype, idx: anytype) [*c]X509_POLICY_NODE {
     _ = &sk;
     _ = &idx;
-    return @import("std").zig.c_translation.cast([*c]X509_POLICY_NODE, OPENSSL_sk_value(ossl_check_const_X509_POLICY_NODE_sk_type(sk), idx));
+    return @import("std").zig.c_translation.helpers.cast([*c]X509_POLICY_NODE, OPENSSL_sk_value(ossl_check_const_X509_POLICY_NODE_sk_type(sk), idx));
 }
 pub const sk_X509_POLICY_NODE_new = @compileError("unable to translate C expr: unexpected token ')'");
 // /usr/include/openssl/x509v3.h:1065:9
@@ -48647,12 +48647,12 @@ pub inline fn sk_X509_POLICY_NODE_zero(sk: anytype) @TypeOf(OPENSSL_sk_zero(ossl
 pub inline fn sk_X509_POLICY_NODE_delete(sk: anytype, i: anytype) [*c]X509_POLICY_NODE {
     _ = &sk;
     _ = &i;
-    return @import("std").zig.c_translation.cast([*c]X509_POLICY_NODE, OPENSSL_sk_delete(ossl_check_X509_POLICY_NODE_sk_type(sk), i));
+    return @import("std").zig.c_translation.helpers.cast([*c]X509_POLICY_NODE, OPENSSL_sk_delete(ossl_check_X509_POLICY_NODE_sk_type(sk), i));
 }
 pub inline fn sk_X509_POLICY_NODE_delete_ptr(sk: anytype, ptr: anytype) [*c]X509_POLICY_NODE {
     _ = &sk;
     _ = &ptr;
-    return @import("std").zig.c_translation.cast([*c]X509_POLICY_NODE, OPENSSL_sk_delete_ptr(ossl_check_X509_POLICY_NODE_sk_type(sk), ossl_check_X509_POLICY_NODE_type(ptr)));
+    return @import("std").zig.c_translation.helpers.cast([*c]X509_POLICY_NODE, OPENSSL_sk_delete_ptr(ossl_check_X509_POLICY_NODE_sk_type(sk), ossl_check_X509_POLICY_NODE_type(ptr)));
 }
 pub inline fn sk_X509_POLICY_NODE_push(sk: anytype, ptr: anytype) @TypeOf(OPENSSL_sk_push(ossl_check_X509_POLICY_NODE_sk_type(sk), ossl_check_X509_POLICY_NODE_type(ptr))) {
     _ = &sk;
@@ -48666,11 +48666,11 @@ pub inline fn sk_X509_POLICY_NODE_unshift(sk: anytype, ptr: anytype) @TypeOf(OPE
 }
 pub inline fn sk_X509_POLICY_NODE_pop(sk: anytype) [*c]X509_POLICY_NODE {
     _ = &sk;
-    return @import("std").zig.c_translation.cast([*c]X509_POLICY_NODE, OPENSSL_sk_pop(ossl_check_X509_POLICY_NODE_sk_type(sk)));
+    return @import("std").zig.c_translation.helpers.cast([*c]X509_POLICY_NODE, OPENSSL_sk_pop(ossl_check_X509_POLICY_NODE_sk_type(sk)));
 }
 pub inline fn sk_X509_POLICY_NODE_shift(sk: anytype) [*c]X509_POLICY_NODE {
     _ = &sk;
-    return @import("std").zig.c_translation.cast([*c]X509_POLICY_NODE, OPENSSL_sk_shift(ossl_check_X509_POLICY_NODE_sk_type(sk)));
+    return @import("std").zig.c_translation.helpers.cast([*c]X509_POLICY_NODE, OPENSSL_sk_shift(ossl_check_X509_POLICY_NODE_sk_type(sk)));
 }
 pub inline fn sk_X509_POLICY_NODE_pop_free(sk: anytype, freefunc: anytype) @TypeOf(OPENSSL_sk_pop_free(ossl_check_X509_POLICY_NODE_sk_type(sk), ossl_check_X509_POLICY_NODE_freefunc_type(freefunc))) {
     _ = &sk;
@@ -48687,7 +48687,7 @@ pub inline fn sk_X509_POLICY_NODE_set(sk: anytype, idx: anytype, ptr: anytype) [
     _ = &sk;
     _ = &idx;
     _ = &ptr;
-    return @import("std").zig.c_translation.cast([*c]X509_POLICY_NODE, OPENSSL_sk_set(ossl_check_X509_POLICY_NODE_sk_type(sk), idx, ossl_check_X509_POLICY_NODE_type(ptr)));
+    return @import("std").zig.c_translation.helpers.cast([*c]X509_POLICY_NODE, OPENSSL_sk_set(ossl_check_X509_POLICY_NODE_sk_type(sk), idx, ossl_check_X509_POLICY_NODE_type(ptr)));
 }
 pub inline fn sk_X509_POLICY_NODE_find(sk: anytype, ptr: anytype) @TypeOf(OPENSSL_sk_find(ossl_check_X509_POLICY_NODE_sk_type(sk), ossl_check_X509_POLICY_NODE_type(ptr))) {
     _ = &sk;
@@ -48720,7 +48720,7 @@ pub const sk_X509_POLICY_NODE_deep_copy = @compileError("unable to translate C e
 pub inline fn sk_X509_POLICY_NODE_set_cmp_func(sk: anytype, cmp: anytype) sk_X509_POLICY_NODE_compfunc {
     _ = &sk;
     _ = &cmp;
-    return @import("std").zig.c_translation.cast(sk_X509_POLICY_NODE_compfunc, OPENSSL_sk_set_cmp_func(ossl_check_X509_POLICY_NODE_sk_type(sk), ossl_check_X509_POLICY_NODE_compfunc_type(cmp)));
+    return @import("std").zig.c_translation.helpers.cast(sk_X509_POLICY_NODE_compfunc, OPENSSL_sk_set_cmp_func(ossl_check_X509_POLICY_NODE_sk_type(sk), ossl_check_X509_POLICY_NODE_compfunc_type(cmp)));
 }
 pub const ASIdOrRange_id = @as(c_int, 0);
 pub const ASIdOrRange_range = @as(c_int, 1);
@@ -48731,7 +48731,7 @@ pub inline fn sk_ASIdOrRange_num(sk: anytype) @TypeOf(OPENSSL_sk_num(ossl_check_
 pub inline fn sk_ASIdOrRange_value(sk: anytype, idx: anytype) [*c]ASIdOrRange {
     _ = &sk;
     _ = &idx;
-    return @import("std").zig.c_translation.cast([*c]ASIdOrRange, OPENSSL_sk_value(ossl_check_const_ASIdOrRange_sk_type(sk), idx));
+    return @import("std").zig.c_translation.helpers.cast([*c]ASIdOrRange, OPENSSL_sk_value(ossl_check_const_ASIdOrRange_sk_type(sk), idx));
 }
 pub const sk_ASIdOrRange_new = @compileError("unable to translate C expr: unexpected token ')'");
 // /usr/include/openssl/x509v3.h:1110:9
@@ -48755,12 +48755,12 @@ pub inline fn sk_ASIdOrRange_zero(sk: anytype) @TypeOf(OPENSSL_sk_zero(ossl_chec
 pub inline fn sk_ASIdOrRange_delete(sk: anytype, i: anytype) [*c]ASIdOrRange {
     _ = &sk;
     _ = &i;
-    return @import("std").zig.c_translation.cast([*c]ASIdOrRange, OPENSSL_sk_delete(ossl_check_ASIdOrRange_sk_type(sk), i));
+    return @import("std").zig.c_translation.helpers.cast([*c]ASIdOrRange, OPENSSL_sk_delete(ossl_check_ASIdOrRange_sk_type(sk), i));
 }
 pub inline fn sk_ASIdOrRange_delete_ptr(sk: anytype, ptr: anytype) [*c]ASIdOrRange {
     _ = &sk;
     _ = &ptr;
-    return @import("std").zig.c_translation.cast([*c]ASIdOrRange, OPENSSL_sk_delete_ptr(ossl_check_ASIdOrRange_sk_type(sk), ossl_check_ASIdOrRange_type(ptr)));
+    return @import("std").zig.c_translation.helpers.cast([*c]ASIdOrRange, OPENSSL_sk_delete_ptr(ossl_check_ASIdOrRange_sk_type(sk), ossl_check_ASIdOrRange_type(ptr)));
 }
 pub inline fn sk_ASIdOrRange_push(sk: anytype, ptr: anytype) @TypeOf(OPENSSL_sk_push(ossl_check_ASIdOrRange_sk_type(sk), ossl_check_ASIdOrRange_type(ptr))) {
     _ = &sk;
@@ -48774,11 +48774,11 @@ pub inline fn sk_ASIdOrRange_unshift(sk: anytype, ptr: anytype) @TypeOf(OPENSSL_
 }
 pub inline fn sk_ASIdOrRange_pop(sk: anytype) [*c]ASIdOrRange {
     _ = &sk;
-    return @import("std").zig.c_translation.cast([*c]ASIdOrRange, OPENSSL_sk_pop(ossl_check_ASIdOrRange_sk_type(sk)));
+    return @import("std").zig.c_translation.helpers.cast([*c]ASIdOrRange, OPENSSL_sk_pop(ossl_check_ASIdOrRange_sk_type(sk)));
 }
 pub inline fn sk_ASIdOrRange_shift(sk: anytype) [*c]ASIdOrRange {
     _ = &sk;
-    return @import("std").zig.c_translation.cast([*c]ASIdOrRange, OPENSSL_sk_shift(ossl_check_ASIdOrRange_sk_type(sk)));
+    return @import("std").zig.c_translation.helpers.cast([*c]ASIdOrRange, OPENSSL_sk_shift(ossl_check_ASIdOrRange_sk_type(sk)));
 }
 pub inline fn sk_ASIdOrRange_pop_free(sk: anytype, freefunc: anytype) @TypeOf(OPENSSL_sk_pop_free(ossl_check_ASIdOrRange_sk_type(sk), ossl_check_ASIdOrRange_freefunc_type(freefunc))) {
     _ = &sk;
@@ -48795,7 +48795,7 @@ pub inline fn sk_ASIdOrRange_set(sk: anytype, idx: anytype, ptr: anytype) [*c]AS
     _ = &sk;
     _ = &idx;
     _ = &ptr;
-    return @import("std").zig.c_translation.cast([*c]ASIdOrRange, OPENSSL_sk_set(ossl_check_ASIdOrRange_sk_type(sk), idx, ossl_check_ASIdOrRange_type(ptr)));
+    return @import("std").zig.c_translation.helpers.cast([*c]ASIdOrRange, OPENSSL_sk_set(ossl_check_ASIdOrRange_sk_type(sk), idx, ossl_check_ASIdOrRange_type(ptr)));
 }
 pub inline fn sk_ASIdOrRange_find(sk: anytype, ptr: anytype) @TypeOf(OPENSSL_sk_find(ossl_check_ASIdOrRange_sk_type(sk), ossl_check_ASIdOrRange_type(ptr))) {
     _ = &sk;
@@ -48828,7 +48828,7 @@ pub const sk_ASIdOrRange_deep_copy = @compileError("unable to translate C expr: 
 pub inline fn sk_ASIdOrRange_set_cmp_func(sk: anytype, cmp: anytype) sk_ASIdOrRange_compfunc {
     _ = &sk;
     _ = &cmp;
-    return @import("std").zig.c_translation.cast(sk_ASIdOrRange_compfunc, OPENSSL_sk_set_cmp_func(ossl_check_ASIdOrRange_sk_type(sk), ossl_check_ASIdOrRange_compfunc_type(cmp)));
+    return @import("std").zig.c_translation.helpers.cast(sk_ASIdOrRange_compfunc, OPENSSL_sk_set_cmp_func(ossl_check_ASIdOrRange_sk_type(sk), ossl_check_ASIdOrRange_compfunc_type(cmp)));
 }
 pub const ASIdentifierChoice_inherit = @as(c_int, 0);
 pub const ASIdentifierChoice_asIdsOrRanges = @as(c_int, 1);
@@ -48841,7 +48841,7 @@ pub inline fn sk_IPAddressOrRange_num(sk: anytype) @TypeOf(OPENSSL_sk_num(ossl_c
 pub inline fn sk_IPAddressOrRange_value(sk: anytype, idx: anytype) [*c]IPAddressOrRange {
     _ = &sk;
     _ = &idx;
-    return @import("std").zig.c_translation.cast([*c]IPAddressOrRange, OPENSSL_sk_value(ossl_check_const_IPAddressOrRange_sk_type(sk), idx));
+    return @import("std").zig.c_translation.helpers.cast([*c]IPAddressOrRange, OPENSSL_sk_value(ossl_check_const_IPAddressOrRange_sk_type(sk), idx));
 }
 pub const sk_IPAddressOrRange_new = @compileError("unable to translate C expr: unexpected token ')'");
 // /usr/include/openssl/x509v3.h:1175:9
@@ -48865,12 +48865,12 @@ pub inline fn sk_IPAddressOrRange_zero(sk: anytype) @TypeOf(OPENSSL_sk_zero(ossl
 pub inline fn sk_IPAddressOrRange_delete(sk: anytype, i: anytype) [*c]IPAddressOrRange {
     _ = &sk;
     _ = &i;
-    return @import("std").zig.c_translation.cast([*c]IPAddressOrRange, OPENSSL_sk_delete(ossl_check_IPAddressOrRange_sk_type(sk), i));
+    return @import("std").zig.c_translation.helpers.cast([*c]IPAddressOrRange, OPENSSL_sk_delete(ossl_check_IPAddressOrRange_sk_type(sk), i));
 }
 pub inline fn sk_IPAddressOrRange_delete_ptr(sk: anytype, ptr: anytype) [*c]IPAddressOrRange {
     _ = &sk;
     _ = &ptr;
-    return @import("std").zig.c_translation.cast([*c]IPAddressOrRange, OPENSSL_sk_delete_ptr(ossl_check_IPAddressOrRange_sk_type(sk), ossl_check_IPAddressOrRange_type(ptr)));
+    return @import("std").zig.c_translation.helpers.cast([*c]IPAddressOrRange, OPENSSL_sk_delete_ptr(ossl_check_IPAddressOrRange_sk_type(sk), ossl_check_IPAddressOrRange_type(ptr)));
 }
 pub inline fn sk_IPAddressOrRange_push(sk: anytype, ptr: anytype) @TypeOf(OPENSSL_sk_push(ossl_check_IPAddressOrRange_sk_type(sk), ossl_check_IPAddressOrRange_type(ptr))) {
     _ = &sk;
@@ -48884,11 +48884,11 @@ pub inline fn sk_IPAddressOrRange_unshift(sk: anytype, ptr: anytype) @TypeOf(OPE
 }
 pub inline fn sk_IPAddressOrRange_pop(sk: anytype) [*c]IPAddressOrRange {
     _ = &sk;
-    return @import("std").zig.c_translation.cast([*c]IPAddressOrRange, OPENSSL_sk_pop(ossl_check_IPAddressOrRange_sk_type(sk)));
+    return @import("std").zig.c_translation.helpers.cast([*c]IPAddressOrRange, OPENSSL_sk_pop(ossl_check_IPAddressOrRange_sk_type(sk)));
 }
 pub inline fn sk_IPAddressOrRange_shift(sk: anytype) [*c]IPAddressOrRange {
     _ = &sk;
-    return @import("std").zig.c_translation.cast([*c]IPAddressOrRange, OPENSSL_sk_shift(ossl_check_IPAddressOrRange_sk_type(sk)));
+    return @import("std").zig.c_translation.helpers.cast([*c]IPAddressOrRange, OPENSSL_sk_shift(ossl_check_IPAddressOrRange_sk_type(sk)));
 }
 pub inline fn sk_IPAddressOrRange_pop_free(sk: anytype, freefunc: anytype) @TypeOf(OPENSSL_sk_pop_free(ossl_check_IPAddressOrRange_sk_type(sk), ossl_check_IPAddressOrRange_freefunc_type(freefunc))) {
     _ = &sk;
@@ -48905,7 +48905,7 @@ pub inline fn sk_IPAddressOrRange_set(sk: anytype, idx: anytype, ptr: anytype) [
     _ = &sk;
     _ = &idx;
     _ = &ptr;
-    return @import("std").zig.c_translation.cast([*c]IPAddressOrRange, OPENSSL_sk_set(ossl_check_IPAddressOrRange_sk_type(sk), idx, ossl_check_IPAddressOrRange_type(ptr)));
+    return @import("std").zig.c_translation.helpers.cast([*c]IPAddressOrRange, OPENSSL_sk_set(ossl_check_IPAddressOrRange_sk_type(sk), idx, ossl_check_IPAddressOrRange_type(ptr)));
 }
 pub inline fn sk_IPAddressOrRange_find(sk: anytype, ptr: anytype) @TypeOf(OPENSSL_sk_find(ossl_check_IPAddressOrRange_sk_type(sk), ossl_check_IPAddressOrRange_type(ptr))) {
     _ = &sk;
@@ -48938,7 +48938,7 @@ pub const sk_IPAddressOrRange_deep_copy = @compileError("unable to translate C e
 pub inline fn sk_IPAddressOrRange_set_cmp_func(sk: anytype, cmp: anytype) sk_IPAddressOrRange_compfunc {
     _ = &sk;
     _ = &cmp;
-    return @import("std").zig.c_translation.cast(sk_IPAddressOrRange_compfunc, OPENSSL_sk_set_cmp_func(ossl_check_IPAddressOrRange_sk_type(sk), ossl_check_IPAddressOrRange_compfunc_type(cmp)));
+    return @import("std").zig.c_translation.helpers.cast(sk_IPAddressOrRange_compfunc, OPENSSL_sk_set_cmp_func(ossl_check_IPAddressOrRange_sk_type(sk), ossl_check_IPAddressOrRange_compfunc_type(cmp)));
 }
 pub const IPAddressChoice_inherit = @as(c_int, 0);
 pub const IPAddressChoice_addressesOrRanges = @as(c_int, 1);
@@ -48949,7 +48949,7 @@ pub inline fn sk_IPAddressFamily_num(sk: anytype) @TypeOf(OPENSSL_sk_num(ossl_ch
 pub inline fn sk_IPAddressFamily_value(sk: anytype, idx: anytype) [*c]IPAddressFamily {
     _ = &sk;
     _ = &idx;
-    return @import("std").zig.c_translation.cast([*c]IPAddressFamily, OPENSSL_sk_value(ossl_check_const_IPAddressFamily_sk_type(sk), idx));
+    return @import("std").zig.c_translation.helpers.cast([*c]IPAddressFamily, OPENSSL_sk_value(ossl_check_const_IPAddressFamily_sk_type(sk), idx));
 }
 pub const sk_IPAddressFamily_new = @compileError("unable to translate C expr: unexpected token ')'");
 // /usr/include/openssl/x509v3.h:1221:9
@@ -48973,12 +48973,12 @@ pub inline fn sk_IPAddressFamily_zero(sk: anytype) @TypeOf(OPENSSL_sk_zero(ossl_
 pub inline fn sk_IPAddressFamily_delete(sk: anytype, i: anytype) [*c]IPAddressFamily {
     _ = &sk;
     _ = &i;
-    return @import("std").zig.c_translation.cast([*c]IPAddressFamily, OPENSSL_sk_delete(ossl_check_IPAddressFamily_sk_type(sk), i));
+    return @import("std").zig.c_translation.helpers.cast([*c]IPAddressFamily, OPENSSL_sk_delete(ossl_check_IPAddressFamily_sk_type(sk), i));
 }
 pub inline fn sk_IPAddressFamily_delete_ptr(sk: anytype, ptr: anytype) [*c]IPAddressFamily {
     _ = &sk;
     _ = &ptr;
-    return @import("std").zig.c_translation.cast([*c]IPAddressFamily, OPENSSL_sk_delete_ptr(ossl_check_IPAddressFamily_sk_type(sk), ossl_check_IPAddressFamily_type(ptr)));
+    return @import("std").zig.c_translation.helpers.cast([*c]IPAddressFamily, OPENSSL_sk_delete_ptr(ossl_check_IPAddressFamily_sk_type(sk), ossl_check_IPAddressFamily_type(ptr)));
 }
 pub inline fn sk_IPAddressFamily_push(sk: anytype, ptr: anytype) @TypeOf(OPENSSL_sk_push(ossl_check_IPAddressFamily_sk_type(sk), ossl_check_IPAddressFamily_type(ptr))) {
     _ = &sk;
@@ -48992,11 +48992,11 @@ pub inline fn sk_IPAddressFamily_unshift(sk: anytype, ptr: anytype) @TypeOf(OPEN
 }
 pub inline fn sk_IPAddressFamily_pop(sk: anytype) [*c]IPAddressFamily {
     _ = &sk;
-    return @import("std").zig.c_translation.cast([*c]IPAddressFamily, OPENSSL_sk_pop(ossl_check_IPAddressFamily_sk_type(sk)));
+    return @import("std").zig.c_translation.helpers.cast([*c]IPAddressFamily, OPENSSL_sk_pop(ossl_check_IPAddressFamily_sk_type(sk)));
 }
 pub inline fn sk_IPAddressFamily_shift(sk: anytype) [*c]IPAddressFamily {
     _ = &sk;
-    return @import("std").zig.c_translation.cast([*c]IPAddressFamily, OPENSSL_sk_shift(ossl_check_IPAddressFamily_sk_type(sk)));
+    return @import("std").zig.c_translation.helpers.cast([*c]IPAddressFamily, OPENSSL_sk_shift(ossl_check_IPAddressFamily_sk_type(sk)));
 }
 pub inline fn sk_IPAddressFamily_pop_free(sk: anytype, freefunc: anytype) @TypeOf(OPENSSL_sk_pop_free(ossl_check_IPAddressFamily_sk_type(sk), ossl_check_IPAddressFamily_freefunc_type(freefunc))) {
     _ = &sk;
@@ -49013,7 +49013,7 @@ pub inline fn sk_IPAddressFamily_set(sk: anytype, idx: anytype, ptr: anytype) [*
     _ = &sk;
     _ = &idx;
     _ = &ptr;
-    return @import("std").zig.c_translation.cast([*c]IPAddressFamily, OPENSSL_sk_set(ossl_check_IPAddressFamily_sk_type(sk), idx, ossl_check_IPAddressFamily_type(ptr)));
+    return @import("std").zig.c_translation.helpers.cast([*c]IPAddressFamily, OPENSSL_sk_set(ossl_check_IPAddressFamily_sk_type(sk), idx, ossl_check_IPAddressFamily_type(ptr)));
 }
 pub inline fn sk_IPAddressFamily_find(sk: anytype, ptr: anytype) @TypeOf(OPENSSL_sk_find(ossl_check_IPAddressFamily_sk_type(sk), ossl_check_IPAddressFamily_type(ptr))) {
     _ = &sk;
@@ -49046,7 +49046,7 @@ pub const sk_IPAddressFamily_deep_copy = @compileError("unable to translate C ex
 pub inline fn sk_IPAddressFamily_set_cmp_func(sk: anytype, cmp: anytype) sk_IPAddressFamily_compfunc {
     _ = &sk;
     _ = &cmp;
-    return @import("std").zig.c_translation.cast(sk_IPAddressFamily_compfunc, OPENSSL_sk_set_cmp_func(ossl_check_IPAddressFamily_sk_type(sk), ossl_check_IPAddressFamily_compfunc_type(cmp)));
+    return @import("std").zig.c_translation.helpers.cast(sk_IPAddressFamily_compfunc, OPENSSL_sk_set_cmp_func(ossl_check_IPAddressFamily_sk_type(sk), ossl_check_IPAddressFamily_compfunc_type(cmp)));
 }
 pub const V3_ASID_ASNUM = @as(c_int, 0);
 pub const V3_ASID_RDI = @as(c_int, 1);
@@ -49059,7 +49059,7 @@ pub inline fn sk_ASN1_STRING_num(sk: anytype) @TypeOf(OPENSSL_sk_num(ossl_check_
 pub inline fn sk_ASN1_STRING_value(sk: anytype, idx: anytype) [*c]ASN1_STRING {
     _ = &sk;
     _ = &idx;
-    return @import("std").zig.c_translation.cast([*c]ASN1_STRING, OPENSSL_sk_value(ossl_check_const_ASN1_STRING_sk_type(sk), idx));
+    return @import("std").zig.c_translation.helpers.cast([*c]ASN1_STRING, OPENSSL_sk_value(ossl_check_const_ASN1_STRING_sk_type(sk), idx));
 }
 pub const sk_ASN1_STRING_new = @compileError("unable to translate C expr: unexpected token ')'");
 // /usr/include/openssl/x509v3.h:1322:9
@@ -49083,12 +49083,12 @@ pub inline fn sk_ASN1_STRING_zero(sk: anytype) @TypeOf(OPENSSL_sk_zero(ossl_chec
 pub inline fn sk_ASN1_STRING_delete(sk: anytype, i: anytype) [*c]ASN1_STRING {
     _ = &sk;
     _ = &i;
-    return @import("std").zig.c_translation.cast([*c]ASN1_STRING, OPENSSL_sk_delete(ossl_check_ASN1_STRING_sk_type(sk), i));
+    return @import("std").zig.c_translation.helpers.cast([*c]ASN1_STRING, OPENSSL_sk_delete(ossl_check_ASN1_STRING_sk_type(sk), i));
 }
 pub inline fn sk_ASN1_STRING_delete_ptr(sk: anytype, ptr: anytype) [*c]ASN1_STRING {
     _ = &sk;
     _ = &ptr;
-    return @import("std").zig.c_translation.cast([*c]ASN1_STRING, OPENSSL_sk_delete_ptr(ossl_check_ASN1_STRING_sk_type(sk), ossl_check_ASN1_STRING_type(ptr)));
+    return @import("std").zig.c_translation.helpers.cast([*c]ASN1_STRING, OPENSSL_sk_delete_ptr(ossl_check_ASN1_STRING_sk_type(sk), ossl_check_ASN1_STRING_type(ptr)));
 }
 pub inline fn sk_ASN1_STRING_push(sk: anytype, ptr: anytype) @TypeOf(OPENSSL_sk_push(ossl_check_ASN1_STRING_sk_type(sk), ossl_check_ASN1_STRING_type(ptr))) {
     _ = &sk;
@@ -49102,11 +49102,11 @@ pub inline fn sk_ASN1_STRING_unshift(sk: anytype, ptr: anytype) @TypeOf(OPENSSL_
 }
 pub inline fn sk_ASN1_STRING_pop(sk: anytype) [*c]ASN1_STRING {
     _ = &sk;
-    return @import("std").zig.c_translation.cast([*c]ASN1_STRING, OPENSSL_sk_pop(ossl_check_ASN1_STRING_sk_type(sk)));
+    return @import("std").zig.c_translation.helpers.cast([*c]ASN1_STRING, OPENSSL_sk_pop(ossl_check_ASN1_STRING_sk_type(sk)));
 }
 pub inline fn sk_ASN1_STRING_shift(sk: anytype) [*c]ASN1_STRING {
     _ = &sk;
-    return @import("std").zig.c_translation.cast([*c]ASN1_STRING, OPENSSL_sk_shift(ossl_check_ASN1_STRING_sk_type(sk)));
+    return @import("std").zig.c_translation.helpers.cast([*c]ASN1_STRING, OPENSSL_sk_shift(ossl_check_ASN1_STRING_sk_type(sk)));
 }
 pub inline fn sk_ASN1_STRING_pop_free(sk: anytype, freefunc: anytype) @TypeOf(OPENSSL_sk_pop_free(ossl_check_ASN1_STRING_sk_type(sk), ossl_check_ASN1_STRING_freefunc_type(freefunc))) {
     _ = &sk;
@@ -49123,7 +49123,7 @@ pub inline fn sk_ASN1_STRING_set(sk: anytype, idx: anytype, ptr: anytype) [*c]AS
     _ = &sk;
     _ = &idx;
     _ = &ptr;
-    return @import("std").zig.c_translation.cast([*c]ASN1_STRING, OPENSSL_sk_set(ossl_check_ASN1_STRING_sk_type(sk), idx, ossl_check_ASN1_STRING_type(ptr)));
+    return @import("std").zig.c_translation.helpers.cast([*c]ASN1_STRING, OPENSSL_sk_set(ossl_check_ASN1_STRING_sk_type(sk), idx, ossl_check_ASN1_STRING_type(ptr)));
 }
 pub inline fn sk_ASN1_STRING_find(sk: anytype, ptr: anytype) @TypeOf(OPENSSL_sk_find(ossl_check_ASN1_STRING_sk_type(sk), ossl_check_ASN1_STRING_type(ptr))) {
     _ = &sk;
@@ -49156,7 +49156,7 @@ pub const sk_ASN1_STRING_deep_copy = @compileError("unable to translate C expr: 
 pub inline fn sk_ASN1_STRING_set_cmp_func(sk: anytype, cmp: anytype) sk_ASN1_STRING_compfunc {
     _ = &sk;
     _ = &cmp;
-    return @import("std").zig.c_translation.cast(sk_ASN1_STRING_compfunc, OPENSSL_sk_set_cmp_func(ossl_check_ASN1_STRING_sk_type(sk), ossl_check_ASN1_STRING_compfunc_type(cmp)));
+    return @import("std").zig.c_translation.helpers.cast(sk_ASN1_STRING_compfunc, OPENSSL_sk_set_cmp_func(ossl_check_ASN1_STRING_sk_type(sk), ossl_check_ASN1_STRING_compfunc_type(cmp)));
 }
 pub inline fn sk_PROFESSION_INFO_num(sk: anytype) @TypeOf(OPENSSL_sk_num(ossl_check_const_PROFESSION_INFO_sk_type(sk))) {
     _ = &sk;
@@ -49165,7 +49165,7 @@ pub inline fn sk_PROFESSION_INFO_num(sk: anytype) @TypeOf(OPENSSL_sk_num(ossl_ch
 pub inline fn sk_PROFESSION_INFO_value(sk: anytype, idx: anytype) [*c]PROFESSION_INFO {
     _ = &sk;
     _ = &idx;
-    return @import("std").zig.c_translation.cast([*c]PROFESSION_INFO, OPENSSL_sk_value(ossl_check_const_PROFESSION_INFO_sk_type(sk), idx));
+    return @import("std").zig.c_translation.helpers.cast([*c]PROFESSION_INFO, OPENSSL_sk_value(ossl_check_const_PROFESSION_INFO_sk_type(sk), idx));
 }
 pub const sk_PROFESSION_INFO_new = @compileError("unable to translate C expr: unexpected token ')'");
 // /usr/include/openssl/x509v3.h:1361:9
@@ -49189,12 +49189,12 @@ pub inline fn sk_PROFESSION_INFO_zero(sk: anytype) @TypeOf(OPENSSL_sk_zero(ossl_
 pub inline fn sk_PROFESSION_INFO_delete(sk: anytype, i: anytype) [*c]PROFESSION_INFO {
     _ = &sk;
     _ = &i;
-    return @import("std").zig.c_translation.cast([*c]PROFESSION_INFO, OPENSSL_sk_delete(ossl_check_PROFESSION_INFO_sk_type(sk), i));
+    return @import("std").zig.c_translation.helpers.cast([*c]PROFESSION_INFO, OPENSSL_sk_delete(ossl_check_PROFESSION_INFO_sk_type(sk), i));
 }
 pub inline fn sk_PROFESSION_INFO_delete_ptr(sk: anytype, ptr: anytype) [*c]PROFESSION_INFO {
     _ = &sk;
     _ = &ptr;
-    return @import("std").zig.c_translation.cast([*c]PROFESSION_INFO, OPENSSL_sk_delete_ptr(ossl_check_PROFESSION_INFO_sk_type(sk), ossl_check_PROFESSION_INFO_type(ptr)));
+    return @import("std").zig.c_translation.helpers.cast([*c]PROFESSION_INFO, OPENSSL_sk_delete_ptr(ossl_check_PROFESSION_INFO_sk_type(sk), ossl_check_PROFESSION_INFO_type(ptr)));
 }
 pub inline fn sk_PROFESSION_INFO_push(sk: anytype, ptr: anytype) @TypeOf(OPENSSL_sk_push(ossl_check_PROFESSION_INFO_sk_type(sk), ossl_check_PROFESSION_INFO_type(ptr))) {
     _ = &sk;
@@ -49208,11 +49208,11 @@ pub inline fn sk_PROFESSION_INFO_unshift(sk: anytype, ptr: anytype) @TypeOf(OPEN
 }
 pub inline fn sk_PROFESSION_INFO_pop(sk: anytype) [*c]PROFESSION_INFO {
     _ = &sk;
-    return @import("std").zig.c_translation.cast([*c]PROFESSION_INFO, OPENSSL_sk_pop(ossl_check_PROFESSION_INFO_sk_type(sk)));
+    return @import("std").zig.c_translation.helpers.cast([*c]PROFESSION_INFO, OPENSSL_sk_pop(ossl_check_PROFESSION_INFO_sk_type(sk)));
 }
 pub inline fn sk_PROFESSION_INFO_shift(sk: anytype) [*c]PROFESSION_INFO {
     _ = &sk;
-    return @import("std").zig.c_translation.cast([*c]PROFESSION_INFO, OPENSSL_sk_shift(ossl_check_PROFESSION_INFO_sk_type(sk)));
+    return @import("std").zig.c_translation.helpers.cast([*c]PROFESSION_INFO, OPENSSL_sk_shift(ossl_check_PROFESSION_INFO_sk_type(sk)));
 }
 pub inline fn sk_PROFESSION_INFO_pop_free(sk: anytype, freefunc: anytype) @TypeOf(OPENSSL_sk_pop_free(ossl_check_PROFESSION_INFO_sk_type(sk), ossl_check_PROFESSION_INFO_freefunc_type(freefunc))) {
     _ = &sk;
@@ -49229,7 +49229,7 @@ pub inline fn sk_PROFESSION_INFO_set(sk: anytype, idx: anytype, ptr: anytype) [*
     _ = &sk;
     _ = &idx;
     _ = &ptr;
-    return @import("std").zig.c_translation.cast([*c]PROFESSION_INFO, OPENSSL_sk_set(ossl_check_PROFESSION_INFO_sk_type(sk), idx, ossl_check_PROFESSION_INFO_type(ptr)));
+    return @import("std").zig.c_translation.helpers.cast([*c]PROFESSION_INFO, OPENSSL_sk_set(ossl_check_PROFESSION_INFO_sk_type(sk), idx, ossl_check_PROFESSION_INFO_type(ptr)));
 }
 pub inline fn sk_PROFESSION_INFO_find(sk: anytype, ptr: anytype) @TypeOf(OPENSSL_sk_find(ossl_check_PROFESSION_INFO_sk_type(sk), ossl_check_PROFESSION_INFO_type(ptr))) {
     _ = &sk;
@@ -49262,7 +49262,7 @@ pub const sk_PROFESSION_INFO_deep_copy = @compileError("unable to translate C ex
 pub inline fn sk_PROFESSION_INFO_set_cmp_func(sk: anytype, cmp: anytype) sk_PROFESSION_INFO_compfunc {
     _ = &sk;
     _ = &cmp;
-    return @import("std").zig.c_translation.cast(sk_PROFESSION_INFO_compfunc, OPENSSL_sk_set_cmp_func(ossl_check_PROFESSION_INFO_sk_type(sk), ossl_check_PROFESSION_INFO_compfunc_type(cmp)));
+    return @import("std").zig.c_translation.helpers.cast(sk_PROFESSION_INFO_compfunc, OPENSSL_sk_set_cmp_func(ossl_check_PROFESSION_INFO_sk_type(sk), ossl_check_PROFESSION_INFO_compfunc_type(cmp)));
 }
 pub inline fn sk_ADMISSIONS_num(sk: anytype) @TypeOf(OPENSSL_sk_num(ossl_check_const_ADMISSIONS_sk_type(sk))) {
     _ = &sk;
@@ -49271,7 +49271,7 @@ pub inline fn sk_ADMISSIONS_num(sk: anytype) @TypeOf(OPENSSL_sk_num(ossl_check_c
 pub inline fn sk_ADMISSIONS_value(sk: anytype, idx: anytype) [*c]ADMISSIONS {
     _ = &sk;
     _ = &idx;
-    return @import("std").zig.c_translation.cast([*c]ADMISSIONS, OPENSSL_sk_value(ossl_check_const_ADMISSIONS_sk_type(sk), idx));
+    return @import("std").zig.c_translation.helpers.cast([*c]ADMISSIONS, OPENSSL_sk_value(ossl_check_const_ADMISSIONS_sk_type(sk), idx));
 }
 pub const sk_ADMISSIONS_new = @compileError("unable to translate C expr: unexpected token ')'");
 // /usr/include/openssl/x509v3.h:1387:9
@@ -49295,12 +49295,12 @@ pub inline fn sk_ADMISSIONS_zero(sk: anytype) @TypeOf(OPENSSL_sk_zero(ossl_check
 pub inline fn sk_ADMISSIONS_delete(sk: anytype, i: anytype) [*c]ADMISSIONS {
     _ = &sk;
     _ = &i;
-    return @import("std").zig.c_translation.cast([*c]ADMISSIONS, OPENSSL_sk_delete(ossl_check_ADMISSIONS_sk_type(sk), i));
+    return @import("std").zig.c_translation.helpers.cast([*c]ADMISSIONS, OPENSSL_sk_delete(ossl_check_ADMISSIONS_sk_type(sk), i));
 }
 pub inline fn sk_ADMISSIONS_delete_ptr(sk: anytype, ptr: anytype) [*c]ADMISSIONS {
     _ = &sk;
     _ = &ptr;
-    return @import("std").zig.c_translation.cast([*c]ADMISSIONS, OPENSSL_sk_delete_ptr(ossl_check_ADMISSIONS_sk_type(sk), ossl_check_ADMISSIONS_type(ptr)));
+    return @import("std").zig.c_translation.helpers.cast([*c]ADMISSIONS, OPENSSL_sk_delete_ptr(ossl_check_ADMISSIONS_sk_type(sk), ossl_check_ADMISSIONS_type(ptr)));
 }
 pub inline fn sk_ADMISSIONS_push(sk: anytype, ptr: anytype) @TypeOf(OPENSSL_sk_push(ossl_check_ADMISSIONS_sk_type(sk), ossl_check_ADMISSIONS_type(ptr))) {
     _ = &sk;
@@ -49314,11 +49314,11 @@ pub inline fn sk_ADMISSIONS_unshift(sk: anytype, ptr: anytype) @TypeOf(OPENSSL_s
 }
 pub inline fn sk_ADMISSIONS_pop(sk: anytype) [*c]ADMISSIONS {
     _ = &sk;
-    return @import("std").zig.c_translation.cast([*c]ADMISSIONS, OPENSSL_sk_pop(ossl_check_ADMISSIONS_sk_type(sk)));
+    return @import("std").zig.c_translation.helpers.cast([*c]ADMISSIONS, OPENSSL_sk_pop(ossl_check_ADMISSIONS_sk_type(sk)));
 }
 pub inline fn sk_ADMISSIONS_shift(sk: anytype) [*c]ADMISSIONS {
     _ = &sk;
-    return @import("std").zig.c_translation.cast([*c]ADMISSIONS, OPENSSL_sk_shift(ossl_check_ADMISSIONS_sk_type(sk)));
+    return @import("std").zig.c_translation.helpers.cast([*c]ADMISSIONS, OPENSSL_sk_shift(ossl_check_ADMISSIONS_sk_type(sk)));
 }
 pub inline fn sk_ADMISSIONS_pop_free(sk: anytype, freefunc: anytype) @TypeOf(OPENSSL_sk_pop_free(ossl_check_ADMISSIONS_sk_type(sk), ossl_check_ADMISSIONS_freefunc_type(freefunc))) {
     _ = &sk;
@@ -49335,7 +49335,7 @@ pub inline fn sk_ADMISSIONS_set(sk: anytype, idx: anytype, ptr: anytype) [*c]ADM
     _ = &sk;
     _ = &idx;
     _ = &ptr;
-    return @import("std").zig.c_translation.cast([*c]ADMISSIONS, OPENSSL_sk_set(ossl_check_ADMISSIONS_sk_type(sk), idx, ossl_check_ADMISSIONS_type(ptr)));
+    return @import("std").zig.c_translation.helpers.cast([*c]ADMISSIONS, OPENSSL_sk_set(ossl_check_ADMISSIONS_sk_type(sk), idx, ossl_check_ADMISSIONS_type(ptr)));
 }
 pub inline fn sk_ADMISSIONS_find(sk: anytype, ptr: anytype) @TypeOf(OPENSSL_sk_find(ossl_check_ADMISSIONS_sk_type(sk), ossl_check_ADMISSIONS_type(ptr))) {
     _ = &sk;
@@ -49368,7 +49368,7 @@ pub const sk_ADMISSIONS_deep_copy = @compileError("unable to translate C expr: u
 pub inline fn sk_ADMISSIONS_set_cmp_func(sk: anytype, cmp: anytype) sk_ADMISSIONS_compfunc {
     _ = &sk;
     _ = &cmp;
-    return @import("std").zig.c_translation.cast(sk_ADMISSIONS_compfunc, OPENSSL_sk_set_cmp_func(ossl_check_ADMISSIONS_sk_type(sk), ossl_check_ADMISSIONS_compfunc_type(cmp)));
+    return @import("std").zig.c_translation.helpers.cast(sk_ADMISSIONS_compfunc, OPENSSL_sk_set_cmp_func(ossl_check_ADMISSIONS_sk_type(sk), ossl_check_ADMISSIONS_compfunc_type(cmp)));
 }
 pub inline fn sk_USERNOTICE_num(sk: anytype) @TypeOf(OPENSSL_sk_num(ossl_check_const_USERNOTICE_sk_type(sk))) {
     _ = &sk;
@@ -49377,7 +49377,7 @@ pub inline fn sk_USERNOTICE_num(sk: anytype) @TypeOf(OPENSSL_sk_num(ossl_check_c
 pub inline fn sk_USERNOTICE_value(sk: anytype, idx: anytype) [*c]USERNOTICE {
     _ = &sk;
     _ = &idx;
-    return @import("std").zig.c_translation.cast([*c]USERNOTICE, OPENSSL_sk_value(ossl_check_const_USERNOTICE_sk_type(sk), idx));
+    return @import("std").zig.c_translation.helpers.cast([*c]USERNOTICE, OPENSSL_sk_value(ossl_check_const_USERNOTICE_sk_type(sk), idx));
 }
 pub const sk_USERNOTICE_new = @compileError("unable to translate C expr: unexpected token ')'");
 // /usr/include/openssl/x509v3.h:1472:9
@@ -49401,12 +49401,12 @@ pub inline fn sk_USERNOTICE_zero(sk: anytype) @TypeOf(OPENSSL_sk_zero(ossl_check
 pub inline fn sk_USERNOTICE_delete(sk: anytype, i: anytype) [*c]USERNOTICE {
     _ = &sk;
     _ = &i;
-    return @import("std").zig.c_translation.cast([*c]USERNOTICE, OPENSSL_sk_delete(ossl_check_USERNOTICE_sk_type(sk), i));
+    return @import("std").zig.c_translation.helpers.cast([*c]USERNOTICE, OPENSSL_sk_delete(ossl_check_USERNOTICE_sk_type(sk), i));
 }
 pub inline fn sk_USERNOTICE_delete_ptr(sk: anytype, ptr: anytype) [*c]USERNOTICE {
     _ = &sk;
     _ = &ptr;
-    return @import("std").zig.c_translation.cast([*c]USERNOTICE, OPENSSL_sk_delete_ptr(ossl_check_USERNOTICE_sk_type(sk), ossl_check_USERNOTICE_type(ptr)));
+    return @import("std").zig.c_translation.helpers.cast([*c]USERNOTICE, OPENSSL_sk_delete_ptr(ossl_check_USERNOTICE_sk_type(sk), ossl_check_USERNOTICE_type(ptr)));
 }
 pub inline fn sk_USERNOTICE_push(sk: anytype, ptr: anytype) @TypeOf(OPENSSL_sk_push(ossl_check_USERNOTICE_sk_type(sk), ossl_check_USERNOTICE_type(ptr))) {
     _ = &sk;
@@ -49420,11 +49420,11 @@ pub inline fn sk_USERNOTICE_unshift(sk: anytype, ptr: anytype) @TypeOf(OPENSSL_s
 }
 pub inline fn sk_USERNOTICE_pop(sk: anytype) [*c]USERNOTICE {
     _ = &sk;
-    return @import("std").zig.c_translation.cast([*c]USERNOTICE, OPENSSL_sk_pop(ossl_check_USERNOTICE_sk_type(sk)));
+    return @import("std").zig.c_translation.helpers.cast([*c]USERNOTICE, OPENSSL_sk_pop(ossl_check_USERNOTICE_sk_type(sk)));
 }
 pub inline fn sk_USERNOTICE_shift(sk: anytype) [*c]USERNOTICE {
     _ = &sk;
-    return @import("std").zig.c_translation.cast([*c]USERNOTICE, OPENSSL_sk_shift(ossl_check_USERNOTICE_sk_type(sk)));
+    return @import("std").zig.c_translation.helpers.cast([*c]USERNOTICE, OPENSSL_sk_shift(ossl_check_USERNOTICE_sk_type(sk)));
 }
 pub inline fn sk_USERNOTICE_pop_free(sk: anytype, freefunc: anytype) @TypeOf(OPENSSL_sk_pop_free(ossl_check_USERNOTICE_sk_type(sk), ossl_check_USERNOTICE_freefunc_type(freefunc))) {
     _ = &sk;
@@ -49441,7 +49441,7 @@ pub inline fn sk_USERNOTICE_set(sk: anytype, idx: anytype, ptr: anytype) [*c]USE
     _ = &sk;
     _ = &idx;
     _ = &ptr;
-    return @import("std").zig.c_translation.cast([*c]USERNOTICE, OPENSSL_sk_set(ossl_check_USERNOTICE_sk_type(sk), idx, ossl_check_USERNOTICE_type(ptr)));
+    return @import("std").zig.c_translation.helpers.cast([*c]USERNOTICE, OPENSSL_sk_set(ossl_check_USERNOTICE_sk_type(sk), idx, ossl_check_USERNOTICE_type(ptr)));
 }
 pub inline fn sk_USERNOTICE_find(sk: anytype, ptr: anytype) @TypeOf(OPENSSL_sk_find(ossl_check_USERNOTICE_sk_type(sk), ossl_check_USERNOTICE_type(ptr))) {
     _ = &sk;
@@ -49474,7 +49474,7 @@ pub const sk_USERNOTICE_deep_copy = @compileError("unable to translate C expr: u
 pub inline fn sk_USERNOTICE_set_cmp_func(sk: anytype, cmp: anytype) sk_USERNOTICE_compfunc {
     _ = &sk;
     _ = &cmp;
-    return @import("std").zig.c_translation.cast(sk_USERNOTICE_compfunc, OPENSSL_sk_set_cmp_func(ossl_check_USERNOTICE_sk_type(sk), ossl_check_USERNOTICE_compfunc_type(cmp)));
+    return @import("std").zig.c_translation.helpers.cast(sk_USERNOTICE_compfunc, OPENSSL_sk_set_cmp_func(ossl_check_USERNOTICE_sk_type(sk), ossl_check_USERNOTICE_compfunc_type(cmp)));
 }
 pub const OPENSSL_OCSPERR_H = "";
 pub const OCSP_R_CERTIFICATE_VERIFY_ERROR = @as(c_int, 101);
@@ -49523,7 +49523,7 @@ pub inline fn sk_OCSP_CERTID_num(sk: anytype) @TypeOf(OPENSSL_sk_num(ossl_check_
 pub inline fn sk_OCSP_CERTID_value(sk: anytype, idx: anytype) [*c]OCSP_CERTID {
     _ = &sk;
     _ = &idx;
-    return @import("std").zig.c_translation.cast([*c]OCSP_CERTID, OPENSSL_sk_value(ossl_check_const_OCSP_CERTID_sk_type(sk), idx));
+    return @import("std").zig.c_translation.helpers.cast([*c]OCSP_CERTID, OPENSSL_sk_value(ossl_check_const_OCSP_CERTID_sk_type(sk), idx));
 }
 pub const sk_OCSP_CERTID_new = @compileError("unable to translate C expr: unexpected token ')'");
 // /usr/include/openssl/ocsp.h:98:9
@@ -49547,12 +49547,12 @@ pub inline fn sk_OCSP_CERTID_zero(sk: anytype) @TypeOf(OPENSSL_sk_zero(ossl_chec
 pub inline fn sk_OCSP_CERTID_delete(sk: anytype, i: anytype) [*c]OCSP_CERTID {
     _ = &sk;
     _ = &i;
-    return @import("std").zig.c_translation.cast([*c]OCSP_CERTID, OPENSSL_sk_delete(ossl_check_OCSP_CERTID_sk_type(sk), i));
+    return @import("std").zig.c_translation.helpers.cast([*c]OCSP_CERTID, OPENSSL_sk_delete(ossl_check_OCSP_CERTID_sk_type(sk), i));
 }
 pub inline fn sk_OCSP_CERTID_delete_ptr(sk: anytype, ptr: anytype) [*c]OCSP_CERTID {
     _ = &sk;
     _ = &ptr;
-    return @import("std").zig.c_translation.cast([*c]OCSP_CERTID, OPENSSL_sk_delete_ptr(ossl_check_OCSP_CERTID_sk_type(sk), ossl_check_OCSP_CERTID_type(ptr)));
+    return @import("std").zig.c_translation.helpers.cast([*c]OCSP_CERTID, OPENSSL_sk_delete_ptr(ossl_check_OCSP_CERTID_sk_type(sk), ossl_check_OCSP_CERTID_type(ptr)));
 }
 pub inline fn sk_OCSP_CERTID_push(sk: anytype, ptr: anytype) @TypeOf(OPENSSL_sk_push(ossl_check_OCSP_CERTID_sk_type(sk), ossl_check_OCSP_CERTID_type(ptr))) {
     _ = &sk;
@@ -49566,11 +49566,11 @@ pub inline fn sk_OCSP_CERTID_unshift(sk: anytype, ptr: anytype) @TypeOf(OPENSSL_
 }
 pub inline fn sk_OCSP_CERTID_pop(sk: anytype) [*c]OCSP_CERTID {
     _ = &sk;
-    return @import("std").zig.c_translation.cast([*c]OCSP_CERTID, OPENSSL_sk_pop(ossl_check_OCSP_CERTID_sk_type(sk)));
+    return @import("std").zig.c_translation.helpers.cast([*c]OCSP_CERTID, OPENSSL_sk_pop(ossl_check_OCSP_CERTID_sk_type(sk)));
 }
 pub inline fn sk_OCSP_CERTID_shift(sk: anytype) [*c]OCSP_CERTID {
     _ = &sk;
-    return @import("std").zig.c_translation.cast([*c]OCSP_CERTID, OPENSSL_sk_shift(ossl_check_OCSP_CERTID_sk_type(sk)));
+    return @import("std").zig.c_translation.helpers.cast([*c]OCSP_CERTID, OPENSSL_sk_shift(ossl_check_OCSP_CERTID_sk_type(sk)));
 }
 pub inline fn sk_OCSP_CERTID_pop_free(sk: anytype, freefunc: anytype) @TypeOf(OPENSSL_sk_pop_free(ossl_check_OCSP_CERTID_sk_type(sk), ossl_check_OCSP_CERTID_freefunc_type(freefunc))) {
     _ = &sk;
@@ -49587,7 +49587,7 @@ pub inline fn sk_OCSP_CERTID_set(sk: anytype, idx: anytype, ptr: anytype) [*c]OC
     _ = &sk;
     _ = &idx;
     _ = &ptr;
-    return @import("std").zig.c_translation.cast([*c]OCSP_CERTID, OPENSSL_sk_set(ossl_check_OCSP_CERTID_sk_type(sk), idx, ossl_check_OCSP_CERTID_type(ptr)));
+    return @import("std").zig.c_translation.helpers.cast([*c]OCSP_CERTID, OPENSSL_sk_set(ossl_check_OCSP_CERTID_sk_type(sk), idx, ossl_check_OCSP_CERTID_type(ptr)));
 }
 pub inline fn sk_OCSP_CERTID_find(sk: anytype, ptr: anytype) @TypeOf(OPENSSL_sk_find(ossl_check_OCSP_CERTID_sk_type(sk), ossl_check_OCSP_CERTID_type(ptr))) {
     _ = &sk;
@@ -49620,7 +49620,7 @@ pub const sk_OCSP_CERTID_deep_copy = @compileError("unable to translate C expr: 
 pub inline fn sk_OCSP_CERTID_set_cmp_func(sk: anytype, cmp: anytype) sk_OCSP_CERTID_compfunc {
     _ = &sk;
     _ = &cmp;
-    return @import("std").zig.c_translation.cast(sk_OCSP_CERTID_compfunc, OPENSSL_sk_set_cmp_func(ossl_check_OCSP_CERTID_sk_type(sk), ossl_check_OCSP_CERTID_compfunc_type(cmp)));
+    return @import("std").zig.c_translation.helpers.cast(sk_OCSP_CERTID_compfunc, OPENSSL_sk_set_cmp_func(ossl_check_OCSP_CERTID_sk_type(sk), ossl_check_OCSP_CERTID_compfunc_type(cmp)));
 }
 pub inline fn sk_OCSP_ONEREQ_num(sk: anytype) @TypeOf(OPENSSL_sk_num(ossl_check_const_OCSP_ONEREQ_sk_type(sk))) {
     _ = &sk;
@@ -49629,7 +49629,7 @@ pub inline fn sk_OCSP_ONEREQ_num(sk: anytype) @TypeOf(OPENSSL_sk_num(ossl_check_
 pub inline fn sk_OCSP_ONEREQ_value(sk: anytype, idx: anytype) [*c]OCSP_ONEREQ {
     _ = &sk;
     _ = &idx;
-    return @import("std").zig.c_translation.cast([*c]OCSP_ONEREQ, OPENSSL_sk_value(ossl_check_const_OCSP_ONEREQ_sk_type(sk), idx));
+    return @import("std").zig.c_translation.helpers.cast([*c]OCSP_ONEREQ, OPENSSL_sk_value(ossl_check_const_OCSP_ONEREQ_sk_type(sk), idx));
 }
 pub const sk_OCSP_ONEREQ_new = @compileError("unable to translate C expr: unexpected token ')'");
 // /usr/include/openssl/ocsp.h:124:9
@@ -49653,12 +49653,12 @@ pub inline fn sk_OCSP_ONEREQ_zero(sk: anytype) @TypeOf(OPENSSL_sk_zero(ossl_chec
 pub inline fn sk_OCSP_ONEREQ_delete(sk: anytype, i: anytype) [*c]OCSP_ONEREQ {
     _ = &sk;
     _ = &i;
-    return @import("std").zig.c_translation.cast([*c]OCSP_ONEREQ, OPENSSL_sk_delete(ossl_check_OCSP_ONEREQ_sk_type(sk), i));
+    return @import("std").zig.c_translation.helpers.cast([*c]OCSP_ONEREQ, OPENSSL_sk_delete(ossl_check_OCSP_ONEREQ_sk_type(sk), i));
 }
 pub inline fn sk_OCSP_ONEREQ_delete_ptr(sk: anytype, ptr: anytype) [*c]OCSP_ONEREQ {
     _ = &sk;
     _ = &ptr;
-    return @import("std").zig.c_translation.cast([*c]OCSP_ONEREQ, OPENSSL_sk_delete_ptr(ossl_check_OCSP_ONEREQ_sk_type(sk), ossl_check_OCSP_ONEREQ_type(ptr)));
+    return @import("std").zig.c_translation.helpers.cast([*c]OCSP_ONEREQ, OPENSSL_sk_delete_ptr(ossl_check_OCSP_ONEREQ_sk_type(sk), ossl_check_OCSP_ONEREQ_type(ptr)));
 }
 pub inline fn sk_OCSP_ONEREQ_push(sk: anytype, ptr: anytype) @TypeOf(OPENSSL_sk_push(ossl_check_OCSP_ONEREQ_sk_type(sk), ossl_check_OCSP_ONEREQ_type(ptr))) {
     _ = &sk;
@@ -49672,11 +49672,11 @@ pub inline fn sk_OCSP_ONEREQ_unshift(sk: anytype, ptr: anytype) @TypeOf(OPENSSL_
 }
 pub inline fn sk_OCSP_ONEREQ_pop(sk: anytype) [*c]OCSP_ONEREQ {
     _ = &sk;
-    return @import("std").zig.c_translation.cast([*c]OCSP_ONEREQ, OPENSSL_sk_pop(ossl_check_OCSP_ONEREQ_sk_type(sk)));
+    return @import("std").zig.c_translation.helpers.cast([*c]OCSP_ONEREQ, OPENSSL_sk_pop(ossl_check_OCSP_ONEREQ_sk_type(sk)));
 }
 pub inline fn sk_OCSP_ONEREQ_shift(sk: anytype) [*c]OCSP_ONEREQ {
     _ = &sk;
-    return @import("std").zig.c_translation.cast([*c]OCSP_ONEREQ, OPENSSL_sk_shift(ossl_check_OCSP_ONEREQ_sk_type(sk)));
+    return @import("std").zig.c_translation.helpers.cast([*c]OCSP_ONEREQ, OPENSSL_sk_shift(ossl_check_OCSP_ONEREQ_sk_type(sk)));
 }
 pub inline fn sk_OCSP_ONEREQ_pop_free(sk: anytype, freefunc: anytype) @TypeOf(OPENSSL_sk_pop_free(ossl_check_OCSP_ONEREQ_sk_type(sk), ossl_check_OCSP_ONEREQ_freefunc_type(freefunc))) {
     _ = &sk;
@@ -49693,7 +49693,7 @@ pub inline fn sk_OCSP_ONEREQ_set(sk: anytype, idx: anytype, ptr: anytype) [*c]OC
     _ = &sk;
     _ = &idx;
     _ = &ptr;
-    return @import("std").zig.c_translation.cast([*c]OCSP_ONEREQ, OPENSSL_sk_set(ossl_check_OCSP_ONEREQ_sk_type(sk), idx, ossl_check_OCSP_ONEREQ_type(ptr)));
+    return @import("std").zig.c_translation.helpers.cast([*c]OCSP_ONEREQ, OPENSSL_sk_set(ossl_check_OCSP_ONEREQ_sk_type(sk), idx, ossl_check_OCSP_ONEREQ_type(ptr)));
 }
 pub inline fn sk_OCSP_ONEREQ_find(sk: anytype, ptr: anytype) @TypeOf(OPENSSL_sk_find(ossl_check_OCSP_ONEREQ_sk_type(sk), ossl_check_OCSP_ONEREQ_type(ptr))) {
     _ = &sk;
@@ -49726,7 +49726,7 @@ pub const sk_OCSP_ONEREQ_deep_copy = @compileError("unable to translate C expr: 
 pub inline fn sk_OCSP_ONEREQ_set_cmp_func(sk: anytype, cmp: anytype) sk_OCSP_ONEREQ_compfunc {
     _ = &sk;
     _ = &cmp;
-    return @import("std").zig.c_translation.cast(sk_OCSP_ONEREQ_compfunc, OPENSSL_sk_set_cmp_func(ossl_check_OCSP_ONEREQ_sk_type(sk), ossl_check_OCSP_ONEREQ_compfunc_type(cmp)));
+    return @import("std").zig.c_translation.helpers.cast(sk_OCSP_ONEREQ_compfunc, OPENSSL_sk_set_cmp_func(ossl_check_OCSP_ONEREQ_sk_type(sk), ossl_check_OCSP_ONEREQ_compfunc_type(cmp)));
 }
 pub const OCSP_RESPONSE_STATUS_SUCCESSFUL = @as(c_int, 0);
 pub const OCSP_RESPONSE_STATUS_MALFORMEDREQUEST = @as(c_int, 1);
@@ -49743,7 +49743,7 @@ pub inline fn sk_OCSP_RESPID_num(sk: anytype) @TypeOf(OPENSSL_sk_num(ossl_check_
 pub inline fn sk_OCSP_RESPID_value(sk: anytype, idx: anytype) [*c]OCSP_RESPID {
     _ = &sk;
     _ = &idx;
-    return @import("std").zig.c_translation.cast([*c]OCSP_RESPID, OPENSSL_sk_value(ossl_check_const_OCSP_RESPID_sk_type(sk), idx));
+    return @import("std").zig.c_translation.helpers.cast([*c]OCSP_RESPID, OPENSSL_sk_value(ossl_check_const_OCSP_RESPID_sk_type(sk), idx));
 }
 pub const sk_OCSP_RESPID_new = @compileError("unable to translate C expr: unexpected token ')'");
 // /usr/include/openssl/ocsp.h:164:9
@@ -49767,12 +49767,12 @@ pub inline fn sk_OCSP_RESPID_zero(sk: anytype) @TypeOf(OPENSSL_sk_zero(ossl_chec
 pub inline fn sk_OCSP_RESPID_delete(sk: anytype, i: anytype) [*c]OCSP_RESPID {
     _ = &sk;
     _ = &i;
-    return @import("std").zig.c_translation.cast([*c]OCSP_RESPID, OPENSSL_sk_delete(ossl_check_OCSP_RESPID_sk_type(sk), i));
+    return @import("std").zig.c_translation.helpers.cast([*c]OCSP_RESPID, OPENSSL_sk_delete(ossl_check_OCSP_RESPID_sk_type(sk), i));
 }
 pub inline fn sk_OCSP_RESPID_delete_ptr(sk: anytype, ptr: anytype) [*c]OCSP_RESPID {
     _ = &sk;
     _ = &ptr;
-    return @import("std").zig.c_translation.cast([*c]OCSP_RESPID, OPENSSL_sk_delete_ptr(ossl_check_OCSP_RESPID_sk_type(sk), ossl_check_OCSP_RESPID_type(ptr)));
+    return @import("std").zig.c_translation.helpers.cast([*c]OCSP_RESPID, OPENSSL_sk_delete_ptr(ossl_check_OCSP_RESPID_sk_type(sk), ossl_check_OCSP_RESPID_type(ptr)));
 }
 pub inline fn sk_OCSP_RESPID_push(sk: anytype, ptr: anytype) @TypeOf(OPENSSL_sk_push(ossl_check_OCSP_RESPID_sk_type(sk), ossl_check_OCSP_RESPID_type(ptr))) {
     _ = &sk;
@@ -49786,11 +49786,11 @@ pub inline fn sk_OCSP_RESPID_unshift(sk: anytype, ptr: anytype) @TypeOf(OPENSSL_
 }
 pub inline fn sk_OCSP_RESPID_pop(sk: anytype) [*c]OCSP_RESPID {
     _ = &sk;
-    return @import("std").zig.c_translation.cast([*c]OCSP_RESPID, OPENSSL_sk_pop(ossl_check_OCSP_RESPID_sk_type(sk)));
+    return @import("std").zig.c_translation.helpers.cast([*c]OCSP_RESPID, OPENSSL_sk_pop(ossl_check_OCSP_RESPID_sk_type(sk)));
 }
 pub inline fn sk_OCSP_RESPID_shift(sk: anytype) [*c]OCSP_RESPID {
     _ = &sk;
-    return @import("std").zig.c_translation.cast([*c]OCSP_RESPID, OPENSSL_sk_shift(ossl_check_OCSP_RESPID_sk_type(sk)));
+    return @import("std").zig.c_translation.helpers.cast([*c]OCSP_RESPID, OPENSSL_sk_shift(ossl_check_OCSP_RESPID_sk_type(sk)));
 }
 pub inline fn sk_OCSP_RESPID_pop_free(sk: anytype, freefunc: anytype) @TypeOf(OPENSSL_sk_pop_free(ossl_check_OCSP_RESPID_sk_type(sk), ossl_check_OCSP_RESPID_freefunc_type(freefunc))) {
     _ = &sk;
@@ -49807,7 +49807,7 @@ pub inline fn sk_OCSP_RESPID_set(sk: anytype, idx: anytype, ptr: anytype) [*c]OC
     _ = &sk;
     _ = &idx;
     _ = &ptr;
-    return @import("std").zig.c_translation.cast([*c]OCSP_RESPID, OPENSSL_sk_set(ossl_check_OCSP_RESPID_sk_type(sk), idx, ossl_check_OCSP_RESPID_type(ptr)));
+    return @import("std").zig.c_translation.helpers.cast([*c]OCSP_RESPID, OPENSSL_sk_set(ossl_check_OCSP_RESPID_sk_type(sk), idx, ossl_check_OCSP_RESPID_type(ptr)));
 }
 pub inline fn sk_OCSP_RESPID_find(sk: anytype, ptr: anytype) @TypeOf(OPENSSL_sk_find(ossl_check_OCSP_RESPID_sk_type(sk), ossl_check_OCSP_RESPID_type(ptr))) {
     _ = &sk;
@@ -49840,7 +49840,7 @@ pub const sk_OCSP_RESPID_deep_copy = @compileError("unable to translate C expr: 
 pub inline fn sk_OCSP_RESPID_set_cmp_func(sk: anytype, cmp: anytype) sk_OCSP_RESPID_compfunc {
     _ = &sk;
     _ = &cmp;
-    return @import("std").zig.c_translation.cast(sk_OCSP_RESPID_compfunc, OPENSSL_sk_set_cmp_func(ossl_check_OCSP_RESPID_sk_type(sk), ossl_check_OCSP_RESPID_compfunc_type(cmp)));
+    return @import("std").zig.c_translation.helpers.cast(sk_OCSP_RESPID_compfunc, OPENSSL_sk_set_cmp_func(ossl_check_OCSP_RESPID_sk_type(sk), ossl_check_OCSP_RESPID_compfunc_type(cmp)));
 }
 pub const V_OCSP_CERTSTATUS_GOOD = @as(c_int, 0);
 pub const V_OCSP_CERTSTATUS_REVOKED = @as(c_int, 1);
@@ -49852,7 +49852,7 @@ pub inline fn sk_OCSP_SINGLERESP_num(sk: anytype) @TypeOf(OPENSSL_sk_num(ossl_ch
 pub inline fn sk_OCSP_SINGLERESP_value(sk: anytype, idx: anytype) [*c]OCSP_SINGLERESP {
     _ = &sk;
     _ = &idx;
-    return @import("std").zig.c_translation.cast([*c]OCSP_SINGLERESP, OPENSSL_sk_value(ossl_check_const_OCSP_SINGLERESP_sk_type(sk), idx));
+    return @import("std").zig.c_translation.helpers.cast([*c]OCSP_SINGLERESP, OPENSSL_sk_value(ossl_check_const_OCSP_SINGLERESP_sk_type(sk), idx));
 }
 pub const sk_OCSP_SINGLERESP_new = @compileError("unable to translate C expr: unexpected token ')'");
 // /usr/include/openssl/ocsp.h:201:9
@@ -49876,12 +49876,12 @@ pub inline fn sk_OCSP_SINGLERESP_zero(sk: anytype) @TypeOf(OPENSSL_sk_zero(ossl_
 pub inline fn sk_OCSP_SINGLERESP_delete(sk: anytype, i: anytype) [*c]OCSP_SINGLERESP {
     _ = &sk;
     _ = &i;
-    return @import("std").zig.c_translation.cast([*c]OCSP_SINGLERESP, OPENSSL_sk_delete(ossl_check_OCSP_SINGLERESP_sk_type(sk), i));
+    return @import("std").zig.c_translation.helpers.cast([*c]OCSP_SINGLERESP, OPENSSL_sk_delete(ossl_check_OCSP_SINGLERESP_sk_type(sk), i));
 }
 pub inline fn sk_OCSP_SINGLERESP_delete_ptr(sk: anytype, ptr: anytype) [*c]OCSP_SINGLERESP {
     _ = &sk;
     _ = &ptr;
-    return @import("std").zig.c_translation.cast([*c]OCSP_SINGLERESP, OPENSSL_sk_delete_ptr(ossl_check_OCSP_SINGLERESP_sk_type(sk), ossl_check_OCSP_SINGLERESP_type(ptr)));
+    return @import("std").zig.c_translation.helpers.cast([*c]OCSP_SINGLERESP, OPENSSL_sk_delete_ptr(ossl_check_OCSP_SINGLERESP_sk_type(sk), ossl_check_OCSP_SINGLERESP_type(ptr)));
 }
 pub inline fn sk_OCSP_SINGLERESP_push(sk: anytype, ptr: anytype) @TypeOf(OPENSSL_sk_push(ossl_check_OCSP_SINGLERESP_sk_type(sk), ossl_check_OCSP_SINGLERESP_type(ptr))) {
     _ = &sk;
@@ -49895,11 +49895,11 @@ pub inline fn sk_OCSP_SINGLERESP_unshift(sk: anytype, ptr: anytype) @TypeOf(OPEN
 }
 pub inline fn sk_OCSP_SINGLERESP_pop(sk: anytype) [*c]OCSP_SINGLERESP {
     _ = &sk;
-    return @import("std").zig.c_translation.cast([*c]OCSP_SINGLERESP, OPENSSL_sk_pop(ossl_check_OCSP_SINGLERESP_sk_type(sk)));
+    return @import("std").zig.c_translation.helpers.cast([*c]OCSP_SINGLERESP, OPENSSL_sk_pop(ossl_check_OCSP_SINGLERESP_sk_type(sk)));
 }
 pub inline fn sk_OCSP_SINGLERESP_shift(sk: anytype) [*c]OCSP_SINGLERESP {
     _ = &sk;
-    return @import("std").zig.c_translation.cast([*c]OCSP_SINGLERESP, OPENSSL_sk_shift(ossl_check_OCSP_SINGLERESP_sk_type(sk)));
+    return @import("std").zig.c_translation.helpers.cast([*c]OCSP_SINGLERESP, OPENSSL_sk_shift(ossl_check_OCSP_SINGLERESP_sk_type(sk)));
 }
 pub inline fn sk_OCSP_SINGLERESP_pop_free(sk: anytype, freefunc: anytype) @TypeOf(OPENSSL_sk_pop_free(ossl_check_OCSP_SINGLERESP_sk_type(sk), ossl_check_OCSP_SINGLERESP_freefunc_type(freefunc))) {
     _ = &sk;
@@ -49916,7 +49916,7 @@ pub inline fn sk_OCSP_SINGLERESP_set(sk: anytype, idx: anytype, ptr: anytype) [*
     _ = &sk;
     _ = &idx;
     _ = &ptr;
-    return @import("std").zig.c_translation.cast([*c]OCSP_SINGLERESP, OPENSSL_sk_set(ossl_check_OCSP_SINGLERESP_sk_type(sk), idx, ossl_check_OCSP_SINGLERESP_type(ptr)));
+    return @import("std").zig.c_translation.helpers.cast([*c]OCSP_SINGLERESP, OPENSSL_sk_set(ossl_check_OCSP_SINGLERESP_sk_type(sk), idx, ossl_check_OCSP_SINGLERESP_type(ptr)));
 }
 pub inline fn sk_OCSP_SINGLERESP_find(sk: anytype, ptr: anytype) @TypeOf(OPENSSL_sk_find(ossl_check_OCSP_SINGLERESP_sk_type(sk), ossl_check_OCSP_SINGLERESP_type(ptr))) {
     _ = &sk;
@@ -49949,7 +49949,7 @@ pub const sk_OCSP_SINGLERESP_deep_copy = @compileError("unable to translate C ex
 pub inline fn sk_OCSP_SINGLERESP_set_cmp_func(sk: anytype, cmp: anytype) sk_OCSP_SINGLERESP_compfunc {
     _ = &sk;
     _ = &cmp;
-    return @import("std").zig.c_translation.cast(sk_OCSP_SINGLERESP_compfunc, OPENSSL_sk_set_cmp_func(ossl_check_OCSP_SINGLERESP_sk_type(sk), ossl_check_OCSP_SINGLERESP_compfunc_type(cmp)));
+    return @import("std").zig.c_translation.helpers.cast(sk_OCSP_SINGLERESP_compfunc, OPENSSL_sk_set_cmp_func(ossl_check_OCSP_SINGLERESP_sk_type(sk), ossl_check_OCSP_SINGLERESP_compfunc_type(cmp)));
 }
 pub const PEM_STRING_OCSP_REQUEST = "OCSP REQUEST";
 pub const PEM_STRING_OCSP_RESPONSE = "OCSP RESPONSE";
@@ -49990,7 +49990,7 @@ pub inline fn ASN1_BIT_STRING_digest(data: anytype, @"type": anytype, md: anytyp
 }
 pub inline fn OCSP_CERTSTATUS_dup(cs: anytype) [*c]OCSP_CERTSTATUS {
     _ = &cs;
-    return @import("std").zig.c_translation.cast([*c]OCSP_CERTSTATUS, ASN1_dup(@import("std").zig.c_translation.cast([*c]i2d_of_void, i2d_OCSP_CERTSTATUS), @import("std").zig.c_translation.cast([*c]d2i_of_void, d2i_OCSP_CERTSTATUS), @import("std").zig.c_translation.cast([*c]u8, cs)));
+    return @import("std").zig.c_translation.helpers.cast([*c]OCSP_CERTSTATUS, ASN1_dup(@import("std").zig.c_translation.helpers.cast([*c]i2d_of_void, i2d_OCSP_CERTSTATUS), @import("std").zig.c_translation.helpers.cast([*c]d2i_of_void, d2i_OCSP_CERTSTATUS), @import("std").zig.c_translation.helpers.cast([*c]u8, cs)));
 }
 pub inline fn OCSP_REQ_CTX_new(io: anytype, buf_size: anytype) @TypeOf(OSSL_HTTP_REQ_CTX_new(io, io, buf_size)) {
     _ = &io;
@@ -50011,10 +50011,10 @@ pub inline fn OCSP_REQ_CTX_i2d(r: anytype, it: anytype, req: anytype) @TypeOf(OS
     _ = &req;
     return OSSL_HTTP_REQ_CTX_set1_req(r, "application/ocsp-request", it, req);
 }
-pub inline fn OCSP_REQ_CTX_set1_req(r: anytype, req: anytype) @TypeOf(OCSP_REQ_CTX_i2d(r, ASN1_ITEM_rptr(OCSP_REQUEST), @import("std").zig.c_translation.cast([*c]ASN1_VALUE, req))) {
+pub inline fn OCSP_REQ_CTX_set1_req(r: anytype, req: anytype) @TypeOf(OCSP_REQ_CTX_i2d(r, ASN1_ITEM_rptr(OCSP_REQUEST), @import("std").zig.c_translation.helpers.cast([*c]ASN1_VALUE, req))) {
     _ = &r;
     _ = &req;
-    return OCSP_REQ_CTX_i2d(r, ASN1_ITEM_rptr(OCSP_REQUEST), @import("std").zig.c_translation.cast([*c]ASN1_VALUE, req));
+    return OCSP_REQ_CTX_i2d(r, ASN1_ITEM_rptr(OCSP_REQUEST), @import("std").zig.c_translation.helpers.cast([*c]ASN1_VALUE, req));
 }
 pub const OCSP_REQ_CTX_nbio = OSSL_HTTP_REQ_CTX_nbio;
 pub const OCSP_REQ_CTX_nbio_d2i = OSSL_HTTP_REQ_CTX_nbio_d2i;
@@ -50100,21 +50100,21 @@ pub const NGX_CONF_FLAG = @as(c_int, 0x00000200);
 pub const NGX_CONF_ANY = @as(c_int, 0x00000400);
 pub const NGX_CONF_1MORE = @as(c_int, 0x00000800);
 pub const NGX_CONF_2MORE = @as(c_int, 0x00001000);
-pub const NGX_DIRECT_CONF = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x00010000, .hex);
-pub const NGX_MAIN_CONF = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x01000000, .hex);
-pub const NGX_ANY_CONF = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0xFF000000, .hex);
+pub const NGX_DIRECT_CONF = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x00010000, .hex);
+pub const NGX_MAIN_CONF = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x01000000, .hex);
+pub const NGX_ANY_CONF = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0xFF000000, .hex);
 pub const NGX_CONF_UNSET = -@as(c_int, 1);
-pub const NGX_CONF_UNSET_UINT = @import("std").zig.c_translation.cast(ngx_uint_t, -@as(c_int, 1));
-pub const NGX_CONF_UNSET_PTR = @import("std").zig.c_translation.cast(?*anyopaque, -@as(c_int, 1));
-pub const NGX_CONF_UNSET_SIZE = @import("std").zig.c_translation.cast(usize, -@as(c_int, 1));
-pub const NGX_CONF_UNSET_MSEC = @import("std").zig.c_translation.cast(ngx_msec_t, -@as(c_int, 1));
+pub const NGX_CONF_UNSET_UINT = @import("std").zig.c_translation.helpers.cast(ngx_uint_t, -@as(c_int, 1));
+pub const NGX_CONF_UNSET_PTR = @import("std").zig.c_translation.helpers.cast(?*anyopaque, -@as(c_int, 1));
+pub const NGX_CONF_UNSET_SIZE = @import("std").zig.c_translation.helpers.cast(usize, -@as(c_int, 1));
+pub const NGX_CONF_UNSET_MSEC = @import("std").zig.c_translation.helpers.cast(ngx_msec_t, -@as(c_int, 1));
 pub const NGX_CONF_OK = NULL;
-pub const NGX_CONF_ERROR = @import("std").zig.c_translation.cast(?*anyopaque, -@as(c_int, 1));
+pub const NGX_CONF_ERROR = @import("std").zig.c_translation.helpers.cast(?*anyopaque, -@as(c_int, 1));
 pub const NGX_CONF_BLOCK_START = @as(c_int, 1);
 pub const NGX_CONF_BLOCK_DONE = @as(c_int, 2);
 pub const NGX_CONF_FILE_DONE = @as(c_int, 3);
-pub const NGX_CORE_MODULE = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x45524F43, .hex);
-pub const NGX_CONF_MODULE = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x464E4F43, .hex);
+pub const NGX_CORE_MODULE = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x45524F43, .hex);
+pub const NGX_CONF_MODULE = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x464E4F43, .hex);
 pub const NGX_MAX_CONF_ERRSTR = @as(c_int, 1024);
 pub const ngx_null_command = @compileError("unable to translate C expr: unexpected token '{'");
 // src/core/ngx_conf_file.h:86:9
@@ -50156,13 +50156,13 @@ pub const ngx_conf_merge_bitmask_value = @compileError("unable to translate C ex
 // src/core/ngx_conf_file.h:262:9
 pub const _NGX_MODULE_H_INCLUDED_ = "";
 pub const _NGINX_H_INCLUDED_ = "";
-pub const nginx_version = @import("std").zig.c_translation.promoteIntLiteral(c_int, 1027004, .decimal);
+pub const nginx_version = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 1027004, .decimal);
 pub const NGINX_VERSION = "1.27.4";
 pub const NGINX_VER = "nginx/" ++ NGINX_VERSION;
 pub const NGINX_VER_BUILD = NGINX_VER;
 pub const NGINX_VAR = "NGINX";
 pub const NGX_OLDPID_EXT = ".oldbin";
-pub const NGX_MODULE_UNSET_INDEX = @import("std").zig.c_translation.cast(ngx_uint_t, -@as(c_int, 1));
+pub const NGX_MODULE_UNSET_INDEX = @import("std").zig.c_translation.helpers.cast(ngx_uint_t, -@as(c_int, 1));
 pub const NGX_MODULE_SIGNATURE_0 = ngx_value(NGX_PTR_SIZE) ++ "," ++ ngx_value(NGX_SIG_ATOMIC_T_SIZE) ++ "," ++ ngx_value(NGX_TIME_T_SIZE) ++ ",";
 pub const NGX_MODULE_SIGNATURE_1 = "0";
 pub const NGX_MODULE_SIGNATURE_2 = "0";
@@ -50360,9 +50360,9 @@ pub inline fn __BPF_FUNC_MAPPER(FN: anytype) @TypeOf(___BPF_FUNC_MAPPER(__BPF_FU
 }
 pub const __BPF_ENUM_FN = @compileError("unable to translate macro: undefined identifier `BPF_FUNC_`");
 // /usr/include/linux/bpf.h:6018:9
-pub inline fn BPF_F_ADJ_ROOM_ENCAP_L2(len: anytype) @TypeOf((@import("std").zig.c_translation.cast(__u64, len) & BPF_ADJ_ROOM_ENCAP_L2_MASK) << BPF_ADJ_ROOM_ENCAP_L2_SHIFT) {
+pub inline fn BPF_F_ADJ_ROOM_ENCAP_L2(len: anytype) @TypeOf((@import("std").zig.c_translation.helpers.cast(__u64, len) & BPF_ADJ_ROOM_ENCAP_L2_MASK) << BPF_ADJ_ROOM_ENCAP_L2_SHIFT) {
     _ = &len;
-    return (@import("std").zig.c_translation.cast(__u64, len) & BPF_ADJ_ROOM_ENCAP_L2_MASK) << BPF_ADJ_ROOM_ENCAP_L2_SHIFT;
+    return (@import("std").zig.c_translation.helpers.cast(__u64, len) & BPF_ADJ_ROOM_ENCAP_L2_MASK) << BPF_ADJ_ROOM_ENCAP_L2_SHIFT;
 }
 pub const __bpf_md_ptr = @compileError("unable to translate macro: undefined identifier `aligned`");
 // /usr/include/linux/bpf.h:6204:9
@@ -50376,8 +50376,8 @@ pub inline fn BPF_LINE_INFO_LINE_COL(line_col: anytype) @TypeOf(line_col & @as(c
     _ = &line_col;
     return line_col & @as(c_int, 0x3ff);
 }
-pub const LF = @import("std").zig.c_translation.cast(u_char, '\n');
-pub const CR = @import("std").zig.c_translation.cast(u_char, '\r');
+pub const LF = @import("std").zig.c_translation.helpers.cast(u_char, '\n');
+pub const CR = @import("std").zig.c_translation.helpers.cast(u_char, '\r');
 pub const CRLF = "\r\n";
 pub inline fn ngx_abs(value: anytype) @TypeOf(if (value >= @as(c_int, 0)) value else -value) {
     _ = &value;
@@ -50408,14 +50408,14 @@ pub const NGX_HTTP_VAR_PREFIX = @as(c_int, 32);
 pub const ngx_http_null_variable = @compileError("unable to translate C expr: unexpected token '{'");
 // src/http/ngx_http_variables.h:46:9
 pub const _NGX_HTTP_CONFIG_H_INCLUDED_ = "";
-pub const NGX_HTTP_MODULE = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x50545448, .hex);
-pub const NGX_HTTP_MAIN_CONF = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x02000000, .hex);
-pub const NGX_HTTP_SRV_CONF = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x04000000, .hex);
-pub const NGX_HTTP_LOC_CONF = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x08000000, .hex);
-pub const NGX_HTTP_UPS_CONF = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x10000000, .hex);
-pub const NGX_HTTP_SIF_CONF = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x20000000, .hex);
-pub const NGX_HTTP_LIF_CONF = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x40000000, .hex);
-pub const NGX_HTTP_LMT_CONF = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x80000000, .hex);
+pub const NGX_HTTP_MODULE = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x50545448, .hex);
+pub const NGX_HTTP_MAIN_CONF = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x02000000, .hex);
+pub const NGX_HTTP_SRV_CONF = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x04000000, .hex);
+pub const NGX_HTTP_LOC_CONF = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x08000000, .hex);
+pub const NGX_HTTP_UPS_CONF = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x10000000, .hex);
+pub const NGX_HTTP_SIF_CONF = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x20000000, .hex);
+pub const NGX_HTTP_LIF_CONF = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x40000000, .hex);
+pub const NGX_HTTP_LMT_CONF = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x80000000, .hex);
 pub const NGX_HTTP_MAIN_CONF_OFFSET = @compileError("unable to translate macro: undefined identifier `main_conf`");
 // src/http/ngx_http_config.h:50:9
 pub const NGX_HTTP_SRV_CONF_OFFSET = @compileError("unable to translate macro: undefined identifier `srv_conf`");
@@ -50437,25 +50437,25 @@ pub inline fn ngx_http_get_module_loc_conf(r: anytype, module: anytype) @TypeOf(
     _ = &module;
     return r.*.loc_conf[@as(usize, @intCast(module.ctx_index))];
 }
-pub inline fn ngx_http_conf_get_module_main_conf(cf: anytype, module: anytype) @TypeOf(@import("std").zig.c_translation.cast([*c]ngx_http_conf_ctx_t, cf.*.ctx).*.main_conf[@as(usize, @intCast(module.ctx_index))]) {
+pub inline fn ngx_http_conf_get_module_main_conf(cf: anytype, module: anytype) @TypeOf(@import("std").zig.c_translation.helpers.cast([*c]ngx_http_conf_ctx_t, cf.*.ctx).*.main_conf[@as(usize, @intCast(module.ctx_index))]) {
     _ = &cf;
     _ = &module;
-    return @import("std").zig.c_translation.cast([*c]ngx_http_conf_ctx_t, cf.*.ctx).*.main_conf[@as(usize, @intCast(module.ctx_index))];
+    return @import("std").zig.c_translation.helpers.cast([*c]ngx_http_conf_ctx_t, cf.*.ctx).*.main_conf[@as(usize, @intCast(module.ctx_index))];
 }
-pub inline fn ngx_http_conf_get_module_srv_conf(cf: anytype, module: anytype) @TypeOf(@import("std").zig.c_translation.cast([*c]ngx_http_conf_ctx_t, cf.*.ctx).*.srv_conf[@as(usize, @intCast(module.ctx_index))]) {
+pub inline fn ngx_http_conf_get_module_srv_conf(cf: anytype, module: anytype) @TypeOf(@import("std").zig.c_translation.helpers.cast([*c]ngx_http_conf_ctx_t, cf.*.ctx).*.srv_conf[@as(usize, @intCast(module.ctx_index))]) {
     _ = &cf;
     _ = &module;
-    return @import("std").zig.c_translation.cast([*c]ngx_http_conf_ctx_t, cf.*.ctx).*.srv_conf[@as(usize, @intCast(module.ctx_index))];
+    return @import("std").zig.c_translation.helpers.cast([*c]ngx_http_conf_ctx_t, cf.*.ctx).*.srv_conf[@as(usize, @intCast(module.ctx_index))];
 }
-pub inline fn ngx_http_conf_get_module_loc_conf(cf: anytype, module: anytype) @TypeOf(@import("std").zig.c_translation.cast([*c]ngx_http_conf_ctx_t, cf.*.ctx).*.loc_conf[@as(usize, @intCast(module.ctx_index))]) {
+pub inline fn ngx_http_conf_get_module_loc_conf(cf: anytype, module: anytype) @TypeOf(@import("std").zig.c_translation.helpers.cast([*c]ngx_http_conf_ctx_t, cf.*.ctx).*.loc_conf[@as(usize, @intCast(module.ctx_index))]) {
     _ = &cf;
     _ = &module;
-    return @import("std").zig.c_translation.cast([*c]ngx_http_conf_ctx_t, cf.*.ctx).*.loc_conf[@as(usize, @intCast(module.ctx_index))];
+    return @import("std").zig.c_translation.helpers.cast([*c]ngx_http_conf_ctx_t, cf.*.ctx).*.loc_conf[@as(usize, @intCast(module.ctx_index))];
 }
-pub inline fn ngx_http_cycle_get_module_main_conf(cycle: anytype, module: anytype) @TypeOf(if (cycle.*.conf_ctx[@as(usize, @intCast(ngx_http_module.index))]) @import("std").zig.c_translation.cast([*c]ngx_http_conf_ctx_t, cycle.*.conf_ctx[@as(usize, @intCast(ngx_http_module.index))]).*.main_conf[@as(usize, @intCast(module.ctx_index))] else NULL) {
+pub inline fn ngx_http_cycle_get_module_main_conf(cycle: anytype, module: anytype) @TypeOf(if (cycle.*.conf_ctx[@as(usize, @intCast(ngx_http_module.index))]) @import("std").zig.c_translation.helpers.cast([*c]ngx_http_conf_ctx_t, cycle.*.conf_ctx[@as(usize, @intCast(ngx_http_module.index))]).*.main_conf[@as(usize, @intCast(module.ctx_index))] else NULL) {
     _ = &cycle;
     _ = &module;
-    return if (cycle.*.conf_ctx[@as(usize, @intCast(ngx_http_module.index))]) @import("std").zig.c_translation.cast([*c]ngx_http_conf_ctx_t, cycle.*.conf_ctx[@as(usize, @intCast(ngx_http_module.index))]).*.main_conf[@as(usize, @intCast(module.ctx_index))] else NULL;
+    return if (cycle.*.conf_ctx[@as(usize, @intCast(ngx_http_module.index))]) @import("std").zig.c_translation.helpers.cast([*c]ngx_http_conf_ctx_t, cycle.*.conf_ctx[@as(usize, @intCast(ngx_http_module.index))]).*.main_conf[@as(usize, @intCast(module.ctx_index))] else NULL;
 }
 pub const _NGX_HTTP_REQUEST_H_INCLUDED_ = "";
 pub const NGX_HTTP_MAX_URI_CHANGES = @as(c_int, 10);
@@ -50483,8 +50483,8 @@ pub const NGX_HTTP_PROPPATCH = @as(c_int, 0x00000800);
 pub const NGX_HTTP_LOCK = @as(c_int, 0x00001000);
 pub const NGX_HTTP_UNLOCK = @as(c_int, 0x00002000);
 pub const NGX_HTTP_PATCH = @as(c_int, 0x00004000);
-pub const NGX_HTTP_TRACE = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x00008000, .hex);
-pub const NGX_HTTP_CONNECT = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x00010000, .hex);
+pub const NGX_HTTP_TRACE = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x00008000, .hex);
+pub const NGX_HTTP_CONNECT = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x00010000, .hex);
 pub const NGX_HTTP_CONNECTION_CLOSE = @as(c_int, 1);
 pub const NGX_HTTP_CONNECTION_KEEP_ALIVE = @as(c_int, 2);
 pub const NGX_NONE = @as(c_int, 1);
@@ -50553,14 +50553,14 @@ pub const NGX_HTTP_SUB_BUFFERED = @as(c_int, 0x02);
 pub const NGX_HTTP_COPY_BUFFERED = @as(c_int, 0x04);
 pub inline fn ngx_http_ephemeral(r: anytype) ?*anyopaque {
     _ = &r;
-    return @import("std").zig.c_translation.cast(?*anyopaque, &r.*.uri_start);
+    return @import("std").zig.c_translation.helpers.cast(?*anyopaque, &r.*.uri_start);
 }
 pub const ngx_http_set_log_request = @compileError("unable to translate C expr: unexpected token '='");
 // src/http/ngx_http_request.h:619:9
 pub const _NGX_HTTP_SCRIPT_H_INCLUDED_ = "";
 pub const _NGX_HTTP_UPSTREAM_H_INCLUDED_ = "";
 pub const _NGX_EVENT_H_INCLUDED_ = "";
-pub const NGX_INVALID_INDEX = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0xd0d0d0d0, .hex);
+pub const NGX_INVALID_INDEX = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0xd0d0d0d0, .hex);
 pub const NGX_USE_LEVEL_EVENT = @as(c_int, 0x00000001);
 pub const NGX_USE_ONESHOT_EVENT = @as(c_int, 0x00000002);
 pub const NGX_USE_CLEAR_EVENT = @as(c_int, 0x00000004);
@@ -50584,7 +50584,7 @@ pub const NGX_READ_EVENT = EPOLLIN | EPOLLRDHUP;
 pub const NGX_WRITE_EVENT = EPOLLOUT;
 pub const NGX_LEVEL_EVENT = @as(c_int, 0);
 pub const NGX_CLEAR_EVENT = EPOLLET;
-pub const NGX_ONESHOT_EVENT = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x70000000, .hex);
+pub const NGX_ONESHOT_EVENT = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x70000000, .hex);
 pub const NGX_EXCLUSIVE_EVENT = EPOLLEXCLUSIVE;
 pub inline fn ngx_process_events(arg_260: [*c]ngx_cycle_t, arg_261: ngx_msec_t, arg_262: ngx_uint_t) ngx_int_t {
     return ngx_event_actions.process_events.?(arg_260, arg_261, arg_262);
@@ -50632,8 +50632,8 @@ pub inline fn ngx_udp_send(arg_289: [*c]ngx_connection_t, arg_290: [*c]u_char, a
 pub inline fn ngx_udp_send_chain(arg_292: [*c]ngx_connection_t, arg_293: [*c]ngx_chain_t, arg_294: off_t) [*c]ngx_chain_t {
     return ngx_io.udp_send_chain.?(arg_292, arg_293, arg_294);
 }
-pub const NGX_EVENT_MODULE = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x544E5645, .hex);
-pub const NGX_EVENT_CONF = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x02000000, .hex);
+pub const NGX_EVENT_MODULE = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x544E5645, .hex);
+pub const NGX_EVENT_CONF = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x02000000, .hex);
 pub const NGX_UPDATE_TIME = @as(c_int, 1);
 pub const NGX_POST_EVENTS = @as(c_int, 2);
 pub inline fn ngx_event_get_conf(conf_ctx: anytype, module: anytype) @TypeOf(ngx_get_conf(conf_ctx, ngx_events_module).*[@as(usize, @intCast(module.ctx_index))]) {
@@ -50641,12 +50641,12 @@ pub inline fn ngx_event_get_conf(conf_ctx: anytype, module: anytype) @TypeOf(ngx
     _ = &module;
     return ngx_get_conf(conf_ctx, ngx_events_module).*[@as(usize, @intCast(module.ctx_index))];
 }
-pub inline fn ngx_event_ident(p: anytype) @TypeOf(@import("std").zig.c_translation.cast([*c]ngx_connection_t, p).*.fd) {
+pub inline fn ngx_event_ident(p: anytype) @TypeOf(@import("std").zig.c_translation.helpers.cast([*c]ngx_connection_t, p).*.fd) {
     _ = &p;
-    return @import("std").zig.c_translation.cast([*c]ngx_connection_t, p).*.fd;
+    return @import("std").zig.c_translation.helpers.cast([*c]ngx_connection_t, p).*.fd;
 }
 pub const _NGX_EVENT_TIMER_H_INCLUDED_ = "";
-pub const NGX_TIMER_INFINITE = @import("std").zig.c_translation.cast(ngx_msec_t, -@as(c_int, 1));
+pub const NGX_TIMER_INFINITE = @import("std").zig.c_translation.helpers.cast(ngx_msec_t, -@as(c_int, 1));
 pub const NGX_TIMER_LAZY_DELAY = @as(c_int, 300);
 pub const _NGX_EVENT_POSTED_H_INCLUDED_ = "";
 pub const ngx_post_event = @compileError("unable to translate C expr: unexpected token 'if'");
@@ -50674,8 +50674,8 @@ pub const NGX_HTTP_UPSTREAM_FT_UPDATING = @as(c_int, 0x00000800);
 pub const NGX_HTTP_UPSTREAM_FT_BUSY_LOCK = @as(c_int, 0x00001000);
 pub const NGX_HTTP_UPSTREAM_FT_MAX_WAITING = @as(c_int, 0x00002000);
 pub const NGX_HTTP_UPSTREAM_FT_NON_IDEMPOTENT = @as(c_int, 0x00004000);
-pub const NGX_HTTP_UPSTREAM_FT_NOLIVE = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x40000000, .hex);
-pub const NGX_HTTP_UPSTREAM_FT_OFF = @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x80000000, .hex);
+pub const NGX_HTTP_UPSTREAM_FT_NOLIVE = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x40000000, .hex);
+pub const NGX_HTTP_UPSTREAM_FT_OFF = @import("std").zig.c_translation.helpers.promoteIntLiteral(c_int, 0x80000000, .hex);
 pub const NGX_HTTP_UPSTREAM_FT_STATUS = (((((NGX_HTTP_UPSTREAM_FT_HTTP_500 | NGX_HTTP_UPSTREAM_FT_HTTP_502) | NGX_HTTP_UPSTREAM_FT_HTTP_503) | NGX_HTTP_UPSTREAM_FT_HTTP_504) | NGX_HTTP_UPSTREAM_FT_HTTP_403) | NGX_HTTP_UPSTREAM_FT_HTTP_404) | NGX_HTTP_UPSTREAM_FT_HTTP_429;
 pub const NGX_HTTP_UPSTREAM_INVALID_HEADER = @as(c_int, 40);
 pub const NGX_HTTP_UPSTREAM_IGN_XA_REDIRECT = @as(c_int, 0x00000002);

@@ -41,11 +41,11 @@ pub fn build_quickjs(
             .pic = true,
             .target = target,
             .optimize = optimize,
+            .link_libc = true,
         }),
     });
 
-    quickjs.linkLibC();
-    quickjs.addCSourceFiles(.{
+    quickjs.root_module.addCSourceFiles(.{
         .files = &files,
         .flags = &QUICKJS_C_FLAGS,
     });

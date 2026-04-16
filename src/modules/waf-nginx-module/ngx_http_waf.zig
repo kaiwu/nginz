@@ -241,7 +241,7 @@ fn appendIpMatchEntry(out: *std.ArrayList(u8), allocator: std.mem.Allocator, ent
 fn loadPmFromFiles(arg_text: []const u8, pool: [*c]core.ngx_pool_t, cf: [*c]ngx_conf_t) ?ngx_str_t {
     const allocator = std.heap.page_allocator;
     var tokens = std.mem.tokenizeAny(u8, arg_text, " \t\r\n");
-    var combined = std.ArrayList(u8){};
+    var combined = std.ArrayList(u8).empty;
     defer combined.deinit(allocator);
 
     var saw_any_file = false;
@@ -268,7 +268,7 @@ fn loadPmFromFiles(arg_text: []const u8, pool: [*c]core.ngx_pool_t, cf: [*c]ngx_
 fn loadIpMatchFromFiles(arg_text: []const u8, pool: [*c]core.ngx_pool_t, cf: [*c]ngx_conf_t) ?ngx_str_t {
     const allocator = std.heap.page_allocator;
     var tokens = std.mem.tokenizeAny(u8, arg_text, " \t\r\n");
-    var combined = std.ArrayList(u8){};
+    var combined = std.ArrayList(u8).empty;
     defer combined.deinit(allocator);
 
     var saw_any_file = false;
@@ -528,26 +528,27 @@ fn numericCompare(normalized: []const u8, pattern_text: []const u8, operator: u8
     };
 }
 
-fn cidrContains(input_addr: std.net.Address, cidr: core.ngx_cidr_t) bool {
-    if (input_addr.any.family != cidr.family) return false;
-
-    return switch (cidr.family) {
-        posix.AF.INET => (input_addr.in.sa.addr & cidr.u.in.mask) == cidr.u.in.addr,
-        posix.AF.INET6 => blk: {
-            const input_bytes = input_addr.in6.sa.addr[0..];
+fn cidrContains(input_addr: std.Io.net.IpAddress, cidr: core.ngx_cidr_t) bool {
+    return switch (input_addr) {
+        .ip4 => |ip4| blk: {
+            if (cidr.family != posix.AF.INET) break :blk false;
+            const input_bits: u32 = @bitCast(ip4.bytes);
+            break :blk (input_bits & cidr.u.in.mask) == cidr.u.in.addr;
+        },
+        .ip6 => |ip6| blk: {
+            if (cidr.family != posix.AF.INET6) break :blk false;
             const cidr_addr = cidr.u.in6.addr.__in6_u.__u6_addr8[0..];
             const cidr_mask = cidr.u.in6.mask.__in6_u.__u6_addr8[0..];
             for (0..16) |i| {
-                if ((input_bytes[i] & cidr_mask[i]) != cidr_addr[i]) break :blk false;
+                if ((ip6.bytes[i] & cidr_mask[i]) != cidr_addr[i]) break :blk false;
             }
             break :blk true;
         },
-        else => false,
     };
 }
 
 fn ipMatchListContains(normalized: []const u8, pattern_text: []const u8) bool {
-    const input_addr = std.net.Address.parseIp(trimAscii(normalized), 0) catch return false;
+    const input_addr = std.Io.net.IpAddress.parse(trimAscii(normalized), 0) catch return false;
     var it = std.mem.tokenizeAny(u8, pattern_text, " ,\t\r\n");
     while (it.next()) |token| {
         if (token.len == 0) continue;
@@ -1283,9 +1284,10 @@ fn applyOffenseToEntry(entry: *waf_ban_entry, now: ngx_uint_t, lccf: *waf_loc_co
 
 fn findBanEntry(store: [*c]waf_ban_store, ip: []const u8) ?[*c]waf_ban_entry {
     for (0..store.*.entries_count) |i| {
-        const entry: *waf_ban_entry = @ptrCast(&store.*.entries[i]);
-        if (entry.ip_len == ip.len and std.mem.eql(u8, entry.ip[0..entry.ip_len], ip)) {
-            return @ptrCast(entry);
+        const entry: [*c]waf_ban_entry = store.*.entries + i;
+        const entry_ip: []const u8 = @ptrCast(entry[0].ip[0..entry[0].ip_len]);
+        if (entry[0].ip_len == ip.len and std.mem.eql(u8, entry_ip, ip)) {
+            return entry;
         }
     }
     return null;
@@ -1299,23 +1301,25 @@ fn getOrCreateBanEntry(shpool: [*c]core.ngx_slab_pool_t, store: [*c]waf_ban_stor
     }
 
     if (store.*.entries_count < WAF_BAN_MAX_ENTRIES) {
-        const entry: *waf_ban_entry = @ptrCast(&store.*.entries[store.*.entries_count]);
+        const entry: [*c]waf_ban_entry = store.*.entries + store.*.entries_count;
+        const entry_ref: *waf_ban_entry = @ptrCast(@alignCast(entry));
         store.*.entries_count += 1;
-        assignBanEntryIp(entry, ip);
-        return @ptrCast(entry);
+        assignBanEntryIp(entry_ref, ip);
+        return entry;
     }
 
     var candidate: ?[*c]waf_ban_entry = null;
     for (0..store.*.entries_count) |i| {
-        const entry: *waf_ban_entry = @ptrCast(&store.*.entries[i]);
-        decayBanEntry(entry, now, lccf);
-        if (entry.ban_until == 0 and entry.count == 0 and entry.strikes == 0) {
-            assignBanEntryIp(entry, ip);
-            return @ptrCast(entry);
+        const entry: [*c]waf_ban_entry = store.*.entries + i;
+        const entry_ref: *waf_ban_entry = @ptrCast(@alignCast(entry));
+        decayBanEntry(entry_ref, now, lccf);
+        if (entry[0].ban_until == 0 and entry[0].count == 0 and entry[0].strikes == 0) {
+            assignBanEntryIp(entry_ref, ip);
+            return entry;
         }
 
-        if (candidate == null or entry.last_seen < candidate.?.*.last_seen) {
-            candidate = @ptrCast(entry);
+        if (candidate == null or entry[0].last_seen < candidate.?[0].last_seen) {
+            candidate = entry;
         }
     }
 
@@ -2844,7 +2848,7 @@ fn postconfiguration(cf: [*c]ngx_conf_t) callconv(.c) ngx_int_t {
     ) orelse return NGX_ERROR;
 
     var handlers = NArray(http.ngx_http_handler_pt).init0(
-        &cmcf.*.phases[http.NGX_HTTP_ACCESS_PHASE].handlers,
+        &cmcf[0].phases[http.NGX_HTTP_ACCESS_PHASE].handlers,
     );
     const h = handlers.append() catch return NGX_ERROR;
     h.* = ngx_http_waf_handler;

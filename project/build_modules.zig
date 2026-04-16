@@ -14,19 +14,19 @@ pub fn build_modules(
             .pic = true,
             .target = target,
             .optimize = optimize,
+            .link_libc = true,
         }),
     });
 
     var files = ArrayList([]const u8).init(b.allocator);
     defer files.deinit();
-    _ = try common.list("submodules/nginx/src/http/modules", 0, &common.BUILD_BUFFER, &files);
+    _ = try common.list(b.graph.io, "submodules/nginx/src/http/modules", 0, &common.BUILD_BUFFER, &files);
 
     for (common.NGX_INCLUDE_PATH) |p| {
-        modules.addIncludePath(b.path(p));
+        modules.root_module.addIncludePath(b.path(p));
     }
-    modules.addSystemIncludePath(libxml2);
-    modules.linkLibC();
-    modules.addCSourceFiles(.{
+    modules.root_module.addSystemIncludePath(libxml2);
+    modules.root_module.addCSourceFiles(.{
         .files = files.items[0..],
         .flags = &common.C_FLAGS,
     });
@@ -47,20 +47,20 @@ pub fn build_test_modules(
             .pic = true,
             .target = target,
             .optimize = optimize,
+            .link_libc = true,
         }),
     });
 
     var files = ArrayList([]const u8).init(b.allocator);
     defer files.deinit();
-    _ = try common.list("submodules/nginx/src/http/modules", 0, &common.BUILD_BUFFER, &files);
+    _ = try common.list(b.graph.io, "submodules/nginx/src/http/modules", 0, &common.BUILD_BUFFER, &files);
     try files.append("submodules/nginx/objs/ngx_modules.c");
 
     for (common.NGX_INCLUDE_PATH) |p| {
-        modules.addIncludePath(b.path(p));
+        modules.root_module.addIncludePath(b.path(p));
     }
-    modules.addSystemIncludePath(libxml2);
-    modules.linkLibC();
-    modules.addCSourceFiles(.{
+    modules.root_module.addSystemIncludePath(libxml2);
+    modules.root_module.addCSourceFiles(.{
         .files = files.items[0..],
         .flags = &common.C_FLAGS,
     });

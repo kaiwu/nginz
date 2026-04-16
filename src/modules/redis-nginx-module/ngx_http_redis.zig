@@ -443,7 +443,7 @@ fn ngx_http_redis_upstream_create_request(
             .del => build_del_command(rctx.*.key, r.*.pool),
             .incr => build_incr_command(rctx.*.key, r.*.pool),
             .expire => build_expire_command(rctx.*.key, rctx.*.value, r.*.pool),
-            .mget => build_mget_command(&rctx.*.mget_keys, rctx.*.mget_count, r.*.pool),
+            .mget => build_mget_command(&rctx[0].mget_keys, rctx.*.mget_count, r.*.pool),
         } catch return http.NGX_HTTP_INTERNAL_SERVER_ERROR;
 
         var chain = NChain.init(r.*.pool);
@@ -1052,7 +1052,7 @@ fn parse_mget_keys(r: [*c]ngx_http_request_t, rctx: [*c]redis_request_ctx) void 
     // Look for ?keys=key1,key2,key3 in args
     if (r.*.args.len == 0) {
         // Use URI as single key
-        rctx.*.mget_keys[0] = get_redis_key(r, rctx.*.lccf);
+        rctx[0].mget_keys[0] = get_redis_key(r, rctx.*.lccf);
         rctx.*.mget_count = 1;
         return;
     }
@@ -1071,7 +1071,7 @@ fn parse_mget_keys(r: [*c]ngx_http_request_t, rctx: [*c]redis_request_ctx) void 
 
     if (pos + 5 >= args.len and !std.mem.eql(u8, args[0..@min(5, args.len)], "keys=")) {
         // No keys= found, use URI as single key
-        rctx.*.mget_keys[0] = get_redis_key(r, rctx.*.lccf);
+        rctx[0].mget_keys[0] = get_redis_key(r, rctx.*.lccf);
         rctx.*.mget_count = 1;
         return;
     }
@@ -1094,7 +1094,7 @@ fn parse_mget_keys(r: [*c]ngx_http_request_t, rctx: [*c]redis_request_ctx) void 
                 // Copy key to pool
                 if (core.castPtr(u8, core.ngx_pnalloc(r.*.pool, key_len))) |key_copy| {
                     @memcpy(core.slicify(u8, key_copy, key_len), args[key_start..pos]);
-                    rctx.*.mget_keys[count] = ngx_str_t{ .data = key_copy, .len = key_len };
+                    rctx[0].mget_keys[count] = ngx_str_t{ .data = key_copy, .len = key_len };
                     count += 1;
                 }
             }
@@ -1107,7 +1107,7 @@ fn parse_mget_keys(r: [*c]ngx_http_request_t, rctx: [*c]redis_request_ctx) void 
     rctx.*.mget_count = count;
     if (count == 0) {
         // Fallback to URI as single key
-        rctx.*.mget_keys[0] = get_redis_key(r, rctx.*.lccf);
+        rctx[0].mget_keys[0] = get_redis_key(r, rctx.*.lccf);
         rctx.*.mget_count = 1;
     }
 }

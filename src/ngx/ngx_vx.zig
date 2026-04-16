@@ -45,7 +45,7 @@ pub const ngx_http_v2_header_t = extern struct {
 //   unsigned parse_name:1
 //   unsigned parse_value:1
 //   unsigned index:1
-const ngx_http_v2_state_flags_s = packed struct {
+const ngx_http_v2_state_flags_s = packed struct(u32) {
     flags: u8,
     incomplete: bool,
     keep_pool: bool,
@@ -90,7 +90,7 @@ pub const ngx_http_v2_hpack_t = extern struct {
 //   unsigned table_update:1
 //   unsigned blocked:1
 //   unsigned goaway:1
-const ngx_http_v2_connection_flags_s = packed struct {
+const ngx_http_v2_connection_flags_s = packed struct(u32) {
     settings_ack: bool,
     table_update: bool,
     blocked: bool,
@@ -163,7 +163,7 @@ pub const ngx_http_v2_node_t = extern struct {
 //   unsigned rst_sent:1
 //   unsigned no_flow_control:1
 //   unsigned skip_data:1
-const ngx_http_v2_stream_flags_s = packed struct {
+const ngx_http_v2_stream_flags_s = packed struct(u32) {
     initialized: bool,
     waiting: bool,
     blocked: bool,
@@ -197,7 +197,7 @@ pub const ngx_http_v2_stream_t = extern struct {
 // ngx_http_v2_out_frame_t bit-fields:
 //   unsigned blocked:1
 //   unsigned fin:1
-const ngx_http_v2_out_frame_flags_s = packed struct {
+const ngx_http_v2_out_frame_flags_s = packed struct(u32) {
     blocked: bool,
     fin: bool,
     padding: u30,
@@ -359,7 +359,7 @@ const NGX_HTTP_V3_MAX_KNOWN_STREAM = 6;
 // ngx_http_v3_session_t bit-fields:
 //   unsigned goaway:1
 //   unsigned hq:1
-const ngx_http_v3_session_flags_s = packed struct {
+const ngx_http_v3_session_flags_s = packed struct(u32) {
     goaway: bool,
     hq: bool,
     padding: u30,
@@ -497,7 +497,7 @@ pub const ngx_stream_upstream_peer_t = extern struct {
 
 // ngx_stream_upstream_server_t bit-fields:
 //   unsigned backup:1
-const ngx_stream_upstream_server_flags_s = packed struct {
+const ngx_stream_upstream_server_flags_s = packed struct(u32) {
     backup: bool,
     padding: u31,
 };
@@ -552,7 +552,7 @@ pub const ngx_stream_upstream_resolved_t = extern struct {
 //   unsigned connected:1
 //   unsigned proxy_protocol:1
 //   unsigned half_closed:1
-const ngx_stream_upstream_flags_s = packed struct {
+const ngx_stream_upstream_flags_s = packed struct(u32) {
     connected: bool,
     proxy_protocol: bool,
     half_closed: bool,
@@ -586,7 +586,7 @@ pub const ngx_stream_upstream_t = extern struct {
 
 // ngx_stream_upstream_rr_peer_t - with NGX_COMPAT_BEGIN(14)
 // Without NGX_STREAM_UPSTREAM_ZONE, spare slots remain at 14
-const ngx_stream_upstream_rr_peer_flags_s = packed struct {
+const ngx_stream_upstream_rr_peer_flags_s = packed struct(u32) {
     padding: u32,
 };
 
@@ -617,7 +617,7 @@ pub const ngx_stream_upstream_rr_peer_t = extern struct {
 // ngx_stream_upstream_rr_peers_t bit-fields:
 //   unsigned single:1
 //   unsigned weighted:1
-const ngx_stream_upstream_rr_peers_flags_s = packed struct {
+const ngx_stream_upstream_rr_peers_flags_s = packed struct(u32) {
     single: bool,
     weighted: bool,
     padding: u30,
@@ -643,7 +643,7 @@ pub const ngx_stream_upstream_rr_peer_data_t = extern struct {
 
 // ngx_stream_core_srv_conf_t bit-fields:
 //   unsigned listen:1
-const ngx_stream_core_srv_conf_flags_s = packed struct {
+const ngx_stream_core_srv_conf_flags_s = packed struct(u32) {
     listen: bool,
     padding: u31,
 };
@@ -676,7 +676,7 @@ pub const ngx_log_handler_pt = ?*const fn (
 //   unsigned stat_processing:1
 //   unsigned health_check:1
 //   unsigned limit_conn_status:2
-const ngx_stream_session_flags_s = packed struct {
+const ngx_stream_session_flags_s = packed struct(u32) {
     ssl: bool,
     stat_processing: bool,
     health_check: bool,

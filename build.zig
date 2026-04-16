@@ -1,4 +1,5 @@
 const std = @import("std");
+const builtin = @import("builtin");
 const exe = @import("project//build_exe.zig");
 const njs = @import("project//build_njs.zig");
 const core = @import("project/build_core.zig");
@@ -12,6 +13,7 @@ const package = @import("project/build_package.zig");
 const check_layout = @import("project/build_check_layout.zig");
 
 const NGINX = "src/ngx/nginx.zig";
+const required_zig_version = std.SemanticVersion{ .major = 0, .minor = 16, .patch = 0 };
 
 var modules = [_][]const u8{
     // Core modules
@@ -116,6 +118,15 @@ fn module_path(f: []const u8) PN {
 }
 
 pub fn build(b: *std.Build) void {
+    comptime {
+        if (builtin.zig_version.order(required_zig_version) != .eq) {
+            @compileError(std.fmt.comptimePrint(
+                "nginz requires Zig {f}; found Zig {f}.",
+                .{ required_zig_version, builtin.zig_version },
+            ));
+        }
+    }
+
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
     const docker = b.option(bool, "docker", "configure with docker primitives") orelse false;
@@ -143,10 +154,10 @@ pub fn build(b: *std.Build) void {
             .target = target,
             .optimize = optimize,
             .root_source_file = b.path("src/ngz_modules.zig"),
+            .link_libc = true,
         }),
     });
-    ngz_modules.linkLibC();
-    nginz.addObject(ngz_modules);
+    nginz.root_module.addObject(ngz_modules);
 
     for (modules) |m| {
         const pn = module_path(m);
@@ -157,14 +168,14 @@ pub fn build(b: *std.Build) void {
                 .root_source_file = b.path(m),
                 .target = target,
                 .optimize = optimize,
+                .link_libc = true,
             }),
         });
-        o.addIncludePath(b.path(pn.p));
+        o.root_module.addIncludePath(b.path(pn.p));
         o.root_module.addImport("ngx", nginx);
         o.root_module.addImport("ngx_libinjection", ngx_libinjection);
         o.bundle_compiler_rt = true;
-        o.linkLibC();
-        nginz.addObject(o);
+        nginz.root_module.addObject(o);
         const install_object = b.addInstallFile(o.getEmittedBin(), obj(pn.n));
         b.getInstallStep().dependOn(&install_object.step);
     }
@@ -175,43 +186,43 @@ pub fn build(b: *std.Build) void {
     quickjslib.step.dependOn(patch_step);
 
     const njs_http_module = njs.build_njs(b, target, optimize, quickjslib) catch unreachable;
-    nginz.addObject(njs_http_module);
+    nginz.root_module.addObject(njs_http_module);
 
     const corelib = core.build_core(b, target, optimize) catch unreachable;
     corelib.step.dependOn(patch_step);
 
     const httplib = http.build_http(b, target, optimize) catch unreachable;
     httplib.step.dependOn(&corelib.step);
-    httplib.linkLibrary(corelib);
+    httplib.root_module.linkLibrary(corelib);
 
     const moduleslib = http_modules.build_modules(b, target, optimize) catch unreachable;
     moduleslib.step.dependOn(&httplib.step);
-    moduleslib.linkLibrary(corelib);
-    moduleslib.linkLibrary(httplib);
+    moduleslib.root_module.linkLibrary(corelib);
+    moduleslib.root_module.linkLibrary(httplib);
 
-    nginz.linkLibC();
-    nginz.linkSystemLibrary("z");
-    nginz.linkSystemLibrary("pq");
-    nginz.linkSystemLibrary("ssl");
-    nginz.linkSystemLibrary("xml2");
-    nginz.linkSystemLibrary("xslt");
-    nginz.linkSystemLibrary("exslt");
-    nginz.linkSystemLibrary("crypt");
-    nginz.linkSystemLibrary("crypto");
-    nginz.linkSystemLibrary("pcre2-8");
-    nginz.linkLibrary(corelib);
-    nginz.linkLibrary(httplib);
-    nginz.linkLibrary(moduleslib);
-    nginz.linkLibrary(cjsonlib);
-    nginz.linkLibrary(libinjectionlib);
+    nginz.root_module.link_libc = true;
+    nginz.root_module.linkSystemLibrary("z", .{});
+    nginz.root_module.linkSystemLibrary("pq", .{});
+    nginz.root_module.linkSystemLibrary("ssl", .{});
+    nginz.root_module.linkSystemLibrary("xml2", .{});
+    nginz.root_module.linkSystemLibrary("xslt", .{});
+    nginz.root_module.linkSystemLibrary("exslt", .{});
+    nginz.root_module.linkSystemLibrary("crypt", .{});
+    nginz.root_module.linkSystemLibrary("crypto", .{});
+    nginz.root_module.linkSystemLibrary("pcre2-8", .{});
+    nginz.root_module.linkLibrary(corelib);
+    nginz.root_module.linkLibrary(httplib);
+    nginz.root_module.linkLibrary(moduleslib);
+    nginz.root_module.linkLibrary(cjsonlib);
+    nginz.root_module.linkLibrary(libinjectionlib);
     b.installArtifact(nginz);
 
     const test_step = b.step("test", "Run unit tests");
 
     const test_moduleslib = http_modules.build_test_modules(b, target, optimize) catch unreachable;
     test_moduleslib.step.dependOn(&httplib.step);
-    test_moduleslib.linkLibrary(corelib);
-    test_moduleslib.linkLibrary(httplib);
+    test_moduleslib.root_module.linkLibrary(corelib);
+    test_moduleslib.root_module.linkLibrary(httplib);
     test_step.dependOn(&test_moduleslib.step);
 
     for (tests) |case| {
@@ -220,25 +231,25 @@ pub fn build(b: *std.Build) void {
                 .root_source_file = b.path(case),
                 .target = target,
                 .optimize = optimize,
+                .link_libc = true,
             }),
         });
 
-        t.linkLibC();
-        t.linkSystemLibrary("z");
-        t.linkSystemLibrary("pq");
-        t.linkSystemLibrary("ssl");
-        t.linkSystemLibrary("xml2");
-        t.linkSystemLibrary("xslt");
-        t.linkSystemLibrary("exslt");
-        t.linkSystemLibrary("crypt");
-        t.linkSystemLibrary("crypto");
-        t.linkSystemLibrary("pcre2-8");
-        t.linkLibrary(corelib);
-        t.linkLibrary(httplib);
-        t.linkLibrary(cjsonlib);
-        t.linkLibrary(libinjectionlib);
-        t.linkLibrary(test_moduleslib);
-        t.addIncludePath(b.path("src/ngx/"));
+        t.root_module.linkSystemLibrary("z", .{});
+        t.root_module.linkSystemLibrary("pq", .{});
+        t.root_module.linkSystemLibrary("ssl", .{});
+        t.root_module.linkSystemLibrary("xml2", .{});
+        t.root_module.linkSystemLibrary("xslt", .{});
+        t.root_module.linkSystemLibrary("exslt", .{});
+        t.root_module.linkSystemLibrary("crypt", .{});
+        t.root_module.linkSystemLibrary("crypto", .{});
+        t.root_module.linkSystemLibrary("pcre2-8", .{});
+        t.root_module.linkLibrary(corelib);
+        t.root_module.linkLibrary(httplib);
+        t.root_module.linkLibrary(cjsonlib);
+        t.root_module.linkLibrary(libinjectionlib);
+        t.root_module.linkLibrary(test_moduleslib);
+        t.root_module.addIncludePath(b.path("src/ngx/"));
         t.root_module.addImport("ngx", nginx);
         t.root_module.addImport("ngx_libinjection", ngx_libinjection);
 

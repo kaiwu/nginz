@@ -47,6 +47,7 @@ extern var ngx_http_upstream_module: ngx_module_t;
 const NGX_HTTP_MOVED_TEMPORARILY: ngx_uint_t = 302;
 
 extern var ngx_http_core_module: ngx_module_t;
+extern fn time(t: ?*i64) i64;
 
 // Constants
 const STATE_SIZE = 32;
@@ -479,7 +480,7 @@ fn checkSession(r: [*c]ngx_http_request_t, lccf: *oidc_loc_conf, rctx: *oidc_req
     // Check expiration
     if (CJSON.query(session_json, "$.exp")) |exp_node| {
         if (CJSON.intValue(exp_node)) |exp| {
-            const now = std.time.timestamp();
+            const now = time(null);
             if (now > exp) return false; // Expired
         }
     }
@@ -1259,8 +1260,8 @@ fn createSessionFromClaims(r: [*c]ngx_http_request_t, lccf: [*c]oidc_loc_conf, r
         "";
 
     // Use IdP's exp or default to 1 hour
-    const exp_time: i64 = if (claims.exp > 0) claims.exp else std.time.timestamp() + SESSION_DURATION_SEC;
-    const iat_time: i64 = if (claims.iat > 0) claims.iat else std.time.timestamp();
+    const exp_time: i64 = if (claims.exp > 0) claims.exp else time(null) + SESSION_DURATION_SEC;
+    const iat_time: i64 = if (claims.iat > 0) claims.iat else time(null);
 
     var offset: usize = 0;
     const prefix1 = "{\"sub\":\"";
@@ -1551,7 +1552,7 @@ export fn ngx_http_oidc_header_filter(r: [*c]ngx_http_request_t) callconv(.c) ng
                 if (headers.append()) |h| {
                     h.*.hash = 1;
                     h.*.key = ngx_string("Set-Cookie");
-                    h.*.value = rctx.*.pending_cookies[idx];
+                    h.*.value = rctx[0].pending_cookies[idx];
                     h.*.lowcase_key = @constCast("set-cookie");
                 } else |_| {}
             }
@@ -1759,7 +1760,7 @@ fn postconfiguration(cf: [*c]ngx_conf_t) callconv(.c) ngx_int_t {
     ) orelse return NGX_ERROR;
 
     var handlers = NArray(http.ngx_http_handler_pt).init0(
-        &cmcf.*.phases[http.NGX_HTTP_ACCESS_PHASE].handlers,
+        &cmcf[0].phases[http.NGX_HTTP_ACCESS_PHASE].handlers,
     );
     const h = handlers.append() catch return NGX_ERROR;
     h.* = ngx_http_oidc_handler;

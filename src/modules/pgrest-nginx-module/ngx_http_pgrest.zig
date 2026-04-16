@@ -3241,8 +3241,8 @@ fn handle_rpc_call_upstream(r: [*c]ngx_http_request_t) ngx_int_t {
     }
 
     // Build RPC query into the context
-    ctx.*.query_len = build_rpc_call_query(&ctx.*.query, function_name, &rpc_call);
-    ctx.*.query[ctx.*.query_len] = 0; // null terminate
+    ctx.*.query_len = build_rpc_call_query(&ctx[0].query, function_name, &rpc_call);
+    ctx[0].query[ctx.*.query_len] = 0; // null terminate
 
     ctx.*.pool_conn = null;
     ctx.*.query_state = .none;
@@ -3370,7 +3370,7 @@ fn ngx_http_pgrest_upstream_handler(r: [*c]ngx_http_request_t) callconv(.c) ngx_
 
     // Build SQL query into the context
     ctx.*.query_len = build_sql_query(
-        &ctx.*.query,
+        &ctx[0].query,
         sql_op,
         table_name,
         filters[0..filter_count],
@@ -3379,7 +3379,7 @@ fn ngx_http_pgrest_upstream_handler(r: [*c]ngx_http_request_t) callconv(.c) ngx_
         order_specs[0..order_count],
         pagination,
     );
-    ctx.*.query[ctx.*.query_len] = 0; // null terminate
+    ctx[0].query[ctx.*.query_len] = 0; // null terminate
 
     ctx.*.pool_conn = null;
     ctx.*.query_state = .none;
