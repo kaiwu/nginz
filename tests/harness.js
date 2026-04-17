@@ -1,6 +1,6 @@
 import { spawn, spawnSync } from "bun";
 import { mkdirSync, rmSync, existsSync } from "fs";
-import { join, dirname } from "path";
+import { join, dirname, isAbsolute } from "path";
 
 let nginzProcess = null;
 const NGINZ_BIN = "./zig-out/bin/nginz";
@@ -43,7 +43,9 @@ function createRuntimeDir(moduleName) {
 // Start nginz with given config
 export async function startNginz(configPath, moduleName) {
   const runtimeDir = createRuntimeDir(moduleName);
-  const absConfig = join(process.cwd(), configPath);
+  const absConfig = isAbsolute(configPath)
+    ? configPath
+    : join(process.cwd(), configPath);
   
   nginzProcess = spawn([NGINZ_BIN, "-c", absConfig, "-p", runtimeDir], {
     stdout: "inherit",

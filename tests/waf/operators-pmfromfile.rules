@@ -1,1 +1,1 @@
-SecRule REQUEST_HEADERS:User-Agent "@pmFromFile /home/kaiwu/Documents/gitea/nginz/tests/waf/pmfromfile-phrases.txt" "id:6160,phase:1,msg:'operators pmFromFile rule'"
+SecRule REQUEST_HEADERS:User-Agent "@pmFromFile __PMFROMFILE_PHRASES_FILE__" "id:6160,phase:1,msg:'operators pmFromFile rule'"

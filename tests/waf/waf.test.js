@@ -1,38 +1,82 @@
 import { describe, test, expect, beforeAll, afterAll } from "bun:test";
 import { startNginz, stopNginz, cleanupRuntime, TEST_URL } from "../harness.js";
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdtempSync, mkdirSync, rmSync, writeFileSync } from "fs";
+import {
+  existsSync,
+  mkdtempSync,
+  mkdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 
 const MODULE = "waf";
-const RULES_FILE = `${process.cwd()}/tests/waf/native-subset.rules`;
-const LIBINJECTION_RULES_FILE = `${process.cwd()}/tests/waf/libinjection.rules`;
-const BAN_RULES_FILE = `${process.cwd()}/tests/waf/ban.rules`;
-const SCORE_RULES_FILE = `${process.cwd()}/tests/waf/ban.rules`;
-const ACTION_RULES_FILE = `${process.cwd()}/tests/waf/action.rules`;
-const UNSUPPORTED_RULES_FILE = `${process.cwd()}/tests/waf/unsupported.rules`;
-const UNSUPPORTED_REQUEST_FILENAME_RULES_FILE = `${process.cwd()}/tests/waf/unsupported-request-filename.rules`;
-const UNSUPPORTED_OPERATOR_ALIASES_RULES_FILE = `${process.cwd()}/tests/waf/unsupported-operator-aliases.rules`;
-const TRANSFORM_RULES_FILE = `${process.cwd()}/tests/waf/transform.rules`;
-const OPERATORS_RULES_FILE = `${process.cwd()}/tests/waf/operators.rules`;
-const OPERATORS_IPMATCH_RULES_FILE = `${process.cwd()}/tests/waf/operators-ipmatch.rules`;
-const OPERATORS_IPMATCH_NEGATIVE_RULES_FILE = `${process.cwd()}/tests/waf/operators-ipmatch-negative.rules`;
-const OPERATORS_IPMATCH_FROM_FILE_RULES_FILE = `${process.cwd()}/tests/waf/operators-ipmatchfromfile.rules`;
-const OPERATORS_STRMATCH_NEGATIVE_RULES_FILE = `${process.cwd()}/tests/waf/operators-strmatch-negative.rules`;
-const OPERATORS_CONTAINS_WORD_NEGATIVE_RULES_FILE = `${process.cwd()}/tests/waf/operators-contains-word-negative.rules`;
-const OPERATORS_NO_MATCH_RULES_FILE = `${process.cwd()}/tests/waf/operators-no-match.rules`;
-const OPERATORS_UNCONDITIONAL_RULES_FILE = `${process.cwd()}/tests/waf/operators-unconditional.rules`;
-const OPERATORS_VALIDATE_URL_ENCODING_RULES_FILE = `${process.cwd()}/tests/waf/operators-validate-url-encoding.rules`;
-const OPERATORS_VALIDATE_URL_ENCODING_NEGATIVE_RULES_FILE = `${process.cwd()}/tests/waf/operators-validate-url-encoding-negative.rules`;
-const OPERATORS_VALIDATE_UTF8_RULES_FILE = `${process.cwd()}/tests/waf/operators-validate-utf8.rules`;
-const OPERATORS_VALIDATE_UTF8_NEGATIVE_RULES_FILE = `${process.cwd()}/tests/waf/operators-validate-utf8-negative.rules`;
-const OPERATORS_PMF_RULES_FILE = `${process.cwd()}/tests/waf/operators-pmfromfile.rules`;
-const COLLECTIONS_RULES_FILE = `${process.cwd()}/tests/waf/collections.rules`;
-const BODY_RULES_FILE = `${process.cwd()}/tests/waf/body.rules`;
-const RESPONSE_RULES_FILE = `${process.cwd()}/tests/waf/response.rules`;
-const GENERATED_CONFIG = `tests/${MODULE}/nginx.generated.conf`;
+const FIXTURES_DIR = join(process.cwd(), "tests", MODULE);
+const RULE_FIXTURES = {
+  WAF_RULES_FILE: "native-subset.rules",
+  WAF_LIBINJECTION_RULES_FILE: "libinjection.rules",
+  WAF_BAN_RULES_FILE: "ban.rules",
+  WAF_SCORE_RULES_FILE: "ban.rules",
+  WAF_ACTION_RULES_FILE: "action.rules",
+  WAF_UNSUPPORTED_RULES_FILE: "unsupported.rules",
+  WAF_UNSUPPORTED_REQUEST_FILENAME_RULES_FILE: "unsupported-request-filename.rules",
+  WAF_UNSUPPORTED_OPERATOR_ALIASES_RULES_FILE: "unsupported-operator-aliases.rules",
+  WAF_TRANSFORM_RULES_FILE: "transform.rules",
+  WAF_OPERATORS_RULES_FILE: "operators.rules",
+  WAF_OPERATORS_IPMATCH_RULES_FILE: "operators-ipmatch.rules",
+  WAF_OPERATORS_IPMATCH_NEGATIVE_RULES_FILE: "operators-ipmatch-negative.rules",
+  WAF_OPERATORS_IPMATCH_FROM_FILE_RULES_FILE: "operators-ipmatchfromfile.rules",
+  WAF_OPERATORS_STRMATCH_NEGATIVE_RULES_FILE: "operators-strmatch-negative.rules",
+  WAF_OPERATORS_CONTAINS_WORD_NEGATIVE_RULES_FILE: "operators-contains-word-negative.rules",
+  WAF_OPERATORS_NO_MATCH_RULES_FILE: "operators-no-match.rules",
+  WAF_OPERATORS_UNCONDITIONAL_RULES_FILE: "operators-unconditional.rules",
+  WAF_OPERATORS_VALIDATE_URL_ENCODING_RULES_FILE: "operators-validate-url-encoding.rules",
+  WAF_OPERATORS_VALIDATE_URL_ENCODING_NEGATIVE_RULES_FILE: "operators-validate-url-encoding-negative.rules",
+  WAF_OPERATORS_VALIDATE_UTF8_RULES_FILE: "operators-validate-utf8.rules",
+  WAF_OPERATORS_VALIDATE_UTF8_NEGATIVE_RULES_FILE: "operators-validate-utf8-negative.rules",
+  WAF_OPERATORS_PMF_RULES_FILE: "operators-pmfromfile.rules",
+  WAF_COLLECTIONS_RULES_FILE: "collections.rules",
+  WAF_BODY_RULES_FILE: "body.rules",
+  WAF_RESPONSE_RULES_FILE: "response.rules",
+};
 const ERROR_LOG = `${process.cwd()}/tests/${MODULE}/runtime/logs/error.log`;
+let generatedConfigPath = "";
+let stagedFixturesDir = "";
+let stagedRulePaths;
+
+function stageWafFixtures() {
+  const stagingDir = mkdtempSync(join(tmpdir(), "nginz-waf-fixtures-"));
+  const rulesDir = join(stagingDir, "rules");
+  mkdirSync(rulesDir, { recursive: true });
+
+  const pmPhraseListPath = join(rulesDir, "pmfromfile-phrases.txt");
+  const ipMatchEntriesPath = join(rulesDir, "ipmatchfromfile-ips.txt");
+
+  writeFileSync(pmPhraseListPath, readFileSync(join(FIXTURES_DIR, "pmfromfile-phrases.txt"), "utf8"));
+  writeFileSync(ipMatchEntriesPath, readFileSync(join(FIXTURES_DIR, "ipmatchfromfile-ips.txt"), "utf8"));
+
+  const stagedPaths = {};
+
+  for (const [placeholder, fileName] of Object.entries(RULE_FIXTURES)) {
+    let content = readFileSync(join(FIXTURES_DIR, fileName), "utf8");
+
+    if (fileName === "operators-pmfromfile.rules") {
+      content = content.replace(/@pmFromFile\s+[^"\s]+/, `@pmFromFile ${pmPhraseListPath}`);
+    }
+
+    if (fileName === "operators-ipmatchfromfile.rules") {
+      content = content.replace(/@ipMatchFromFile\s+[^"\s]+/, `@ipMatchFromFile ${ipMatchEntriesPath}`);
+    }
+
+    const stagedPath = join(rulesDir, fileName);
+    writeFileSync(stagedPath, content);
+    stagedPaths[placeholder] = stagedPath;
+  }
+
+  return { stagingDir, stagedPaths };
+}
 
 async function waitForLogContains(needle, attempts = 10) {
   for (let i = 0; i < attempts; i++) {
@@ -51,7 +95,7 @@ async function fetchNoKeepAlive(url, init = {}) {
 
 async function restartWafServer() {
   await stopNginz();
-  await startNginz(GENERATED_CONFIG, MODULE);
+  await startNginz(generatedConfigPath, MODULE);
 }
 
 async function waitForStatus(url, expectedStatus, attempts = 24, delayMs = 500) {
@@ -85,40 +129,45 @@ function testConfigFailure(rulesFile) {
 
 describe("waf module", () => {
   beforeAll(async () => {
+    const { stagingDir, stagedPaths } = stageWafFixtures();
+    stagedFixturesDir = stagingDir;
+    stagedRulePaths = stagedPaths;
+
     const template = await Bun.file(`tests/${MODULE}/nginx.conf`).text();
+    generatedConfigPath = join(stagedFixturesDir, "nginx.generated.conf");
     await Bun.write(
-      GENERATED_CONFIG,
+      generatedConfigPath,
       template
-        .replaceAll("__WAF_RULES_FILE__", RULES_FILE)
-        .replaceAll("__WAF_LIBINJECTION_RULES_FILE__", LIBINJECTION_RULES_FILE)
-        .replaceAll("__WAF_ACTION_RULES_FILE__", ACTION_RULES_FILE)
-        .replaceAll("__WAF_BAN_RULES_FILE__", BAN_RULES_FILE)
-        .replaceAll("__WAF_SCORE_RULES_FILE__", SCORE_RULES_FILE)
-        .replaceAll("__WAF_TRANSFORM_RULES_FILE__", TRANSFORM_RULES_FILE)
-        .replaceAll("__WAF_OPERATORS_RULES_FILE__", OPERATORS_RULES_FILE)
-        .replaceAll("__WAF_OPERATORS_IPMATCH_RULES_FILE__", OPERATORS_IPMATCH_RULES_FILE)
-        .replaceAll("__WAF_OPERATORS_IPMATCH_NEGATIVE_RULES_FILE__", OPERATORS_IPMATCH_NEGATIVE_RULES_FILE)
-        .replaceAll("__WAF_OPERATORS_IPMATCH_FROM_FILE_RULES_FILE__", OPERATORS_IPMATCH_FROM_FILE_RULES_FILE)
-        .replaceAll("__WAF_OPERATORS_STRMATCH_NEGATIVE_RULES_FILE__", OPERATORS_STRMATCH_NEGATIVE_RULES_FILE)
-        .replaceAll("__WAF_OPERATORS_CONTAINS_WORD_NEGATIVE_RULES_FILE__", OPERATORS_CONTAINS_WORD_NEGATIVE_RULES_FILE)
-        .replaceAll("__WAF_OPERATORS_NO_MATCH_RULES_FILE__", OPERATORS_NO_MATCH_RULES_FILE)
-        .replaceAll("__WAF_OPERATORS_UNCONDITIONAL_RULES_FILE__", OPERATORS_UNCONDITIONAL_RULES_FILE)
-        .replaceAll("__WAF_OPERATORS_VALIDATE_URL_ENCODING_RULES_FILE__", OPERATORS_VALIDATE_URL_ENCODING_RULES_FILE)
-        .replaceAll("__WAF_OPERATORS_VALIDATE_URL_ENCODING_NEGATIVE_RULES_FILE__", OPERATORS_VALIDATE_URL_ENCODING_NEGATIVE_RULES_FILE)
-        .replaceAll("__WAF_OPERATORS_VALIDATE_UTF8_RULES_FILE__", OPERATORS_VALIDATE_UTF8_RULES_FILE)
-        .replaceAll("__WAF_OPERATORS_VALIDATE_UTF8_NEGATIVE_RULES_FILE__", OPERATORS_VALIDATE_UTF8_NEGATIVE_RULES_FILE)
-        .replaceAll("__WAF_OPERATORS_PMF_RULES_FILE__", OPERATORS_PMF_RULES_FILE)
-        .replaceAll("__WAF_COLLECTIONS_RULES_FILE__", COLLECTIONS_RULES_FILE)
-        .replaceAll("__WAF_BODY_RULES_FILE__", BODY_RULES_FILE)
-        .replaceAll("__WAF_RESPONSE_RULES_FILE__", RESPONSE_RULES_FILE)
+        .replaceAll("__WAF_RULES_FILE__", stagedRulePaths.WAF_RULES_FILE)
+        .replaceAll("__WAF_LIBINJECTION_RULES_FILE__", stagedRulePaths.WAF_LIBINJECTION_RULES_FILE)
+        .replaceAll("__WAF_ACTION_RULES_FILE__", stagedRulePaths.WAF_ACTION_RULES_FILE)
+        .replaceAll("__WAF_BAN_RULES_FILE__", stagedRulePaths.WAF_BAN_RULES_FILE)
+        .replaceAll("__WAF_SCORE_RULES_FILE__", stagedRulePaths.WAF_SCORE_RULES_FILE)
+        .replaceAll("__WAF_TRANSFORM_RULES_FILE__", stagedRulePaths.WAF_TRANSFORM_RULES_FILE)
+        .replaceAll("__WAF_OPERATORS_RULES_FILE__", stagedRulePaths.WAF_OPERATORS_RULES_FILE)
+        .replaceAll("__WAF_OPERATORS_IPMATCH_RULES_FILE__", stagedRulePaths.WAF_OPERATORS_IPMATCH_RULES_FILE)
+        .replaceAll("__WAF_OPERATORS_IPMATCH_NEGATIVE_RULES_FILE__", stagedRulePaths.WAF_OPERATORS_IPMATCH_NEGATIVE_RULES_FILE)
+        .replaceAll("__WAF_OPERATORS_IPMATCH_FROM_FILE_RULES_FILE__", stagedRulePaths.WAF_OPERATORS_IPMATCH_FROM_FILE_RULES_FILE)
+        .replaceAll("__WAF_OPERATORS_STRMATCH_NEGATIVE_RULES_FILE__", stagedRulePaths.WAF_OPERATORS_STRMATCH_NEGATIVE_RULES_FILE)
+        .replaceAll("__WAF_OPERATORS_CONTAINS_WORD_NEGATIVE_RULES_FILE__", stagedRulePaths.WAF_OPERATORS_CONTAINS_WORD_NEGATIVE_RULES_FILE)
+        .replaceAll("__WAF_OPERATORS_NO_MATCH_RULES_FILE__", stagedRulePaths.WAF_OPERATORS_NO_MATCH_RULES_FILE)
+        .replaceAll("__WAF_OPERATORS_UNCONDITIONAL_RULES_FILE__", stagedRulePaths.WAF_OPERATORS_UNCONDITIONAL_RULES_FILE)
+        .replaceAll("__WAF_OPERATORS_VALIDATE_URL_ENCODING_RULES_FILE__", stagedRulePaths.WAF_OPERATORS_VALIDATE_URL_ENCODING_RULES_FILE)
+        .replaceAll("__WAF_OPERATORS_VALIDATE_URL_ENCODING_NEGATIVE_RULES_FILE__", stagedRulePaths.WAF_OPERATORS_VALIDATE_URL_ENCODING_NEGATIVE_RULES_FILE)
+        .replaceAll("__WAF_OPERATORS_VALIDATE_UTF8_RULES_FILE__", stagedRulePaths.WAF_OPERATORS_VALIDATE_UTF8_RULES_FILE)
+        .replaceAll("__WAF_OPERATORS_VALIDATE_UTF8_NEGATIVE_RULES_FILE__", stagedRulePaths.WAF_OPERATORS_VALIDATE_UTF8_NEGATIVE_RULES_FILE)
+        .replaceAll("__WAF_OPERATORS_PMF_RULES_FILE__", stagedRulePaths.WAF_OPERATORS_PMF_RULES_FILE)
+        .replaceAll("__WAF_COLLECTIONS_RULES_FILE__", stagedRulePaths.WAF_COLLECTIONS_RULES_FILE)
+        .replaceAll("__WAF_BODY_RULES_FILE__", stagedRulePaths.WAF_BODY_RULES_FILE)
+        .replaceAll("__WAF_RESPONSE_RULES_FILE__", stagedRulePaths.WAF_RESPONSE_RULES_FILE)
     );
-    await startNginz(GENERATED_CONFIG, MODULE);
+    await startNginz(generatedConfigPath, MODULE);
   });
 
   afterAll(async () => {
     await stopNginz();
-    if (existsSync(GENERATED_CONFIG)) {
-      rmSync(GENERATED_CONFIG);
+    if (stagedFixturesDir && existsSync(stagedFixturesDir)) {
+      rmSync(stagedFixturesDir, { recursive: true, force: true });
     }
     cleanupRuntime(MODULE);
   });
@@ -846,21 +895,21 @@ describe("waf module", () => {
 
   describe("configuration validation", () => {
     test("reports line-specific unsupported rule syntax", () => {
-      const result = testConfigFailure(UNSUPPORTED_RULES_FILE);
+    const result = testConfigFailure(stagedRulePaths.WAF_UNSUPPORTED_RULES_FILE);
       expect(result.stderr).toContain("line 2: unsupported rule operator");
       expect(result.stderr).toContain("configuration file");
       expect(result.stderr).toContain("test failed");
     });
 
     test("rejects path-mapped REQUEST_FILENAME targets explicitly", () => {
-      const result = testConfigFailure(UNSUPPORTED_REQUEST_FILENAME_RULES_FILE);
+    const result = testConfigFailure(stagedRulePaths.WAF_UNSUPPORTED_REQUEST_FILENAME_RULES_FILE);
       expect(result.stderr).toContain("line 2: unsupported rule target");
       expect(result.stderr).toContain("configuration file");
       expect(result.stderr).toContain("test failed");
     });
 
     test("rejects unsupported operator aliases explicitly", () => {
-      const result = testConfigFailure(UNSUPPORTED_OPERATOR_ALIASES_RULES_FILE);
+    const result = testConfigFailure(stagedRulePaths.WAF_UNSUPPORTED_OPERATOR_ALIASES_RULES_FILE);
       expect(result.stderr).toContain("line 2: unsupported rule operator");
       expect(result.stderr).toContain("configuration file");
       expect(result.stderr).toContain("test failed");
