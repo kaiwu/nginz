@@ -105,12 +105,14 @@ describe("nftset-nginx-module", () => {
       const res = await fetch(`${TEST_URL}/variable`);
       expect(res.status).toBe(200);
       expect(res.headers.get("x-nftset-result")).toBe("error");
+      expect(res.headers.get("x-nftset-matched-set")).toBeNull();
     });
 
     test("result is 'dryrun' when nftset_dryrun is on", async () => {
       const res = await fetch(`${TEST_URL}/variable-dryrun`);
       expect(res.status).toBe(200);
       expect(res.headers.get("x-nftset-result")).toBe("dryrun");
+      expect(res.headers.get("x-nftset-matched-set")).toBeNull();
     });
   });
 

@@ -155,6 +155,27 @@ function request(path) {
   return { status, headers, body };
 }
 
+function requestIpv6(path) {
+  const res = dockerExec(`curl -g -6 -sS -i http://[::1]:8888${path}`);
+  const raw = res.stdout.replace(/\r/g, "");
+  const [headerBlock, body = ""] = raw.split("\n\n", 2);
+  const headerLines = headerBlock.split("\n");
+  const statusLine = headerLines[0] ?? "";
+  const status = Number(statusLine.split(" ")[1]);
+  const headers = new Map();
+  for (const line of headerLines.slice(1)) {
+    const idx = line.indexOf(":");
+    if (idx > 0) {
+      headers.set(line.slice(0, idx).trim().toLowerCase(), line.slice(idx + 1).trim());
+    }
+  }
+  return { status, headers, body };
+}
+
+function nft(command) {
+  return dockerExec(`nft ${command}`);
+}
+
 ensureImage();
 
 describe("nftset-nginx-module container integration", () => {
@@ -204,25 +225,123 @@ describe("nftset-nginx-module container integration", () => {
     const res = request("/variable-block-hit");
     expect(res.status).toBe(403);
     expect(res.headers.get("x-nftset-result")).toBe("deny");
+    expect(res.headers.get("x-nftset-matched-set")).toBe("nginz_test:blocklist");
   });
 
   test("$nftset_result is allow on a real allowlist hit", () => {
     const res = request("/variable-allow-hit");
     expect(res.status).toBe(200);
     expect(res.headers.get("x-nftset-result")).toBe("allow");
+    expect(res.headers.get("x-nftset-matched-set")).toBe("nginz_test:trusted");
   });
 
   test("dryrun reports dryrun on a real membership hit without blocking", () => {
     const res = request("/dryrun-hit");
     expect(res.status).toBe(200);
     expect(res.headers.get("x-nftset-result")).toBe("dryrun");
+    expect(res.headers.get("x-nftset-matched-set")).toBe("nginz_test:blocklist");
     expect(res.body).toContain("dryrun-hit ok");
   });
 
+  test("cache TTL keeps a positive hit sticky until expiry", async () => {
+    const first = request("/cache-positive");
+    expect(first.status).toBe(403);
+    expect(first.headers.get("x-nftset-result")).toBe("deny");
+
+    nft("delete element ip nginz_test cachepositive { 127.0.0.1 }");
+
+    const cached = request("/cache-positive");
+    expect(cached.status).toBe(403);
+    expect(cached.headers.get("x-nftset-result")).toBe("deny");
+
+    await Bun.sleep(1400);
+
+    const afterExpiry = request("/cache-positive");
+    expect(afterExpiry.status).toBe(200);
+    expect(afterExpiry.headers.get("x-nftset-result")).toBe("allow");
+    expect(afterExpiry.body).toContain("cache-positive ok");
+  });
+
+  test("cache TTL keeps a negative miss sticky until expiry", async () => {
+    const first = request("/cache-negative");
+    expect(first.status).toBe(200);
+    expect(first.headers.get("x-nftset-result")).toBe("allow");
+
+    nft("add element ip nginz_test cachenegative { 127.0.0.1 }");
+
+    const cached = request("/cache-negative");
+    expect(cached.status).toBe(200);
+    expect(cached.headers.get("x-nftset-result")).toBe("allow");
+
+    await Bun.sleep(1400);
+
+    const afterExpiry = request("/cache-negative");
+    expect(afterExpiry.status).toBe(403);
+    expect(afterExpiry.headers.get("x-nftset-result")).toBe("deny");
+  });
+
+  test("cache_ttl 0 disables caching so live nft changes apply immediately", () => {
+    const first = request("/cache-disabled");
+    expect(first.status).toBe(200);
+    expect(first.headers.get("x-nftset-result")).toBe("allow");
+
+    nft("add element ip nginz_test cachedisabled { 127.0.0.1 }");
+
+    const second = request("/cache-disabled");
+    expect(second.status).toBe(403);
+    expect(second.headers.get("x-nftset-result")).toBe("deny");
+  });
+
+  test("missing set currently follows ENOENT-as-miss policy in blocklist mode", () => {
+    const res = request("/missing-set-fail-closed");
+    expect(res.status).toBe(200);
+    expect(res.headers.get("x-nftset-result")).toBe("allow");
+    expect(res.body).toContain("missing-set-fail-closed ok");
+  });
+
+  test("missing set also passes in blocklist mode when fail_open is on", () => {
+    const res = request("/missing-set-fail-open");
+    expect(res.status).toBe(200);
+    expect(res.headers.get("x-nftset-result")).toBe("allow");
+    expect(res.body).toContain("missing-set-fail-open ok");
+  });
+
+  test("configured family mismatch is treated as lookup error and fails closed", () => {
+    const res = request("/family-mismatch");
+    expect(res.status).toBe(403);
+    expect(res.headers.get("x-nftset-result")).toBe("error");
+  });
+
+  test("configured family mismatch respects fail_open", () => {
+    const res = request("/family-mismatch-fail-open");
+    expect(res.status).toBe(200);
+    expect(res.headers.get("x-nftset-result")).toBe("error");
+    expect(res.body).toContain("family-mismatch-fail-open ok");
+  });
+
+  test("native IPv6 blocklist hit is denied against an ip6 set", () => {
+    const res = requestIpv6("/ip6-hit");
+    expect(res.status).toBe(403);
+    expect(res.headers.get("x-nftset-result")).toBe("deny");
+    expect(res.headers.get("x-nftset-matched-set")).toBe("nginz_test:blocklist6");
+  });
+
+  test("native IPv6 blocklist miss passes against an ip6 set", () => {
+    const res = requestIpv6("/ip6-miss");
+    expect(res.status).toBe(200);
+    expect(res.headers.get("x-nftset-result")).toBe("allow");
+    expect(res.headers.get("x-nftset-matched-set")).toBeUndefined();
+    expect(res.body).toContain("ip6-miss ok");
+  });
+
   test("container nftables state contains the expected sets and elements", () => {
-    const listed = dockerExec("nft list table ip nginz_test").stdout;
-    expect(listed).toContain("set blocklist");
-    expect(listed).toContain("127.0.0.1");
-    expect(listed).toContain("set trusted");
+    const listedIp = dockerExec("nft list table ip nginz_test").stdout;
+    const listedIp6 = dockerExec("nft list table ip6 nginz_test").stdout;
+    expect(listedIp).toContain("set blocklist");
+    expect(listedIp).toContain("127.0.0.1");
+    expect(listedIp).toContain("set trusted");
+    expect(listedIp).toContain("set cachepositive");
+    expect(listedIp6).toContain("set blocklist6");
+    expect(listedIp6).toContain("::1");
   });
 });

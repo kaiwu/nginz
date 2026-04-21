@@ -4,7 +4,7 @@ Zero-latency IP blocking for nginx using Linux nftables named sets.
 
 ### Status
 
-**Implemented with limitations** — The module performs request-time kernel lookup via raw Netlink `NFT_MSG_GETSETELEM`, exposes `$nftset_result`, and enforces `nftset_deny`, `nftset_status`, `nftset_fail_open`, and `nftset_dryrun`. Live nftables membership coverage now runs in Docker-isolated tests so host nftables never needs to be touched. Remaining work is around broader feature depth and longer-term hardening, not the core membership path.
+**Implemented with limitations** — The module performs request-time kernel lookup via raw Netlink `NFT_MSG_GETSETELEM`, exposes `$nftset_result` and `$nftset_matched_set`, enforces `nftset_deny`, `nftset_status`, `nftset_fail_open`, `nftset_dryrun`, and `nftset_cache_ttl`, and runs live nftables coverage in Docker-isolated tests so host nftables never needs to be touched. Remaining work is now concentrated in broader feature depth rather than the basic membership path.
 
 See [GitHub issue #5](https://github.com/kaiwu/nginz/issues/5) for the original feature request.
 
@@ -16,7 +16,7 @@ See [GitHub issue #5](https://github.com/kaiwu/nginz/issues/5) for the original 
 - **Fixed in this audit:** the raw Netlink request path had unsafe unaligned packet-buffer access. The lookup code now uses byte-copy helpers instead of typed writes into unaligned buffers, which stopped nginx worker crashes on the first enabled request.
 - **Fixed in this audit:** the raw Netlink exchange now uses the correct nfnetlink subsystem/message constants, sends explicitly to the kernel, correlates replies by `nlmsg_seq`, and rejects malformed/truncated frames as lookup errors instead of trusting them.
 - **Fixed in this audit:** positive and negative membership behavior is now covered against live nftables sets in a Docker-isolated test namespace instead of relying only on fail-open / fail-closed fallback coverage.
-- **Still open:** `nftset_cache_ttl` is parsed and inherited, but there is no per-worker cache implementation yet.
+- **Fixed in this audit:** `nftset_cache_ttl` now drives a real per-worker membership cache for definitive hit/miss results, with live Docker coverage proving both TTL expiry and `0` disabling the cache.
 
 #### Motivation
 
@@ -70,7 +70,7 @@ nft add element inet filter blocklist { 1.2.3.4 }
 nft delete element inet filter blocklist { 1.2.3.4 }
 ```
 
-The module reads the set at request time; it does not cache membership yet. This keeps the implementation simple and means set changes take effect immediately for the next request.
+The module reads the set at request time and can cache definitive membership results per worker for the configured TTL. Set `nftset_cache_ttl 0;` when you need every request to reflect nftables mutations immediately.
 
 ---
 
@@ -150,7 +150,7 @@ When enabled, the module logs what it would block but never actually blocks. `$n
 *default:* `nftset_cache_ttl 60s;`
 *context:* `http, server, location`
 
-How long to cache the set membership result per worker process. Reduces kernel calls at high request rates. Set to `0` to disable caching. (*Cache implementation is pending; field is parsed and stored.*)
+How long to cache the set membership result per worker process. Reduces kernel calls at high request rates. Set to `0` to disable caching and force every request through the kernel lookup path.
 
 ---
 
@@ -206,7 +206,7 @@ The current implementation uses raw Netlink syscalls from Zig and does **not** l
 The nftset test directory now contains two layers of coverage:
 
 - `tests/nftset/nftset.test.js` validates directive parsing, inheritance, fail-open / fail-closed handling, and `$nftset_result` behavior without needing live nftables state.
-- `tests/nftset/nftset.container.test.js` provisions real nftables tables/sets inside a disposable Docker container and verifies hit/miss behavior there, so no host nftables rules are modified.
+- `tests/nftset/nftset.container.test.js` provisions real nftables tables/sets inside a disposable Docker container and verifies hit/miss behavior there, including cache TTL expiry and `cache_ttl 0` live-refresh behavior, so no host nftables rules are modified.
 
 ---
 
@@ -214,9 +214,9 @@ The nftset test directory now contains two layers of coverage:
 
 - Linux only (nftables is a Linux kernel subsystem).
 - Requires the nginx worker process to be able to complete nftables Netlink lookups. When lookup fails, `nftset_fail_open` controls whether the request passes through or is denied.
-- IPv4-mapped IPv6 addresses are normalized onto the IPv4 lookup path, but broader family / set-type interoperability still needs more real-kernel coverage.
-- No caching: every request performs a kernel lookup. For extremely high-traffic locations this may become a bottleneck; a per-worker LRU cache can be added later.
-- `NFT_MSG_GETSETELEM` returns `ENOENT` for both “element absent” and some missing-object cases; the raw path still needs more hardening/documented policy around that ambiguity.
+- IPv4-mapped IPv6 addresses are normalized onto the IPv4 lookup path. Native IPv6 hit/miss coverage now runs in Docker, but broader family / set-type interoperability still needs more real-kernel coverage.
+- The current cache is per-worker and only stores definitive hit/miss outcomes. Lookup errors are never cached, so transient kernel or capability failures still re-evaluate on the next request.
+- `NFT_MSG_GETSETELEM` still overloads `ENOENT`, so the module intentionally treats raw `ENOENT` as “not in set” to keep the point-lookup path stable. Operator-facing hardening is instead focused on explicit family-mismatch detection and documentation of this ambiguity.
 
 ---
 
@@ -239,7 +239,7 @@ Comparison against the [GetPageSpeed nftset-access module](https://nginx-extras.
 | Directive | Reference semantics | Status |
 |---|---|---|
 | `nftset_status <code>` | HTTP status on block (403/429/503/444) | ✅ Implemented |
-| `nftset_cache_ttl <time>` | Per-worker result cache, default 60 s | ✅ Parsed & stored — cache logic pending kernel lookup |
+| `nftset_cache_ttl <time>` | Per-worker result cache, default 60 s | ✅ Implemented with live Docker coverage |
 | `nftset_fail_open on\|off` | Allow/deny on lookup error | ✅ Implemented |
 | `nftset_dryrun on\|off` | Log decision, never block | ✅ Implemented |
 | `nftset_ratelimit …` | Per-IP rate limit with optional auto-ban | Open |
@@ -253,7 +253,7 @@ Comparison against the [GetPageSpeed nftset-access module](https://nginx-extras.
 | Variable | Meaning | Status |
 |---|---|---|
 | `$nftset_result` | `allow` / `deny` / `dryrun` / `error` | ✅ Implemented |
-| `$nftset_matched_set` | `table:setname` of the matching set | Open |
+| `$nftset_matched_set` | `table:setname` of the matching set | ✅ Implemented |
 
 #### Missing features
 
@@ -264,12 +264,9 @@ Comparison against the [GetPageSpeed nftset-access module](https://nginx-extras.
 
 ### Remaining Work (hard)
 
-1. **Per-worker LRU cache** — once lookup behavior is better characterized, add a fixed-size array cache keyed on IP string hash with `cache_ttl` expiry.
-2. ~~**Auto-detect IP family**~~ ✅ Done — handler reads `r->connection->sockaddr->sa_family`; IPv4-mapped IPv6 (`::ffff:x.x.x.x`) normalised to `ip`; `nftset_family` becomes an optional override.
-3. **`$nftset_matched_set`** — store the `table:set` string that triggered the match in `nftset_ctx`; expose via a second variable getter.
-4. **Multi-set OR logic** — accept variadic `nftset_blacklist table:set …` syntax; iterate sets until first match.
-5. **`nftset_autoadd`** — honeypot directive: on location access, call `nft add element` to insert client IP into a named set (with optional timeout).
-6. **CIDR matching** — use nftables prefix sets or add a userspace CIDR trie alongside the exact-IP lookup.
+1. **Multi-set OR logic** — accept variadic `nftset_blacklist table:set …` syntax; iterate sets until first match.
+2. **`nftset_autoadd`** — honeypot directive: on location access, call `nft add element` to insert client IP into a named set (with optional timeout).
+3. **CIDR matching** — use nftables prefix sets or add a userspace CIDR trie alongside the exact-IP lookup.
 
 ### Documentation Audit Checklist
 
