@@ -36,7 +36,9 @@
       "Bash(make -f project/nginz.makefile clean 2>&1 && make -f project/nginz.makefile 2>&1 | tail -3)",
       "Bash(zig16 build *)",
       "Bash(python3 /tmp/count_bits.py)",
-      "Bash(zig16 run *)"
+      "Bash(zig16 run *)",
+      "Bash(nm zig-out/bin/nginz)",
+      "WebFetch(domain:nginx-extras.getpagespeed.com)"
     ]
   }
 }

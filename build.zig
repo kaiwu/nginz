@@ -45,6 +45,9 @@ var modules = [_][]const u8{
     "src/modules/transform-nginx-module/ngx_http_transform.zig",
     "src/modules/cache-tags-nginx-module/ngx_http_cache_tags.zig",
     "src/modules/prometheus-nginx-module/ngx_http_prometheus.zig",
+
+    // Security & Network Modules
+    "src/modules/nftset-nginx-module/ngx_http_nftset.zig",
 };
 
 var tests = [_][]const u8{
@@ -87,6 +90,9 @@ var tests = [_][]const u8{
     "src/modules/transform-nginx-module/ngx_http_transform.zig",
     "src/modules/cache-tags-nginx-module/ngx_http_cache_tags.zig",
     "src/modules/prometheus-nginx-module/ngx_http_prometheus.zig",
+
+    // Security & Network Modules
+    "src/modules/nftset-nginx-module/ngx_http_nftset.zig",
 };
 
 const PN = struct {

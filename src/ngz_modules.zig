@@ -109,6 +109,9 @@ extern var ngx_http_ratelimit_module: ngx_module_t;
 extern var ngx_http_requestid_filter_module: ngx_module_t;
 extern var ngx_http_circuit_breaker_module: ngx_module_t;
 
+// Network Security Modules
+extern var ngx_http_nftset_module: ngx_module_t;
+
 // Advanced Processing Modules
 extern var ngx_http_graphql_module: ngx_module_t;
 extern var ngx_http_cache_tags_filter_module: ngx_module_t;
@@ -156,6 +159,7 @@ export const ngx_modules = [_][*c]ngx_module_t{
     &ngx_http_jwt_module,
     &ngx_http_waf_module,
     &ngx_http_circuit_breaker_module,
+    &ngx_http_nftset_module,
 
     // Routing & filtering
     &ngx_http_geo_module,
@@ -270,6 +274,7 @@ export const ngx_module_names = [_][*c]const u8{
     "ngx_http_ratelimit_module",
     "ngx_http_waf_module",
     "ngx_http_circuit_breaker_module",
+    "ngx_http_nftset_module",
     "ngx_http_geo_module",
     "ngx_http_map_module",
     "ngx_http_split_clients_module",
