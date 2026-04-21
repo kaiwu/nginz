@@ -4,6 +4,7 @@ const ngx = @import("ngx");
 const core = ngx.core;
 const conf = ngx.conf;
 const http = ngx.http;
+const shm = ngx.shm;
 
 const NGX_OK = core.NGX_OK;
 const NGX_ERROR = core.NGX_ERROR;
@@ -32,7 +33,7 @@ const NArray = ngx.array.NArray;
 extern var ngx_http_core_module: ngx_module_t;
 extern var ngx_current_msec: ngx_msec_t;
 
-// TODO: nftset_ratelimit — per-IP rate window with optional autoban to a named set
+// TODO: nftset_ratelimit — shared-worker per-IP rate window with optional autoban to a named set
 
 // ──────────────────────────────────────────────────────────────────────────
 // Linux socket / Netlink / nftables kernel ABI constants
@@ -170,6 +171,7 @@ const NFTSET_CACHE_SIZE: usize = 128;
 const NFTSET_CACHE_KEY_MAX: usize = 512;
 const NFTSET_RATELIMIT_MAX_ENTRIES: usize = 1024;
 const NFTSET_RATELIMIT_STATUS: ngx_int_t = 429;
+const NFTSET_RATELIMIT_ZONE_SIZE: usize = 128 * 1024;
 
 const CacheMembership = enum(u8) {
     in_set,
@@ -192,15 +194,20 @@ const CacheEntry = struct {
 
 var nftset_cache = std.mem.zeroes([NFTSET_CACHE_SIZE]CacheEntry);
 
-const RateLimitEntry = struct {
-    valid: bool,
+const RateLimitEntry = extern struct {
     key: u64,
     count: u32,
     window_start_sec: u64,
     last_used_sec: u64,
 };
 
-var nftset_ratelimit_entries = std.mem.zeroes([NFTSET_RATELIMIT_MAX_ENTRIES]RateLimitEntry);
+const nftset_ratelimit_store = extern struct {
+    initialized: ngx_flag_t,
+    entry_count: ngx_uint_t,
+    entries: [NFTSET_RATELIMIT_MAX_ENTRIES]RateLimitEntry,
+};
+
+var ngx_http_nftset_ratelimit_zone: [*c]core.ngx_shm_zone_t = core.nullptr(core.ngx_shm_zone_t);
 
 const nftset_spec = extern struct {
     table: ngx_str_t,
@@ -478,22 +485,55 @@ fn currentWindowSec() u64 {
     return @intCast(ngx_current_msec / 1000);
 }
 
-fn buildRateLimitKey(scope: usize, table_fam: u8, ip_bytes: []const u8) u64 {
+fn buildRateLimitKey(scope: []const u8, table_fam: u8, ip_bytes: []const u8) u64 {
     var hash: u64 = 1469598103934665603;
-    var scope_value: u64 = @intCast(scope);
-    hash = fnv1a64(hash, std.mem.asBytes(&scope_value));
+    hash = fnv1a64(hash, scope);
     hash = fnv1a64(hash, &[_]u8{table_fam});
     hash = fnv1a64(hash, ip_bytes);
     return if (hash == 0) 1 else hash;
 }
 
-fn getOrCreateRateLimitEntry(rate_key: u64, current_sec: u64) *RateLimitEntry {
+fn getRateLimitStore() ?[*c]nftset_ratelimit_store {
+    if (ngx_http_nftset_ratelimit_zone == core.nullptr(core.ngx_shm_zone_t)) return null;
+    return core.castPtr(nftset_ratelimit_store, ngx_http_nftset_ratelimit_zone.*.data);
+}
+
+fn getRateLimitShpool() ?[*c]core.ngx_slab_pool_t {
+    const zone = ngx_http_nftset_ratelimit_zone;
+    if (zone == core.nullptr(core.ngx_shm_zone_t) or zone.*.shm.addr == null or zone.*.data == null) {
+        return null;
+    }
+    return core.castPtr(core.ngx_slab_pool_t, zone.*.shm.addr);
+}
+
+fn ngx_http_nftset_ratelimit_zone_init(zone: [*c]core.ngx_shm_zone_t, data: ?*anyopaque) callconv(.c) ngx_int_t {
+    if (data != null) {
+        zone.*.data = data;
+        return NGX_OK;
+    }
+
+    const shpool = core.castPtr(core.ngx_slab_pool_t, zone.*.shm.addr) orelse return NGX_ERROR;
+    if (shpool.*.data != null) {
+        zone.*.data = shpool.*.data;
+        return NGX_OK;
+    }
+
+    const store_mem = shm.ngx_slab_calloc(shpool, @sizeOf(nftset_ratelimit_store)) orelse return NGX_ERROR;
+    const store = core.castPtr(nftset_ratelimit_store, store_mem) orelse return NGX_ERROR;
+    store.* = std.mem.zeroes(nftset_ratelimit_store);
+    store.*.initialized = 1;
+    shpool.*.data = store;
+    zone.*.data = store;
+    return NGX_OK;
+}
+
+fn getOrCreateRateLimitEntry(store: *nftset_ratelimit_store, rate_key: u64, current_sec: u64) *RateLimitEntry {
     var empty_slot: ?*RateLimitEntry = null;
     var reusable_slot: ?*RateLimitEntry = null;
     var oldest_slot: ?*RateLimitEntry = null;
 
-    for (&nftset_ratelimit_entries) |*entry| {
-        if (!entry.valid) {
+    for (&store.entries) |*entry| {
+        if (entry.key == 0) {
             if (empty_slot == null) empty_slot = entry;
             continue;
         }
@@ -503,8 +543,8 @@ fn getOrCreateRateLimitEntry(rate_key: u64, current_sec: u64) *RateLimitEntry {
     }
 
     const slot = empty_slot orelse reusable_slot orelse oldest_slot orelse unreachable;
+    if (slot.key == 0) store.entry_count += 1;
     slot.* = .{
-        .valid = true,
         .key = rate_key,
         .count = 0,
         .window_start_sec = current_sec,
@@ -513,9 +553,9 @@ fn getOrCreateRateLimitEntry(rate_key: u64, current_sec: u64) *RateLimitEntry {
     return slot;
 }
 
-fn checkRateLimit(rate_key: u64, rate: ngx_uint_t, burst: ngx_uint_t) bool {
+fn checkRateLimit(store: *nftset_ratelimit_store, rate_key: u64, rate: ngx_uint_t, burst: ngx_uint_t) bool {
     const current_sec = currentWindowSec();
-    const entry = getOrCreateRateLimitEntry(rate_key, current_sec);
+    const entry = getOrCreateRateLimitEntry(store, rate_key, current_sec);
 
     if (current_sec > entry.window_start_sec) {
         entry.window_start_sec = current_sec;
@@ -530,6 +570,33 @@ fn checkRateLimit(rate_key: u64, rate: ngx_uint_t, burst: ngx_uint_t) bool {
     }
 
     return false;
+}
+
+fn initRateLimitScope(cf: [*c]ngx_conf_t, lcf: *nftset_loc_conf) [*c]u8 {
+    const clcf = core.castPtr(
+        http.ngx_http_core_loc_conf_t,
+        conf.ngx_http_conf_get_module_loc_conf(cf, &ngx_http_core_module),
+    ) orelse return conf.NGX_CONF_ERROR;
+    const cscf = core.castPtr(
+        http.ngx_http_core_srv_conf_t,
+        conf.ngx_http_conf_get_module_srv_conf(cf, &ngx_http_core_module),
+    ) orelse return conf.NGX_CONF_ERROR;
+
+    const server_name = if (cscf.*.server_name.len > 0 and cscf.*.server_name.data != null)
+        core.slicify(u8, cscf.*.server_name.data, cscf.*.server_name.len)
+    else
+        "_";
+    const location_name = if (clcf.*.name.len > 0 and clcf.*.name.data != null)
+        core.slicify(u8, clcf.*.name.data, clcf.*.name.len)
+    else
+        "/";
+
+    const buf_len = server_name.len + location_name.len + 2;
+    const scope_buf = core.castPtr(u8, core.ngx_pnalloc(cf.*.pool, buf_len)) orelse return conf.NGX_CONF_ERROR;
+    const scope_slice = core.slicify(u8, scope_buf, buf_len);
+    const rendered = std.fmt.bufPrint(scope_slice, "{s}|{s}", .{ server_name, location_name }) catch return conf.NGX_CONF_ERROR;
+    lcf.*.ratelimit_scope = ngx_str_t{ .data = scope_buf, .len = rendered.len };
+    return conf.NGX_CONF_OK;
 }
 
 fn parseRateLimitRate(value: []const u8) ?ngx_uint_t {
@@ -833,7 +900,6 @@ fn nftset_add_ip_to_set(
 
 fn nftset_init_process(cycle: [*c]core.ngx_cycle_t) callconv(.c) ngx_int_t {
     nftset_cache = std.mem.zeroes([NFTSET_CACHE_SIZE]CacheEntry);
-    nftset_ratelimit_entries = std.mem.zeroes([NFTSET_RATELIMIT_MAX_ENTRIES]RateLimitEntry);
     netlink_fd = socket(AF_NETLINK_SOCK, SOCK_RAW_C, NETLINK_NETFILTER_PROT);
     if (netlink_fd < 0) {
         // Socket failed (e.g. no CAP_NET_ADMIN) — module operates in
@@ -860,7 +926,6 @@ fn nftset_init_process(cycle: [*c]core.ngx_cycle_t) callconv(.c) ngx_int_t {
 
 fn nftset_exit_process(_: [*c]core.ngx_cycle_t) callconv(.c) void {
     nftset_cache = std.mem.zeroes([NFTSET_CACHE_SIZE]CacheEntry);
-    nftset_ratelimit_entries = std.mem.zeroes([NFTSET_RATELIMIT_MAX_ENTRIES]RateLimitEntry);
     if (netlink_fd >= 0) {
         _ = close(netlink_fd);
         netlink_fd = -1;
@@ -905,6 +970,7 @@ const nftset_loc_conf = extern struct {
     autoban_set: ngx_str_t,
     autoban_family: ngx_str_t,
     autoban_timeout: ngx_msec_t,
+    ratelimit_scope: ngx_str_t,
 };
 
 // Per-request context — carries the access decision and resolved family
@@ -1418,8 +1484,13 @@ fn ngx_http_nftset_access_handler(r: [*c]ngx_http_request_t) callconv(.c) ngx_in
     }
 
     if (ratelimit_enabled and response == NGX_DECLINED) {
-        const rate_key = buildRateLimitKey(@intFromPtr(lcf), table_fam, ip_bytes);
-        if (!checkRateLimit(rate_key, lcf.*.ratelimit_rate, lcf.*.ratelimit_burst)) {
+        const rate_key = buildRateLimitKey(core.slicify(u8, lcf.*.ratelimit_scope.data, lcf.*.ratelimit_scope.len), table_fam, ip_bytes);
+        const shpool = getRateLimitShpool() orelse return NGX_DECLINED;
+        const store = getRateLimitStore() orelse return NGX_DECLINED;
+        shm.ngx_shmtx_lock(&shpool.*.mutex);
+        const allowed = checkRateLimit(store, rate_key, lcf.*.ratelimit_rate, lcf.*.ratelimit_burst);
+        shm.ngx_shmtx_unlock(&shpool.*.mutex);
+        if (!allowed) {
             maybeApplyAutoban(r, lcf, lookup_enabled, table_fam, is_ipv6, elem_family, table_slice, ip_bytes);
             ngx.log.ngz_log_error(
                 ngx.log.NGX_LOG_NOTICE,
@@ -1513,6 +1584,7 @@ fn create_loc_conf(cf: [*c]ngx_conf_t) callconv(.c) ?*anyopaque {
     lcf.*.ratelimit_burst_set = conf.NGX_CONF_UNSET;
     lcf.*.ratelimit_status = conf.NGX_CONF_UNSET;
     lcf.*.autoban_timeout = conf.NGX_CONF_UNSET_MSEC;
+    lcf.*.ratelimit_scope = ngx_str_t{ .len = 0, .data = null };
     return lcf;
 }
 
@@ -1521,7 +1593,6 @@ fn merge_loc_conf(
     parent: ?*anyopaque,
     child: ?*anyopaque,
 ) callconv(.c) [*c]u8 {
-    _ = cf;
     const prev = core.castPtr(nftset_loc_conf, parent) orelse return conf.NGX_CONF_OK;
     const curr = core.castPtr(nftset_loc_conf, child) orelse return conf.NGX_CONF_OK;
 
@@ -1616,10 +1687,24 @@ fn merge_loc_conf(
         }
     }
 
+    if (curr.*.ratelimit_scope.len == 0 and prev.*.ratelimit_scope.len > 0) {
+        curr.*.ratelimit_scope = prev.*.ratelimit_scope;
+    }
+
+    if (curr.*.ratelimit_rate > 0 and curr.*.ratelimit_scope.len == 0) {
+        return initRateLimitScope(cf, curr);
+    }
+
     return conf.NGX_CONF_OK;
 }
 
 fn postconfiguration(cf: [*c]ngx_conf_t) callconv(.c) ngx_int_t {
+    var zone_name = ngx_string("nftset_ratelimit_zone");
+    const zone = shm.ngx_shared_memory_add(cf, &zone_name, NFTSET_RATELIMIT_ZONE_SIZE, @constCast(&ngx_http_nftset_module));
+    if (zone == core.nullptr(core.ngx_shm_zone_t)) return NGX_ERROR;
+    zone.*.init = ngx_http_nftset_ratelimit_zone_init;
+    ngx_http_nftset_ratelimit_zone = zone;
+
     // Register $nftset_result and $nftset_matched_set variables
     var vs = [_]http.ngx_http_variable_t{
         http.ngx_http_variable_t{

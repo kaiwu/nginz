@@ -133,6 +133,17 @@ describe("nftset-nginx-module", () => {
       expect(await res.text()).toContain("ratelimit-burst ok");
     });
 
+    test("shared ratelimit budget is enforced across multiple workers", async () => {
+      await Bun.sleep(1100);
+
+      const statuses = await Promise.all(
+        Array.from({ length: 4 }, () => fetch(`${TEST_URL}/ratelimit`).then((res) => res.status))
+      );
+
+      expect(statuses.filter((s) => s === 200).length).toBe(3);
+      expect(statuses.filter((s) => s === 429).length).toBe(1);
+    });
+
     test("child ratelimit burst can override inherited burst with zero", async () => {
       const res = await fetch(`${TEST_URL}/ratelimit-parent/child-zero-burst`);
       expect(res.status).toBe(200);

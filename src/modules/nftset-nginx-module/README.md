@@ -4,7 +4,7 @@ Zero-latency IP blocking for nginx using Linux nftables named sets.
 
 ### Status
 
-**Implemented with limitations** — The module performs request-time kernel lookup via raw Netlink `NFT_MSG_GETSETELEM`, exposes `$nftset_result` and `$nftset_matched_set`, enforces `nftset_deny`, `nftset_status`, `nftset_fail_open`, `nftset_dryrun`, `nftset_cache_ttl`, `nftset_sets`, `nftset_autoadd`, and `nftset_ratelimit`/`nftset_autoban`, and runs live nftables coverage in Docker-isolated tests so host nftables never needs to be touched. Remaining work is now concentrated in harder multi-worker/state-sharing follow-ups rather than the basic membership and write paths.
+**Implemented with limitations** — The module performs request-time kernel lookup via raw Netlink `NFT_MSG_GETSETELEM`, exposes `$nftset_result` and `$nftset_matched_set`, enforces `nftset_deny`, `nftset_status`, `nftset_fail_open`, `nftset_dryrun`, `nftset_cache_ttl`, `nftset_sets`, `nftset_autoadd`, and `nftset_ratelimit`/`nftset_autoban`, and runs live nftables coverage in Docker-isolated tests so host nftables never needs to be touched. The remaining gaps are now around cache sharing and deeper kernel hardening rather than the basic membership, write, or rate-limit paths.
 
 See [GitHub issue #5](https://github.com/kaiwu/nginz/issues/5) for the original feature request.
 
@@ -208,7 +208,7 @@ Optional per-element timeout for auto-added entries. Encoded as milliseconds to 
 *default:* disabled
 *context:* `http, server, location`
 
-Enable a simple fixed-window per-IP rate limit in this context. Counting is per worker and per effective location config.
+Enable a simple fixed-window per-IP rate limit in this context. Counting is shared across workers and scoped to the effective location config.
 
 #### nftset_ratelimit_burst
 
@@ -406,7 +406,8 @@ The nftset test directory now contains two layers of coverage:
 - Requires the nginx worker process to be able to complete nftables Netlink lookups. When lookup fails, `nftset_fail_open` controls whether the request passes through or is denied.
 - IPv4-mapped IPv6 addresses are normalized onto the IPv4 lookup path. Native IPv6 hit/miss coverage now runs in Docker, but broader family / set-type interoperability still needs more real-kernel coverage.
 - The current cache is per-worker and only stores definitive hit/miss outcomes. Lookup errors are never cached, so transient kernel or capability failures still re-evaluate on the next request.
-- The current rate limiter is also per-worker and uses a simple fixed 1-second window, so limits are intentionally approximate across multiple workers and can burst at window boundaries.
+- The rate limiter now uses nginx shared memory so the same fixed 1-second budget is enforced across workers for a given location/IP bucket.
+- That shared rate-limit bucket is keyed by `server_name|location`, so its stability across workers/reloads depends on that pair remaining unique for the intended policy scope.
 - `NFT_MSG_GETSETELEM` still overloads `ENOENT`, so the module intentionally treats raw `ENOENT` as “not in set” to keep the point-lookup path stable. Operator-facing hardening is instead focused on explicit family-mismatch detection and documentation of this ambiguity.
 
 ---
@@ -447,15 +448,9 @@ Comparison against the [GetPageSpeed nftset-access module](https://nginx-extras.
 | `$nftset_result` | `allow` / `deny` / `dryrun` / `error` | ✅ Implemented |
 | `$nftset_matched_set` | `table:setname` of the matching set | ✅ Implemented |
 
-#### Missing features
-
-- **Shared-worker rate state** — current rate windows are local to each worker rather than backed by shared memory or kernel counters.
-
----
-
 ### Remaining Work (hard)
 
-1. **Shared-worker rate limiting** — move beyond the current per-worker fixed-window approximation if stricter enforcement is needed.
+1. **Shared-worker membership cache** — if cache coherence across workers matters, move beyond the current per-worker definitive hit/miss cache.
 2. **Stronger ENOENT disambiguation** — if a safe object-existence strategy proves reliable across kernels, tighten the missing-set vs missing-element behavior without regressing common misses.
 3. **Broader write-path hardening** — more kernel/version coverage for auto-add / autoban edge cases such as interval sets, maps, and batch error reporting.
 
@@ -467,3 +462,4 @@ Comparison against the [GetPageSpeed nftset-access module](https://nginx-extras.
 - [x] Gap fixed in this audit pass: the raw Netlink request path no longer performs unsafe unaligned struct access into packet buffers.
 - [x] Gap fixed in this audit pass: the raw Netlink lookup now uses the correct nfnetlink subsystem/message constants, which made live nftables membership checks work instead of failing with `EINVAL`.
 - [x] Bun integration coverage now verifies fail-open inheritance, fail-closed custom-status behavior, `$nftset_result` on lookup failure, dryrun behavior, directive inheritance across `server` / `location` blocks, and live membership hit/miss behavior in Docker-isolated nftables tests.
+- [x] `nftset_ratelimit` now uses a shared-memory zone for cross-worker fixed-window accounting, while the lookup cache intentionally remains per-worker.

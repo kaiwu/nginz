@@ -177,6 +177,11 @@ function requestBurst(path, count) {
   return res.stdout.trim().split(/\s+/).filter(Boolean).map(Number);
 }
 
+function requestConcurrent(path, count) {
+  const res = dockerExec(`seq 1 ${count} | xargs -n1 -P${count} -I{} bash -lc "curl -sS -o /dev/null -w '%{http_code}\n' http://127.0.0.1:8888${path}"`);
+  return res.stdout.trim().split(/\s+/).filter(Boolean).map(Number);
+}
+
 function nft(command) {
   return dockerExec(`nft ${command}`);
 }
@@ -360,6 +365,15 @@ describe("nftset-nginx-module container integration", () => {
     expect(statuses).toEqual([200, 200, 200, 429]);
   });
 
+  test("ratelimit shared memory enforces a single budget across multiple workers", async () => {
+    await Bun.sleep(1100);
+
+    const statuses = requestConcurrent("/ratelimit-plain", 4);
+
+    expect(statuses.filter((s) => s === 200).length).toBe(3);
+    expect(statuses.filter((s) => s === 429).length).toBe(1);
+  });
+
   test("child zero-burst overrides inherited burst allowance", async () => {
     await Bun.sleep(1100);
 
@@ -374,12 +388,8 @@ describe("nftset-nginx-module container integration", () => {
     const before = dockerExec("nft list set ip nginz_test ratelimit_banned").stdout;
     expect(before).not.toContain("127.0.0.1");
 
-    const first = request("/ratelimit-autoban");
-    expect(first.status).toBe(200);
-    expect(first.headers.get("x-nftset-result")).toBe("allow");
-
-    const second = request("/ratelimit-autoban");
-    expect(second.status).toBe(429);
+    const statuses = requestBurst("/ratelimit-autoban", 2);
+    expect(statuses).toEqual([200, 429]);
 
     const after = dockerExec("nft list set ip nginz_test ratelimit_banned").stdout;
     expect(after).toContain("127.0.0.1 timeout");

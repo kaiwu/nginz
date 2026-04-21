@@ -94,6 +94,17 @@ describe("ratelimit module", () => {
       expect(results.filter((s) => s === 200).length).toBe(5);
       expect(results.filter((s) => s === 429).length).toBe(2);
     });
+
+    test("shared counters enforce the fixed window across multiple workers", async () => {
+      await Bun.sleep(1100);
+
+      const statuses = await Promise.all(
+        Array.from({ length: 6 }, () => fetch(`${TEST_URL}/api`).then((res) => res.status))
+      );
+
+      expect(statuses.filter((s) => s === 200).length).toBe(5);
+      expect(statuses.filter((s) => s === 429).length).toBe(1);
+    });
   });
 
   describe("rate limit isolation", () => {
@@ -125,6 +136,86 @@ describe("ratelimit module", () => {
 
       expect(results.filter((s) => s === 200).length).toBe(4);
       expect(results.filter((s) => s === 429).length).toBe(2);
+    });
+  });
+
+  describe("generic variable inputs", () => {
+    test("shared ratelimit_key can make multiple requests in one location consume the same budget", async () => {
+      await Bun.sleep(1100);
+
+      const statuses = [];
+      statuses.push((await fetch(`${TEST_URL}/shared-a`)).status);
+      statuses.push((await fetch(`${TEST_URL}/shared-a`)).status);
+      statuses.push((await fetch(`${TEST_URL}/shared-a`)).status);
+
+      expect(statuses).toEqual([200, 200, 429]);
+    });
+
+    test("same ratelimit_key in different locations still keeps separate location-scoped budgets", async () => {
+      await Bun.sleep(1100);
+
+      await fetch(`${TEST_URL}/shared-parent-a`);
+      await fetch(`${TEST_URL}/shared-parent-a`);
+
+      const otherLocation = await fetch(`${TEST_URL}/shared-parent-b`);
+      expect(otherLocation.status).toBe(200);
+    });
+
+    test("ratelimit_cost variable can consume more than one token per request", async () => {
+      await Bun.sleep(1100);
+
+      const [first, second] = await Promise.all([
+        fetch(`${TEST_URL}/costly`),
+        fetch(`${TEST_URL}/costly`),
+      ]);
+
+      const responses = [first, second];
+      const allowed = responses.filter((res) => res.status === 200);
+      const denied = responses.filter((res) => res.status === 429);
+
+      expect(allowed).toHaveLength(1);
+      expect(denied).toHaveLength(1);
+      expect(allowed[0].headers.get("x-ratelimit-cost")).toBe("2");
+      expect(allowed[0].headers.get("x-ratelimit-source")).toBe("ip");
+      expect(allowed[0].headers.get("x-ratelimit-result")).toBe("allow");
+    });
+
+    test("ratelimit_skip variable bypasses enforcement while still exposing allow result", async () => {
+      await Bun.sleep(1100);
+
+      for (let i = 0; i < 5; i++) {
+        const res = await fetch(`${TEST_URL}/skip`);
+        expect(res.status).toBe(200);
+        expect(res.headers.get("x-ratelimit-result")).toBe("allow");
+      }
+    });
+  });
+
+  describe("ratelimit observability variables", () => {
+    test("default path exposes IP-derived key, source, cost, and decision", async () => {
+      await Bun.sleep(1100);
+
+      const res = await fetch(`${TEST_URL}/observed`);
+
+      expect(res.status).toBe(200);
+      expect(res.headers.get("x-ratelimit-cost")).toBe("1");
+      expect(res.headers.get("x-ratelimit-source")).toBe("ip");
+      expect(res.headers.get("x-ratelimit-result")).toBe("allow");
+      expect(res.headers.get("x-ratelimit-key")).toBeTruthy();
+    });
+  });
+
+  describe("config inheritance", () => {
+    test("child explicit ratelimit_rate 10 does not inherit a parent non-10 rate", async () => {
+      await Bun.sleep(1100);
+
+      const statuses = [];
+      for (let i = 0; i < 11; i++) {
+        statuses.push((await fetch(`${TEST_URL}/inherit-parent/child-rate-10`)).status);
+      }
+
+      expect(statuses.filter((s) => s === 200).length).toBe(10);
+      expect(statuses.filter((s) => s === 429).length).toBe(1);
     });
   });
 });
