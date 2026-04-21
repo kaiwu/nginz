@@ -22,6 +22,7 @@ const ngx_http_request_t = http.ngx_http_request_t;
 const ngx_http_handler_pt = http.ngx_http_handler_pt;
 const ngx_http_core_main_conf_t = http.ngx_http_core_main_conf_t;
 const ngx_http_variable_value_t = http.ngx_http_variable_value_t;
+const ngx_array_t = ngx.array.ngx_array_t;
 
 const ngx_string = ngx.string.ngx_string;
 const ngx_null_str = ngx.string.ngx_null_str;
@@ -32,11 +33,6 @@ extern var ngx_http_core_module: ngx_module_t;
 extern var ngx_current_msec: ngx_msec_t;
 
 // TODO: nftset_ratelimit — per-IP rate window with optional autoban to a named set
-// TODO: nftset_autoadd   — honeypot: visiting this location adds client IP to a set
-// TODO: multi-set OR logic (nftset_blacklist t:s1 t:s2 …)
-// TODO: $nftset_matched_set variable — which set matched, in table:set format
-// TODO: CIDR subnet matching via ipv4_addr prefix set type
-// TODO: nftset_cache_ttl — extend beyond the current exact-match membership cache if needed
 
 // ──────────────────────────────────────────────────────────────────────────
 // Linux socket / Netlink / nftables kernel ABI constants
@@ -63,6 +59,9 @@ const NLMSG_DONE_TYPE: u16 = 3;
 // Netlink message flags
 const NLM_F_REQUEST: u16 = 0x01;
 const NLM_F_ACK: u16 = 0x04;
+const NLM_F_CREATE: u16 = 0x400;
+const NFNL_MSG_BATCH_BEGIN: u16 = 16;
+const NFNL_MSG_BATCH_END: u16 = 17;
 
 // nftables protocol families (nfgenmsg.nfgen_family)
 const NFNETLINK_V0: u8 = 0;
@@ -77,6 +76,7 @@ const NFTA_SET_ELEM_LIST_SET: u16 = 2;
 const NFTA_SET_ELEM_LIST_ELEMENTS: u16 = 3;
 const NFTA_LIST_ELEM: u16 = 1; // one element in the list
 const NFTA_SET_ELEM_KEY: u16 = 1; // key nested under NFTA_LIST_ELEM
+const NFTA_SET_ELEM_TIMEOUT: u16 = 4;
 const NFTA_DATA_VALUE: u16 = 1; // raw bytes under NFTA_SET_ELEM_KEY
 
 // Fixed sizes matching Linux kernel ABI
@@ -190,6 +190,11 @@ const CacheEntry = struct {
 
 var nftset_cache = std.mem.zeroes([NFTSET_CACHE_SIZE]CacheEntry);
 
+const nftset_spec = extern struct {
+    table: ngx_str_t,
+    set: ngx_str_t,
+};
+
 // ──────────────────────────────────────────────────────────────────────────
 // Netlink message construction helpers
 // ──────────────────────────────────────────────────────────────────────────
@@ -220,6 +225,16 @@ fn put_nla_raw(buf: []u8, pos: usize, nla_type: u16, data: []const u8) usize {
     @memset(buf[pos .. pos + aligned], 0);
     writeStruct(buf, pos, Nlattr{ .len = total, .type_ = nla_type });
     @memcpy(buf[pos + NLATTR_HDR_SZ .. pos + NLATTR_HDR_SZ + data.len], data);
+    return pos + aligned;
+}
+
+fn put_nla_u64_be(buf: []u8, pos: usize, nla_type: u16, value: u64) usize {
+    const total: u16 = @intCast(NLATTR_HDR_SZ + @sizeOf(u64));
+    const aligned = nla_align(total);
+    @memset(buf[pos .. pos + aligned], 0);
+    writeStruct(buf, pos, Nlattr{ .len = total, .type_ = nla_type });
+    const be_value = std.mem.nativeToBig(u64, value);
+    writeStruct(buf, pos + NLATTR_HDR_SZ, be_value);
     return pos + aligned;
 }
 
@@ -293,6 +308,81 @@ fn build_query(
     });
 
     return pos;
+}
+
+fn build_add_query(
+    buf: *[512]u8,
+    seq: u32,
+    table_fam: u8,
+    table: []const u8,
+    set_name: []const u8,
+    ip_bytes: []const u8,
+    timeout_ms: ngx_msec_t,
+) ?usize {
+    @memset(buf, 0);
+    var pos: usize = 0;
+
+    if (!ensureSpace(buf.len, pos, NLMSG_HDR_SZ)) return null;
+    pos += NLMSG_HDR_SZ;
+
+    if (!ensureSpace(buf.len, pos, NFGENMSG_SZ)) return null;
+    writeStruct(buf, pos, Nfgenmsg{ .family = table_fam, .version = NFNETLINK_V0, .res_id = 0 });
+    pos += NFGENMSG_SZ;
+
+    if (!ensureSpace(buf.len, pos, nla_align(NLATTR_HDR_SZ + table.len + 1))) return null;
+    pos = put_nla_str(buf, pos, NFTA_SET_ELEM_LIST_TABLE, table);
+
+    if (!ensureSpace(buf.len, pos, nla_align(NLATTR_HDR_SZ + set_name.len + 1))) return null;
+    pos = put_nla_str(buf, pos, NFTA_SET_ELEM_LIST_SET, set_name);
+
+    const timeout_need: usize = if (timeout_ms > 0) nla_align(NLATTR_HDR_SZ + @sizeOf(u64)) else 0;
+    const nested_need = (NLATTR_HDR_SZ * 3) + nla_align(NLATTR_HDR_SZ + ip_bytes.len) + timeout_need;
+    if (!ensureSpace(buf.len, pos, nested_need)) return null;
+
+    const elements_hdr = pos;
+    pos = nla_nest_start(buf, pos, NFTA_SET_ELEM_LIST_ELEMENTS);
+    const list_elem_hdr = pos;
+    pos = nla_nest_start(buf, pos, NFTA_LIST_ELEM);
+    const key_hdr = pos;
+    pos = nla_nest_start(buf, pos, NFTA_SET_ELEM_KEY);
+    pos = put_nla_raw(buf, pos, NFTA_DATA_VALUE, ip_bytes);
+    nla_nest_end(buf, key_hdr, pos);
+    if (timeout_ms > 0) {
+        pos = put_nla_u64_be(buf, pos, NFTA_SET_ELEM_TIMEOUT, timeout_ms);
+    }
+    nla_nest_end(buf, list_elem_hdr, pos);
+    nla_nest_end(buf, elements_hdr, pos);
+
+    writeStruct(buf, 0, Nlmsghdr{
+        .len = @intCast(pos),
+        .type_ = (NFNL_SUBSYS_NFTABLES << 8) | NFT_MSG_NEWSETELEM,
+        .flags = NLM_F_REQUEST | NLM_F_CREATE | NLM_F_ACK,
+        .seq = seq,
+        .pid = 0,
+    });
+
+    return pos;
+}
+
+fn build_batch_marker(
+    buf: *[20]u8,
+    seq: u32,
+    msg_type: u16,
+) usize {
+    @memset(buf, 0);
+    writeStruct(buf, 0, Nlmsghdr{
+        .len = @intCast(NLMSG_HDR_SZ + NFGENMSG_SZ),
+        .type_ = msg_type,
+        .flags = NLM_F_REQUEST,
+        .seq = seq,
+        .pid = 0,
+    });
+    writeStruct(buf, NLMSG_HDR_SZ, Nfgenmsg{
+        .family = 0,
+        .version = 0,
+        .res_id = std.mem.nativeToBig(u16, NFNL_SUBSYS_NFTABLES),
+    });
+    return NLMSG_HDR_SZ + NFGENMSG_SZ;
 }
 
 // ──────────────────────────────────────────────────────────────────────────
@@ -371,6 +461,17 @@ const LookupResult = union(enum) {
     in_set,
     not_in_set,
     lookup_error: i32,
+};
+
+const AutoaddResult = union(enum) {
+    added,
+    exists,
+    add_error: i32,
+};
+
+const LookupOutcome = struct {
+    lookup: LookupResult,
+    matched_set: ngx_str_t,
 };
 
 fn cacheMembershipToLookup(membership: CacheMembership) LookupResult {
@@ -465,6 +566,19 @@ fn cacheStore(key: []const u8, membership: CacheMembership, now: ngx_msec_t, ttl
     slot.expires_at = now + ttl;
 }
 
+fn updateLookupCacheForSet(
+    table: []const u8,
+    set_name: []const u8,
+    table_fam: u8,
+    ip_bytes: []const u8,
+    ttl: ngx_msec_t,
+) void {
+    if (ttl == 0) return;
+    var key_buf: [NFTSET_CACHE_KEY_MAX]u8 = undefined;
+    const cache_key = buildCacheKey(&key_buf, table, set_name, table_fam, ip_bytes) orelse return;
+    cacheStore(cache_key, .in_set, ngx_current_msec, ttl);
+}
+
 // Query whether ip_bytes is a member of the named set in the named table.
 //
 // Protocol: send NFT_MSG_GETSETELEM | NLM_F_REQUEST | NLM_F_ACK.
@@ -552,6 +666,79 @@ fn nftset_ip_in_set(
     return if (found) .in_set else .{ .lookup_error = -8 };
 }
 
+fn nftset_add_ip_to_set(
+    table: []const u8,
+    set_name: []const u8,
+    table_fam: u8,
+    ip_bytes: []const u8,
+    timeout_ms: ngx_msec_t,
+) AutoaddResult {
+    if (netlink_fd < 0) return .{ .add_error = -1 };
+
+    var qbuf: [512]u8 = undefined;
+    var begin_buf: [20]u8 = undefined;
+    var end_buf: [20]u8 = undefined;
+    var send_buf: [768]u8 = undefined;
+
+    netlink_seq +%= 1;
+    const begin_seq = netlink_seq;
+    netlink_seq +%= 1;
+    const add_seq = netlink_seq;
+    netlink_seq +%= 1;
+    const end_seq = netlink_seq;
+
+    const begin_len = build_batch_marker(&begin_buf, begin_seq, NFNL_MSG_BATCH_BEGIN);
+    const msg_len = build_add_query(&qbuf, add_seq, table_fam, table, set_name, ip_bytes, timeout_ms) orelse return .{ .add_error = -2 };
+    const end_len = build_batch_marker(&end_buf, end_seq, NFNL_MSG_BATCH_END);
+
+    const total_len = begin_len + msg_len + end_len;
+    if (total_len > send_buf.len) return .{ .add_error = -10 };
+    @memcpy(send_buf[0..begin_len], begin_buf[0..begin_len]);
+    @memcpy(send_buf[begin_len .. begin_len + msg_len], qbuf[0..msg_len]);
+    @memcpy(send_buf[begin_len + msg_len .. total_len], end_buf[0..end_len]);
+
+    const kernel_addr = SockaddrNl{ .family = AF_NETLINK_SOCK, .pad = 0, .pid = 0, .groups = 0 };
+    const sent = sendto(netlink_fd, &send_buf, total_len, 0, &kernel_addr, @sizeOf(SockaddrNl));
+    if (sent < 0) return .{ .add_error = -3 };
+
+    var rbuf: [4096]u8 = undefined;
+    var iters: u8 = 0;
+    while (iters < 4) : (iters += 1) {
+        const rcvd = recv(netlink_fd, &rbuf, rbuf.len, 0);
+        if (rcvd <= 0) return .{ .add_error = -4 };
+
+        const rcvd_sz: usize = @intCast(rcvd);
+        var off: usize = 0;
+        while (off + NLMSG_HDR_SZ <= rcvd_sz) {
+            const nlh = readStruct(Nlmsghdr, &rbuf, off);
+            if (nlh.len < NLMSG_HDR_SZ) break;
+            if (nlh.len > rcvd_sz - off) return .{ .add_error = -5 };
+
+            const step = nla_align(@intCast(nlh.len));
+            if (step == 0 or step > rcvd_sz - off) return .{ .add_error = -6 };
+
+            if (nlh.seq != add_seq) {
+                off += step;
+                continue;
+            }
+
+            if (nlh.type_ == NLMSG_ERROR_TYPE) {
+                if (off + NLMSG_HDR_SZ + 4 > rcvd_sz) return .{ .add_error = -7 };
+                const err_val = read_i32_native(&rbuf, off + NLMSG_HDR_SZ);
+                if (err_val == 0) return .added;
+                if (err_val == -17) return .exists;
+                return .{ .add_error = err_val };
+            }
+
+            if (nlh.type_ == NLMSG_DONE_TYPE) return .added;
+
+            off += step;
+        }
+    }
+
+    return .{ .add_error = -8 };
+}
+
 // ──────────────────────────────────────────────────────────────────────────
 // Per-worker init / exit (open/close the Netlink socket once per worker)
 // ──────────────────────────────────────────────────────────────────────────
@@ -600,6 +787,8 @@ const nftset_loc_conf = extern struct {
     table: ngx_str_t,
     // nftables set name (e.g. "blocklist")
     set: ngx_str_t,
+    // Optional multi-set OR list. When present, it overrides table/set.
+    sets: NArray(nftset_spec),
     // nftables table family: "inet", "ip", "ip6"; null = auto-detect
     family: ngx_str_t,
     // deny=1: block IPs found in set; deny=0: block IPs NOT in set (allowlist)
@@ -612,6 +801,12 @@ const nftset_loc_conf = extern struct {
     dryrun: ngx_flag_t,
     // cache_ttl: how long to cache set membership per worker (ms, default 60000)
     cache_ttl: ngx_msec_t,
+    // autoadd: add the client IP to a target set on request handling
+    autoadd: ngx_flag_t,
+    autoadd_table: ngx_str_t,
+    autoadd_set: ngx_str_t,
+    autoadd_family: ngx_str_t,
+    autoadd_timeout: ngx_msec_t,
 };
 
 // Per-request context — carries the access decision and resolved family
@@ -631,12 +826,177 @@ fn make_matched_set(r: [*c]ngx_http_request_t, table: ngx_str_t, set_name: ngx_s
     return concat_string_from_pool(&.{ table, set_name }, ":", r.*.pool) catch ngx_null_str;
 }
 
+fn make_matched_set_from_slice(r: [*c]ngx_http_request_t, table: []const u8, set_name: []const u8) ngx_str_t {
+    const table_str = ngx_string(table);
+    const set_str = ngx_string(set_name);
+    return concat_string_from_pool(&.{ table_str, set_str }, ":", r.*.pool) catch ngx_null_str;
+}
+
+fn parse_set_spec(spec: []const u8) ?struct { table: []const u8, set_name: []const u8 } {
+    const sep = std.mem.indexOfScalar(u8, spec, ':') orelse return null;
+    if (sep == 0 or sep + 1 >= spec.len) return null;
+    return .{
+        .table = spec[0..sep],
+        .set_name = spec[sep + 1 ..],
+    };
+}
+
+fn cfgError(cf: [*c]ngx_conf_t, statement: []const u8) [*c]u8 {
+    ngx.log.ngz_log_error(ngx.log.NGX_LOG_EMERG, cf.*.log, 0, statement.ptr, .{});
+    return conf.NGX_CONF_ERROR;
+}
+
+fn ngx_conf_set_nftset_sets(
+    cf: [*c]ngx_conf_t,
+    cmd: [*c]ngx_command_t,
+    loc: ?*anyopaque,
+) callconv(.c) [*c]u8 {
+    _ = cmd;
+    const lcf = core.castPtr(nftset_loc_conf, loc) orelse return conf.NGX_CONF_ERROR;
+    if (!lcf.*.sets.inited()) {
+        lcf.*.sets = NArray(nftset_spec).init(cf.*.pool, 1) catch return conf.NGX_CONF_ERROR;
+    }
+
+    var i: ngx_uint_t = 1;
+    while (ngx.array.ngx_array_next(ngx_str_t, cf.*.args, &i)) |arg| {
+        const raw = arg.*.data[0..arg.*.len];
+        const parsed = parse_set_spec(raw) orelse return cfgError(cf, "nftset_sets entries must use table:set syntax");
+        const spec = lcf.*.sets.append() catch return conf.NGX_CONF_ERROR;
+        spec.*.table = ngx.string.ngx_string_from_pool(@constCast(parsed.table.ptr), parsed.table.len, cf.*.pool) catch return conf.NGX_CONF_ERROR;
+        spec.*.set = ngx.string.ngx_string_from_pool(@constCast(parsed.set_name.ptr), parsed.set_name.len, cf.*.pool) catch return conf.NGX_CONF_ERROR;
+    }
+
+    if (lcf.*.sets.size() == 0) return cfgError(cf, "nftset_sets requires at least one table:set entry");
+    return conf.NGX_CONF_OK;
+}
+
 fn set_ctx(r: [*c]ngx_http_request_t, result: ngx_str_t, client_family: ngx_str_t, matched_set: ngx_str_t) void {
     const ctx = core.ngz_pcalloc_c(nftset_ctx, r.*.pool) orelse return;
     ctx.*.result = result;
     ctx.*.client_family = client_family;
     ctx.*.matched_set = matched_set;
     r.*.ctx[ngx_http_nftset_module.ctx_index] = ctx;
+}
+
+fn lookup_single_set(
+    r: [*c]ngx_http_request_t,
+    table: []const u8,
+    set_name: []const u8,
+    table_str: ngx_str_t,
+    set_str: ngx_str_t,
+    table_fam: u8,
+    ip_bytes: []const u8,
+    cache_ttl: ngx_msec_t,
+) LookupResult {
+    const now = ngx_current_msec;
+    var key_buf: [NFTSET_CACHE_KEY_MAX]u8 = undefined;
+    const cache_key = if (cache_ttl > 0)
+        buildCacheKey(&key_buf, table, set_name, table_fam, ip_bytes)
+    else
+        null;
+
+    return blk: {
+        if (cache_ttl > 0) {
+            if (cache_key) |key| {
+                switch (cacheLookup(key, now)) {
+                    .hit => |membership| {
+                        ngx.log.ngz_log_debug(
+                            ngx.log.NGX_LOG_DEBUG_HTTP,
+                            r.*.connection.*.log,
+                            0,
+                            "nftset: cache hit client=%V table=%V set=%V",
+                            .{ &r.*.connection.*.addr_text, &table_str, &set_str },
+                        );
+                        break :blk cacheMembershipToLookup(membership);
+                    },
+                    .miss => {},
+                }
+            }
+        }
+
+        const fresh = nftset_ip_in_set(table, set_name, table_fam, ip_bytes);
+        if (cache_ttl > 0) {
+            if (cache_key) |key| {
+                if (lookupToCacheMembership(fresh)) |membership| {
+                    cacheStore(key, membership, now, cache_ttl);
+                }
+            }
+        }
+        break :blk fresh;
+    };
+}
+
+fn perform_lookup(
+    r: [*c]ngx_http_request_t,
+    lcf: *nftset_loc_conf,
+    table_fam: u8,
+    ip_bytes: []const u8,
+) LookupOutcome {
+    var matched_set = ngx_null_str;
+    const table_slice: []const u8 = if (lcf.*.table.data != null) lcf.*.table.data[0..lcf.*.table.len] else "filter";
+    const set_slice: []const u8 = if (lcf.*.set.data != null) lcf.*.set.data[0..lcf.*.set.len] else "blocklist";
+
+    const lookup = blk: {
+        if (lcf.*.sets.inited() and lcf.*.sets.size() > 0) {
+            var it = lcf.*.sets.iterator();
+            while (it.next()) |spec| {
+                const spec_table = spec.*.table.data[0..spec.*.table.len];
+                const spec_set = spec.*.set.data[0..spec.*.set.len];
+                const spec_lookup = lookup_single_set(
+                    r,
+                    spec_table,
+                    spec_set,
+                    spec.*.table,
+                    spec.*.set,
+                    table_fam,
+                    ip_bytes,
+                    lcf.*.cache_ttl,
+                );
+                switch (spec_lookup) {
+                    .in_set => {
+                        matched_set = make_matched_set(r, spec.*.table, spec.*.set);
+                        break :blk .in_set;
+                    },
+                    .lookup_error => break :blk spec_lookup,
+                    .not_in_set => {},
+                }
+            }
+            break :blk .not_in_set;
+        }
+
+        const single_lookup = lookup_single_set(
+            r,
+            table_slice,
+            set_slice,
+            lcf.*.table,
+            lcf.*.set,
+            table_fam,
+            ip_bytes,
+            lcf.*.cache_ttl,
+        );
+        if (single_lookup == .in_set) {
+            matched_set = make_matched_set_from_slice(r, table_slice, set_slice);
+        }
+        break :blk single_lookup;
+    };
+
+    return .{ .lookup = lookup, .matched_set = matched_set };
+}
+
+fn lookupUsesTarget(lcf: *nftset_loc_conf, table: []const u8, set_name: []const u8) bool {
+    if (lcf.*.sets.inited() and lcf.*.sets.size() > 0) {
+        var it = lcf.*.sets.iterator();
+        while (it.next()) |spec| {
+            const spec_table = spec.*.table.data[0..spec.*.table.len];
+            const spec_set = spec.*.set.data[0..spec.*.set.len];
+            if (std.mem.eql(u8, spec_table, table) and std.mem.eql(u8, spec_set, set_name)) return true;
+        }
+        return false;
+    }
+
+    const table_slice: []const u8 = if (lcf.*.table.data != null) lcf.*.table.data[0..lcf.*.table.len] else "filter";
+    const set_slice: []const u8 = if (lcf.*.set.data != null) lcf.*.set.data[0..lcf.*.set.len] else "blocklist";
+    return std.mem.eql(u8, table_slice, table) and std.mem.eql(u8, set_slice, set_name);
 }
 
 // ──────────────────────────────────────────────────────────────────────────
@@ -649,7 +1009,9 @@ fn ngx_http_nftset_access_handler(r: [*c]ngx_http_request_t) callconv(.c) ngx_in
         conf.ngx_http_get_module_loc_conf(r, &ngx_http_nftset_module),
     ) orelse return NGX_DECLINED;
 
-    if (lcf.*.enabled != 1) return NGX_DECLINED;
+    const lookup_enabled = lcf.*.enabled == 1;
+    const autoadd_enabled = lcf.*.autoadd == 1;
+    if (!lookup_enabled and !autoadd_enabled) return NGX_DECLINED;
 
     // Element IP family: always derived from the actual client address.
     // "ip" for IPv4 (or IPv4-mapped IPv6), "ip6" for native IPv6.
@@ -668,8 +1030,8 @@ fn ngx_http_nftset_access_handler(r: [*c]ngx_http_request_t) callconv(.c) ngx_in
         ngx.log.NGX_LOG_DEBUG_HTTP,
         r.*.connection.*.log,
         0,
-        "nftset: client=%V elem_family=%V table=%V set=%V deny=%d dryrun=%d",
-        .{ &r.*.connection.*.addr_text, &elem_family, &lcf.*.table, &lcf.*.set, lcf.*.deny, lcf.*.dryrun },
+        "nftset: client=%V elem_family=%V table=%V set=%V deny=%d dryrun=%d autoadd=%d",
+        .{ &r.*.connection.*.addr_text, &elem_family, &lcf.*.table, &lcf.*.set, lcf.*.deny, lcf.*.dryrun, lcf.*.autoadd },
     );
 
     const table_slice: []const u8 = if (lcf.*.table.data != null) lcf.*.table.data[0..lcf.*.table.len] else "filter";
@@ -679,132 +1041,165 @@ fn ngx_http_nftset_access_handler(r: [*c]ngx_http_request_t) callconv(.c) ngx_in
     else
         "inet";
 
-    const family_mismatch = (std.mem.eql(u8, configured_family, "ip") and is_ipv6) or
-        (std.mem.eql(u8, configured_family, "ip6") and !is_ipv6);
-    if (family_mismatch) {
-        ngx.log.ngz_log_error(
-            ngx.log.NGX_LOG_ERR,
-            r.*.connection.*.log,
-            0,
-            "nftset: client family %V does not match configured nftset_family=%V (table=%V set=%V)",
-            .{ &elem_family, &lcf.*.family, &lcf.*.table, &lcf.*.set },
-        );
-        set_ctx(r, result_error, elem_family, ngx_null_str);
-        if (lcf.*.fail_open == 1) return NGX_DECLINED;
-        return lcf.*.status;
-    }
-
-    if (lcf.*.dryrun == 1) {
-        // Dryrun mode: perform the lookup for diagnostic logging only; never enforce.
-        var ip_buf: [16]u8 = undefined;
-        if (get_client_ip_bytes(r, is_ipv6, &ip_buf)) |ip_bytes| {
-            const lookup = nftset_ip_in_set(table_slice, set_slice, table_fam, ip_bytes);
-            const matched_set = if (lookup == .in_set) make_matched_set(r, lcf.*.table, lcf.*.set) else ngx_null_str;
-            const would_block = switch (lookup) {
-                .in_set => lcf.*.deny == 1,
-                .not_in_set => lcf.*.deny == 0,
-                .lookup_error => false,
-            };
-            if (would_block) {
-                ngx.log.ngz_log_error(
-                    ngx.log.NGX_LOG_NOTICE,
-                    r.*.connection.*.log,
-                    0,
-                    "nftset: dryrun would block %V (table=%V set=%V)",
-                    .{ &r.*.connection.*.addr_text, &lcf.*.table, &lcf.*.set },
-                );
-            }
-            set_ctx(r, result_dryrun, elem_family, matched_set);
-            return NGX_DECLINED;
-        }
-        set_ctx(r, result_dryrun, elem_family, ngx_null_str);
-        return NGX_DECLINED;
-    }
-
-    // Extract the binary IP from the request's remote address.
     var ip_buf: [16]u8 = undefined;
     const ip_bytes = get_client_ip_bytes(r, is_ipv6, &ip_buf) orelse {
+        if (lookup_enabled) {
+            ngx.log.ngz_log_error(
+                ngx.log.NGX_LOG_ERR,
+                r.*.connection.*.log,
+                0,
+                "nftset: cannot extract client IP bytes (sa_family=%d)",
+                .{@as(c_int, if (r.*.connection.*.sockaddr != null) @intCast(r.*.connection.*.sockaddr.?.*.sa_family) else 0)},
+            );
+            set_ctx(r, result_error, elem_family, ngx_null_str);
+            if (lcf.*.fail_open == 1) return NGX_DECLINED;
+            return lcf.*.status;
+        }
+
         ngx.log.ngz_log_error(
             ngx.log.NGX_LOG_ERR,
             r.*.connection.*.log,
             0,
-            "nftset: cannot extract client IP bytes (sa_family=%d)",
+            "nftset: autoadd cannot extract client IP bytes (sa_family=%d)",
             .{@as(c_int, if (r.*.connection.*.sockaddr != null) @intCast(r.*.connection.*.sockaddr.?.*.sa_family) else 0)},
         );
-        set_ctx(r, result_error, elem_family, ngx_null_str);
-        if (lcf.*.fail_open == 1) return NGX_DECLINED;
-        return lcf.*.status;
+        return NGX_DECLINED;
     };
 
-    const now = ngx_current_msec;
-    var key_buf: [NFTSET_CACHE_KEY_MAX]u8 = undefined;
-    const cache_key = if (lcf.*.cache_ttl > 0)
-        buildCacheKey(&key_buf, table_slice, set_slice, table_fam, ip_bytes)
-    else
-        null;
+    var response: ngx_int_t = NGX_DECLINED;
+    var ctx_result = ngx_null_str;
+    var ctx_matched_set = ngx_null_str;
 
-    const lookup = blk: {
-        if (lcf.*.cache_ttl > 0) {
-            if (cache_key) |key| {
-                switch (cacheLookup(key, now)) {
-                    .hit => |membership| {
-                        ngx.log.ngz_log_debug(
-                            ngx.log.NGX_LOG_DEBUG_HTTP,
-                            r.*.connection.*.log,
-                            0,
-                            "nftset: cache hit client=%V table=%V set=%V",
-                            .{ &r.*.connection.*.addr_text, &lcf.*.table, &lcf.*.set },
-                        );
-                        break :blk cacheMembershipToLookup(membership);
-                    },
-                    .miss => {},
+    if (lookup_enabled) {
+        const family_mismatch = (std.mem.eql(u8, configured_family, "ip") and is_ipv6) or
+            (std.mem.eql(u8, configured_family, "ip6") and !is_ipv6);
+        if (family_mismatch) {
+            ngx.log.ngz_log_error(
+                ngx.log.NGX_LOG_ERR,
+                r.*.connection.*.log,
+                0,
+                "nftset: client family %V does not match configured nftset_family=%V (table=%V set=%V)",
+                .{ &elem_family, &lcf.*.family, &lcf.*.table, &lcf.*.set },
+            );
+            ctx_result = result_error;
+            response = if (lcf.*.fail_open == 1) NGX_DECLINED else lcf.*.status;
+        } else {
+            const outcome = perform_lookup(r, lcf, table_fam, ip_bytes);
+            ctx_matched_set = outcome.matched_set;
+
+            if (lcf.*.dryrun == 1) {
+                const would_block = switch (outcome.lookup) {
+                    .in_set => lcf.*.deny == 1,
+                    .not_in_set => lcf.*.deny == 0,
+                    .lookup_error => false,
+                };
+                if (would_block) {
+                    ngx.log.ngz_log_error(
+                        ngx.log.NGX_LOG_NOTICE,
+                        r.*.connection.*.log,
+                        0,
+                        "nftset: dryrun would block %V (table=%V set=%V)",
+                        .{ &r.*.connection.*.addr_text, &lcf.*.table, &lcf.*.set },
+                    );
+                }
+                ctx_result = result_dryrun;
+                response = NGX_DECLINED;
+            } else if (outcome.lookup == .lookup_error) {
+                const err_code = outcome.lookup.lookup_error;
+                ngx.log.ngz_log_error(
+                    ngx.log.NGX_LOG_ERR,
+                    r.*.connection.*.log,
+                    0,
+                    "nftset: kernel lookup failed for %V (table=%V set=%V fail_open=%d err=%d)",
+                    .{ &r.*.connection.*.addr_text, &lcf.*.table, &lcf.*.set, lcf.*.fail_open, err_code },
+                );
+                ctx_result = result_error;
+                ctx_matched_set = ngx_null_str;
+                response = if (lcf.*.fail_open == 1) NGX_DECLINED else lcf.*.status;
+            } else {
+                const blocked = if (outcome.lookup == .in_set) lcf.*.deny == 1 else lcf.*.deny == 0;
+                if (blocked) {
+                    ngx.log.ngz_log_error(
+                        ngx.log.NGX_LOG_NOTICE,
+                        r.*.connection.*.log,
+                        0,
+                        "nftset: blocking %V (table=%V set=%V status=%d)",
+                        .{ &r.*.connection.*.addr_text, &lcf.*.table, &lcf.*.set, lcf.*.status },
+                    );
+                    ctx_result = result_deny;
+                    response = lcf.*.status;
+                } else {
+                    ctx_result = result_allow;
+                    response = NGX_DECLINED;
                 }
             }
         }
+    }
 
-        const fresh = nftset_ip_in_set(table_slice, set_slice, table_fam, ip_bytes);
-        if (lcf.*.cache_ttl > 0) {
-            if (cache_key) |key| {
-                if (lookupToCacheMembership(fresh)) |membership| {
-                    cacheStore(key, membership, now, lcf.*.cache_ttl);
-                }
+    if (autoadd_enabled) {
+        const autoadd_family_slice = if (lcf.*.autoadd_family.data != null and lcf.*.autoadd_family.len > 0)
+            lcf.*.autoadd_family.data[0..lcf.*.autoadd_family.len]
+        else if (lcf.*.family.data != null and lcf.*.family.len > 0)
+            lcf.*.family.data[0..lcf.*.family.len]
+        else
+            "inet";
+        const autoadd_family_mismatch = (std.mem.eql(u8, autoadd_family_slice, "ip") and is_ipv6) or
+            (std.mem.eql(u8, autoadd_family_slice, "ip6") and !is_ipv6);
+        if (autoadd_family_mismatch) {
+            ngx.log.ngz_log_error(
+                ngx.log.NGX_LOG_ERR,
+                r.*.connection.*.log,
+                0,
+                "nftset: autoadd client family %V does not match nftset_autoadd_family=%V (table=%V set=%V)",
+                .{ &elem_family, &lcf.*.autoadd_family, &lcf.*.autoadd_table, &lcf.*.autoadd_set },
+            );
+        } else {
+            const autoadd_table_slice: []const u8 = if (lcf.*.autoadd_table.data != null) lcf.*.autoadd_table.data[0..lcf.*.autoadd_table.len] else table_slice;
+            const autoadd_set_slice: []const u8 = if (lcf.*.autoadd_set.data != null) lcf.*.autoadd_set.data[0..lcf.*.autoadd_set.len] else set_slice;
+            const autoadd_table_fam = table_family_num(autoadd_family_slice);
+            switch (nftset_add_ip_to_set(autoadd_table_slice, autoadd_set_slice, autoadd_table_fam, ip_bytes, lcf.*.autoadd_timeout)) {
+                .added => {
+                    ngx.log.ngz_log_debug(
+                        ngx.log.NGX_LOG_DEBUG_HTTP,
+                        r.*.connection.*.log,
+                        0,
+                        "nftset: autoadd inserted %V into table=%V set=%V",
+                        .{ &r.*.connection.*.addr_text, &lcf.*.autoadd_table, &lcf.*.autoadd_set },
+                    );
+                    if (lookup_enabled and autoadd_table_fam == table_fam and lookupUsesTarget(lcf, autoadd_table_slice, autoadd_set_slice)) {
+                        updateLookupCacheForSet(autoadd_table_slice, autoadd_set_slice, table_fam, ip_bytes, lcf.*.cache_ttl);
+                    }
+                },
+                .exists => {
+                    ngx.log.ngz_log_debug(
+                        ngx.log.NGX_LOG_DEBUG_HTTP,
+                        r.*.connection.*.log,
+                        0,
+                        "nftset: autoadd found existing element for %V in table=%V set=%V",
+                        .{ &r.*.connection.*.addr_text, &lcf.*.autoadd_table, &lcf.*.autoadd_set },
+                    );
+                    if (lookup_enabled and autoadd_table_fam == table_fam and lookupUsesTarget(lcf, autoadd_table_slice, autoadd_set_slice)) {
+                        updateLookupCacheForSet(autoadd_table_slice, autoadd_set_slice, table_fam, ip_bytes, lcf.*.cache_ttl);
+                    }
+                },
+                .add_error => |err_code| {
+                    ngx.log.ngz_log_error(
+                        ngx.log.NGX_LOG_ERR,
+                        r.*.connection.*.log,
+                        0,
+                        "nftset: autoadd failed for %V (table=%V set=%V err=%d)",
+                        .{ &r.*.connection.*.addr_text, &lcf.*.autoadd_table, &lcf.*.autoadd_set, err_code },
+                    );
+                },
             }
         }
-        break :blk fresh;
-    };
-
-    if (lookup == .lookup_error) {
-        const err_code = lookup.lookup_error;
-        ngx.log.ngz_log_error(
-            ngx.log.NGX_LOG_ERR,
-            r.*.connection.*.log,
-            0,
-            "nftset: kernel lookup failed for %V (table=%V set=%V fail_open=%d err=%d)",
-            .{ &r.*.connection.*.addr_text, &lcf.*.table, &lcf.*.set, lcf.*.fail_open, err_code },
-        );
-        set_ctx(r, result_error, elem_family, ngx_null_str);
-        if (lcf.*.fail_open == 1) return NGX_DECLINED;
-        return lcf.*.status;
     }
 
-    // Determine if the request should be blocked.
-    // deny=1 (blocklist): block if IP is in set
-    // deny=0 (allowlist): block if IP is NOT in set
-    const blocked = if (lookup == .in_set) lcf.*.deny == 1 else lcf.*.deny == 0;
-
-    if (blocked) {
-        ngx.log.ngz_log_error(
-            ngx.log.NGX_LOG_NOTICE,
-            r.*.connection.*.log,
-            0,
-            "nftset: blocking %V (table=%V set=%V status=%d)",
-            .{ &r.*.connection.*.addr_text, &lcf.*.table, &lcf.*.set, lcf.*.status },
-        );
-        set_ctx(r, result_deny, elem_family, if (lookup == .in_set) make_matched_set(r, lcf.*.table, lcf.*.set) else ngx_null_str);
-        return lcf.*.status;
+    if (lookup_enabled) {
+        set_ctx(r, ctx_result, elem_family, ctx_matched_set);
+        return response;
     }
 
-    set_ctx(r, result_allow, elem_family, if (lookup == .in_set) make_matched_set(r, lcf.*.table, lcf.*.set) else ngx_null_str);
     return NGX_DECLINED;
 }
 
@@ -868,6 +1263,8 @@ fn create_loc_conf(cf: [*c]ngx_conf_t) callconv(.c) ?*anyopaque {
     lcf.*.fail_open = conf.NGX_CONF_UNSET;
     lcf.*.dryrun = conf.NGX_CONF_UNSET;
     lcf.*.cache_ttl = conf.NGX_CONF_UNSET_MSEC;
+    lcf.*.autoadd = conf.NGX_CONF_UNSET;
+    lcf.*.autoadd_timeout = conf.NGX_CONF_UNSET_MSEC;
     return lcf;
 }
 
@@ -898,12 +1295,42 @@ fn merge_loc_conf(
     if (curr.*.cache_ttl == conf.NGX_CONF_UNSET_MSEC) {
         curr.*.cache_ttl = if (prev.*.cache_ttl == conf.NGX_CONF_UNSET_MSEC) 60000 else prev.*.cache_ttl;
     }
+    if (curr.*.autoadd == conf.NGX_CONF_UNSET) {
+        curr.*.autoadd = if (prev.*.autoadd == conf.NGX_CONF_UNSET) 0 else prev.*.autoadd;
+    }
+    if (curr.*.autoadd_timeout == conf.NGX_CONF_UNSET_MSEC) {
+        curr.*.autoadd_timeout = if (prev.*.autoadd_timeout == conf.NGX_CONF_UNSET_MSEC) 0 else prev.*.autoadd_timeout;
+    }
+    if (!curr.*.sets.inited() and prev.*.sets.inited()) {
+        curr.*.sets = prev.*.sets;
+    }
     conf.ngx_conf_merge_str_value(&curr.*.table, &prev.*.table, ngx_string("filter"));
     conf.ngx_conf_merge_str_value(&curr.*.set, &prev.*.set, ngx_string("blocklist"));
     // family: no hardcoded default — null signals auto-detect (use NFPROTO_INET).
     // Inherit from parent only if parent was explicitly set.
     if (curr.*.family.data == null and prev.*.family.data != null) {
         curr.*.family = prev.*.family;
+    }
+    if (curr.*.autoadd_table.data == null) {
+        if (prev.*.autoadd_table.data != null) {
+            curr.*.autoadd_table = prev.*.autoadd_table;
+        } else {
+            curr.*.autoadd_table = curr.*.table;
+        }
+    }
+    if (curr.*.autoadd_set.data == null) {
+        if (prev.*.autoadd_set.data != null) {
+            curr.*.autoadd_set = prev.*.autoadd_set;
+        } else {
+            curr.*.autoadd_set = curr.*.set;
+        }
+    }
+    if (curr.*.autoadd_family.data == null) {
+        if (prev.*.autoadd_family.data != null) {
+            curr.*.autoadd_family = prev.*.autoadd_family;
+        } else {
+            curr.*.autoadd_family = curr.*.family;
+        }
     }
 
     return conf.NGX_CONF_OK;
@@ -985,6 +1412,14 @@ export const ngx_http_nftset_commands = [_]ngx_command_t{
         .post = null,
     },
     ngx_command_t{
+        .name = ngx_string("nftset_sets"),
+        .type = CTX | conf.NGX_CONF_1MORE,
+        .set = ngx_conf_set_nftset_sets,
+        .conf = conf.NGX_HTTP_LOC_CONF_OFFSET,
+        .offset = 0,
+        .post = null,
+    },
+    ngx_command_t{
         .name = ngx_string("nftset_family"),
         .type = CTX | conf.NGX_CONF_TAKE1,
         .set = conf.ngx_conf_set_str_slot,
@@ -1025,6 +1460,46 @@ export const ngx_http_nftset_commands = [_]ngx_command_t{
         .post = null,
     },
     ngx_command_t{
+        .name = ngx_string("nftset_autoadd"),
+        .type = CTX | conf.NGX_CONF_FLAG,
+        .set = conf.ngx_conf_set_flag_slot,
+        .conf = conf.NGX_HTTP_LOC_CONF_OFFSET,
+        .offset = @offsetOf(nftset_loc_conf, "autoadd"),
+        .post = null,
+    },
+    ngx_command_t{
+        .name = ngx_string("nftset_autoadd_table"),
+        .type = CTX | conf.NGX_CONF_TAKE1,
+        .set = conf.ngx_conf_set_str_slot,
+        .conf = conf.NGX_HTTP_LOC_CONF_OFFSET,
+        .offset = @offsetOf(nftset_loc_conf, "autoadd_table"),
+        .post = null,
+    },
+    ngx_command_t{
+        .name = ngx_string("nftset_autoadd_set"),
+        .type = CTX | conf.NGX_CONF_TAKE1,
+        .set = conf.ngx_conf_set_str_slot,
+        .conf = conf.NGX_HTTP_LOC_CONF_OFFSET,
+        .offset = @offsetOf(nftset_loc_conf, "autoadd_set"),
+        .post = null,
+    },
+    ngx_command_t{
+        .name = ngx_string("nftset_autoadd_family"),
+        .type = CTX | conf.NGX_CONF_TAKE1,
+        .set = conf.ngx_conf_set_str_slot,
+        .conf = conf.NGX_HTTP_LOC_CONF_OFFSET,
+        .offset = @offsetOf(nftset_loc_conf, "autoadd_family"),
+        .post = null,
+    },
+    ngx_command_t{
+        .name = ngx_string("nftset_autoadd_timeout"),
+        .type = CTX | conf.NGX_CONF_TAKE1,
+        .set = conf.ngx_conf_set_msec_slot,
+        .conf = conf.NGX_HTTP_LOC_CONF_OFFSET,
+        .offset = @offsetOf(nftset_loc_conf, "autoadd_timeout"),
+        .post = null,
+    },
+    ngx_command_t{
         .name = ngx_string("nftset_cache_ttl"),
         .type = CTX | conf.NGX_CONF_TAKE1,
         .set = conf.ngx_conf_set_msec_slot,
@@ -1056,3 +1531,119 @@ pub export var ngx_http_nftset_module = blk: {
     m.exit_process = nftset_exit_process;
     break :blk m;
 };
+
+// Tests
+const expectEqual = std.testing.expectEqual;
+const expect = std.testing.expect;
+
+test "parse_set_spec accepts valid table:set syntax" {
+    const parsed = parse_set_spec("filter:blocklist") orelse return error.TestUnexpectedResult;
+    try expectEqualStrings("filter", parsed.table);
+    try expectEqualStrings("blocklist", parsed.set_name);
+}
+
+test "parse_set_spec rejects malformed values" {
+    try expect(parse_set_spec("noscope") == null);
+    try expect(parse_set_spec(":set") == null);
+    try expect(parse_set_spec("table:") == null);
+}
+
+test "table_family_num maps configured families" {
+    try expectEqual(@as(u8, NFPROTO_IPV4), table_family_num("ip"));
+    try expectEqual(@as(u8, NFPROTO_IPV6), table_family_num("ip6"));
+    try expectEqual(@as(u8, NFPROTO_INET), table_family_num("inet"));
+    try expectEqual(@as(u8, NFPROTO_INET), table_family_num("unexpected"));
+}
+
+test "buildCacheKey encodes family ip and set identity" {
+    var key_buf: [NFTSET_CACHE_KEY_MAX]u8 = undefined;
+    const ip = [_]u8{ 0x7f, 0x00, 0x00, 0x01 };
+    const key = buildCacheKey(&key_buf, "nginz_test", "blocklist", NFPROTO_IPV4, &ip) orelse return error.TestUnexpectedResult;
+
+    try expectEqual(@as(u8, NFPROTO_IPV4), key[0]);
+    try expectEqual(@as(u8, 4), key[1]);
+    try expect(std.mem.eql(u8, key[2..6], &ip));
+}
+
+test "buildCacheKey differs across sets" {
+    var first_buf: [NFTSET_CACHE_KEY_MAX]u8 = undefined;
+    var second_buf: [NFTSET_CACHE_KEY_MAX]u8 = undefined;
+    const ip = [_]u8{ 0x7f, 0x00, 0x00, 0x01 };
+    const first = buildCacheKey(&first_buf, "nginz_test", "blocklist", NFPROTO_IPV4, &ip) orelse return error.TestUnexpectedResult;
+    const second = buildCacheKey(&second_buf, "nginz_test", "allowlist", NFPROTO_IPV4, &ip) orelse return error.TestUnexpectedResult;
+
+    try expect(!std.mem.eql(u8, first, second));
+}
+
+test "build_query emits get setelem message" {
+    var buf: [512]u8 = undefined;
+    const ip = [_]u8{ 0x7f, 0x00, 0x00, 0x01 };
+    const msg_len = build_query(&buf, 42, NFPROTO_IPV4, "nginz_test", "blocklist", &ip) orelse return error.TestUnexpectedResult;
+    const nlh = readStruct(Nlmsghdr, &buf, 0);
+    const nfgen = readStruct(Nfgenmsg, &buf, NLMSG_HDR_SZ);
+
+    try expectEqual(msg_len, nlh.len);
+    try expectEqual(@as(u16, (NFNL_SUBSYS_NFTABLES << 8) | NFT_MSG_GETSETELEM), nlh.type_);
+    try expectEqual(@as(u16, NLM_F_REQUEST | NLM_F_ACK), nlh.flags);
+    try expectEqual(@as(u32, 42), nlh.seq);
+    try expectEqual(@as(u8, NFPROTO_IPV4), nfgen.family);
+    try expectEqual(@as(u8, NFNETLINK_V0), nfgen.version);
+}
+
+test "build_add_query emits new setelem message with timeout" {
+    var buf: [512]u8 = undefined;
+    const ip = [_]u8{ 0x7f, 0x00, 0x00, 0x01 };
+    const msg_len = build_add_query(&buf, 7, NFPROTO_IPV4, "nginz_test", "honeypot_timeout", &ip, 1200) orelse return error.TestUnexpectedResult;
+    const nlh = readStruct(Nlmsghdr, &buf, 0);
+    const nfgen = readStruct(Nfgenmsg, &buf, NLMSG_HDR_SZ);
+    const msg_slice = buf[0..msg_len];
+
+    try expectEqual(msg_len, nlh.len);
+    try expectEqual(@as(u16, (NFNL_SUBSYS_NFTABLES << 8) | NFT_MSG_NEWSETELEM), nlh.type_);
+    try expectEqual(@as(u16, NLM_F_REQUEST | NLM_F_CREATE | NLM_F_ACK), nlh.flags);
+    try expectEqual(@as(u8, NFPROTO_IPV4), nfgen.family);
+    try expect(std.mem.indexOf(u8, msg_slice, "nginz_test") != null);
+    try expect(std.mem.indexOf(u8, msg_slice, "honeypot_timeout") != null);
+    try expect(std.mem.indexOf(u8, msg_slice, &[_]u8{ 0x7f, 0x00, 0x00, 0x01 }) != null);
+    try expect(std.mem.indexOf(u8, msg_slice, &std.mem.toBytes(std.mem.nativeToBig(u64, 1200))) != null);
+}
+
+test "build_batch_marker emits nftables batch control message" {
+    var buf: [20]u8 = undefined;
+    const msg_len = build_batch_marker(&buf, 9, NFNL_MSG_BATCH_BEGIN);
+    const nlh = readStruct(Nlmsghdr, &buf, 0);
+    const nfgen = readStruct(Nfgenmsg, &buf, NLMSG_HDR_SZ);
+
+    try expectEqual(@as(usize, NLMSG_HDR_SZ + NFGENMSG_SZ), msg_len);
+    try expectEqual(@as(u16, NFNL_MSG_BATCH_BEGIN), nlh.type_);
+    try expectEqual(@as(u16, NLM_F_REQUEST), nlh.flags);
+    try expectEqual(@as(u32, 9), nlh.seq);
+    try expectEqual(@as(u8, 0), nfgen.family);
+    try expectEqual(std.mem.nativeToBig(u16, NFNL_SUBSYS_NFTABLES), nfgen.res_id);
+}
+
+test "cacheStore and cacheLookup roundtrip membership" {
+    nftset_cache = std.mem.zeroes([NFTSET_CACHE_SIZE]CacheEntry);
+
+    var key_buf: [NFTSET_CACHE_KEY_MAX]u8 = undefined;
+    const ip = [_]u8{ 0x7f, 0x00, 0x00, 0x01 };
+    const key = buildCacheKey(&key_buf, "nginz_test", "blocklist", NFPROTO_IPV4, &ip) orelse return error.TestUnexpectedResult;
+
+    cacheStore(key, .in_set, 100, 50);
+
+    switch (cacheLookup(key, 120)) {
+        .hit => |membership| try expectEqual(CacheMembership.in_set, membership),
+        .miss => return error.TestUnexpectedResult,
+    }
+
+    switch (cacheLookup(key, 151)) {
+        .hit => return error.TestUnexpectedResult,
+        .miss => {},
+    }
+}
+
+test "nftset module" {}
+
+fn expectEqualStrings(expected: []const u8, actual: []const u8) !void {
+    try expect(std.mem.eql(u8, expected, actual));
+}

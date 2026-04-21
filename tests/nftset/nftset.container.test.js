@@ -292,6 +292,53 @@ describe("nftset-nginx-module container integration", () => {
     expect(second.headers.get("x-nftset-result")).toBe("deny");
   });
 
+  test("autoadd inserts the client IP into the target set without blocking", () => {
+    const before = dockerExec("nft list set ip nginz_test honeypot").stdout;
+    expect(before).not.toContain("127.0.0.1");
+
+    const res = request("/autoadd-basic");
+    expect(res.status).toBe(200);
+    expect(res.body).toContain("autoadd-basic ok");
+
+    const after = dockerExec("nft list set ip nginz_test honeypot").stdout;
+    expect(after).toContain("127.0.0.1");
+  });
+
+  test("autoadd timeout inserts an expiring element into a timeout-capable set", async () => {
+    const res = request("/autoadd-timeout");
+    expect(res.status).toBe(200);
+    expect(res.body).toContain("autoadd-timeout ok");
+
+    const afterAdd = dockerExec("nft list set ip nginz_test honeypot_timeout").stdout;
+    expect(afterAdd).toContain("127.0.0.1 timeout");
+    expect(afterAdd).toContain("expires");
+
+    await Bun.sleep(1600);
+
+    const afterExpiry = dockerExec("nft list set ip nginz_test honeypot_timeout").stdout;
+    expect(afterExpiry).not.toContain("127.0.0.1");
+  });
+
+  test("autoadd updates shared lookup cache so a follow-up request sees the new membership", () => {
+    const first = request("/autoadd-lookup-shared");
+    expect(first.status).toBe(200);
+    expect(first.headers.get("x-nftset-result")).toBe("allow");
+
+    const second = request("/autoadd-lookup-shared");
+    expect(second.status).toBe(403);
+    expect(second.headers.get("x-nftset-result")).toBe("deny");
+    expect(second.headers.get("x-nftset-matched-set")).toBe("nginz_test:autoaddshared");
+
+    const listed = dockerExec("nft list set ip nginz_test autoaddshared").stdout;
+    expect(listed).toContain("127.0.0.1");
+  });
+
+  test("autoadd family mismatch is logged but does not fail the request", () => {
+    const res = request("/autoadd-family-mismatch");
+    expect(res.status).toBe(200);
+    expect(res.body).toContain("autoadd-family-mismatch ok");
+  });
+
   test("missing set currently follows ENOENT-as-miss policy in blocklist mode", () => {
     const res = request("/missing-set-fail-closed");
     expect(res.status).toBe(200);
@@ -334,6 +381,51 @@ describe("nftset-nginx-module container integration", () => {
     expect(res.body).toContain("ip6-miss ok");
   });
 
+  test("multi-set blocklist stops at the first matching set", () => {
+    const res = request("/multi-block-hit");
+    expect(res.status).toBe(403);
+    expect(res.headers.get("x-nftset-result")).toBe("deny");
+    expect(res.headers.get("x-nftset-matched-set")).toBe("nginz_test:blocklist");
+  });
+
+  test("multi-set blocklist passes when no set matches", () => {
+    const res = request("/multi-block-miss");
+    expect(res.status).toBe(200);
+    expect(res.headers.get("x-nftset-result")).toBe("allow");
+    expect(res.headers.get("x-nftset-matched-set")).toBeUndefined();
+    expect(res.body).toContain("multi-block-miss ok");
+  });
+
+  test("multi-set allowlist passes when any set matches", () => {
+    const res = request("/multi-allow-hit");
+    expect(res.status).toBe(200);
+    expect(res.headers.get("x-nftset-result")).toBe("allow");
+    expect(res.headers.get("x-nftset-matched-set")).toBe("nginz_test:trusted");
+    expect(res.body).toContain("multi-allow-hit ok");
+  });
+
+  test("multi-set allowlist denies when all sets miss", () => {
+    const res = request("/multi-allow-miss");
+    expect(res.status).toBe(403);
+    expect(res.headers.get("x-nftset-result")).toBe("deny");
+    expect(res.headers.get("x-nftset-matched-set")).toBeUndefined();
+  });
+
+  test("CIDR interval set denies when the client IP falls inside the prefix", () => {
+    const res = request("/cidr-hit");
+    expect(res.status).toBe(403);
+    expect(res.headers.get("x-nftset-result")).toBe("deny");
+    expect(res.headers.get("x-nftset-matched-set")).toBe("nginz_test:cidrblock");
+  });
+
+  test("CIDR interval set passes when the client IP falls outside the prefix", () => {
+    const res = request("/cidr-miss");
+    expect(res.status).toBe(200);
+    expect(res.headers.get("x-nftset-result")).toBe("allow");
+    expect(res.headers.get("x-nftset-matched-set")).toBeUndefined();
+    expect(res.body).toContain("cidr-miss ok");
+  });
+
   test("container nftables state contains the expected sets and elements", () => {
     const listedIp = dockerExec("nft list table ip nginz_test").stdout;
     const listedIp6 = dockerExec("nft list table ip6 nginz_test").stdout;
@@ -341,6 +433,10 @@ describe("nftset-nginx-module container integration", () => {
     expect(listedIp).toContain("127.0.0.1");
     expect(listedIp).toContain("set trusted");
     expect(listedIp).toContain("set cachepositive");
+    expect(listedIp).toContain("set honeypot");
+    expect(listedIp).toContain("set honeypot_timeout");
+    expect(listedIp).toContain("set autoaddshared");
+    expect(listedIp).toContain("set cidrblock");
     expect(listedIp6).toContain("set blocklist6");
     expect(listedIp6).toContain("::1");
   });

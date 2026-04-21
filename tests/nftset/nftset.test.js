@@ -100,6 +100,40 @@ describe("nftset-nginx-module", () => {
     });
   });
 
+  describe("nftset_autoadd", () => {
+    test("autoadd-only location parses and serves without lookup enforcement", async () => {
+      const res = await fetch(`${TEST_URL}/autoadd`);
+      expect(res.status).toBe(200);
+      expect(await res.text()).toContain("autoadd ok");
+    });
+
+    test("autoadd inherits table and family from higher scopes", async () => {
+      const res = await fetch(`${TEST_URL}/autoadd-inherit`);
+      expect(res.status).toBe(200);
+      expect(await res.text()).toContain("autoadd-inherit ok");
+    });
+
+    test("autoadd timeout directive parses cleanly", async () => {
+      const res = await fetch(`${TEST_URL}/autoadd-timeout`);
+      expect(res.status).toBe(200);
+      expect(await res.text()).toContain("autoadd-timeout ok");
+    });
+  });
+
+  describe("nftset_sets", () => {
+    test("multi-set blocklist location parses and still passes through when lookup fails open", async () => {
+      const res = await fetch(`${TEST_URL}/multi-set`);
+      expect(res.status).toBe(200);
+      expect(await res.text()).toContain("multi-set ok");
+    });
+
+    test("multi-set allowlist location parses under the current ENOENT-as-miss policy", async () => {
+      const res = await fetch(`${TEST_URL}/multi-set-allow`);
+      expect(res.status).toBe(200);
+      expect(await res.text()).toContain("multi-set-allow ok");
+    });
+  });
+
   describe("$nftset_result variable", () => {
     test("result is 'error' when lookup fails but fail_open allows the request", async () => {
       const res = await fetch(`${TEST_URL}/variable`);
