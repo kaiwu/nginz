@@ -4,7 +4,7 @@ Zero-latency IP blocking for nginx using Linux nftables named sets.
 
 ### Status
 
-**Implemented with limitations** — The module performs request-time kernel lookup via raw Netlink `NFT_MSG_GETSETELEM`, exposes `$nftset_result` and `$nftset_matched_set`, enforces `nftset_deny`, `nftset_status`, `nftset_fail_open`, `nftset_dryrun`, `nftset_cache_ttl`, `nftset_sets`, and `nftset_autoadd`, and runs live nftables coverage in Docker-isolated tests so host nftables never needs to be touched. Remaining work is now concentrated in higher-level write-path features such as rate-based autoban rather than the basic membership and honeypot insertion paths.
+**Implemented with limitations** — The module performs request-time kernel lookup via raw Netlink `NFT_MSG_GETSETELEM`, exposes `$nftset_result` and `$nftset_matched_set`, enforces `nftset_deny`, `nftset_status`, `nftset_fail_open`, `nftset_dryrun`, `nftset_cache_ttl`, `nftset_sets`, `nftset_autoadd`, and `nftset_ratelimit`/`nftset_autoban`, and runs live nftables coverage in Docker-isolated tests so host nftables never needs to be touched. Remaining work is now concentrated in harder multi-worker/state-sharing follow-ups rather than the basic membership and write paths.
 
 See [GitHub issue #5](https://github.com/kaiwu/nginz/issues/5) for the original feature request.
 
@@ -202,6 +202,62 @@ Address family used for the auto-add write path. As with lookup, explicit family
 
 Optional per-element timeout for auto-added entries. Encoded as milliseconds to the kernel. The target set must support timeout semantics, typically by being created with `flags dynamic,timeout`.
 
+#### nftset_ratelimit_rate
+
+*syntax:* `nftset_ratelimit_rate <N>r/s;` or `nftset_ratelimit_rate <N>;`
+*default:* disabled
+*context:* `http, server, location`
+
+Enable a simple fixed-window per-IP rate limit in this context. Counting is per worker and per effective location config.
+
+#### nftset_ratelimit_burst
+
+*syntax:* `nftset_ratelimit_burst <N>;`
+*default:* `0`
+*context:* `http, server, location`
+
+Allow extra requests beyond `nftset_ratelimit_rate` within the current 1-second window.
+
+#### nftset_ratelimit_status
+
+*syntax:* `nftset_ratelimit_status <code>;`
+*default:* `429`
+*context:* `http, server, location`
+
+HTTP status code returned when the rate limit budget is exceeded.
+
+#### nftset_autoban_table
+
+*syntax:* `nftset_autoban_table <name>;`
+*default:* inherits `nftset_table`
+*context:* `http, server, location`
+
+Target nftables table for auto-ban writes triggered by rate-limit overflow.
+
+#### nftset_autoban_set
+
+*syntax:* `nftset_autoban_set <name>;`
+*default:* disabled
+*context:* `http, server, location`
+
+When set, an over-limit client IP is inserted into this nftables set using the same raw Netlink write path as `nftset_autoadd`.
+
+#### nftset_autoban_family
+
+*syntax:* `nftset_autoban_family inet|ip|ip6;`
+*default:* inherits `nftset_family`
+*context:* `http, server, location`
+
+Address family used for the auto-ban write path.
+
+#### nftset_autoban_timeout
+
+*syntax:* `nftset_autoban_timeout <time>;`
+*default:* `0`
+*context:* `http, server, location`
+
+Optional per-element timeout for auto-ban entries. The target set should support `timeout` semantics when this is non-zero.
+
 ---
 
 ### Usage
@@ -298,6 +354,32 @@ location /trap-temporary {
 
 If `nftset_autoadd` targets the same set used by request-time lookup in that location, the module refreshes its per-worker cache so the next request sees the newly inserted membership immediately.
 
+#### Rate limit with temporary autoban
+
+```bash
+nft add set ip filter ratelimit_banned '{ type ipv4_addr; flags dynamic,timeout; timeout 5m; }'
+```
+
+```nginx
+location /login {
+    nftset on;
+    nftset_set ratelimit_banned;
+    nftset_cache_ttl 5s;
+
+    nftset_ratelimit_rate   10r/s;
+    nftset_ratelimit_burst  5;
+    nftset_ratelimit_status 429;
+
+    nftset_autoban_table   filter;
+    nftset_autoban_set     ratelimit_banned;
+    nftset_autoban_timeout 10m;
+
+    proxy_pass http://auth_backend;
+}
+```
+
+When `nftset_autoban_set` matches the lookup set, the module refreshes the per-worker lookup cache after inserting the ban so the next request is denied by the normal nftset lookup path immediately.
+
 ---
 
 ### Build
@@ -314,7 +396,7 @@ The current implementation uses raw Netlink syscalls from Zig and does **not** l
 The nftset test directory now contains two layers of coverage:
 
 - `tests/nftset/nftset.test.js` validates directive parsing, inheritance, fail-open / fail-closed handling, and `$nftset_result` behavior without needing live nftables state.
-- `tests/nftset/nftset.container.test.js` provisions real nftables tables/sets inside a disposable Docker container and verifies hit/miss behavior there, including cache TTL expiry, `cache_ttl 0` live-refresh behavior, auto-add insertion/expiry/cache interaction, multi-set OR matching, IPv6 hit/miss, and interval/CIDR set matching, so no host nftables rules are modified.
+- `tests/nftset/nftset.container.test.js` provisions real nftables tables/sets inside a disposable Docker container and verifies hit/miss behavior there, including cache TTL expiry, `cache_ttl 0` live-refresh behavior, auto-add insertion/expiry/cache interaction, rate-limit overflow with optional auto-ban, multi-set OR matching, IPv6 hit/miss, and interval/CIDR set matching, so no host nftables rules are modified.
 
 ---
 
@@ -324,6 +406,7 @@ The nftset test directory now contains two layers of coverage:
 - Requires the nginx worker process to be able to complete nftables Netlink lookups. When lookup fails, `nftset_fail_open` controls whether the request passes through or is denied.
 - IPv4-mapped IPv6 addresses are normalized onto the IPv4 lookup path. Native IPv6 hit/miss coverage now runs in Docker, but broader family / set-type interoperability still needs more real-kernel coverage.
 - The current cache is per-worker and only stores definitive hit/miss outcomes. Lookup errors are never cached, so transient kernel or capability failures still re-evaluate on the next request.
+- The current rate limiter is also per-worker and uses a simple fixed 1-second window, so limits are intentionally approximate across multiple workers and can burst at window boundaries.
 - `NFT_MSG_GETSETELEM` still overloads `ENOENT`, so the module intentionally treats raw `ENOENT` as “not in set” to keep the point-lookup path stable. Operator-facing hardening is instead focused on explicit family-mismatch detection and documentation of this ambiguity.
 
 ---
@@ -351,7 +434,7 @@ Comparison against the [GetPageSpeed nftset-access module](https://nginx-extras.
 | `nftset_sets <table:set> ...` | Variadic OR matching across multiple sets | ✅ Implemented |
 | `nftset_fail_open on\|off` | Allow/deny on lookup error | ✅ Implemented |
 | `nftset_dryrun on\|off` | Log decision, never block | ✅ Implemented |
-| `nftset_ratelimit …` | Per-IP rate limit with optional auto-ban | Open |
+| `nftset_ratelimit …` | Per-IP rate limit with optional auto-ban | ✅ Implemented with live Docker coverage |
 | `nftset_autoadd …` | Honeypot: auto-add client IP to a set, optionally with timeout | ✅ Implemented with live Docker coverage |
 | `nftset_stats` | JSON stats endpoint | Open |
 | `nftset_metrics` | Prometheus endpoint | Open (overlaps with prometheus module) |
@@ -366,15 +449,15 @@ Comparison against the [GetPageSpeed nftset-access module](https://nginx-extras.
 
 #### Missing features
 
-- **Entry timeouts** — per-element expiry useful for temporary blocks (`nftset_autoadd timeout=N`).
+- **Shared-worker rate state** — current rate windows are local to each worker rather than backed by shared memory or kernel counters.
 
 ---
 
 ### Remaining Work (hard)
 
-1. **Rate limit / autoban** — rate window tracking plus optional ban-set insertion.
+1. **Shared-worker rate limiting** — move beyond the current per-worker fixed-window approximation if stricter enforcement is needed.
 2. **Stronger ENOENT disambiguation** — if a safe object-existence strategy proves reliable across kernels, tighten the missing-set vs missing-element behavior without regressing common misses.
-3. **Broader write-path hardening** — more kernel/version coverage for auto-add edge cases such as interval sets, maps, and batch error reporting.
+3. **Broader write-path hardening** — more kernel/version coverage for auto-add / autoban edge cases such as interval sets, maps, and batch error reporting.
 
 ### Documentation Audit Checklist
 

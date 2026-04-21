@@ -168,6 +168,8 @@ var netlink_seq: u32 = 0;
 
 const NFTSET_CACHE_SIZE: usize = 128;
 const NFTSET_CACHE_KEY_MAX: usize = 512;
+const NFTSET_RATELIMIT_MAX_ENTRIES: usize = 1024;
+const NFTSET_RATELIMIT_STATUS: ngx_int_t = 429;
 
 const CacheMembership = enum(u8) {
     in_set,
@@ -189,6 +191,16 @@ const CacheEntry = struct {
 };
 
 var nftset_cache = std.mem.zeroes([NFTSET_CACHE_SIZE]CacheEntry);
+
+const RateLimitEntry = struct {
+    valid: bool,
+    key: u64,
+    count: u32,
+    window_start_sec: u64,
+    last_used_sec: u64,
+};
+
+var nftset_ratelimit_entries = std.mem.zeroes([NFTSET_RATELIMIT_MAX_ENTRIES]RateLimitEntry);
 
 const nftset_spec = extern struct {
     table: ngx_str_t,
@@ -451,6 +463,82 @@ fn get_client_ip_bytes(
 // Read a host-endian i32 from an unaligned byte slice.
 fn read_i32_native(buf: []const u8, off: usize) i32 {
     return readStruct(i32, buf, off);
+}
+
+fn fnv1a64(seed: u64, bytes: []const u8) u64 {
+    var hash = seed;
+    for (bytes) |b| {
+        hash ^= b;
+        hash *%= 1099511628211;
+    }
+    return hash;
+}
+
+fn currentWindowSec() u64 {
+    return @intCast(ngx_current_msec / 1000);
+}
+
+fn buildRateLimitKey(scope: usize, table_fam: u8, ip_bytes: []const u8) u64 {
+    var hash: u64 = 1469598103934665603;
+    var scope_value: u64 = @intCast(scope);
+    hash = fnv1a64(hash, std.mem.asBytes(&scope_value));
+    hash = fnv1a64(hash, &[_]u8{table_fam});
+    hash = fnv1a64(hash, ip_bytes);
+    return if (hash == 0) 1 else hash;
+}
+
+fn getOrCreateRateLimitEntry(rate_key: u64, current_sec: u64) *RateLimitEntry {
+    var empty_slot: ?*RateLimitEntry = null;
+    var reusable_slot: ?*RateLimitEntry = null;
+    var oldest_slot: ?*RateLimitEntry = null;
+
+    for (&nftset_ratelimit_entries) |*entry| {
+        if (!entry.valid) {
+            if (empty_slot == null) empty_slot = entry;
+            continue;
+        }
+        if (entry.key == rate_key) return entry;
+        if (entry.window_start_sec < current_sec and reusable_slot == null) reusable_slot = entry;
+        if (oldest_slot == null or entry.last_used_sec < oldest_slot.?.last_used_sec) oldest_slot = entry;
+    }
+
+    const slot = empty_slot orelse reusable_slot orelse oldest_slot orelse unreachable;
+    slot.* = .{
+        .valid = true,
+        .key = rate_key,
+        .count = 0,
+        .window_start_sec = current_sec,
+        .last_used_sec = current_sec,
+    };
+    return slot;
+}
+
+fn checkRateLimit(rate_key: u64, rate: ngx_uint_t, burst: ngx_uint_t) bool {
+    const current_sec = currentWindowSec();
+    const entry = getOrCreateRateLimitEntry(rate_key, current_sec);
+
+    if (current_sec > entry.window_start_sec) {
+        entry.window_start_sec = current_sec;
+        entry.count = 0;
+    }
+
+    entry.last_used_sec = current_sec;
+    const limit = @as(u64, @intCast(rate)) + @as(u64, @intCast(burst));
+    if (@as(u64, entry.count) < limit) {
+        entry.count += 1;
+        return true;
+    }
+
+    return false;
+}
+
+fn parseRateLimitRate(value: []const u8) ?ngx_uint_t {
+    if (value.len == 0) return null;
+    if (std.mem.endsWith(u8, value, "r/s")) {
+        if (value.len <= 3) return null;
+        return std.fmt.parseInt(ngx_uint_t, value[0 .. value.len - 3], 10) catch null;
+    }
+    return std.fmt.parseInt(ngx_uint_t, value, 10) catch null;
 }
 
 // ──────────────────────────────────────────────────────────────────────────
@@ -745,6 +833,7 @@ fn nftset_add_ip_to_set(
 
 fn nftset_init_process(cycle: [*c]core.ngx_cycle_t) callconv(.c) ngx_int_t {
     nftset_cache = std.mem.zeroes([NFTSET_CACHE_SIZE]CacheEntry);
+    nftset_ratelimit_entries = std.mem.zeroes([NFTSET_RATELIMIT_MAX_ENTRIES]RateLimitEntry);
     netlink_fd = socket(AF_NETLINK_SOCK, SOCK_RAW_C, NETLINK_NETFILTER_PROT);
     if (netlink_fd < 0) {
         // Socket failed (e.g. no CAP_NET_ADMIN) — module operates in
@@ -771,6 +860,7 @@ fn nftset_init_process(cycle: [*c]core.ngx_cycle_t) callconv(.c) ngx_int_t {
 
 fn nftset_exit_process(_: [*c]core.ngx_cycle_t) callconv(.c) void {
     nftset_cache = std.mem.zeroes([NFTSET_CACHE_SIZE]CacheEntry);
+    nftset_ratelimit_entries = std.mem.zeroes([NFTSET_RATELIMIT_MAX_ENTRIES]RateLimitEntry);
     if (netlink_fd >= 0) {
         _ = close(netlink_fd);
         netlink_fd = -1;
@@ -807,6 +897,14 @@ const nftset_loc_conf = extern struct {
     autoadd_set: ngx_str_t,
     autoadd_family: ngx_str_t,
     autoadd_timeout: ngx_msec_t,
+    ratelimit_rate: ngx_uint_t,
+    ratelimit_burst: ngx_uint_t,
+    ratelimit_burst_set: ngx_flag_t,
+    ratelimit_status: ngx_int_t,
+    autoban_table: ngx_str_t,
+    autoban_set: ngx_str_t,
+    autoban_family: ngx_str_t,
+    autoban_timeout: ngx_msec_t,
 };
 
 // Per-request context — carries the access decision and resolved family
@@ -844,6 +942,40 @@ fn parse_set_spec(spec: []const u8) ?struct { table: []const u8, set_name: []con
 fn cfgError(cf: [*c]ngx_conf_t, statement: []const u8) [*c]u8 {
     ngx.log.ngz_log_error(ngx.log.NGX_LOG_EMERG, cf.*.log, 0, statement.ptr, .{});
     return conf.NGX_CONF_ERROR;
+}
+
+fn ngx_conf_set_nftset_ratelimit_rate(
+    cf: [*c]ngx_conf_t,
+    cmd: [*c]ngx_command_t,
+    loc: ?*anyopaque,
+) callconv(.c) [*c]u8 {
+    _ = cmd;
+    const lcf = core.castPtr(nftset_loc_conf, loc) orelse return conf.NGX_CONF_ERROR;
+
+    var i: ngx_uint_t = 1;
+    const arg = ngx.array.ngx_array_next(ngx_str_t, cf.*.args, &i) orelse return cfgError(cf, "nftset_ratelimit_rate requires a value");
+    const raw = core.slicify(u8, arg.*.data, arg.*.len);
+    const parsed = parseRateLimitRate(raw) orelse return cfgError(cf, "nftset_ratelimit_rate must be a positive integer or Nr/s");
+    if (parsed == 0) return cfgError(cf, "nftset_ratelimit_rate must be greater than zero");
+
+    lcf.*.ratelimit_rate = parsed;
+    return conf.NGX_CONF_OK;
+}
+
+fn ngx_conf_set_nftset_ratelimit_burst(
+    cf: [*c]ngx_conf_t,
+    cmd: [*c]ngx_command_t,
+    loc: ?*anyopaque,
+) callconv(.c) [*c]u8 {
+    _ = cmd;
+    const lcf = core.castPtr(nftset_loc_conf, loc) orelse return conf.NGX_CONF_ERROR;
+
+    var i: ngx_uint_t = 1;
+    const arg = ngx.array.ngx_array_next(ngx_str_t, cf.*.args, &i) orelse return cfgError(cf, "nftset_ratelimit_burst requires a value");
+    const raw = core.slicify(u8, arg.*.data, arg.*.len);
+    lcf.*.ratelimit_burst = std.fmt.parseInt(ngx_uint_t, raw, 10) catch return cfgError(cf, "nftset_ratelimit_burst must be an integer");
+    lcf.*.ratelimit_burst_set = 1;
+    return conf.NGX_CONF_OK;
 }
 
 fn ngx_conf_set_nftset_sets(
@@ -999,6 +1131,154 @@ fn lookupUsesTarget(lcf: *nftset_loc_conf, table: []const u8, set_name: []const 
     return std.mem.eql(u8, table_slice, table) and std.mem.eql(u8, set_slice, set_name);
 }
 
+fn refreshLookupCacheIfTargeted(
+    lcf: *nftset_loc_conf,
+    lookup_enabled: bool,
+    table_fam: u8,
+    target_table_fam: u8,
+    table: []const u8,
+    set_name: []const u8,
+    ip_bytes: []const u8,
+) void {
+    if (!lookup_enabled) return;
+    if (target_table_fam != table_fam) return;
+    if (!lookupUsesTarget(lcf, table, set_name)) return;
+    updateLookupCacheForSet(table, set_name, table_fam, ip_bytes, lcf.*.cache_ttl);
+}
+
+fn applyAutoadd(
+    r: [*c]ngx_http_request_t,
+    lcf: *nftset_loc_conf,
+    lookup_enabled: bool,
+    table_fam: u8,
+    is_ipv6: bool,
+    elem_family: ngx_str_t,
+    table_slice: []const u8,
+    set_slice: []const u8,
+    ip_bytes: []const u8,
+) void {
+    const autoadd_family_slice = if (lcf.*.autoadd_family.data != null and lcf.*.autoadd_family.len > 0)
+        lcf.*.autoadd_family.data[0..lcf.*.autoadd_family.len]
+    else if (lcf.*.family.data != null and lcf.*.family.len > 0)
+        lcf.*.family.data[0..lcf.*.family.len]
+    else
+        "inet";
+    const autoadd_family_mismatch = (std.mem.eql(u8, autoadd_family_slice, "ip") and is_ipv6) or
+        (std.mem.eql(u8, autoadd_family_slice, "ip6") and !is_ipv6);
+    if (autoadd_family_mismatch) {
+        ngx.log.ngz_log_error(
+            ngx.log.NGX_LOG_ERR,
+            r.*.connection.*.log,
+            0,
+            "nftset: autoadd client family %V does not match nftset_autoadd_family=%V (table=%V set=%V)",
+            .{ &elem_family, &lcf.*.autoadd_family, &lcf.*.autoadd_table, &lcf.*.autoadd_set },
+        );
+        return;
+    }
+
+    const autoadd_table_slice: []const u8 = if (lcf.*.autoadd_table.data != null) lcf.*.autoadd_table.data[0..lcf.*.autoadd_table.len] else table_slice;
+    const autoadd_set_slice: []const u8 = if (lcf.*.autoadd_set.data != null) lcf.*.autoadd_set.data[0..lcf.*.autoadd_set.len] else set_slice;
+    const autoadd_table_fam = table_family_num(autoadd_family_slice);
+    switch (nftset_add_ip_to_set(autoadd_table_slice, autoadd_set_slice, autoadd_table_fam, ip_bytes, lcf.*.autoadd_timeout)) {
+        .added => {
+            ngx.log.ngz_log_debug(
+                ngx.log.NGX_LOG_DEBUG_HTTP,
+                r.*.connection.*.log,
+                0,
+                "nftset: autoadd inserted %V into table=%V set=%V",
+                .{ &r.*.connection.*.addr_text, &lcf.*.autoadd_table, &lcf.*.autoadd_set },
+            );
+            refreshLookupCacheIfTargeted(lcf, lookup_enabled, table_fam, autoadd_table_fam, autoadd_table_slice, autoadd_set_slice, ip_bytes);
+        },
+        .exists => {
+            ngx.log.ngz_log_debug(
+                ngx.log.NGX_LOG_DEBUG_HTTP,
+                r.*.connection.*.log,
+                0,
+                "nftset: autoadd found existing element for %V in table=%V set=%V",
+                .{ &r.*.connection.*.addr_text, &lcf.*.autoadd_table, &lcf.*.autoadd_set },
+            );
+            refreshLookupCacheIfTargeted(lcf, lookup_enabled, table_fam, autoadd_table_fam, autoadd_table_slice, autoadd_set_slice, ip_bytes);
+        },
+        .add_error => |err_code| {
+            ngx.log.ngz_log_error(
+                ngx.log.NGX_LOG_ERR,
+                r.*.connection.*.log,
+                0,
+                "nftset: autoadd failed for %V (table=%V set=%V err=%d)",
+                .{ &r.*.connection.*.addr_text, &lcf.*.autoadd_table, &lcf.*.autoadd_set, err_code },
+            );
+        },
+    }
+}
+
+fn maybeApplyAutoban(
+    r: [*c]ngx_http_request_t,
+    lcf: *nftset_loc_conf,
+    lookup_enabled: bool,
+    table_fam: u8,
+    is_ipv6: bool,
+    elem_family: ngx_str_t,
+    table_slice: []const u8,
+    ip_bytes: []const u8,
+) void {
+    if (lcf.*.autoban_set.data == null or lcf.*.autoban_set.len == 0) return;
+
+    const autoban_family_slice = if (lcf.*.autoban_family.data != null and lcf.*.autoban_family.len > 0)
+        lcf.*.autoban_family.data[0..lcf.*.autoban_family.len]
+    else if (lcf.*.family.data != null and lcf.*.family.len > 0)
+        lcf.*.family.data[0..lcf.*.family.len]
+    else
+        "inet";
+    const autoban_family_mismatch = (std.mem.eql(u8, autoban_family_slice, "ip") and is_ipv6) or
+        (std.mem.eql(u8, autoban_family_slice, "ip6") and !is_ipv6);
+    if (autoban_family_mismatch) {
+        ngx.log.ngz_log_error(
+            ngx.log.NGX_LOG_ERR,
+            r.*.connection.*.log,
+            0,
+            "nftset: autoban client family %V does not match nftset_autoban_family=%V (table=%V set=%V)",
+            .{ &elem_family, &lcf.*.autoban_family, &lcf.*.autoban_table, &lcf.*.autoban_set },
+        );
+        return;
+    }
+
+    const autoban_table_slice: []const u8 = if (lcf.*.autoban_table.data != null) lcf.*.autoban_table.data[0..lcf.*.autoban_table.len] else table_slice;
+    const autoban_set_slice: []const u8 = lcf.*.autoban_set.data[0..lcf.*.autoban_set.len];
+    const autoban_table_fam = table_family_num(autoban_family_slice);
+    switch (nftset_add_ip_to_set(autoban_table_slice, autoban_set_slice, autoban_table_fam, ip_bytes, lcf.*.autoban_timeout)) {
+        .added => {
+            ngx.log.ngz_log_error(
+                ngx.log.NGX_LOG_NOTICE,
+                r.*.connection.*.log,
+                0,
+                "nftset: autoban inserted %V into table=%V set=%V",
+                .{ &r.*.connection.*.addr_text, &lcf.*.autoban_table, &lcf.*.autoban_set },
+            );
+            refreshLookupCacheIfTargeted(lcf, lookup_enabled, table_fam, autoban_table_fam, autoban_table_slice, autoban_set_slice, ip_bytes);
+        },
+        .exists => {
+            ngx.log.ngz_log_debug(
+                ngx.log.NGX_LOG_DEBUG_HTTP,
+                r.*.connection.*.log,
+                0,
+                "nftset: autoban found existing element for %V in table=%V set=%V",
+                .{ &r.*.connection.*.addr_text, &lcf.*.autoban_table, &lcf.*.autoban_set },
+            );
+            refreshLookupCacheIfTargeted(lcf, lookup_enabled, table_fam, autoban_table_fam, autoban_table_slice, autoban_set_slice, ip_bytes);
+        },
+        .add_error => |err_code| {
+            ngx.log.ngz_log_error(
+                ngx.log.NGX_LOG_ERR,
+                r.*.connection.*.log,
+                0,
+                "nftset: autoban failed for %V (table=%V set=%V err=%d)",
+                .{ &r.*.connection.*.addr_text, &lcf.*.autoban_table, &lcf.*.autoban_set, err_code },
+            );
+        },
+    }
+}
+
 // ──────────────────────────────────────────────────────────────────────────
 // Access phase handler
 // ──────────────────────────────────────────────────────────────────────────
@@ -1011,7 +1291,8 @@ fn ngx_http_nftset_access_handler(r: [*c]ngx_http_request_t) callconv(.c) ngx_in
 
     const lookup_enabled = lcf.*.enabled == 1;
     const autoadd_enabled = lcf.*.autoadd == 1;
-    if (!lookup_enabled and !autoadd_enabled) return NGX_DECLINED;
+    const ratelimit_enabled = lcf.*.ratelimit_rate > 0;
+    if (!lookup_enabled and !autoadd_enabled and !ratelimit_enabled) return NGX_DECLINED;
 
     // Element IP family: always derived from the actual client address.
     // "ip" for IPv4 (or IPv4-mapped IPv6), "ip6" for native IPv6.
@@ -1136,63 +1417,27 @@ fn ngx_http_nftset_access_handler(r: [*c]ngx_http_request_t) callconv(.c) ngx_in
         }
     }
 
-    if (autoadd_enabled) {
-        const autoadd_family_slice = if (lcf.*.autoadd_family.data != null and lcf.*.autoadd_family.len > 0)
-            lcf.*.autoadd_family.data[0..lcf.*.autoadd_family.len]
-        else if (lcf.*.family.data != null and lcf.*.family.len > 0)
-            lcf.*.family.data[0..lcf.*.family.len]
-        else
-            "inet";
-        const autoadd_family_mismatch = (std.mem.eql(u8, autoadd_family_slice, "ip") and is_ipv6) or
-            (std.mem.eql(u8, autoadd_family_slice, "ip6") and !is_ipv6);
-        if (autoadd_family_mismatch) {
+    if (ratelimit_enabled and response == NGX_DECLINED) {
+        const rate_key = buildRateLimitKey(@intFromPtr(lcf), table_fam, ip_bytes);
+        if (!checkRateLimit(rate_key, lcf.*.ratelimit_rate, lcf.*.ratelimit_burst)) {
+            maybeApplyAutoban(r, lcf, lookup_enabled, table_fam, is_ipv6, elem_family, table_slice, ip_bytes);
             ngx.log.ngz_log_error(
-                ngx.log.NGX_LOG_ERR,
+                ngx.log.NGX_LOG_NOTICE,
                 r.*.connection.*.log,
                 0,
-                "nftset: autoadd client family %V does not match nftset_autoadd_family=%V (table=%V set=%V)",
-                .{ &elem_family, &lcf.*.autoadd_family, &lcf.*.autoadd_table, &lcf.*.autoadd_set },
+                "nftset: ratelimit exceeded for %V (rate=%ui burst=%ui status=%d)",
+                .{ &r.*.connection.*.addr_text, lcf.*.ratelimit_rate, lcf.*.ratelimit_burst, lcf.*.ratelimit_status },
             );
-        } else {
-            const autoadd_table_slice: []const u8 = if (lcf.*.autoadd_table.data != null) lcf.*.autoadd_table.data[0..lcf.*.autoadd_table.len] else table_slice;
-            const autoadd_set_slice: []const u8 = if (lcf.*.autoadd_set.data != null) lcf.*.autoadd_set.data[0..lcf.*.autoadd_set.len] else set_slice;
-            const autoadd_table_fam = table_family_num(autoadd_family_slice);
-            switch (nftset_add_ip_to_set(autoadd_table_slice, autoadd_set_slice, autoadd_table_fam, ip_bytes, lcf.*.autoadd_timeout)) {
-                .added => {
-                    ngx.log.ngz_log_debug(
-                        ngx.log.NGX_LOG_DEBUG_HTTP,
-                        r.*.connection.*.log,
-                        0,
-                        "nftset: autoadd inserted %V into table=%V set=%V",
-                        .{ &r.*.connection.*.addr_text, &lcf.*.autoadd_table, &lcf.*.autoadd_set },
-                    );
-                    if (lookup_enabled and autoadd_table_fam == table_fam and lookupUsesTarget(lcf, autoadd_table_slice, autoadd_set_slice)) {
-                        updateLookupCacheForSet(autoadd_table_slice, autoadd_set_slice, table_fam, ip_bytes, lcf.*.cache_ttl);
-                    }
-                },
-                .exists => {
-                    ngx.log.ngz_log_debug(
-                        ngx.log.NGX_LOG_DEBUG_HTTP,
-                        r.*.connection.*.log,
-                        0,
-                        "nftset: autoadd found existing element for %V in table=%V set=%V",
-                        .{ &r.*.connection.*.addr_text, &lcf.*.autoadd_table, &lcf.*.autoadd_set },
-                    );
-                    if (lookup_enabled and autoadd_table_fam == table_fam and lookupUsesTarget(lcf, autoadd_table_slice, autoadd_set_slice)) {
-                        updateLookupCacheForSet(autoadd_table_slice, autoadd_set_slice, table_fam, ip_bytes, lcf.*.cache_ttl);
-                    }
-                },
-                .add_error => |err_code| {
-                    ngx.log.ngz_log_error(
-                        ngx.log.NGX_LOG_ERR,
-                        r.*.connection.*.log,
-                        0,
-                        "nftset: autoadd failed for %V (table=%V set=%V err=%d)",
-                        .{ &r.*.connection.*.addr_text, &lcf.*.autoadd_table, &lcf.*.autoadd_set, err_code },
-                    );
-                },
+            if (lookup_enabled and ctx_result.len == 0) ctx_result = result_allow;
+            if (lookup_enabled) {
+                set_ctx(r, ctx_result, elem_family, ctx_matched_set);
             }
+            return lcf.*.ratelimit_status;
         }
+    }
+
+    if (autoadd_enabled) {
+        applyAutoadd(r, lcf, lookup_enabled, table_fam, is_ipv6, elem_family, table_slice, set_slice, ip_bytes);
     }
 
     if (lookup_enabled) {
@@ -1265,6 +1510,9 @@ fn create_loc_conf(cf: [*c]ngx_conf_t) callconv(.c) ?*anyopaque {
     lcf.*.cache_ttl = conf.NGX_CONF_UNSET_MSEC;
     lcf.*.autoadd = conf.NGX_CONF_UNSET;
     lcf.*.autoadd_timeout = conf.NGX_CONF_UNSET_MSEC;
+    lcf.*.ratelimit_burst_set = conf.NGX_CONF_UNSET;
+    lcf.*.ratelimit_status = conf.NGX_CONF_UNSET;
+    lcf.*.autoban_timeout = conf.NGX_CONF_UNSET_MSEC;
     return lcf;
 }
 
@@ -1301,6 +1549,24 @@ fn merge_loc_conf(
     if (curr.*.autoadd_timeout == conf.NGX_CONF_UNSET_MSEC) {
         curr.*.autoadd_timeout = if (prev.*.autoadd_timeout == conf.NGX_CONF_UNSET_MSEC) 0 else prev.*.autoadd_timeout;
     }
+    if (curr.*.ratelimit_rate == 0 and prev.*.ratelimit_rate != 0) {
+        curr.*.ratelimit_rate = prev.*.ratelimit_rate;
+    }
+    if (curr.*.ratelimit_burst_set == conf.NGX_CONF_UNSET) {
+        if (prev.*.ratelimit_burst_set != conf.NGX_CONF_UNSET) {
+            curr.*.ratelimit_burst = prev.*.ratelimit_burst;
+            curr.*.ratelimit_burst_set = prev.*.ratelimit_burst_set;
+        } else {
+            curr.*.ratelimit_burst = 0;
+            curr.*.ratelimit_burst_set = 0;
+        }
+    }
+    if (curr.*.ratelimit_status == conf.NGX_CONF_UNSET) {
+        curr.*.ratelimit_status = if (prev.*.ratelimit_status == conf.NGX_CONF_UNSET) NFTSET_RATELIMIT_STATUS else prev.*.ratelimit_status;
+    }
+    if (curr.*.autoban_timeout == conf.NGX_CONF_UNSET_MSEC) {
+        curr.*.autoban_timeout = if (prev.*.autoban_timeout == conf.NGX_CONF_UNSET_MSEC) 0 else prev.*.autoban_timeout;
+    }
     if (!curr.*.sets.inited() and prev.*.sets.inited()) {
         curr.*.sets = prev.*.sets;
     }
@@ -1330,6 +1596,23 @@ fn merge_loc_conf(
             curr.*.autoadd_family = prev.*.autoadd_family;
         } else {
             curr.*.autoadd_family = curr.*.family;
+        }
+    }
+    if (curr.*.autoban_table.data == null) {
+        if (prev.*.autoban_table.data != null) {
+            curr.*.autoban_table = prev.*.autoban_table;
+        } else {
+            curr.*.autoban_table = curr.*.table;
+        }
+    }
+    if (curr.*.autoban_set.data == null and prev.*.autoban_set.data != null) {
+        curr.*.autoban_set = prev.*.autoban_set;
+    }
+    if (curr.*.autoban_family.data == null) {
+        if (prev.*.autoban_family.data != null) {
+            curr.*.autoban_family = prev.*.autoban_family;
+        } else {
+            curr.*.autoban_family = curr.*.family;
         }
     }
 
@@ -1500,6 +1783,62 @@ export const ngx_http_nftset_commands = [_]ngx_command_t{
         .post = null,
     },
     ngx_command_t{
+        .name = ngx_string("nftset_ratelimit_rate"),
+        .type = CTX | conf.NGX_CONF_TAKE1,
+        .set = ngx_conf_set_nftset_ratelimit_rate,
+        .conf = conf.NGX_HTTP_LOC_CONF_OFFSET,
+        .offset = 0,
+        .post = null,
+    },
+    ngx_command_t{
+        .name = ngx_string("nftset_ratelimit_burst"),
+        .type = CTX | conf.NGX_CONF_TAKE1,
+        .set = ngx_conf_set_nftset_ratelimit_burst,
+        .conf = conf.NGX_HTTP_LOC_CONF_OFFSET,
+        .offset = 0,
+        .post = null,
+    },
+    ngx_command_t{
+        .name = ngx_string("nftset_ratelimit_status"),
+        .type = CTX | conf.NGX_CONF_TAKE1,
+        .set = conf.ngx_conf_set_num_slot,
+        .conf = conf.NGX_HTTP_LOC_CONF_OFFSET,
+        .offset = @offsetOf(nftset_loc_conf, "ratelimit_status"),
+        .post = null,
+    },
+    ngx_command_t{
+        .name = ngx_string("nftset_autoban_table"),
+        .type = CTX | conf.NGX_CONF_TAKE1,
+        .set = conf.ngx_conf_set_str_slot,
+        .conf = conf.NGX_HTTP_LOC_CONF_OFFSET,
+        .offset = @offsetOf(nftset_loc_conf, "autoban_table"),
+        .post = null,
+    },
+    ngx_command_t{
+        .name = ngx_string("nftset_autoban_set"),
+        .type = CTX | conf.NGX_CONF_TAKE1,
+        .set = conf.ngx_conf_set_str_slot,
+        .conf = conf.NGX_HTTP_LOC_CONF_OFFSET,
+        .offset = @offsetOf(nftset_loc_conf, "autoban_set"),
+        .post = null,
+    },
+    ngx_command_t{
+        .name = ngx_string("nftset_autoban_family"),
+        .type = CTX | conf.NGX_CONF_TAKE1,
+        .set = conf.ngx_conf_set_str_slot,
+        .conf = conf.NGX_HTTP_LOC_CONF_OFFSET,
+        .offset = @offsetOf(nftset_loc_conf, "autoban_family"),
+        .post = null,
+    },
+    ngx_command_t{
+        .name = ngx_string("nftset_autoban_timeout"),
+        .type = CTX | conf.NGX_CONF_TAKE1,
+        .set = conf.ngx_conf_set_msec_slot,
+        .conf = conf.NGX_HTTP_LOC_CONF_OFFSET,
+        .offset = @offsetOf(nftset_loc_conf, "autoban_timeout"),
+        .post = null,
+    },
+    ngx_command_t{
         .name = ngx_string("nftset_cache_ttl"),
         .type = CTX | conf.NGX_CONF_TAKE1,
         .set = conf.ngx_conf_set_msec_slot,
@@ -1553,6 +1892,15 @@ test "table_family_num maps configured families" {
     try expectEqual(@as(u8, NFPROTO_IPV6), table_family_num("ip6"));
     try expectEqual(@as(u8, NFPROTO_INET), table_family_num("inet"));
     try expectEqual(@as(u8, NFPROTO_INET), table_family_num("unexpected"));
+}
+
+test "parseRateLimitRate accepts valid formats and rejects malformed ones" {
+    try expectEqual(@as(ngx_uint_t, 10), parseRateLimitRate("10") orelse return error.TestUnexpectedResult);
+    try expectEqual(@as(ngx_uint_t, 25), parseRateLimitRate("25r/s") orelse return error.TestUnexpectedResult);
+    try expect(parseRateLimitRate("") == null);
+    try expect(parseRateLimitRate("r/s") == null);
+    try expect(parseRateLimitRate("10r/sx") == null);
+    try expect(parseRateLimitRate("10foo") == null);
 }
 
 test "buildCacheKey encodes family ip and set identity" {

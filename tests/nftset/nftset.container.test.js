@@ -172,6 +172,11 @@ function requestIpv6(path) {
   return { status, headers, body };
 }
 
+function requestBurst(path, count) {
+  const res = dockerExec(`statuses=""; i=0; while [ "$i" -lt ${count} ]; do code=$(curl -sS -o /dev/null -w '%{http_code}' http://127.0.0.1:8888${path}); statuses="$statuses $code"; i=$((i + 1)); done; printf '%s\n' "$statuses"`);
+  return res.stdout.trim().split(/\s+/).filter(Boolean).map(Number);
+}
+
 function nft(command) {
   return dockerExec(`nft ${command}`);
 }
@@ -339,6 +344,57 @@ describe("nftset-nginx-module container integration", () => {
     expect(res.body).toContain("autoadd-family-mismatch ok");
   });
 
+  test("ratelimit returns 429 after the configured fixed-window budget is exhausted", async () => {
+    await Bun.sleep(1100);
+
+    const statuses = requestBurst("/ratelimit-plain", 4);
+
+    expect(statuses).toEqual([200, 200, 200, 429]);
+  });
+
+  test("ratelimit burst allows burst requests before returning 429", async () => {
+    await Bun.sleep(1100);
+
+    const statuses = requestBurst("/ratelimit-burst", 4);
+
+    expect(statuses).toEqual([200, 200, 200, 429]);
+  });
+
+  test("child zero-burst overrides inherited burst allowance", async () => {
+    await Bun.sleep(1100);
+
+    const statuses = requestBurst("/ratelimit-parent/child-zero-burst", 3);
+
+    expect(statuses).toEqual([200, 200, 429]);
+  });
+
+  test("ratelimit autoban inserts into the configured set and subsequent lookup blocks immediately", async () => {
+    await Bun.sleep(1100);
+
+    const before = dockerExec("nft list set ip nginz_test ratelimit_banned").stdout;
+    expect(before).not.toContain("127.0.0.1");
+
+    const first = request("/ratelimit-autoban");
+    expect(first.status).toBe(200);
+    expect(first.headers.get("x-nftset-result")).toBe("allow");
+
+    const second = request("/ratelimit-autoban");
+    expect(second.status).toBe(429);
+
+    const after = dockerExec("nft list set ip nginz_test ratelimit_banned").stdout;
+    expect(after).toContain("127.0.0.1 timeout");
+
+    const third = request("/ratelimit-autoban");
+    expect(third.status).toBe(403);
+    expect(third.headers.get("x-nftset-result")).toBe("deny");
+    expect(third.headers.get("x-nftset-matched-set")).toBe("nginz_test:ratelimit_banned");
+
+    await Bun.sleep(1400);
+
+    const afterExpiry = dockerExec("nft list set ip nginz_test ratelimit_banned").stdout;
+    expect(afterExpiry).not.toContain("127.0.0.1");
+  });
+
   test("missing set currently follows ENOENT-as-miss policy in blocklist mode", () => {
     const res = request("/missing-set-fail-closed");
     expect(res.status).toBe(200);
@@ -436,6 +492,7 @@ describe("nftset-nginx-module container integration", () => {
     expect(listedIp).toContain("set honeypot");
     expect(listedIp).toContain("set honeypot_timeout");
     expect(listedIp).toContain("set autoaddshared");
+    expect(listedIp).toContain("set ratelimit_banned");
     expect(listedIp).toContain("set cidrblock");
     expect(listedIp6).toContain("set blocklist6");
     expect(listedIp6).toContain("::1");

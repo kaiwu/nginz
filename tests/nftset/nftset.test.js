@@ -120,6 +120,34 @@ describe("nftset-nginx-module", () => {
     });
   });
 
+  describe("nftset_ratelimit", () => {
+    test("ratelimit-only location parses and serves", async () => {
+      const res = await fetch(`${TEST_URL}/ratelimit`);
+      expect(res.status).toBe(200);
+      expect(await res.text()).toContain("ratelimit ok");
+    });
+
+    test("ratelimit burst location parses and serves", async () => {
+      const res = await fetch(`${TEST_URL}/ratelimit-burst`);
+      expect(res.status).toBe(200);
+      expect(await res.text()).toContain("ratelimit-burst ok");
+    });
+
+    test("child ratelimit burst can override inherited burst with zero", async () => {
+      const res = await fetch(`${TEST_URL}/ratelimit-parent/child-zero-burst`);
+      expect(res.status).toBe(200);
+      expect(await res.text()).toContain("ratelimit-child-zero-burst ok");
+    });
+
+    test("autoban directives parse alongside lookup directives", async () => {
+      const res = await fetch(`${TEST_URL}/autoban`);
+      expect(res.status).toBe(200);
+      expect(res.headers.get("x-nftset-result")).toBe("error");
+      expect(await res.text()).toContain("autoban ok");
+    });
+
+  });
+
   describe("nftset_sets", () => {
     test("multi-set blocklist location parses and still passes through when lookup fails open", async () => {
       const res = await fetch(`${TEST_URL}/multi-set`);
