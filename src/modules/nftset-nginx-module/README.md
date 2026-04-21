@@ -4,7 +4,7 @@ Zero-latency IP blocking for nginx using Linux nftables named sets.
 
 ### Status
 
-**In progress** — The module now performs request-time kernel lookup via raw Netlink `NFT_MSG_GETSETELEM`, exposes `$nftset_result`, and enforces `nftset_deny`, `nftset_status`, `nftset_fail_open`, and `nftset_dryrun`. The remaining gaps are around production-hardening and full real-nftables integration coverage, not basic request wiring.
+**Implemented with limitations** — The module performs request-time kernel lookup via raw Netlink `NFT_MSG_GETSETELEM`, exposes `$nftset_result`, and enforces `nftset_deny`, `nftset_status`, `nftset_fail_open`, and `nftset_dryrun`. Live nftables membership coverage now runs in Docker-isolated tests so host nftables never needs to be touched. Remaining work is around broader feature depth and longer-term hardening, not the core membership path.
 
 See [GitHub issue #5](https://github.com/kaiwu/nginz/issues/5) for the original feature request.
 
@@ -14,8 +14,8 @@ See [GitHub issue #5](https://github.com/kaiwu/nginz/issues/5) for the original 
 
 - **Fixed in this audit:** the README had drifted behind the implementation. It still described kernel lookup as unimplemented and claimed a `libnftables` build/runtime dependency even though the module now uses a raw Netlink path and `build.zig` does not link `libnftables`.
 - **Fixed in this audit:** the raw Netlink request path had unsafe unaligned packet-buffer access. The lookup code now uses byte-copy helpers instead of typed writes into unaligned buffers, which stopped nginx worker crashes on the first enabled request.
-- **Fixed in this audit:** the raw Netlink exchange now sends explicitly to the kernel, correlates replies by `nlmsg_seq` / kernel `nlmsg_pid`, and rejects malformed/truncated frames as lookup errors instead of trusting them.
-- **Still open:** integration coverage now verifies fail-open / fail-closed behavior when lookup cannot be completed, but it still does not provision real nftables tables/sets to prove positive membership hits (`in_set`) against a live kernel set.
+- **Fixed in this audit:** the raw Netlink exchange now uses the correct nfnetlink subsystem/message constants, sends explicitly to the kernel, correlates replies by `nlmsg_seq`, and rejects malformed/truncated frames as lookup errors instead of trusting them.
+- **Fixed in this audit:** positive and negative membership behavior is now covered against live nftables sets in a Docker-isolated test namespace instead of relying only on fail-open / fail-closed fallback coverage.
 - **Still open:** `nftset_cache_ttl` is parsed and inherited, but there is no per-worker cache implementation yet.
 
 #### Motivation
@@ -197,11 +197,16 @@ location /internal/api {
 ```bash
 zig build
 
-# Integration tests
+# Integration tests (config/inheritance + Docker-isolated live nftables coverage)
 bun test tests/nftset/
 ```
 
 The current implementation uses raw Netlink syscalls from Zig and does **not** link `libnftables` in `build.zig`.
+
+The nftset test directory now contains two layers of coverage:
+
+- `tests/nftset/nftset.test.js` validates directive parsing, inheritance, fail-open / fail-closed handling, and `$nftset_result` behavior without needing live nftables state.
+- `tests/nftset/nftset.container.test.js` provisions real nftables tables/sets inside a disposable Docker container and verifies hit/miss behavior there, so no host nftables rules are modified.
 
 ---
 
@@ -211,7 +216,6 @@ The current implementation uses raw Netlink syscalls from Zig and does **not** l
 - Requires the nginx worker process to be able to complete nftables Netlink lookups. When lookup fails, `nftset_fail_open` controls whether the request passes through or is denied.
 - IPv4-mapped IPv6 addresses are normalized onto the IPv4 lookup path, but broader family / set-type interoperability still needs more real-kernel coverage.
 - No caching: every request performs a kernel lookup. For extremely high-traffic locations this may become a bottleneck; a per-worker LRU cache can be added later.
-- Real set-membership integration coverage is still incomplete. The current Bun coverage proves fail-open / fail-closed behavior under lookup failure, not successful membership hits against provisioned nftables sets.
 - `NFT_MSG_GETSETELEM` returns `ENOENT` for both “element absent” and some missing-object cases; the raw path still needs more hardening/documented policy around that ambiguity.
 
 ---
@@ -255,19 +259,17 @@ Comparison against the [GetPageSpeed nftset-access module](https://nginx-extras.
 
 - **CIDR subnet matching** — requires `ipv4_addr` set with prefix flag or a separate CIDR path.
 - **Entry timeouts** — per-element expiry useful for temporary blocks (`nftset_autoadd timeout=N`).
-- **Positive-membership integration coverage** — provision live nftables tables/sets in tests and assert both `in_set` and `not_in_set` outcomes.
 
 ---
 
 ### Remaining Work (hard)
 
-1. **Real kernel integration coverage** — provision nftables tables/sets during tests and assert `in_set`, `not_in_set`, `fail_open`, and custom-status behavior against real kernel responses.
-2. **Per-worker LRU cache** — once lookup behavior is better characterized, add a fixed-size array cache keyed on IP string hash with `cache_ttl` expiry.
-3. ~~**Auto-detect IP family**~~ ✅ Done — handler reads `r->connection->sockaddr->sa_family`; IPv4-mapped IPv6 (`::ffff:x.x.x.x`) normalised to `ip`; `nftset_family` becomes an optional override.
-4. **`$nftset_matched_set`** — store the `table:set` string that triggered the match in `nftset_ctx`; expose via a second variable getter.
-5. **Multi-set OR logic** — accept variadic `nftset_blacklist table:set …` syntax; iterate sets until first match.
-6. **`nftset_autoadd`** — honeypot directive: on location access, call `nft add element` to insert client IP into a named set (with optional timeout).
-7. **CIDR matching** — use nftables prefix sets or add a userspace CIDR trie alongside the exact-IP lookup.
+1. **Per-worker LRU cache** — once lookup behavior is better characterized, add a fixed-size array cache keyed on IP string hash with `cache_ttl` expiry.
+2. ~~**Auto-detect IP family**~~ ✅ Done — handler reads `r->connection->sockaddr->sa_family`; IPv4-mapped IPv6 (`::ffff:x.x.x.x`) normalised to `ip`; `nftset_family` becomes an optional override.
+3. **`$nftset_matched_set`** — store the `table:set` string that triggered the match in `nftset_ctx`; expose via a second variable getter.
+4. **Multi-set OR logic** — accept variadic `nftset_blacklist table:set …` syntax; iterate sets until first match.
+5. **`nftset_autoadd`** — honeypot directive: on location access, call `nft add element` to insert client IP into a named set (with optional timeout).
+6. **CIDR matching** — use nftables prefix sets or add a userspace CIDR trie alongside the exact-IP lookup.
 
 ### Documentation Audit Checklist
 
@@ -275,5 +277,5 @@ Comparison against the [GetPageSpeed nftset-access module](https://nginx-extras.
 - [x] Bun integration coverage exists at `tests/nftset/`.
 - [x] Gap fixed in this audit pass: README now reflects that kernel lookup is implemented via raw Netlink rather than still being a stub or a `libnftables`-linked path.
 - [x] Gap fixed in this audit pass: the raw Netlink request path no longer performs unsafe unaligned struct access into packet buffers.
-- [x] Bun integration coverage now verifies fail-open inheritance, fail-closed custom-status behavior, `$nftset_result` on lookup failure, dryrun behavior, and directive inheritance across `server` / `location` blocks.
-- [x] Remaining gap recorded: Bun coverage still does not provision real nftables tables/sets for positive membership assertions.
+- [x] Gap fixed in this audit pass: the raw Netlink lookup now uses the correct nfnetlink subsystem/message constants, which made live nftables membership checks work instead of failing with `EINVAL`.
+- [x] Bun integration coverage now verifies fail-open inheritance, fail-closed custom-status behavior, `$nftset_result` on lookup failure, dryrun behavior, directive inheritance across `server` / `location` blocks, and live membership hit/miss behavior in Docker-isolated nftables tests.

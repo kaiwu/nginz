@@ -17,6 +17,10 @@ $ bun test
 Nginx development requires some system library dependencies, which shall be addressed first.
 A Dockerfile is provided as reference so that one can build their own dev image.
 
+For nftables-related work, `tests/nftset/` now includes a Docker-isolated live nftables suite.
+It provisions temporary tables/sets inside a disposable container namespace via `sudo docker`,
+so nobody's host nftables ruleset needs to be modified during development or CI-like validation.
+
 > [!NOTE]
 > The SSL zig bindings are generated with `OpenSSL 3`.
 
@@ -96,7 +100,7 @@ make install
 
 ## Module Status
 
-20 modules total. All modules have integration tests and individual README documentation.
+21 modules total. All modules have integration tests and individual README documentation.
 
 ### Feature Ready (16)
 
@@ -119,13 +123,14 @@ make install
 | **pgrest** | PostgreSQL REST API with JWT auth, content negotiation (JSON/CSV/XML) |
 | **wechatpay** | WeChat Pay signature verification |
 
-### Working with Limitations (3)
+### Implemented with Limitations (4)
 
 | Module | Description | Limitations |
 |--------|-------------|-------------|
 | **oidc** | OpenID Connect SSO with PKCE | No ID token signature verification |
 | **acme** | Let's Encrypt certificate automation | Not tested with real ACME servers; single worker only |
 | **healthcheck** | Health status endpoint | Passive only (no active probing) |
+| **nftset** | nftables-backed IP allow/block checks via raw Netlink lookup | Core lookup path and Docker-isolated live nftables coverage are implemented; cache, CIDR matching, and richer set features are still pending |
 
 ### Reference (1)
 

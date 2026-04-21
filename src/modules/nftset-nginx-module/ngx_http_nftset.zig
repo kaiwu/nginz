@@ -51,9 +51,9 @@ const SOL_SOCKET_C: c_int = 1;
 const SO_RCVTIMEO_C: c_int = 20;
 
 // nftables Netlink subsystem and message types
-const NFNL_SUBSYS_NFTABLES: u16 = 12;
-const NFT_MSG_GETSETELEM: u16 = 14; // request: get set element(s)
-const NFT_MSG_NEWSETELEM: u16 = 13; // response: element found
+const NFNL_SUBSYS_NFTABLES: u16 = 10;
+const NFT_MSG_GETSETELEM: u16 = 13; // request: get set element(s)
+const NFT_MSG_NEWSETELEM: u16 = 12; // response: element found
 const NLMSG_ERROR_TYPE: u16 = 2; // standard Netlink error / ACK
 const NLMSG_DONE_TYPE: u16 = 3;
 
@@ -231,13 +231,13 @@ fn build_query(
     writeStruct(buf, pos, Nfgenmsg{ .family = table_fam, .version = NFNETLINK_V0, .res_id = 0 });
     pos += NFGENMSG_SZ;
 
-    // NFTA_SET_ELEM_LIST_TABLE: table name
-    if (!ensureSpace(buf.len, pos, nla_align(NLATTR_HDR_SZ + table.len + 1))) return null;
-    pos = put_nla_str(buf, pos, NFTA_SET_ELEM_LIST_TABLE, table);
-
     // NFTA_SET_ELEM_LIST_SET: set name
     if (!ensureSpace(buf.len, pos, nla_align(NLATTR_HDR_SZ + set_name.len + 1))) return null;
     pos = put_nla_str(buf, pos, NFTA_SET_ELEM_LIST_SET, set_name);
+
+    // NFTA_SET_ELEM_LIST_TABLE: table name
+    if (!ensureSpace(buf.len, pos, nla_align(NLATTR_HDR_SZ + table.len + 1))) return null;
+    pos = put_nla_str(buf, pos, NFTA_SET_ELEM_LIST_TABLE, table);
 
     // NFTA_SET_ELEM_LIST_ELEMENTS (nested)
     //   └─ NFTA_LIST_ELEM (nested)
@@ -310,7 +310,8 @@ fn get_client_ip_bytes(
     if (!is_ipv6) {
         if (sa_fam == AF_INET) {
             const sa4: *const Sockaddr4 = @ptrCast(@alignCast(sa));
-            // addr is stored in network byte order; copy as-is to buf
+            // nft get element emits IPv4 keys as 7f 00 00 01 for 127.0.0.1.
+            // Copy the sockaddr bytes as-is to match that request encoding.
             const addr_bytes: *const [4]u8 = @ptrCast(&sa4.*.addr);
             @memcpy(buf[0..4], addr_bytes);
             return buf[0..4];
@@ -339,7 +340,11 @@ fn read_i32_native(buf: []const u8, off: usize) i32 {
 // nftables kernel lookup via raw Netlink (NFT_MSG_GETSETELEM)
 // ──────────────────────────────────────────────────────────────────────────
 
-const LookupResult = enum { in_set, not_in_set, lookup_error };
+const LookupResult = union(enum) {
+    in_set,
+    not_in_set,
+    lookup_error: i32,
+};
 
 // Query whether ip_bytes is a member of the named set in the named table.
 //
@@ -359,16 +364,16 @@ fn nftset_ip_in_set(
     table_fam: u8,
     ip_bytes: []const u8,
 ) LookupResult {
-    if (netlink_fd < 0) return .lookup_error;
+    if (netlink_fd < 0) return .{ .lookup_error = -1 };
 
     var qbuf: [512]u8 = undefined;
     netlink_seq +%= 1;
-    const msg_len = build_query(&qbuf, netlink_seq, table_fam, table, set_name, ip_bytes) orelse return .lookup_error;
+    const msg_len = build_query(&qbuf, netlink_seq, table_fam, table, set_name, ip_bytes) orelse return .{ .lookup_error = -2 };
 
     const kernel_addr = SockaddrNl{ .family = AF_NETLINK_SOCK, .pad = 0, .pid = 0, .groups = 0 };
 
     const sent = sendto(netlink_fd, &qbuf, msg_len, 0, &kernel_addr, @sizeOf(SockaddrNl));
-    if (sent < 0) return .lookup_error;
+    if (sent < 0) return .{ .lookup_error = -3 };
 
     var rbuf: [4096]u8 = undefined;
     var found = false;
@@ -378,7 +383,7 @@ fn nftset_ip_in_set(
     var iters: u8 = 0;
     while (iters < 4) : (iters += 1) {
         const rcvd = recv(netlink_fd, &rbuf, rbuf.len, 0);
-        if (rcvd <= 0) break; // timeout or error — stop iterating
+        if (rcvd <= 0) return .{ .lookup_error = -4 }; // timeout or socket error
 
         const rcvd_sz: usize = @intCast(rcvd);
         var off: usize = 0;
@@ -386,17 +391,12 @@ fn nftset_ip_in_set(
         while (off + NLMSG_HDR_SZ <= rcvd_sz) {
             const nlh = readStruct(Nlmsghdr, &rbuf, off);
             if (nlh.len < NLMSG_HDR_SZ) break;
-            if (nlh.len > rcvd_sz - off) return .lookup_error;
+            if (nlh.len > rcvd_sz - off) return .{ .lookup_error = -5 };
 
             const step = nla_align(@intCast(nlh.len));
-            if (step == 0 or step > rcvd_sz - off) return .lookup_error;
+            if (step == 0 or step > rcvd_sz - off) return .{ .lookup_error = -6 };
 
             if (nlh.seq != netlink_seq) {
-                off += step;
-                continue;
-            }
-
-            if (nlh.pid != 0) {
                 off += step;
                 continue;
             }
@@ -404,14 +404,14 @@ fn nftset_ip_in_set(
             const msg_type = nlh.type_;
 
             if (msg_type == NLMSG_ERROR_TYPE) {
-                if (off + NLMSG_HDR_SZ + 4 > rcvd_sz) return .lookup_error;
+                if (off + NLMSG_HDR_SZ + 4 > rcvd_sz) return .{ .lookup_error = -7 };
                 const err_val = read_i32_native(&rbuf, off + NLMSG_HDR_SZ);
                 if (err_val == 0) {
                     // Explicit ACK (NLM_F_ACK response with error=0)
                     return if (found) .in_set else .not_in_set;
                 }
                 if (err_val == -2) return .not_in_set; // -ENOENT: not in set (or set/table not found)
-                return .lookup_error;
+                return .{ .lookup_error = err_val };
             }
 
             const newsetelem_type: u16 = (NFNL_SUBSYS_NFTABLES << 8) | NFT_MSG_NEWSETELEM;
@@ -425,7 +425,7 @@ fn nftset_ip_in_set(
         }
     }
 
-    return if (found) .in_set else .lookup_error;
+    return if (found) .in_set else .{ .lookup_error = -8 };
 }
 
 // ──────────────────────────────────────────────────────────────────────────
@@ -585,12 +585,13 @@ fn ngx_http_nftset_access_handler(r: [*c]ngx_http_request_t) callconv(.c) ngx_in
     const lookup = nftset_ip_in_set(table_slice, set_slice, table_fam, ip_bytes);
 
     if (lookup == .lookup_error) {
+        const err_code = lookup.lookup_error;
         ngx.log.ngz_log_error(
             ngx.log.NGX_LOG_ERR,
             r.*.connection.*.log,
             0,
-            "nftset: kernel lookup failed for %V (table=%V set=%V fail_open=%d)",
-            .{ &r.*.connection.*.addr_text, &lcf.*.table, &lcf.*.set, lcf.*.fail_open },
+            "nftset: kernel lookup failed for %V (table=%V set=%V fail_open=%d err=%d)",
+            .{ &r.*.connection.*.addr_text, &lcf.*.table, &lcf.*.set, lcf.*.fail_open, err_code },
         );
         set_ctx(r, result_error, elem_family);
         if (lcf.*.fail_open == 1) return NGX_DECLINED;
