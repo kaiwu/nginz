@@ -1044,6 +1044,25 @@ fn ngx_conf_set_nftset_ratelimit_burst(
     return conf.NGX_CONF_OK;
 }
 
+fn ngx_conf_set_nftset_set(
+    cf: [*c]ngx_conf_t,
+    cmd: [*c]ngx_command_t,
+    loc: ?*anyopaque,
+) callconv(.c) [*c]u8 {
+    _ = cmd;
+    const lcf = core.castPtr(nftset_loc_conf, loc) orelse return conf.NGX_CONF_ERROR;
+    var i: ngx_uint_t = 1;
+    const arg = ngx.array.ngx_array_next(ngx_str_t, cf.*.args, &i) orelse return cfgError(cf, "nftset_set requires a value");
+    const raw = arg.*.data[0..arg.*.len];
+    if (parse_set_spec(raw)) |parsed| {
+        lcf.*.table = ngx.string.ngx_string_from_pool(@constCast(parsed.table.ptr), parsed.table.len, cf.*.pool) catch return conf.NGX_CONF_ERROR;
+        lcf.*.set = ngx.string.ngx_string_from_pool(@constCast(parsed.set_name.ptr), parsed.set_name.len, cf.*.pool) catch return conf.NGX_CONF_ERROR;
+    } else {
+        lcf.*.set = arg.*;
+    }
+    return conf.NGX_CONF_OK;
+}
+
 fn ngx_conf_set_nftset_sets(
     cf: [*c]ngx_conf_t,
     cmd: [*c]ngx_command_t,
@@ -1066,6 +1085,47 @@ fn ngx_conf_set_nftset_sets(
 
     if (lcf.*.sets.size() == 0) return cfgError(cf, "nftset_sets requires at least one table:set entry");
     return conf.NGX_CONF_OK;
+}
+
+fn ngx_conf_set_nftset_list(
+    cf: [*c]ngx_conf_t,
+    loc: ?*anyopaque,
+    deny: ngx_flag_t,
+) [*c]u8 {
+    const lcf = core.castPtr(nftset_loc_conf, loc) orelse return conf.NGX_CONF_ERROR;
+    if (!lcf.*.sets.inited()) {
+        lcf.*.sets = NArray(nftset_spec).init(cf.*.pool, 1) catch return conf.NGX_CONF_ERROR;
+    }
+    var i: ngx_uint_t = 1;
+    while (ngx.array.ngx_array_next(ngx_str_t, cf.*.args, &i)) |arg| {
+        const raw = arg.*.data[0..arg.*.len];
+        const parsed = parse_set_spec(raw) orelse return cfgError(cf, "nftset_blacklist / nftset_whitelist require table:set syntax");
+        const spec = lcf.*.sets.append() catch return conf.NGX_CONF_ERROR;
+        spec.*.table = ngx.string.ngx_string_from_pool(@constCast(parsed.table.ptr), parsed.table.len, cf.*.pool) catch return conf.NGX_CONF_ERROR;
+        spec.*.set = ngx.string.ngx_string_from_pool(@constCast(parsed.set_name.ptr), parsed.set_name.len, cf.*.pool) catch return conf.NGX_CONF_ERROR;
+    }
+    if (lcf.*.sets.size() == 0) return cfgError(cf, "nftset_blacklist / nftset_whitelist require at least one table:set entry");
+    lcf.*.enabled = 1;
+    lcf.*.deny = deny;
+    return conf.NGX_CONF_OK;
+}
+
+fn ngx_conf_set_nftset_blacklist(
+    cf: [*c]ngx_conf_t,
+    cmd: [*c]ngx_command_t,
+    loc: ?*anyopaque,
+) callconv(.c) [*c]u8 {
+    _ = cmd;
+    return ngx_conf_set_nftset_list(cf, loc, 1);
+}
+
+fn ngx_conf_set_nftset_whitelist(
+    cf: [*c]ngx_conf_t,
+    cmd: [*c]ngx_command_t,
+    loc: ?*anyopaque,
+) callconv(.c) [*c]u8 {
+    _ = cmd;
+    return ngx_conf_set_nftset_list(cf, loc, 0);
 }
 
 fn set_ctx(r: [*c]ngx_http_request_t, result: ngx_str_t, client_family: ngx_str_t, matched_set: ngx_str_t) void {
@@ -1774,15 +1834,31 @@ export const ngx_http_nftset_commands = [_]ngx_command_t{
     ngx_command_t{
         .name = ngx_string("nftset_set"),
         .type = CTX | conf.NGX_CONF_TAKE1,
-        .set = conf.ngx_conf_set_str_slot,
+        .set = ngx_conf_set_nftset_set,
         .conf = conf.NGX_HTTP_LOC_CONF_OFFSET,
-        .offset = @offsetOf(nftset_loc_conf, "set"),
+        .offset = 0,
         .post = null,
     },
     ngx_command_t{
         .name = ngx_string("nftset_sets"),
         .type = CTX | conf.NGX_CONF_1MORE,
         .set = ngx_conf_set_nftset_sets,
+        .conf = conf.NGX_HTTP_LOC_CONF_OFFSET,
+        .offset = 0,
+        .post = null,
+    },
+    ngx_command_t{
+        .name = ngx_string("nftset_blacklist"),
+        .type = CTX | conf.NGX_CONF_1MORE,
+        .set = ngx_conf_set_nftset_blacklist,
+        .conf = conf.NGX_HTTP_LOC_CONF_OFFSET,
+        .offset = 0,
+        .post = null,
+    },
+    ngx_command_t{
+        .name = ngx_string("nftset_whitelist"),
+        .type = CTX | conf.NGX_CONF_1MORE,
+        .set = ngx_conf_set_nftset_whitelist,
         .conf = conf.NGX_HTTP_LOC_CONF_OFFSET,
         .offset = 0,
         .post = null,
@@ -1970,6 +2046,16 @@ test "parse_set_spec rejects malformed values" {
     try expect(parse_set_spec("noscope") == null);
     try expect(parse_set_spec(":set") == null);
     try expect(parse_set_spec("table:") == null);
+}
+
+test "parse_set_spec: plain name (no colon) returns null — backward compat path" {
+    try expect(parse_set_spec("blocklist") == null);
+}
+
+test "parse_set_spec: combined token sets both table and set fields" {
+    const parsed = parse_set_spec("nginz_test:blocklist") orelse return error.TestUnexpectedResult;
+    try expectEqualStrings("nginz_test", parsed.table);
+    try expectEqualStrings("blocklist", parsed.set_name);
 }
 
 test "table_family_num maps configured families" {

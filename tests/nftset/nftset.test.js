@@ -189,6 +189,30 @@ describe("nftset-nginx-module", () => {
     });
   });
 
+  describe("nftset_set combined table:set token", () => {
+    test("combined token parses table and set name from a single directive", async () => {
+      const res = await fetch(`${TEST_URL}/combined-set`);
+      expect(res.status).toBe(200);
+      expect(await res.text()).toContain("combined-set ok");
+    });
+  });
+
+  describe("nftset_blacklist / nftset_whitelist aliases", () => {
+    test("nftset_blacklist enables nftset with deny=on and passes through when lookup fails open", async () => {
+      const res = await fetch(`${TEST_URL}/alias-blacklist`);
+      expect(res.status).toBe(200);
+      expect(res.headers.get("x-nftset-result")).toBe("error");
+      expect(await res.text()).toContain("alias-blacklist ok");
+    });
+
+    test("nftset_whitelist enables nftset with deny=off and passes through via fail_open", async () => {
+      const res = await fetch(`${TEST_URL}/alias-whitelist`);
+      expect(res.status).toBe(200);
+      expect(res.headers.get("x-nftset-result")).toBe("error");
+      expect(await res.text()).toContain("alias-whitelist ok");
+    });
+  });
+
   describe("config inheritance", () => {
     test("child location inherits nftset and fail_open from parent/server and passes through", async () => {
       const res = await fetch(`${TEST_URL}/parent/child`);

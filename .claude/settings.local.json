@@ -38,7 +38,8 @@
       "Bash(python3 /tmp/count_bits.py)",
       "Bash(zig16 run *)",
       "Bash(nm zig-out/bin/nginz)",
-      "WebFetch(domain:nginx-extras.getpagespeed.com)"
+      "WebFetch(domain:nginx-extras.getpagespeed.com)",
+      "Bash(git *)"
     ]
   }
 }

@@ -102,6 +102,45 @@ nftables table name to query.
 
 nftables set name inside the table.
 
+`nftset_set` also accepts the combined `table:set` form. When a colon is present the table name is extracted and `nftset_table` is updated accordingly, so a single directive fully specifies the target:
+
+```nginx
+nftset_set nginz_test:blocklist;
+# equivalent to:
+#   nftset_table nginz_test;
+#   nftset_set   blocklist;
+```
+
+Plain names (no colon) continue to work as before for backward compatibility.
+
+#### nftset_blacklist
+
+*syntax:* `nftset_blacklist <table:set> [table:set ...];`
+*default:* none
+*context:* `http, server, location`
+
+Shorthand that enables nftset, registers one or more sets as blocklist targets (`nftset_deny on`), and populates `nftset_sets`. Equivalent to:
+
+```nginx
+nftset     on;
+nftset_sets table:setname;
+nftset_deny on;
+```
+
+#### nftset_whitelist
+
+*syntax:* `nftset_whitelist <table:set> [table:set ...];`
+*default:* none
+*context:* `http, server, location`
+
+Shorthand that enables nftset in allowlist mode (`nftset_deny off`). Equivalent to:
+
+```nginx
+nftset      on;
+nftset_sets table:setname;
+nftset_deny off;
+```
+
 #### nftset_sets
 
 *syntax:* `nftset_sets <table:set> [table:set ...];`
@@ -420,9 +459,9 @@ Comparison against the [GetPageSpeed nftset-access module](https://nginx-extras.
 
 | Area | Reference | Ours | Status |
 |---|---|---|---|
-| Set spec format | `table:setname` combined token | Separate `nftset_table` / `nftset_set` directives | Open — our form is more explicit; `table:set` syntax not yet supported |
+| Set spec format | `table:setname` combined token | `nftset_set` accepts both plain name and `table:set` | ✅ Fixed |
 | Multiple sets | `nftset_blacklist t:s1 t:s2 …` (OR logic, variadic) | `nftset_sets table:set ...` with first-match OR semantics | ✅ Implemented |
-| Blocklist/allowlist naming | Distinct `nftset_blacklist` and `nftset_whitelist` | Single `nftset_deny on\|off` toggle | Open — naming less discoverable |
+| Blocklist/allowlist naming | Distinct `nftset_blacklist` and `nftset_whitelist` | Aliases for `nftset on; nftset_sets …; nftset_deny on\|off` | ✅ Fixed |
 | Directive context | `http`, `server` (inherited down) | ~~`location` only~~ → **`http`, `server`, `location`** | ✅ Fixed |
 | IP family | Auto-detected from client address | `nftset_family` is optional — auto-detected from `sockaddr->sa_family`; IPv4-mapped IPv6 normalised to `ip` | ✅ Fixed |
 
