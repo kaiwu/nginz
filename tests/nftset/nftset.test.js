@@ -1,10 +1,11 @@
 import { describe, test, expect, beforeAll, afterAll } from "bun:test";
-import { startNginz, stopNginz, cleanupRuntime, TEST_URL } from "../harness.js";
+import { ensureBuild, startNginz, stopNginz, cleanupRuntime, TEST_URL } from "../harness.js";
 
 const MODULE = "nftset";
 
 describe("nftset-nginx-module", () => {
   beforeAll(async () => {
+    ensureBuild();
     await startNginz(`tests/${MODULE}/nginx.conf`, MODULE);
   });
 

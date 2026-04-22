@@ -41,7 +41,12 @@ function createRuntimeDir() {
 }
 
 function cleanupRuntime() {
-  // No host cleanup needed because runtime stays inside the container.
+  // Remove root-owned cache entries left by the in-container zig build.
+  try {
+    run(["sudo", "find", ".zig-cache", "-user", "root", "-delete"]);
+  } catch {
+    // best-effort; non-fatal if nothing to remove
+  }
 }
 
 function docker(...args) {
