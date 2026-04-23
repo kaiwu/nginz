@@ -39,7 +39,8 @@
       "Bash(zig16 run *)",
       "Bash(nm zig-out/bin/nginz)",
       "WebFetch(domain:nginx-extras.getpagespeed.com)",
-      "Bash(git *)"
+      "Bash(git *)",
+      "Bash(sudo docker *)"
     ]
   }
 }

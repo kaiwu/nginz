@@ -8,8 +8,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Zig 0.15.2
-RUN zig_version="0.15.2" && \
+# Install Zig 0.16.0
+RUN zig_version="0.16.0" && \
     curl -kL "https://ziglang.org/download/${zig_version}/zig-x86_64-linux-${zig_version}.tar.xz" -o /tmp/zig.tar.xz && \
     tar -xf /tmp/zig.tar.xz -C /opt && \
     rm /tmp/zig.tar.xz && \
@@ -38,12 +38,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
-COPY --from=builder /opt/zig-x86_64-linux-0.15.2 /opt/zig-0.15.2
+COPY --from=builder /opt/zig-x86_64-linux-0.16.0 /opt/zig-0.16.0
 COPY --from=builder /root/.bun/bin/bun /usr/local/bin/bun
 COPY --from=builder /usr/local/bin/zig /usr/local/bin/zig
 COPY --from=builder /usr/local/bin/zig++ /usr/local/bin/zig++
 
-ENV PATH="/opt/zig-0.15.2:${PATH}"
+ENV PATH="/opt/zig-0.16.0:${PATH}"
 
 WORKDIR /workdir
 
