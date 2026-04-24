@@ -347,8 +347,10 @@ export class OIDCMock {
 
     let signatureB64 = Buffer.from(signature).toString("base64url");
     if (overrides.tamperSignature) {
-      const last = signatureB64.at(-1);
-      signatureB64 = `${signatureB64.slice(0, -1)}${last === "A" ? "B" : "A"}`;
+      // Mutate the first base64url character, not the trailing one: for RSA signatures,
+      // the last unpadded base64url character can affect only ignored padding bits.
+      const first = signatureB64[0];
+      signatureB64 = `${first === "A" ? "B" : "A"}${signatureB64.slice(1)}`;
     }
 
     return `${signingInput}.${signatureB64}`;
