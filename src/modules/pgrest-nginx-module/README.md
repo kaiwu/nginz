@@ -16,12 +16,12 @@ A PostgREST-like nginx module written in Zig that provides a RESTful API for Pos
 ### RPC/Stored Procedures
 - **RPC/Stored Procedures** - Call PostgreSQL functions via `/rpc/function_name`
 - **Smart response formatting** - Auto-detects scalar, object, or array results
-- **JSON request body parsing** - POST with JSON payloads for function parameters
+- **Request body media parsing** - `application/json`, `application/x-www-form-urlencoded`, `text/csv`, `text/plain`, `text/xml`, and `application/octet-stream` with explicit narrow mappings for supported function and table parameters
 - **Query string parameters** - GET requests with function parameters
 
 ### Response Format Control
 - **Accept header negotiation** - `Accept: application/json`, `text/csv`, `text/plain`, `text/xml`, `application/octet-stream`
-- **Multiple format support** - JSON, CSV, plain text, XML, and binary output formats
+- **Multiple format support** - JSON, CSV, plain text, XML, and deterministic octet-stream output formats
 - **Schema selection** - `Accept-Profile` (GET/HEAD/DELETE) and `Content-Profile` (POST/PATCH/PUT) headers for schema-qualified table access
 - **RPC parameter wrapping** - `Prefer: params=single-object` header for single JSON object parameters
 
@@ -764,7 +764,7 @@ curl "http://localhost/api/files?id=eq.1&select=data" \
   -H "Accept: application/octet-stream"
 ```
 
-Returns raw binary data for bytea columns.
+Returns the raw field payload when the query result shape is exactly one row and one column. Wider result shapes are rejected explicitly instead of being coerced to JSON.
 
 ### Accept Header Behavior
 
@@ -772,7 +772,19 @@ Returns raw binary data for bytea columns.
 - For single-row results with CSV/plain text, outputs the first column value
 - For multi-column results, CSV includes all columns with proper escaping
 - XML wraps results in `<root>` with `<row>` elements for each record
-- Unsupported formats fall back to JSON
+- `application/octet-stream` is supported only for single-row, single-column responses
+- Unsupported response formats return `406 Not Acceptable`
+
+### Request Body Media Types
+
+pgrest accepts the following request body media types with explicit mappings that stay within the current upstream module contract:
+
+- `application/json` - object payloads for table writes and named RPC parameters
+- `application/x-www-form-urlencoded` - key/value payloads for table writes and named RPC parameters
+- `text/csv` - single-row CSV payloads for table writes; raw `data` payload for RPC
+- `text/plain`, `text/xml`, `application/octet-stream` - raw body mapped to a single `data` field/parameter
+
+These mappings are intentionally narrow so content-type support does not silently introduce broader write-contract or RPC semantics.
 
 ### Response Format Options
 
@@ -959,8 +971,8 @@ Error responses:
 
 ## Completed Features (v1.0+)
 
-- ✅ **JSON request body for RPC** - POST with JSON payloads for function parameters
-- ✅ **Accept header support** - Multiple output formats (JSON, CSV, XML, plain text, binary)
+- ✅ **Request body media types** - JSON, form-urlencoded, CSV, plain text, XML, and octet-stream with explicit narrow mappings
+- ✅ **Accept header support** - JSON, CSV, XML, plain text, and deterministic octet-stream output
 - ✅ **RPC POST requests** - Call functions with structured JSON data
 - ✅ **Accept-Profile header** - Schema selection for GET/HEAD/DELETE requests
 - ✅ **Content-Profile header** - Schema selection for POST/PATCH/PUT requests
@@ -972,8 +984,7 @@ Error responses:
 
 ## Planned Features
 
-- **Binary response format** - Full application/octet-stream support for bytea columns (currently falls back to JSON)
-- **Binary data upload** - Content-Type: application/octet-stream for bytea parameters
+- **Broader binary response format** - widen application/octet-stream beyond the current single-row/single-column response contract
 - **Variadic functions** - Multiple parameter values for variadic functions
 
 ## Limitations
@@ -981,7 +992,8 @@ Error responses:
 - **Basic SQL injection prevention** - Values are quoted but not fully parameterized
 - **Single table operations** - CRUD on single tables only (use RPC for JOINs/complex queries)
 - **Simple query building** - Complex filters use AND logic only
-- **Binary format** - application/octet-stream currently falls back to JSON
+- **Binary format** - application/octet-stream currently requires exactly one row and one column on output
+- **Request body media types** - non-JSON formats are intentionally mapped to narrow write/RPC contracts rather than inferred automatically
 
 ## Future Improvements
 
@@ -1001,5 +1013,5 @@ Error responses:
 - [x] Gap recorded: this audit pass expanded Bun coverage for schema-profile headers, combined query shaping, PATCH/DELETE write paths, singular-object and `nulls=stripped` JSON formats, RPC array parameters, and `Prefer: params=single-object` behavior.
 - [x] Gap recorded: real bugs were fixed in request-body handling, SQL value rendering for JSON/RPC parameters, `is`/`in` filter SQL generation, text/plain formatting, and binary Accept fallback behavior.
 - [x] Gap recorded: the README does not provide directive reference coverage for `pgrest_server`, `pgrest_keepalive`, `pgrest_pooling`, and `pgrest_pass` alongside the other exported `pgrest_*` directives.
-- [x] Gap recorded: the top-level response-format sections still describe binary/octet-stream output as supported, while the planned-features and limitations sections say binary currently falls back to JSON.
+- [x] Gap recorded: Batch 2 now documents octet-stream as a constrained single-row/single-column response format and records the explicit request-body media mappings that are tested in both blocking and pooled paths.
 - [x] No additional documentation gaps were identified in this audit pass.

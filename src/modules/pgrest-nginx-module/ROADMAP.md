@@ -296,6 +296,12 @@ These stay out of the first batch because they enlarge the parser, require intro
 
 Batch 1 should land as a protocol/correctness batch only. It should not quietly introduce new query features while fixing these semantics. That boundary keeps future batches independent: URL grammar can expand later, schema governance can tighten later, and embedding/aggregates can be designed later without needing to revisit the first batch.
 
+### Batch 1 progress update
+
+- ✅ Completed: blocking and pooled paths now share the same tested HTTP contract for singular-object semantics, unsupported `Accept`, `HEAD`, range headers, central `Prefer: params=single-object`, `Preference-Applied`, and covered error/status parity.
+- ✅ Completed: integration coverage exists for both blocking and pooled modes across the Batch 1 feature set.
+- ✅ Completed: directive-sensitive pooled behavior (`pgrest_pooling`, `pgrest_pass`, keepalive-oriented pooled lifecycle) was exercised and fixed as part of Batch 1 parity work.
+
 ---
 
 ## Full Batch Plan
@@ -343,6 +349,14 @@ This module is not a standalone PostgREST server. It is an nginx upstream module
 
 **Unlocks**
 - Stable representation behavior for later RPC, aggregate, and embedding work
+
+### Batch 2 progress update
+
+- ✅ Completed: real `application/octet-stream` responses for the deterministic contract of exactly one row and one column, with matching blocking and pooled behavior and explicit rejection outside that shape.
+- ✅ Completed: request-body media support for `application/x-www-form-urlencoded`, `text/csv`, `text/plain`, `text/xml`, and `application/octet-stream` where it fits the current upstream contract, using explicit narrow mappings instead of heuristic parsing.
+- ✅ Completed: representation parity across blocking and pooled paths for the supported response formats covered by Batch 2.
+- ✅ Completed: README/media claims aligned with the tested Batch 2 contract instead of broader unsupported claims.
+- ℹ️ Intentional Batch 2 boundary: the completed request-body support is explicit and narrow by design; broader write/RPC semantics remain future-batch work, not unfinished Batch 2 work.
 
 ### Batch 3: Prefer Header Completeness and Write Contract
 

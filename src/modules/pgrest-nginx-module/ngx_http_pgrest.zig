@@ -51,6 +51,7 @@ const NGX_ERROR = core.NGX_ERROR;
 const NGX_AGAIN = core.NGX_AGAIN;
 const NGX_DECLINED = core.NGX_DECLINED;
 const NGX_HTTP_NOT_ACCEPTABLE: ngx_uint_t = 406;
+const NGX_HTTP_UNSUPPORTED_MEDIA_TYPE: ngx_uint_t = 415;
 
 const NGX_CONF_OK = conf.NGX_CONF_OK;
 const NGX_CONF_ERROR = conf.NGX_CONF_ERROR;
@@ -267,7 +268,8 @@ const JsonField = struct {
     value: []const u8,
     is_null: bool,
     is_number: bool,
-    value_buf: [64]u8,
+    name_buf: [256]u8,
+    value_buf: [1024]u8,
 };
 
 fn format_json_number(value: f64, buffer: []u8) []const u8 {
@@ -371,8 +373,139 @@ fn parse_json_body(
     return count;
 }
 
+fn decode_form_component_into(dest: []u8, src: []const u8) ?usize {
+    var pos: usize = 0;
+    var i: usize = 0;
+
+    while (i < src.len) : (i += 1) {
+        if (pos >= dest.len) return null;
+
+        switch (src[i]) {
+            '+' => {
+                dest[pos] = ' ';
+                pos += 1;
+            },
+            '%' => {
+                if (i + 2 >= src.len) return null;
+                const hi = std.fmt.charToDigit(src[i + 1], 16) catch return null;
+                const lo = std.fmt.charToDigit(src[i + 2], 16) catch return null;
+                dest[pos] = @as(u8, @intCast(hi * 16 + lo));
+                pos += 1;
+                i += 2;
+            },
+            else => {
+                dest[pos] = src[i];
+                pos += 1;
+            },
+        }
+    }
+
+    return pos;
+}
+
+fn parse_form_urlencoded_body(
+    body: []const u8,
+    fields: *[MAX_COLUMNS]JsonField,
+) usize {
+    if (body.len == 0) return 0;
+
+    var count: usize = 0;
+    var start: usize = 0;
+
+    while (start <= body.len and count < MAX_COLUMNS) {
+        var end = start;
+        while (end < body.len and body[end] != '&') : (end += 1) {}
+
+        const pair = body[start..end];
+        if (pair.len > 0) {
+            const eq = std.mem.indexOfScalar(u8, pair, '=') orelse pair.len;
+            const raw_name = pair[0..eq];
+            const raw_value = if (eq < pair.len) pair[eq + 1 ..] else "";
+
+            const name_len = decode_form_component_into(&fields[count].name_buf, raw_name) orelse return count;
+            const value_len = decode_form_component_into(&fields[count].value_buf, raw_value) orelse return count;
+
+            fields[count].name = fields[count].name_buf[0..name_len];
+            fields[count].value = fields[count].value_buf[0..value_len];
+            fields[count].is_null = false;
+            fields[count].is_number = is_numeric(fields[count].value);
+            count += 1;
+        }
+
+        if (end == body.len) break;
+        start = end + 1;
+    }
+
+    return count;
+}
+
+fn parse_csv_row_into_fields(body: []const u8, fields: *[MAX_COLUMNS]JsonField) usize {
+    if (body.len == 0) return 0;
+
+    const newline = std.mem.indexOfScalar(u8, body, '\n') orelse return 0;
+    const header_line = trim_ascii_spaces(body[0..newline]);
+    if (header_line.len == 0) return 0;
+
+    const data_rest = body[newline + 1 ..];
+    const data_end = std.mem.indexOfScalar(u8, data_rest, '\n') orelse data_rest.len;
+    const data_line = trim_ascii_spaces(data_rest[0..data_end]);
+    if (data_line.len == 0) return 0;
+
+    var count: usize = 0;
+    var header_it = std.mem.splitScalar(u8, header_line, ',');
+    var value_it = std.mem.splitScalar(u8, data_line, ',');
+
+    while (header_it.next()) |raw_name| {
+        const raw_value = value_it.next() orelse return 0;
+        if (count >= MAX_COLUMNS) break;
+
+        const name = trim_ascii_spaces(raw_name);
+        const value = trim_ascii_spaces(raw_value);
+        if (name.len == 0) return 0;
+        if (name.len > fields[count].name_buf.len or value.len > fields[count].value_buf.len) return 0;
+
+        @memcpy(fields[count].name_buf[0..name.len], name);
+        @memcpy(fields[count].value_buf[0..value.len], value);
+        fields[count].name = fields[count].name_buf[0..name.len];
+        fields[count].value = fields[count].value_buf[0..value.len];
+        fields[count].is_null = std.mem.eql(u8, value, "null") or std.mem.eql(u8, value, "NULL");
+        fields[count].is_number = !fields[count].is_null and is_numeric(fields[count].value);
+        count += 1;
+    }
+
+    if (value_it.next() != null) return 0;
+    return count;
+}
+
+fn parse_single_value_body(
+    name: []const u8,
+    body: []const u8,
+    fields: *[MAX_COLUMNS]JsonField,
+) usize {
+    if (body.len == 0 or name.len > fields[0].name_buf.len or body.len > fields[0].value_buf.len) return 0;
+
+    @memcpy(fields[0].name_buf[0..name.len], name);
+    @memcpy(fields[0].value_buf[0..body.len], body);
+    fields[0].name = fields[0].name_buf[0..name.len];
+    fields[0].value = fields[0].value_buf[0..body.len];
+    fields[0].is_null = false;
+    fields[0].is_number = false;
+    return 1;
+}
+
 const PreferOptions = struct {
     params_single_object: bool = false,
+};
+
+const RequestBodyFormat = enum(u8) {
+    none,
+    json,
+    form_urlencoded,
+    csv,
+    plain_text,
+    xml,
+    binary,
+    unsupported,
 };
 
 const RequestOptions = struct {
@@ -390,6 +523,12 @@ fn trim_ascii_spaces(value: []const u8) []const u8 {
     while (start < end and std.ascii.isWhitespace(value[start])) : (start += 1) {}
     while (end > start and std.ascii.isWhitespace(value[end - 1])) : (end -= 1) {}
     return value[start..end];
+}
+
+fn trim_media_type(value: []const u8) []const u8 {
+    const trimmed = trim_ascii_spaces(value);
+    const semi = std.mem.indexOfScalar(u8, trimmed, ';') orelse trimmed.len;
+    return trim_ascii_spaces(trimmed[0..semi]);
 }
 
 fn parse_prefer_header(r: [*c]ngx_http_request_t) PreferOptions {
@@ -499,6 +638,10 @@ fn send_not_acceptable(r: [*c]ngx_http_request_t, body: []const u8) ngx_int_t {
     return send_json_error(r, NGX_HTTP_NOT_ACCEPTABLE, body);
 }
 
+fn send_unsupported_media_type(r: [*c]ngx_http_request_t, body: []const u8) ngx_int_t {
+    return send_json_error(r, NGX_HTTP_UNSUPPORTED_MEDIA_TYPE, body);
+}
+
 fn finalize_response_send(
     r: [*c]ngx_http_request_t,
     response_data: []const u8,
@@ -536,6 +679,78 @@ fn finalize_response_send(
     out.buf = b;
     out.next = null;
     return http.ngx_http_output_filter(r, &out);
+}
+
+const FormatResponseError = error{
+    BinaryShapeUnsupported,
+    ResponseTooLarge,
+};
+
+fn format_result_as_binary(
+    result: ?*PGresult,
+    ntuples: i32,
+    nfields: i32,
+    response_buf: []u8,
+) FormatResponseError!usize {
+    if (result == null or ntuples != 1 or nfields != 1) {
+        return error.BinaryShapeUnsupported;
+    }
+
+    if (pgGetisnull(result, 0, 0) != 0) {
+        return 0;
+    }
+
+    const value = pgGetvalue(result, 0, 0) orelse return 0;
+    const value_len: usize = @intCast(pgGetlength(result, 0, 0));
+    if (value_len > response_buf.len) {
+        return error.ResponseTooLarge;
+    }
+
+    @memcpy(response_buf[0..value_len], value[0..value_len]);
+    return value_len;
+}
+
+fn format_result_for_response(
+    result: ?*PGresult,
+    ntuples: i32,
+    nfields: i32,
+    opts: RequestOptions,
+    response_buf: []u8,
+    content_type: *[*:0]const u8,
+) FormatResponseError!usize {
+    switch (opts.response_format) {
+        .json => {
+            content_type.* = "application/json";
+            return format_result_as_json_smart(
+                result,
+                ntuples,
+                nfields,
+                response_buf,
+                opts.singular_object,
+                opts.strip_nulls,
+            );
+        },
+        .csv => {
+            content_type.* = "text/csv; charset=utf-8";
+            return format_result_as_csv(result, ntuples, nfields, response_buf);
+        },
+        .plain_text => {
+            content_type.* = "text/plain; charset=utf-8";
+            if (ntuples > 0 and nfields > 0) {
+                return format_result_as_plain_text(result, ntuples, response_buf);
+            }
+            return 0;
+        },
+        .xml => {
+            content_type.* = "text/xml; charset=utf-8";
+            return format_result_as_xml(result, ntuples, nfields, response_buf);
+        },
+        .binary => {
+            content_type.* = "application/octet-stream";
+            return try format_result_as_binary(result, ntuples, nfields, response_buf);
+        },
+        .unsupported => unreachable,
+    }
 }
 
 fn release_pooled_ctx(ctx: *PgRequestCtx, failed: bool) void {
@@ -1910,9 +2125,25 @@ fn parse_accept_header_from_request(r: [*c]ngx_http_request_t) ResponseFormat {
         return .xml;
     }
     if (std.mem.containsAtLeast(u8, accept_val, 1, "application/octet-stream")) {
-        return .unsupported;
+        return .binary;
     }
 
+    return .unsupported;
+}
+
+fn parse_content_type_from_request(r: [*c]ngx_http_request_t) RequestBodyFormat {
+    if (!request_needs_body(r)) return .none;
+
+    const content_type = extract_header_value(r, "content-type") orelse return .json;
+    const media_type = trim_media_type(content_type);
+
+    if (media_type.len == 0) return .json;
+    if (std.ascii.eqlIgnoreCase(media_type, "application/json")) return .json;
+    if (std.ascii.eqlIgnoreCase(media_type, "application/x-www-form-urlencoded")) return .form_urlencoded;
+    if (std.ascii.eqlIgnoreCase(media_type, "text/csv")) return .csv;
+    if (std.ascii.eqlIgnoreCase(media_type, "text/plain")) return .plain_text;
+    if (std.ascii.eqlIgnoreCase(media_type, "text/xml") or std.ascii.eqlIgnoreCase(media_type, "application/xml")) return .xml;
+    if (std.ascii.eqlIgnoreCase(media_type, "application/octet-stream")) return .binary;
     return .unsupported;
 }
 
@@ -2933,6 +3164,63 @@ fn parse_rpc_params(args: ngx_str_t, rpc_call: *RpcCall) void {
     rpc_call.param_count = count;
 }
 
+fn parse_rpc_form_body(body: []const u8, rpc_call: *RpcCall) void {
+    if (body.len == 0) return;
+    if (rpc_call.prefer_single_object) return;
+
+    var count: usize = 0;
+    var start: usize = 0;
+
+    while (start <= body.len and count < MAX_RPC_PARAMS) {
+        var end = start;
+        while (end < body.len and body[end] != '&') : (end += 1) {}
+
+        const pair = body[start..end];
+        if (pair.len > 0) {
+            const eq = std.mem.indexOfScalar(u8, pair, '=') orelse pair.len;
+            const raw_name = pair[0..eq];
+            const raw_value = if (eq < pair.len) pair[eq + 1 ..] else "";
+
+            const name_len = decode_form_component_into(&rpc_call.params[count].value_buf, raw_name) orelse return;
+            if (name_len == 0) {
+                if (end == body.len) break;
+                start = end + 1;
+                continue;
+            }
+
+            rpc_call.params[count].name = rpc_call.params[count].value_buf[0..name_len];
+
+            const value_storage = rpc_call.raw_body[count * 256 .. @min(rpc_call.raw_body.len, (count + 1) * 256)];
+            const value_len = decode_form_component_into(value_storage, raw_value) orelse return;
+            rpc_call.params[count].value = value_storage[0..value_len];
+            rpc_call.params[count].is_null = false;
+            rpc_call.params[count].is_numeric = is_numeric(rpc_call.params[count].value);
+            rpc_call.params[count].is_boolean = std.mem.eql(u8, rpc_call.params[count].value, "true") or std.mem.eql(u8, rpc_call.params[count].value, "false");
+            rpc_call.params[count].is_raw = false;
+            count += 1;
+        }
+
+        if (end == body.len) break;
+        start = end + 1;
+    }
+
+    rpc_call.param_count = count;
+}
+
+fn set_rpc_single_raw_param(rpc_call: *RpcCall, name: []const u8, body: []const u8) void {
+    if (body.len == 0 or name.len > rpc_call.params[0].value_buf.len or body.len > rpc_call.raw_body.len) return;
+
+    @memcpy(rpc_call.params[0].value_buf[0..name.len], name);
+    @memcpy(rpc_call.raw_body[0..body.len], body);
+    rpc_call.params[0].name = rpc_call.params[0].value_buf[0..name.len];
+    rpc_call.params[0].value = rpc_call.raw_body[0..body.len];
+    rpc_call.params[0].is_null = false;
+    rpc_call.params[0].is_numeric = false;
+    rpc_call.params[0].is_boolean = false;
+    rpc_call.params[0].is_raw = false;
+    rpc_call.param_count = 1;
+}
+
 /// Build SQL function call from RPC parameters
 /// Format: SELECT function_name(param1 => value1, param2 => value2)
 /// Handles JSON arrays without quotes, regular strings with quotes
@@ -3042,6 +3330,51 @@ fn request_needs_body(r: [*c]ngx_http_request_t) bool {
         r.*.method == http.NGX_HTTP_PUT;
 }
 
+fn get_request_body_slice(r: [*c]ngx_http_request_t) ?[]const u8 {
+    if (r.*.request_body == null or r.*.request_body.*.bufs == null) return null;
+
+    const body_chain = r.*.request_body.*.bufs;
+    if (body_chain.*.buf == null) return null;
+
+    const body_buf = body_chain.*.buf;
+    const body_len = @intFromPtr(body_buf.*.last) - @intFromPtr(body_buf.*.pos);
+    if (body_len == 0 or body_buf.*.pos == core.nullptr(u8)) return null;
+
+    return body_buf.*.pos[0..body_len];
+}
+
+fn parse_write_body_fields(
+    body_format: RequestBodyFormat,
+    body_data: []const u8,
+    pool: [*c]ngx_pool_t,
+    fields: *[MAX_COLUMNS]JsonField,
+) usize {
+    return switch (body_format) {
+        .json => parse_json_body(pool, body_data, fields),
+        .form_urlencoded => parse_form_urlencoded_body(body_data, fields),
+        .csv => parse_csv_row_into_fields(body_data, fields),
+        .plain_text, .xml, .binary => parse_single_value_body("data", body_data, fields),
+        .none, .unsupported => 0,
+    };
+}
+
+fn parse_rpc_body_params(
+    body_format: RequestBodyFormat,
+    body_data: []const u8,
+    pool: [*c]ngx_pool_t,
+    rpc_call: *RpcCall,
+) void {
+    switch (body_format) {
+        .json => parse_rpc_json_body(pool, body_data, rpc_call),
+        .form_urlencoded => parse_rpc_form_body(body_data, rpc_call),
+        .csv => set_rpc_single_raw_param(rpc_call, "data", body_data),
+        .plain_text => set_rpc_single_raw_param(rpc_call, "data", body_data),
+        .xml => set_rpc_single_raw_param(rpc_call, "data", body_data),
+        .binary => set_rpc_single_raw_param(rpc_call, "data", body_data),
+        .none, .unsupported => {},
+    }
+}
+
 export fn ngx_http_pgrest_client_body_handler(r: [*c]ngx_http_request_t) callconv(.c) void {
     http.ngx_http_finalize_request(r, ngx_http_pgrest_handler(r));
 }
@@ -3099,6 +3432,11 @@ fn handle_rpc_call(
     loc_conf: *ngx_pgrest_loc_conf_t,
     opts: RequestOptions,
 ) ngx_int_t {
+    const body_format = parse_content_type_from_request(r);
+    if (request_needs_body(r) and body_format == .unsupported) {
+        return send_unsupported_media_type(r, "{\"message\":\"Unsupported request media type\"}");
+    }
+
     // Extract function name from URI
     const function_name = extract_rpc_function_name(r.*.uri) orelse {
         r.*.headers_out.status = http.NGX_HTTP_BAD_REQUEST;
@@ -3114,16 +3452,8 @@ fn handle_rpc_call(
     rpc_call.prefer_single_object = opts.prefer.params_single_object;
 
     // Try to parse POST body first (if present)
-    if (r.*.request_body != null and r.*.request_body.*.bufs != null) {
-        const body_chain = r.*.request_body.*.bufs;
-        if (body_chain.*.buf != null) {
-            const body_buf = body_chain.*.buf;
-            const body_len = @intFromPtr(body_buf.*.last) - @intFromPtr(body_buf.*.pos);
-            if (body_len > 0 and body_buf.*.pos != core.nullptr(u8)) {
-                const body_data = body_buf.*.pos[0..body_len];
-                parse_rpc_json_body(r.*.pool, body_data, &rpc_call);
-            }
-        }
+    if (get_request_body_slice(r)) |body_data| {
+        parse_rpc_body_params(body_format, body_data, r.*.pool, &rpc_call);
     }
 
     // If no body parameters, parse query string
@@ -3199,58 +3529,17 @@ fn handle_rpc_call(
     var response_len: usize = 0;
     var content_type: [*:0]const u8 = "application/json";
 
-    switch (opts.response_format) {
-        .json => {
-            response_len = format_result_as_json_smart(
-                pg_result.result,
-                pg_result.ntuples,
-                pg_result.nfields,
-                &response_buf,
-                opts.singular_object,
-                opts.strip_nulls,
-            );
-            content_type = "application/json";
-        },
-        .csv => {
-            response_len = format_result_as_csv(
-                pg_result.result,
-                pg_result.ntuples,
-                pg_result.nfields,
-                &response_buf,
-            );
-            content_type = "text/csv; charset=utf-8";
-        },
-        .plain_text => {
-            response_len = format_result_as_plain_text(
-                pg_result.result,
-                pg_result.ntuples,
-                &response_buf,
-            );
-            content_type = "text/plain; charset=utf-8";
-        },
-        .xml => {
-            response_len = format_result_as_xml(
-                pg_result.result,
-                pg_result.ntuples,
-                pg_result.nfields,
-                &response_buf,
-            );
-            content_type = "text/xml; charset=utf-8";
-        },
-        .binary => {
-            content_type = "application/octet-stream";
-            // Binary would require special handling - for now return as JSON
-            response_len = format_result_as_json_smart(
-                pg_result.result,
-                pg_result.ntuples,
-                pg_result.nfields,
-                &response_buf,
-                opts.singular_object,
-                opts.strip_nulls,
-            );
-        },
-        .unsupported => unreachable,
-    }
+    response_len = format_result_for_response(
+        pg_result.result,
+        pg_result.ntuples,
+        pg_result.nfields,
+        opts,
+        &response_buf,
+        &content_type,
+    ) catch |err| switch (err) {
+        error.BinaryShapeUnsupported => return send_not_acceptable(r, "{\"message\":\"application/octet-stream requires exactly one row and one column\"}"),
+        error.ResponseTooLarge => return http.NGX_HTTP_INTERNAL_SERVER_ERROR,
+    };
 
     return finalize_response_send(r, response_buf[0..response_len], content_type, pg_result.ntuples, opts);
 }
@@ -3288,6 +3577,11 @@ fn ngx_http_pgrest_handler(r: [*c]ngx_http_request_t) callconv(.c) ngx_int_t {
     const opts = parse_request_options(r);
     if (opts.response_format == .unsupported) {
         return send_not_acceptable(r, "{\"message\":\"None of these media types are available\"}");
+    }
+
+    const body_format = parse_content_type_from_request(r);
+    if (request_needs_body(r) and body_format == .unsupported) {
+        return send_unsupported_media_type(r, "{\"message\":\"Unsupported request media type\"}");
     }
 
     // Check if this is an RPC (stored procedure) call
@@ -3345,17 +3639,8 @@ fn ngx_http_pgrest_handler(r: [*c]ngx_http_request_t) callconv(.c) ngx_int_t {
     var json_field_count: usize = 0;
 
     if (sql_op == .insert or sql_op == .update) {
-        // Get request body if available
-        if (r.*.request_body != null and r.*.request_body.*.bufs != null) {
-            const body_chain = r.*.request_body.*.bufs;
-            if (body_chain.*.buf != null) {
-                const body_buf = body_chain.*.buf;
-                const body_len = @intFromPtr(body_buf.*.last) - @intFromPtr(body_buf.*.pos);
-                if (body_len > 0 and body_buf.*.pos != core.nullptr(u8)) {
-                    const body_data = body_buf.*.pos[0..body_len];
-                    json_field_count = parse_json_body(r.*.pool, body_data, &json_fields);
-                }
-            }
+        if (get_request_body_slice(r)) |body_data| {
+            json_field_count = parse_write_body_fields(body_format, body_data, r.*.pool, &json_fields);
         }
     }
 
@@ -3432,59 +3717,17 @@ fn ngx_http_pgrest_handler(r: [*c]ngx_http_request_t) callconv(.c) ngx_int_t {
     var response_len: usize = 0;
     var content_type: [*:0]const u8 = "application/json";
 
-    switch (opts.response_format) {
-        .json => {
-            response_len = format_result_as_json_smart(
-                pg_result.result,
-                pg_result.ntuples,
-                pg_result.nfields,
-                &response_buf,
-                opts.singular_object,
-                opts.strip_nulls,
-            );
-            content_type = "application/json";
-        },
-        .csv => {
-            response_len = format_result_as_csv(
-                pg_result.result,
-                pg_result.ntuples,
-                pg_result.nfields,
-                &response_buf,
-            );
-            content_type = "text/csv; charset=utf-8";
-        },
-        .plain_text => {
-            if (pg_result.ntuples > 0 and pg_result.nfields > 0) {
-                response_len = format_result_as_plain_text(
-                    pg_result.result,
-                    pg_result.ntuples,
-                    &response_buf,
-                );
-            }
-            content_type = "text/plain; charset=utf-8";
-        },
-        .xml => {
-            response_len = format_result_as_xml(
-                pg_result.result,
-                pg_result.ntuples,
-                pg_result.nfields,
-                &response_buf,
-            );
-            content_type = "text/xml; charset=utf-8";
-        },
-        .binary => {
-            content_type = "application/json";
-            response_len = format_result_as_json_smart(
-                pg_result.result,
-                pg_result.ntuples,
-                pg_result.nfields,
-                &response_buf,
-                opts.singular_object,
-                opts.strip_nulls,
-            );
-        },
-        .unsupported => unreachable,
-    }
+    response_len = format_result_for_response(
+        pg_result.result,
+        pg_result.ntuples,
+        pg_result.nfields,
+        opts,
+        &response_buf,
+        &content_type,
+    ) catch |err| switch (err) {
+        error.BinaryShapeUnsupported => return send_not_acceptable(r, "{\"message\":\"application/octet-stream requires exactly one row and one column\"}"),
+        error.ResponseTooLarge => return http.NGX_HTTP_INTERNAL_SERVER_ERROR,
+    };
 
     return finalize_response_send(r, response_buf[0..response_len], content_type, pg_result.ntuples, opts);
 }
@@ -3495,6 +3738,11 @@ fn handle_rpc_call_upstream(
     opts: RequestOptions,
     loc_conf: *ngx_pgrest_loc_conf_t,
 ) ngx_int_t {
+    const body_format = parse_content_type_from_request(r);
+    if (request_needs_body(r) and body_format == .unsupported) {
+        return send_unsupported_media_type(r, "{\"message\":\"Unsupported request media type\"}");
+    }
+
     // Extract function name from URI
     const function_name = extract_rpc_function_name(r.*.uri) orelse {
         return http.NGX_HTTP_BAD_REQUEST;
@@ -3512,16 +3760,8 @@ fn handle_rpc_call_upstream(
     rpc_call.prefer_single_object = opts.prefer.params_single_object;
 
     // Try to parse POST body first (if present)
-    if (r.*.request_body != null and r.*.request_body.*.bufs != null) {
-        const body_chain = r.*.request_body.*.bufs;
-        if (body_chain.*.buf != null) {
-            const body_buf = body_chain.*.buf;
-            const body_len = @intFromPtr(body_buf.*.last) - @intFromPtr(body_buf.*.pos);
-            if (body_len > 0 and body_buf.*.pos != core.nullptr(u8)) {
-                const body_data = body_buf.*.pos[0..body_len];
-                parse_rpc_json_body(r.*.pool, body_data, &rpc_call);
-            }
-        }
+    if (get_request_body_slice(r)) |body_data| {
+        parse_rpc_body_params(body_format, body_data, r.*.pool, &rpc_call);
     }
 
     // If no body parameters, parse query string
@@ -3585,6 +3825,11 @@ fn ngx_http_pgrest_upstream_handler(r: [*c]ngx_http_request_t) callconv(.c) ngx_
         return send_not_acceptable(r, "{\"message\":\"None of these media types are available\"}");
     }
 
+    const body_format = parse_content_type_from_request(r);
+    if (request_needs_body(r) and body_format == .unsupported) {
+        return send_unsupported_media_type(r, "{\"message\":\"Unsupported request media type\"}");
+    }
+
     // Check if this is an RPC (stored procedure) call
     if (is_rpc_endpoint(r.*.uri)) {
         return handle_rpc_call_upstream(r, opts, loc_conf);
@@ -3629,16 +3874,8 @@ fn ngx_http_pgrest_upstream_handler(r: [*c]ngx_http_request_t) callconv(.c) ngx_
     var json_field_count: usize = 0;
 
     if (sql_op == .insert or sql_op == .update) {
-        if (r.*.request_body != null and r.*.request_body.*.bufs != null) {
-            const body_chain = r.*.request_body.*.bufs;
-            if (body_chain.*.buf != null) {
-                const body_buf = body_chain.*.buf;
-                const body_len = @intFromPtr(body_buf.*.last) - @intFromPtr(body_buf.*.pos);
-                if (body_len > 0 and body_buf.*.pos != core.nullptr(u8)) {
-                    const body_data = body_buf.*.pos[0..body_len];
-                    json_field_count = parse_json_body(r.*.pool, body_data, &json_fields);
-                }
-            }
+        if (get_request_body_slice(r)) |body_data| {
+            json_field_count = parse_write_body_fields(body_format, body_data, r.*.pool, &json_fields);
         }
     }
 
@@ -3828,45 +4065,28 @@ fn finalize_pg_response(ctx: *PgRequestCtx) void {
     var response_len: usize = 0;
     var content_type: [*:0]const u8 = "application/json";
 
-    switch (opts.response_format) {
-        .json => {
-            response_len = format_result_as_json_smart(
-                result,
-                ntuples,
-                nfields,
-                &response_buf,
-                opts.singular_object,
-                opts.strip_nulls,
-            );
-            content_type = "application/json";
+    response_len = format_result_for_response(
+        result,
+        ntuples,
+        nfields,
+        opts,
+        &response_buf,
+        &content_type,
+    ) catch |err| switch (err) {
+        error.BinaryShapeUnsupported => {
+            const rc = send_not_acceptable(r, "{\"message\":\"application/octet-stream requires exactly one row and one column\"}");
+            ctx.*.request = null;
+            release_pooled_ctx(ctx, false);
+            http.ngx_http_finalize_request(r, rc);
+            return;
         },
-        .csv => {
-            response_len = format_result_as_csv(result, ntuples, nfields, &response_buf);
-            content_type = "text/csv; charset=utf-8";
+        error.ResponseTooLarge => {
+            ctx.*.request = null;
+            release_pooled_ctx(ctx, true);
+            http.ngx_http_finalize_request(r, http.NGX_HTTP_INTERNAL_SERVER_ERROR);
+            return;
         },
-        .plain_text => {
-            if (ntuples > 0 and nfields > 0) {
-                response_len = format_result_as_plain_text(result, ntuples, &response_buf);
-            }
-            content_type = "text/plain; charset=utf-8";
-        },
-        .xml => {
-            response_len = format_result_as_xml(result, ntuples, nfields, &response_buf);
-            content_type = "text/xml; charset=utf-8";
-        },
-        .binary => {
-            response_len = format_result_as_json_smart(
-                result,
-                ntuples,
-                nfields,
-                &response_buf,
-                opts.singular_object,
-                opts.strip_nulls,
-            );
-            content_type = "application/json";
-        },
-        .unsupported => unreachable,
-    }
+    };
 
     const rc = finalize_response_send(r, response_buf[0..response_len], content_type, ntuples, opts);
     ctx.*.request = null;

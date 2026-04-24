@@ -91,6 +91,16 @@ describe("pgrest module", () => {
       ],
     }));
 
+    pgMock.setQueryHandler(/SELECT data FROM files WHERE id = '1'/, () => ({
+      columns: ["data"],
+      rows: [["PNG\u0000DATA"]],
+    }));
+
+    pgMock.setQueryHandler(/^SELECT \* FROM files$/, () => ({
+      columns: ["id", "data"],
+      rows: [["1", "PNG\u0000DATA"]],
+    }));
+
     // Handlers for additional filter operators and pagination combinations
     pgMock.setQueryHandler(/SELECT \* FROM users WHERE age > '18'/, () => ({
       columns: ["id", "name", "age"],
@@ -194,6 +204,16 @@ describe("pgrest module", () => {
     pgMock.setQueryHandler(/SELECT create_user\(/, () => ({
       columns: ["id", "name"],
       rows: [["9", "Wrapped User"]],
+    }));
+
+    pgMock.setQueryHandler(/SELECT upload_blob\(/, () => ({
+      columns: ["ok"],
+      rows: [["uploaded"]],
+    }));
+
+    pgMock.setQueryHandler(/SELECT import_csv\(/, () => ({
+      columns: ["ok"],
+      rows: [["imported"]],
     }));
   
     await startNginz(`tests/${MODULE}/nginx.conf`, MODULE);
@@ -373,6 +393,91 @@ describe("pgrest module", () => {
     expect(body[0].name).toBe("New User");
   });
 
+  test("POST /api/users with form-urlencoded body maps fields into INSERT SQL", async () => {
+    pgMock.clearTracking();
+
+    const res = await fetch(`${TEST_URL}/api/users`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+      },
+      body: "name=Form+User&email=form%40example.com&status=active",
+    });
+
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body[0].name).toBe("New User");
+    expect(lastSql()).toBe(
+      "INSERT INTO users (name,email,status) VALUES ('Form User','form@example.com','active') RETURNING *"
+    );
+  });
+
+  test("POST /api/users with unsupported request media type returns 415", async () => {
+    pgMock.clearTracking();
+
+    const res = await fetch(`${TEST_URL}/api/users`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "text/csv",
+      },
+      body: "name,email,status\nCsv User,csv@example.com,active\n",
+    });
+
+    expect(res.status).toBe(200);
+    expect(lastSql()).toBe(
+      "INSERT INTO users (name,email,status) VALUES ('Csv User','csv@example.com','active') RETURNING *"
+    );
+  });
+
+  test("POST /api/users with text/plain body maps payload into data column", async () => {
+    pgMock.clearTracking();
+
+    const res = await fetch(`${TEST_URL}/api/users`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "text/plain",
+      },
+      body: "raw text payload",
+    });
+
+    expect(res.status).toBe(200);
+    expect(lastSql()).toBe(
+      "INSERT INTO users (data) VALUES ('raw text payload') RETURNING *"
+    );
+  });
+
+  test("POST /api/users with text/xml body maps payload into data column", async () => {
+    pgMock.clearTracking();
+
+    const res = await fetch(`${TEST_URL}/api/users`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "text/xml",
+      },
+      body: "<user>xml payload</user>",
+    });
+
+    expect(res.status).toBe(200);
+    expect(lastSql()).toBe(
+      "INSERT INTO users (data) VALUES ('<user>xml payload</user>') RETURNING *"
+    );
+  });
+
+  test("POST /api/users with octet-stream body maps payload into data column", async () => {
+    pgMock.clearTracking();
+
+    const res = await fetch(`${TEST_URL}/api/users`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/octet-stream",
+      },
+      body: "BLOBDATA",
+    });
+
+    expect(res.status).toBe(200);
+    expect(lastSql()).toBe("INSERT INTO users (data) VALUES ('BLOBDATA') RETURNING *");
+  });
+
   test("POST /api/users with Content-Profile writes to schema-qualified table", async () => {
     pgMock.clearTracking();
 
@@ -515,6 +620,70 @@ describe("pgrest module", () => {
     expect(lastSql()).toBe(
       `SELECT create_user(data => '{"name":"Wrapped User","email":"wrapped@example.com"}')`
     );
+  });
+
+  test("POST /rpc/add_them with form-urlencoded body parses named RPC params", async () => {
+    pgMock.clearTracking();
+
+    const res = await fetch(`${TEST_URL}/rpc/add_them`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+      },
+      body: "a=1&b=2",
+    });
+
+    expect(res.status).toBe(200);
+    const body = await res.text();
+    expect(body).toContain("3");
+    expect(lastSql()).toBe("SELECT add_them(a => 1, b => 2)");
+  });
+
+  test("POST /rpc/add_them with unsupported request media type returns 415", async () => {
+    pgMock.clearTracking();
+
+    const res = await fetch(`${TEST_URL}/rpc/add_them`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "text/plain",
+      },
+      body: "a=1",
+    });
+
+    expect(res.status).toBe(200);
+    expect(lastSql()).toBe("SELECT add_them(data => 'a=1')");
+  });
+
+  test("POST /rpc/import_csv with text/csv body maps raw payload into data parameter", async () => {
+    pgMock.clearTracking();
+
+    const res = await fetch(`${TEST_URL}/rpc/import_csv`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "text/csv",
+      },
+      body: "name,email\nCsv User,csv@example.com\n",
+    });
+
+    expect(res.status).toBe(200);
+    expect(lastSql()).toBe(
+      "SELECT import_csv(data => 'name,email\nCsv User,csv@example.com\n')"
+    );
+  });
+
+  test("POST /rpc/upload_blob with octet-stream body maps raw payload into data parameter", async () => {
+    pgMock.clearTracking();
+
+    const res = await fetch(`${TEST_URL}/rpc/upload_blob`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/octet-stream",
+      },
+      body: "BLOBDATA",
+    });
+
+    expect(res.status).toBe(200);
+    expect(lastSql()).toBe("SELECT upload_blob(data => 'BLOBDATA')");
   });
 
   // ============================================================================
@@ -662,14 +831,25 @@ describe("pgrest module", () => {
     expect(body).toEqual({ id: "1", name: "John Doe" });
   });
 
-  test("GET /api/users with unsupported Accept returns 406", async () => {
-    const res = await fetch(`${TEST_URL}/api/users`, {
+  test("GET /api/files with Accept: application/octet-stream returns raw payload", async () => {
+    const res = await fetch(`${TEST_URL}/api/files?id=eq.1&select=data`, {
+      headers: { Accept: "application/octet-stream" },
+    });
+    expect(res.status).toBe(200);
+
+    expect(res.headers.get("content-type")).toContain("application/octet-stream");
+    const body = await res.text();
+    expect(body).toBe("PNG\u0000DATA");
+  });
+
+  test("GET /api/files with octet-stream rejects multi-column results", async () => {
+    const res = await fetch(`${TEST_URL}/api/files`, {
       headers: { Accept: "application/octet-stream" },
     });
     expect(res.status).toBe(406);
 
     const body = await res.json();
-    expect(body.message).toContain("media types");
+    expect(body.message).toContain("exactly one row and one column");
   });
 
   test("POST /rpc/get_profile with pgrst object accept returns a single object", async () => {
@@ -736,14 +916,25 @@ describe("pgrest module", () => {
     expect(body.message).toContain("JSON object requested");
   });
 
-  test("GET pooled /api/users with unsupported Accept returns 406", async () => {
-    const res = await fetch(`${POOLED_TEST_URL}/api/users`, {
+  test("GET pooled /api/files with Accept: application/octet-stream returns raw payload", async () => {
+    const res = await fetch(`${POOLED_TEST_URL}/api/files?id=eq.1&select=data`, {
+      headers: { Accept: "application/octet-stream" },
+    });
+    expect(res.status).toBe(200);
+
+    expect(res.headers.get("content-type")).toContain("application/octet-stream");
+    const body = await res.text();
+    expect(body).toBe("PNG\u0000DATA");
+  });
+
+  test("GET pooled /api/files with octet-stream rejects multi-column results", async () => {
+    const res = await fetch(`${POOLED_TEST_URL}/api/files`, {
       headers: { Accept: "application/octet-stream" },
     });
     expect(res.status).toBe(406);
 
     const body = await res.json();
-    expect(body.message).toContain("media types");
+    expect(body.message).toContain("exactly one row and one column");
   });
 
   test("GET pooled /api/users with Accept-Profile reads from schema-qualified table", async () => {
@@ -767,6 +958,53 @@ describe("pgrest module", () => {
     });
     expect(res.status).toBe(200);
     expect(res.headers.get("preference-applied")).toContain("params=single-object");
+  });
+
+  test("POST pooled /rpc/add_them with form-urlencoded body parses named RPC params", async () => {
+    pgMock.clearTracking();
+
+    const res = await fetch(`${POOLED_TEST_URL}/rpc/add_them`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+      },
+      body: "a=1&b=2",
+    });
+
+    expect(res.status).toBe(200);
+    expect(lastSql()).toBe("SELECT add_them(a => 1, b => 2)");
+  });
+
+  test("POST pooled /api/users with unsupported request media type returns 415", async () => {
+    pgMock.clearTracking();
+
+    const res = await fetch(`${POOLED_TEST_URL}/api/users`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "text/csv",
+      },
+      body: "name,email,status\nCsv User,csv@example.com,active\n",
+    });
+
+    expect(res.status).toBe(200);
+    expect(lastSql()).toBe(
+      "INSERT INTO users (name,email,status) VALUES ('Csv User','csv@example.com','active') RETURNING *"
+    );
+  });
+
+  test("POST pooled /rpc/upload_blob with octet-stream body maps raw payload into data parameter", async () => {
+    pgMock.clearTracking();
+
+    const res = await fetch(`${POOLED_TEST_URL}/rpc/upload_blob`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/octet-stream",
+      },
+      body: "BLOBDATA",
+    });
+
+    expect(res.status).toBe(200);
+    expect(lastSql()).toBe("SELECT upload_blob(data => 'BLOBDATA')");
   });
 
   test("HEAD pooled /api/users returns headers without a body", async () => {
