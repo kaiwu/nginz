@@ -1,7 +1,7 @@
 import { describe, test, expect, beforeAll, afterAll } from "bun:test";
 import { startNginz, stopNginz, cleanupRuntime, TEST_URL } from "../harness.js";
 
-const MODULE = "njs-stdlib";
+const MODULE = "njs";
 
 describe("njs stdlib modules", () => {
   beforeAll(async () => {

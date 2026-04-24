@@ -1,7 +1,7 @@
 import { describe, test, expect, beforeAll, afterAll } from "bun:test";
 import { startNginz, stopNginz, cleanupRuntime, TEST_URL, createHTTPMock, MOCK_PORTS } from "../harness.js";
 
-const MODULE = "njs-http";
+const MODULE = "njs";
 const MOCK_PORT = MOCK_PORTS.HTTP;
 
 describe("njs HTTP features", () => {
