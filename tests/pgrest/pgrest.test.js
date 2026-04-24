@@ -10,6 +10,7 @@ import {
 
 const MODULE = "pgrest";
 let pgMock;
+const POOLED_TEST_URL = "http://127.0.0.1:8889";
 
 function lastSql() {
   return pgMock.getLastQuery();
@@ -75,6 +76,11 @@ describe("pgrest module", () => {
     pgMock.setQueryHandler(/SELECT \* FROM profiles WHERE id = '1'/, () => ({
       columns: ["id", "name", "bio", "avatar"],
       rows: [["1", "John Doe", null, null]],
+    }));
+
+    pgMock.setQueryHandler(/SELECT \* FROM profiles WHERE id = '404'/, () => ({
+      columns: ["id", "name", "bio", "avatar"],
+      rows: [],
     }));
 
     pgMock.setQueryHandler(/^SELECT \* FROM profiles$/, () => ({
@@ -610,6 +616,27 @@ describe("pgrest module", () => {
       bio: null,
       avatar: null,
     });
+    expect(res.headers.get("content-range")).toBe("0-0/*");
+  });
+
+  test("GET /api/profiles with pgrst object accept returns 406 when zero rows are returned", async () => {
+    const res = await fetch(`${TEST_URL}/api/profiles?id=eq.404`, {
+      headers: { Accept: "application/vnd.pgrst.object+json" },
+    });
+    expect(res.status).toBe(406);
+
+    const body = await res.json();
+    expect(body.message).toContain("JSON object requested");
+  });
+
+  test("GET /api/profiles with pgrst object accept returns 406 when multiple rows are returned", async () => {
+    const res = await fetch(`${TEST_URL}/api/profiles`, {
+      headers: { Accept: "application/vnd.pgrst.object+json" },
+    });
+    expect(res.status).toBe(406);
+
+    const body = await res.json();
+    expect(body.message).toContain("JSON object requested");
   });
 
   test("GET /api/profiles with nulls=stripped removes null fields from array results", async () => {
@@ -635,16 +662,14 @@ describe("pgrest module", () => {
     expect(body).toEqual({ id: "1", name: "John Doe" });
   });
 
-  test("GET /api/users with Accept: application/octet-stream falls back to JSON response semantics", async () => {
+  test("GET /api/users with unsupported Accept returns 406", async () => {
     const res = await fetch(`${TEST_URL}/api/users`, {
       headers: { Accept: "application/octet-stream" },
     });
-    expect(res.status).toBe(200);
+    expect(res.status).toBe(406);
 
-    expect(res.headers.get("content-type")).toContain("application/json");
-    const body = await res.text();
-    expect(body.startsWith("[")).toBe(true);
-    expect(body).toContain('"John Doe"');
+    const body = await res.json();
+    expect(body.message).toContain("media types");
   });
 
   test("POST /rpc/get_profile with pgrst object accept returns a single object", async () => {
@@ -660,6 +685,98 @@ describe("pgrest module", () => {
 
     const body = await res.json();
     expect(body).toEqual({ id: "1", name: "John Doe" });
+  });
+
+  test("POST /rpc/create_user returns Preference-Applied for params=single-object", async () => {
+    const res = await fetch(`${TEST_URL}/rpc/create_user`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Prefer: "params=single-object",
+      },
+      body: JSON.stringify({ name: "Wrapped User", email: "wrapped@example.com" }),
+    });
+    expect(res.status).toBe(200);
+    expect(res.headers.get("preference-applied")).toContain("params=single-object");
+  });
+
+  test("HEAD /api/users returns headers without a body", async () => {
+    const res = await fetch(`${TEST_URL}/api/users`, { method: "HEAD" });
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-type")).toContain("application/json");
+    expect(res.headers.get("range-unit")).toBe("items");
+    expect(res.headers.get("content-range")).toBe("0-2/*");
+    const body = await res.text();
+    expect(body).toBe("");
+  });
+
+  test("GET pooled /api/profiles with pgrst object accept returns a single object", async () => {
+    const res = await fetch(`${POOLED_TEST_URL}/api/profiles?id=eq.1`, {
+      headers: { Accept: "application/vnd.pgrst.object+json" },
+    });
+    expect(res.status).toBe(200);
+
+    const body = await res.json();
+    expect(body).toEqual({
+      id: "1",
+      name: "John Doe",
+      bio: null,
+      avatar: null,
+    });
+    expect(res.headers.get("content-range")).toBe("0-0/*");
+  });
+
+  test("GET pooled /api/profiles with pgrst object accept returns 406 for multiple rows", async () => {
+    const res = await fetch(`${POOLED_TEST_URL}/api/profiles`, {
+      headers: { Accept: "application/vnd.pgrst.object+json" },
+    });
+    expect(res.status).toBe(406);
+
+    const body = await res.json();
+    expect(body.message).toContain("JSON object requested");
+  });
+
+  test("GET pooled /api/users with unsupported Accept returns 406", async () => {
+    const res = await fetch(`${POOLED_TEST_URL}/api/users`, {
+      headers: { Accept: "application/octet-stream" },
+    });
+    expect(res.status).toBe(406);
+
+    const body = await res.json();
+    expect(body.message).toContain("media types");
+  });
+
+  test("GET pooled /api/users with Accept-Profile reads from schema-qualified table", async () => {
+    pgMock.clearTracking();
+
+    const res = await fetch(`${POOLED_TEST_URL}/api/users`, {
+      headers: { "Accept-Profile": "admin" },
+    });
+    expect(res.status).toBe(200);
+    expect(lastSql()).toBe("SELECT * FROM admin.users");
+  });
+
+  test("POST pooled /rpc/create_user returns Preference-Applied for params=single-object", async () => {
+    const res = await fetch(`${POOLED_TEST_URL}/rpc/create_user`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Prefer: "params=single-object",
+      },
+      body: JSON.stringify({ name: "Wrapped User", email: "wrapped@example.com" }),
+    });
+    expect(res.status).toBe(200);
+    expect(res.headers.get("preference-applied")).toContain("params=single-object");
+  });
+
+  test("HEAD pooled /api/users returns headers without a body", async () => {
+    const res = await fetch(`${POOLED_TEST_URL}/api/users`, { method: "HEAD" });
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-type")).toContain("application/json");
+    expect(res.headers.get("range-unit")).toBe("items");
+    expect(res.headers.get("content-range")).toBe("0-2/*");
+    const body = await res.text();
+    expect(body).toBe("");
   });
 
   // ============================================================================

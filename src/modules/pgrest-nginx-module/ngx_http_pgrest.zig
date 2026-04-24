@@ -50,6 +50,7 @@ const NGX_OK = core.NGX_OK;
 const NGX_ERROR = core.NGX_ERROR;
 const NGX_AGAIN = core.NGX_AGAIN;
 const NGX_DECLINED = core.NGX_DECLINED;
+const NGX_HTTP_NOT_ACCEPTABLE: ngx_uint_t = 406;
 
 const NGX_CONF_OK = conf.NGX_CONF_OK;
 const NGX_CONF_ERROR = conf.NGX_CONF_ERROR;
@@ -78,6 +79,7 @@ const NArray = ngx.array.NArray;
 
 extern var ngx_http_upstream_module: ngx_module_t;
 extern var ngx_http_core_module: ngx_module_t;
+extern var ngx_pagesize: ngx_uint_t;
 
 const ngx_pgrest_upstream_srv_t = extern struct {
     conn: ngx_str_t,
@@ -91,6 +93,7 @@ const ngx_pgrest_loc_conf_t = extern struct {
     upstream: ngx_str_t,
     conninfo: ngx_str_t, // PostgreSQL connection string
     pooling: ngx_flag_t, // Enable connection pooling (non-blocking mode)
+    ups: http.ngx_http_upstream_conf_t,
 
     // JWT role-based access control
     jwt_secret: ngx_str_t, // HS256 secret for JWT validation
@@ -130,6 +133,7 @@ const PgPoolConn = extern struct {
     state: PgConnState, // Current connection state
     fd: c_int, // Socket file descriptor for event registration
     ngx_conn: ?*core.ngx_connection_t, // nginx connection wrapper
+    request_ctx: ?*PgRequestCtx, // active request bound to this pooled connection
 };
 
 /// Connection pool for an upstream
@@ -151,6 +155,7 @@ const PgConnPool = struct {
             c.state = .free;
             c.fd = -1;
             c.ngx_conn = null;
+            c.request_ctx = null;
         }
     }
 
@@ -199,7 +204,43 @@ const PgRequestCtx = extern struct {
     query_len: usize, // Query length
     result: ?*PGresult, // Query result
     request: ?*ngx_http_request_t, // Back-reference to HTTP request
+    response_format: ResponseFormat,
+    singular_object: bool,
+    strip_nulls: bool,
+    is_head: bool,
+    prefer_params_single_object: bool,
+    emit_range_headers: bool,
 };
+
+fn ensure_pool_conninfo(conninfo: []const u8) bool {
+    if (!g_pool_initialized) {
+        g_conn_pool.init();
+        g_pool_initialized = true;
+    }
+
+    if (!g_conn_pool.initialized) {
+        if (conninfo.len == 0 or conninfo.len >= g_conn_pool.conninfo.len) return false;
+        @memcpy(g_conn_pool.conninfo[0..conninfo.len], conninfo);
+        g_conn_pool.conninfo[conninfo.len] = 0;
+        g_conn_pool.conninfo_len = conninfo.len;
+        g_conn_pool.initialized = true;
+        return true;
+    }
+
+    if (g_conn_pool.conninfo_len == conninfo.len and std.mem.eql(u8, g_conn_pool.conninfo[0..conninfo.len], conninfo)) {
+        return true;
+    }
+
+    if (g_conn_pool.active_count != 0 or conninfo.len == 0 or conninfo.len >= g_conn_pool.conninfo.len) {
+        return false;
+    }
+
+    @memcpy(g_conn_pool.conninfo[0..conninfo.len], conninfo);
+    g_conn_pool.conninfo[conninfo.len] = 0;
+    g_conn_pool.conninfo_len = conninfo.len;
+    g_conn_pool.initialized = true;
+    return true;
+}
 
 /// Global connection pool (one per upstream)
 var g_conn_pool: PgConnPool = undefined;
@@ -330,23 +371,300 @@ fn parse_json_body(
     return count;
 }
 
-/// Format PostgreSQL result as JSON array
-/// Parse Accept header to check for singular object format
-/// Returns true if Accept header contains "application/vnd.pgrst.object+json"
-fn should_format_as_singular_object(r: [*c]ngx_http_request_t) bool {
-    if (extract_header_value(r, "accept")) |accept_val| {
-        return std.mem.containsAtLeast(u8, accept_val, 1, "application/vnd.pgrst.object+json");
-    }
-    return false;
+const PreferOptions = struct {
+    params_single_object: bool = false,
+};
+
+const RequestOptions = struct {
+    response_format: ResponseFormat = .json,
+    singular_object: bool = false,
+    strip_nulls: bool = false,
+    is_head: bool = false,
+    prefer: PreferOptions = .{},
+    emit_range_headers: bool = false,
+};
+
+fn trim_ascii_spaces(value: []const u8) []const u8 {
+    var start: usize = 0;
+    var end: usize = value.len;
+    while (start < end and std.ascii.isWhitespace(value[start])) : (start += 1) {}
+    while (end > start and std.ascii.isWhitespace(value[end - 1])) : (end -= 1) {}
+    return value[start..end];
 }
 
-/// Parse Accept header to check for stripped nulls format
-/// Returns true if Accept header contains "nulls=stripped"
-fn should_strip_nulls(r: [*c]ngx_http_request_t) bool {
-    if (extract_header_value(r, "accept")) |accept_val| {
-        return std.mem.containsAtLeast(u8, accept_val, 1, "nulls=stripped");
+fn parse_prefer_header(r: [*c]ngx_http_request_t) PreferOptions {
+    var prefer: PreferOptions = .{};
+    const prefer_val = extract_header_value(r, "prefer") orelse return prefer;
+
+    var it = std.mem.splitScalar(u8, prefer_val, ',');
+    while (it.next()) |part| {
+        const token = trim_ascii_spaces(part);
+        if (std.mem.eql(u8, token, "params=single-object")) {
+            prefer.params_single_object = true;
+        }
     }
-    return false;
+
+    return prefer;
+}
+
+fn parse_request_options(r: [*c]ngx_http_request_t) RequestOptions {
+    var opts: RequestOptions = .{};
+    opts.is_head = r != null and r.*.method == http.NGX_HTTP_HEAD;
+    opts.prefer = parse_prefer_header(r);
+    opts.emit_range_headers = r != null and (r.*.method == http.NGX_HTTP_GET or r.*.method == http.NGX_HTTP_HEAD);
+
+    if (extract_header_value(r, "accept")) |accept_val| {
+        opts.singular_object = std.mem.containsAtLeast(u8, accept_val, 1, "application/vnd.pgrst.object+json");
+        opts.strip_nulls = std.mem.containsAtLeast(u8, accept_val, 1, "nulls=stripped");
+    }
+
+    opts.response_format = parse_accept_header_from_request(r);
+    return opts;
+}
+
+fn dup_to_ngx_str(pool: [*c]ngx_pool_t, value: []const u8) ?ngx_str_t {
+    const mem = core.ngx_pnalloc(pool, value.len) orelse return null;
+    const ptr = core.castPtr(u8, mem) orelse return null;
+    @memcpy(ptr[0..value.len], value);
+    return ngx_str_t{ .data = ptr, .len = value.len };
+}
+
+fn append_response_header(
+    r: [*c]ngx_http_request_t,
+    key: []const u8,
+    lowcase_key: []const u8,
+    value: []const u8,
+) bool {
+    var headers = NList(ngx_table_elt_t).init0(&r.*.headers_out.headers);
+    const h = headers.append() catch return false;
+    h.*.hash = 1;
+    h.*.key = ngx_str_t{ .data = @constCast(key.ptr), .len = key.len };
+    h.*.value = dup_to_ngx_str(r.*.pool, value) orelse return false;
+    h.*.lowcase_key = @constCast(lowcase_key.ptr);
+    return true;
+}
+
+fn append_preference_applied_header(r: [*c]ngx_http_request_t, opts: RequestOptions) void {
+    if (opts.prefer.params_single_object) {
+        _ = append_response_header(r, "Preference-Applied", "preference-applied", "params=single-object");
+    }
+}
+
+fn append_range_headers(r: [*c]ngx_http_request_t, ntuples: i32, opts: RequestOptions) void {
+    if (!opts.emit_range_headers) return;
+
+    _ = append_response_header(r, "Range-Unit", "range-unit", "items");
+
+    var content_range_buf: [64]u8 = undefined;
+    const content_range = if (ntuples > 0)
+        std.fmt.bufPrint(content_range_buf[0..], "0-{d}/*", .{ntuples - 1}) catch return
+    else
+        std.fmt.bufPrint(content_range_buf[0..], "*/0", .{}) catch return;
+
+    _ = append_response_header(r, "Content-Range", "content-range", content_range);
+}
+
+fn send_json_error(r: [*c]ngx_http_request_t, status: ngx_uint_t, body: []const u8) ngx_int_t {
+    r.*.headers_out.status = status;
+    const content_type = "application/json";
+    r.*.headers_out.content_type = ngx_str_t{ .data = @constCast(content_type), .len = content_type.len };
+    r.*.headers_out.content_type_len = content_type.len;
+    r.*.headers_out.content_length_n = @intCast(body.len);
+
+    const header_rc = http.ngx_http_send_header(r);
+    if (header_rc == NGX_ERROR or header_rc > http.NGX_HTTP_SPECIAL_RESPONSE) {
+        return header_rc;
+    }
+
+    if (r.*.method == http.NGX_HTTP_HEAD) {
+        return http.ngx_http_send_special(r, http.NGX_HTTP_LAST);
+    }
+
+    const b = buf.ngx_create_temp_buf(r.*.pool, body.len) orelse {
+        return http.NGX_HTTP_INTERNAL_SERVER_ERROR;
+    };
+
+    @memcpy(b.*.last[0..body.len], body);
+    b.*.last += body.len;
+    b.*.flags.last_buf = true;
+    b.*.flags.last_in_chain = true;
+
+    var out: ngx_chain_t = std.mem.zeroes(ngx_chain_t);
+    out.buf = b;
+    out.next = null;
+    return http.ngx_http_output_filter(r, &out);
+}
+
+fn send_not_acceptable(r: [*c]ngx_http_request_t, body: []const u8) ngx_int_t {
+    return send_json_error(r, NGX_HTTP_NOT_ACCEPTABLE, body);
+}
+
+fn finalize_response_send(
+    r: [*c]ngx_http_request_t,
+    response_data: []const u8,
+    content_type: [*:0]const u8,
+    ntuples: i32,
+    opts: RequestOptions,
+) ngx_int_t {
+    r.*.headers_out.status = http.NGX_HTTP_OK;
+    const len = std.mem.len(content_type);
+    r.*.headers_out.content_type = ngx_str_t{ .data = @constCast(content_type), .len = len };
+    r.*.headers_out.content_type_len = len;
+    r.*.headers_out.content_length_n = @intCast(response_data.len);
+
+    append_preference_applied_header(r, opts);
+    append_range_headers(r, ntuples, opts);
+
+    const header_rc = http.ngx_http_send_header(r);
+    if (header_rc == NGX_ERROR or header_rc > http.NGX_HTTP_SPECIAL_RESPONSE) {
+        return header_rc;
+    }
+
+    if (opts.is_head) {
+        return http.ngx_http_send_special(r, http.NGX_HTTP_LAST);
+    }
+
+    const b = buf.ngx_create_temp_buf(r.*.pool, response_data.len) orelse {
+        return http.NGX_HTTP_INTERNAL_SERVER_ERROR;
+    };
+    @memcpy(b.*.last[0..response_data.len], response_data);
+    b.*.last += response_data.len;
+    b.*.flags.last_buf = true;
+    b.*.flags.last_in_chain = true;
+
+    var out: ngx_chain_t = std.mem.zeroes(ngx_chain_t);
+    out.buf = b;
+    out.next = null;
+    return http.ngx_http_output_filter(r, &out);
+}
+
+fn release_pooled_ctx(ctx: *PgRequestCtx, failed: bool) void {
+    if (ctx.*.result != null) {
+        pgClear(ctx.*.result);
+        ctx.*.result = null;
+    }
+
+    if (ctx.*.pool_conn) |pool_conn| {
+        pool_conn.request_ctx = null;
+        if (failed) {
+            pool_conn.state = .conn_error;
+        }
+        g_conn_pool.releaseConn(pool_conn);
+        ctx.*.pool_conn = null;
+    }
+}
+
+fn finalize_pooled_failure(ctx: *PgRequestCtx) void {
+    const r = ctx.*.request orelse return;
+    const rc = send_json_error(r, http.NGX_HTTP_INTERNAL_SERVER_ERROR, "{\"error\":\"Query failed\"}");
+    ctx.*.request = null;
+    release_pooled_ctx(ctx, true);
+    http.ngx_http_finalize_request(r, rc);
+}
+
+fn start_pooled_query(ctx: *PgRequestCtx, pool_conn: *PgPoolConn) bool {
+    const conn = pool_conn.conn orelse return false;
+
+    if (pgSendQuery(conn, &ctx.*.query) == 0) {
+        ctx.*.query_state = .failed;
+        return false;
+    }
+
+    ctx.*.query_state = .sending;
+    pool_conn.state = .busy;
+
+    const flush_result = pgFlush(conn);
+    if (flush_result == 0) {
+        ctx.*.query_state = .waiting;
+    } else if (flush_result < 0) {
+        ctx.*.query_state = .failed;
+        return false;
+    }
+
+    return true;
+}
+
+fn start_pooled_request(ctx: *PgRequestCtx, loc_conf: *ngx_pgrest_loc_conf_t) ngx_int_t {
+    const conninfo = core.slicify(u8, loc_conf.*.conninfo.data, loc_conf.*.conninfo.len);
+    if (!ensure_pool_conninfo(conninfo)) {
+        return http.NGX_HTTP_INTERNAL_SERVER_ERROR;
+    }
+
+    if (g_conn_pool.getIdleConn()) |pool_conn| {
+        ctx.*.pool_conn = pool_conn;
+        pool_conn.request_ctx = ctx;
+        pool_conn.state = .busy;
+        const ngx_conn = pool_conn.ngx_conn orelse return http.NGX_HTTP_INTERNAL_SERVER_ERROR;
+        ngx_conn.*.data = pool_conn;
+        if (!start_pooled_query(ctx, pool_conn)) {
+            pool_conn.request_ctx = null;
+            pool_conn.state = .conn_error;
+            g_conn_pool.releaseConn(pool_conn);
+            ctx.*.pool_conn = null;
+            return http.NGX_HTTP_INTERNAL_SERVER_ERROR;
+        }
+        ctx.*.request.?.*.main.*.flags0.count += 1;
+        return core.NGX_DONE;
+    }
+
+    const pool_conn = g_conn_pool.getFreeSlot() orelse return http.NGX_HTTP_SERVICE_UNAVAILABLE;
+    const conn = pgConnectStart(&g_conn_pool.conninfo);
+    if (conn == null) return http.NGX_HTTP_INTERNAL_SERVER_ERROR;
+    if (pgStatus(conn) == pq.CONNECTION_BAD) {
+        pgFinish(conn);
+        return http.NGX_HTTP_INTERNAL_SERVER_ERROR;
+    }
+    if (pgSetnonblocking(conn, 1) != 0) {
+        pgFinish(conn);
+        return http.NGX_HTTP_INTERNAL_SERVER_ERROR;
+    }
+
+    const fd = pgSocket(conn);
+    if (fd < 0) {
+        pgFinish(conn);
+        return http.NGX_HTTP_INTERNAL_SERVER_ERROR;
+    }
+
+    const ngx_conn = http.ngx_get_connection(fd, ctx.*.request.?.*.connection.*.log);
+    if (ngx_conn == core.nullptr(core.ngx_connection_t)) {
+        pgFinish(conn);
+        return http.NGX_HTTP_INTERNAL_SERVER_ERROR;
+    }
+    ngx_conn.*.log = ctx.*.request.?.*.connection.*.log;
+
+    pool_conn.conn = conn;
+    pool_conn.state = .connecting;
+    pool_conn.fd = fd;
+    pool_conn.ngx_conn = ngx_conn;
+    pool_conn.request_ctx = ctx;
+    g_conn_pool.active_count += 1;
+    ctx.*.pool_conn = pool_conn;
+
+    ngx_conn.*.data = pool_conn;
+    if (ngx_conn.*.read != core.nullptr(core.ngx_event_t)) {
+        ngx_conn.*.read.*.log = ngx_conn.*.log;
+        ngx_conn.*.read.*.handler = ngx_pgrest_conn_read_handler;
+        if (http.ngx_handle_read_event(ngx_conn.*.read, 0) != NGX_OK) {
+            pool_conn.request_ctx = null;
+            cleanup_pool_conn(pool_conn);
+            ctx.*.pool_conn = null;
+            return http.NGX_HTTP_INTERNAL_SERVER_ERROR;
+        }
+    }
+    if (ngx_conn.*.write != core.nullptr(core.ngx_event_t)) {
+        ngx_conn.*.write.*.log = ngx_conn.*.log;
+        ngx_conn.*.write.*.handler = ngx_pgrest_conn_write_handler;
+        if (http.ngx_handle_write_event(ngx_conn.*.write, 0) != NGX_OK) {
+            pool_conn.request_ctx = null;
+            cleanup_pool_conn(pool_conn);
+            ctx.*.pool_conn = null;
+            return http.NGX_HTTP_INTERNAL_SERVER_ERROR;
+        }
+    }
+
+    ctx.*.request.?.*.main.*.flags0.count += 1;
+    poll_pg_connection(ctx, pool_conn);
+    return core.NGX_DONE;
 }
 
 /// Format a single row as a JSON object
@@ -623,16 +941,15 @@ fn format_result_as_json_with_options(
 /// If Accept header contains "application/vnd.pgrst.object+json" and there's exactly one row,
 /// returns that row as a single object instead of an array
 fn format_result_as_json_smart(
-    r: [*c]ngx_http_request_t,
     result: ?*PGresult,
     ntuples: i32,
     nfields: i32,
     json_buf: []u8,
+    singular_object: bool,
+    strip_nulls: bool,
 ) usize {
-    const strip_nulls = should_strip_nulls(r);
-
     // Check if singular object format is requested
-    if (should_format_as_singular_object(r)) {
+    if (singular_object) {
         // For singular object format, return first row if it exists
         if (ntuples >= 1) {
             return format_row_as_json_object_impl(result, 0, nfields, json_buf, strip_nulls);
@@ -787,9 +1104,22 @@ fn pgrest_create_loc_conf(cf: [*c]ngx_conf_t) callconv(.c) ?*anyopaque {
         loc.*.pooling = 0; // Disabled by default (blocking mode)
         // Default role claim name is "role"
         loc.*.jwt_role_claim = ngx_string("role");
+        init_upstream_conf(&loc.*.ups);
         return loc;
     }
     return null;
+}
+
+fn init_upstream_conf(cf: [*c]http.ngx_http_upstream_conf_t) void {
+    cf.*.buffering = 0;
+    cf.*.buffer_size = 8 * ngx_pagesize;
+    cf.*.ssl_verify = 0;
+    cf.*.connect_timeout = 5000;
+    cf.*.send_timeout = 5000;
+    cf.*.read_timeout = 5000;
+    cf.*.module = ngx_string("ngx_http_pgrest_module");
+    cf.*.hide_headers = conf.NGX_CONF_UNSET_PTR;
+    cf.*.pass_headers = conf.NGX_CONF_UNSET_PTR;
 }
 
 fn ngx_conf_set_server(
@@ -923,6 +1253,7 @@ const SqlOp = enum {
     pub fn fromMethod(method: ngx_uint_t) ?SqlOp {
         return switch (method) {
             http.NGX_HTTP_GET => .select,
+            http.NGX_HTTP_HEAD => .select,
             http.NGX_HTTP_POST => .insert,
             http.NGX_HTTP_PATCH => .update,
             http.NGX_HTTP_PUT => .update,
@@ -1544,18 +1875,27 @@ fn append_filter_value(buf_out: []u8, pos_in: usize, filter: Filter) usize {
 /// HTTP Header Parsing
 /// ============================================================================
 /// Supported response formats
-const ResponseFormat = enum {
+const ResponseFormat = enum(u8) {
     json, // application/json (default)
     csv, // text/csv
     plain_text, // text/plain (for scalar functions)
     xml, // text/xml (for XML functions)
     binary, // application/octet-stream (for bytea)
+    unsupported,
 };
 
 /// Parse Accept header to determine response format from request
 /// Supports: application/json, text/csv, text/plain, text/xml, application/octet-stream
 fn parse_accept_header_from_request(r: [*c]ngx_http_request_t) ResponseFormat {
     const accept_val = extract_header_value(r, "accept") orelse return .json;
+
+    if (std.mem.containsAtLeast(u8, accept_val, 1, "application/vnd.pgrst.object+json") or
+        std.mem.containsAtLeast(u8, accept_val, 1, "application/vnd.pgrst.array+json") or
+        std.mem.containsAtLeast(u8, accept_val, 1, "application/json") or
+        std.mem.containsAtLeast(u8, accept_val, 1, "*/*"))
+    {
+        return .json;
+    }
 
     // Check for specific content types (order matters - more specific first)
     if (std.mem.containsAtLeast(u8, accept_val, 1, "text/csv")) {
@@ -1570,11 +1910,10 @@ fn parse_accept_header_from_request(r: [*c]ngx_http_request_t) ResponseFormat {
         return .xml;
     }
     if (std.mem.containsAtLeast(u8, accept_val, 1, "application/octet-stream")) {
-        return .binary;
+        return .unsupported;
     }
 
-    // Default to JSON for application/json, */*, or unrecognized types
-    return .json;
+    return .unsupported;
 }
 
 /// Extract a header value from HTTP request headers
@@ -1665,15 +2004,6 @@ fn build_qualified_table_name(
     @memcpy(buffer[pos..][0..table.len], table);
     pos += table.len;
     return pos;
-}
-
-/// Check if Prefer header contains "params=single-object"
-/// Used for RPC functions that expect a single JSON object parameter
-fn prefer_single_object_param(r: [*c]ngx_http_request_t) bool {
-    if (extract_header_value(r, "prefer")) |prefer_val| {
-        return std.mem.containsAtLeast(u8, prefer_val, 1, "params=single-object");
-    }
-    return false;
 }
 
 /// ============================================================================
@@ -2718,7 +3048,7 @@ export fn ngx_http_pgrest_client_body_handler(r: [*c]ngx_http_request_t) callcon
 
 export fn ngx_http_pgrest_upstream_client_body_handler(r: [*c]ngx_http_request_t) callconv(.c) void {
     const rc = ngx_http_pgrest_upstream_handler(r);
-    if (rc != NGX_AGAIN and rc != NGX_OK) {
+    if (rc != core.NGX_DONE) {
         http.ngx_http_finalize_request(r, rc);
     }
 }
@@ -2763,7 +3093,12 @@ fn extract_table_name(uri: ngx_str_t) ?[]const u8 {
 }
 
 /// Handle RPC (stored procedure) call in blocking mode
-fn handle_rpc_call(r: [*c]ngx_http_request_t, conninfo: []const u8, loc_conf: *ngx_pgrest_loc_conf_t) ngx_int_t {
+fn handle_rpc_call(
+    r: [*c]ngx_http_request_t,
+    conninfo: []const u8,
+    loc_conf: *ngx_pgrest_loc_conf_t,
+    opts: RequestOptions,
+) ngx_int_t {
     // Extract function name from URI
     const function_name = extract_rpc_function_name(r.*.uri) orelse {
         r.*.headers_out.status = http.NGX_HTTP_BAD_REQUEST;
@@ -2776,7 +3111,7 @@ fn handle_rpc_call(r: [*c]ngx_http_request_t, conninfo: []const u8, loc_conf: *n
     var rpc_call: RpcCall = undefined;
     rpc_call.param_count = 0;
     rpc_call.function_name = function_name;
-    rpc_call.prefer_single_object = prefer_single_object_param(r);
+    rpc_call.prefer_single_object = opts.prefer.params_single_object;
 
     // Try to parse POST body first (if present)
     if (r.*.request_body != null and r.*.request_body.*.bufs != null) {
@@ -2851,22 +3186,28 @@ fn handle_rpc_call(r: [*c]ngx_http_request_t, conninfo: []const u8, loc_conf: *n
         return http.ngx_http_output_filter(r, &out);
     }
 
-    // Parse Accept header to determine response format
-    const response_format = parse_accept_header_from_request(r);
+    if (opts.response_format == .unsupported) {
+        return send_not_acceptable(r, "{\"message\":\"None of these media types are available\"}");
+    }
+
+    if (opts.singular_object and pg_result.ntuples != 1) {
+        return send_not_acceptable(r, "{\"message\":\"JSON object requested, multiple (or no) rows returned\"}");
+    }
 
     // Format query results according to requested format
     var response_buf: [MAX_JSON_SIZE]u8 = undefined;
     var response_len: usize = 0;
     var content_type: [*:0]const u8 = "application/json";
 
-    switch (response_format) {
+    switch (opts.response_format) {
         .json => {
             response_len = format_result_as_json_smart(
-                r,
                 pg_result.result,
                 pg_result.ntuples,
                 pg_result.nfields,
                 &response_buf,
+                opts.singular_object,
+                opts.strip_nulls,
             );
             content_type = "application/json";
         },
@@ -2900,49 +3241,18 @@ fn handle_rpc_call(r: [*c]ngx_http_request_t, conninfo: []const u8, loc_conf: *n
             content_type = "application/octet-stream";
             // Binary would require special handling - for now return as JSON
             response_len = format_result_as_json_smart(
-                r,
                 pg_result.result,
                 pg_result.ntuples,
                 pg_result.nfields,
                 &response_buf,
+                opts.singular_object,
+                opts.strip_nulls,
             );
         },
+        .unsupported => unreachable,
     }
 
-    const response_data = response_buf[0..response_len];
-
-    // Allocate buffer
-    const b = buf.ngx_create_temp_buf(r.*.pool, response_len) orelse {
-        return http.NGX_HTTP_INTERNAL_SERVER_ERROR;
-    };
-
-    // Copy response
-    @memcpy(b.*.last[0..response_len], response_data);
-    b.*.last += response_len;
-
-    b.*.flags.last_buf = true;
-    b.*.flags.last_in_chain = true;
-
-    // Build output chain
-    var out: ngx_chain_t = std.mem.zeroes(ngx_chain_t);
-    out.buf = b;
-    out.next = null;
-
-    // Set content length and status
-    r.*.headers_out.status = http.NGX_HTTP_OK;
-    const len = std.mem.len(content_type);
-    r.*.headers_out.content_type = ngx_str_t{ .data = @constCast(content_type), .len = len };
-    r.*.headers_out.content_type_len = len;
-    r.*.headers_out.content_length_n = @intCast(response_len);
-
-    // Send headers
-    const header_rc = http.ngx_http_send_header(r);
-    if (header_rc == NGX_ERROR or header_rc > http.NGX_HTTP_SPECIAL_RESPONSE) {
-        return header_rc;
-    }
-
-    // Send body
-    return http.ngx_http_output_filter(r, &out);
+    return finalize_response_send(r, response_buf[0..response_len], content_type, pg_result.ntuples, opts);
 }
 
 /// Content handler for pgrest_pass locations
@@ -2975,9 +3285,14 @@ fn ngx_http_pgrest_handler(r: [*c]ngx_http_request_t) callconv(.c) ngx_int_t {
         return http.ngx_http_send_special(r, http.NGX_HTTP_LAST);
     }
 
+    const opts = parse_request_options(r);
+    if (opts.response_format == .unsupported) {
+        return send_not_acceptable(r, "{\"message\":\"None of these media types are available\"}");
+    }
+
     // Check if this is an RPC (stored procedure) call
     if (is_rpc_endpoint(r.*.uri)) {
-        return handle_rpc_call(r, conninfo, loc_conf);
+        return handle_rpc_call(r, conninfo, loc_conf, opts);
     }
 
     // Extract table name from URI
@@ -3108,22 +3423,24 @@ fn ngx_http_pgrest_handler(r: [*c]ngx_http_request_t) callconv(.c) ngx_int_t {
         return http.ngx_http_output_filter(r, &out);
     }
 
-    // Parse Accept header to determine response format
-    const response_format = parse_accept_header_from_request(r);
+    if (opts.singular_object and pg_result.ntuples != 1) {
+        return send_not_acceptable(r, "{\"message\":\"JSON object requested, multiple (or no) rows returned\"}");
+    }
 
     // Format query results according to requested format
     var response_buf: [MAX_JSON_SIZE]u8 = undefined;
     var response_len: usize = 0;
     var content_type: [*:0]const u8 = "application/json";
 
-    switch (response_format) {
+    switch (opts.response_format) {
         .json => {
             response_len = format_result_as_json_smart(
-                r,
                 pg_result.result,
                 pg_result.ntuples,
                 pg_result.nfields,
                 &response_buf,
+                opts.singular_object,
+                opts.strip_nulls,
             );
             content_type = "application/json";
         },
@@ -3158,55 +3475,26 @@ fn ngx_http_pgrest_handler(r: [*c]ngx_http_request_t) callconv(.c) ngx_int_t {
         .binary => {
             content_type = "application/json";
             response_len = format_result_as_json_smart(
-                r,
                 pg_result.result,
                 pg_result.ntuples,
                 pg_result.nfields,
                 &response_buf,
+                opts.singular_object,
+                opts.strip_nulls,
             );
         },
+        .unsupported => unreachable,
     }
 
-    const response_data = response_buf[0..response_len];
-
-    // Allocate buffer
-    const b = buf.ngx_create_temp_buf(r.*.pool, response_len) orelse {
-        return http.NGX_HTTP_INTERNAL_SERVER_ERROR;
-    };
-
-    // Copy response
-    @memcpy(b.*.last[0..response_len], response_data);
-    b.*.last += response_len;
-
-    b.*.flags.last_buf = true;
-    b.*.flags.last_in_chain = true;
-
-    // Build output chain
-    var out: ngx_chain_t = std.mem.zeroes(ngx_chain_t);
-    out.buf = b;
-    out.next = null;
-
-    // Set content type from Accept header
-    const ct_len = std.mem.len(content_type);
-    r.*.headers_out.content_type = ngx_str_t{ .data = @constCast(content_type), .len = ct_len };
-    r.*.headers_out.content_type_len = ct_len;
-
-    // Set content length and status
-    r.*.headers_out.status = http.NGX_HTTP_OK;
-    r.*.headers_out.content_length_n = @intCast(response_len);
-
-    // Send headers
-    const header_rc = http.ngx_http_send_header(r);
-    if (header_rc == NGX_ERROR or header_rc > http.NGX_HTTP_SPECIAL_RESPONSE) {
-        return header_rc;
-    }
-
-    // Send body
-    return http.ngx_http_output_filter(r, &out);
+    return finalize_response_send(r, response_buf[0..response_len], content_type, pg_result.ntuples, opts);
 }
 
 /// Handle RPC (stored procedure) call in non-blocking mode with connection pooling
-fn handle_rpc_call_upstream(r: [*c]ngx_http_request_t) ngx_int_t {
+fn handle_rpc_call_upstream(
+    r: [*c]ngx_http_request_t,
+    opts: RequestOptions,
+    loc_conf: *ngx_pgrest_loc_conf_t,
+) ngx_int_t {
     // Extract function name from URI
     const function_name = extract_rpc_function_name(r.*.uri) orelse {
         return http.NGX_HTTP_BAD_REQUEST;
@@ -3221,6 +3509,7 @@ fn handle_rpc_call_upstream(r: [*c]ngx_http_request_t) ngx_int_t {
     var rpc_call: RpcCall = undefined;
     rpc_call.param_count = 0;
     rpc_call.function_name = function_name;
+    rpc_call.prefer_single_object = opts.prefer.params_single_object;
 
     // Try to parse POST body first (if present)
     if (r.*.request_body != null and r.*.request_body.*.bufs != null) {
@@ -3248,48 +3537,24 @@ fn handle_rpc_call_upstream(r: [*c]ngx_http_request_t) ngx_int_t {
     ctx.*.query_state = .none;
     ctx.*.result = null;
     ctx.*.request = r;
-
-    // Create upstream
-    if (http.ngx_http_upstream_create(r) != NGX_OK) {
-        return http.NGX_HTTP_INTERNAL_SERVER_ERROR;
-    }
-
-    const u = r.*.upstream orelse return http.NGX_HTTP_INTERNAL_SERVER_ERROR;
-
-    // Configure upstream callbacks
-    u.*.create_request = ngx_pgrest_upstream_create_request;
-    u.*.process_header = ngx_pgrest_upstream_process_header;
-    u.*.finalize_request = ngx_pgrest_upstream_finalize_request;
-    u.*.input_filter_init = ngx_pgrest_upstream_input_filter_init;
-    u.*.input_filter = ngx_pgrest_upstream_input_filter;
-
-    // Set up peer callbacks
-    u.*.peer.get = ngx_pgrest_upstream_get_peer;
-    u.*.peer.free = ngx_pgrest_upstream_free_peer;
-    u.*.peer.data = ctx;
-
-    // Increase reference count
-    r.*.main.*.flags0.count += 1;
-
-    // Start the upstream process
-    http.ngx_http_upstream_init(r);
-
-    return NGX_AGAIN;
+    ctx.*.response_format = opts.response_format;
+    ctx.*.singular_object = opts.singular_object;
+    ctx.*.strip_nulls = opts.strip_nulls;
+    ctx.*.is_head = opts.is_head;
+    ctx.*.prefer_params_single_object = opts.prefer.params_single_object;
+    ctx.*.emit_range_headers = opts.emit_range_headers;
+    return start_pooled_request(ctx, loc_conf);
 }
 
 /// Non-blocking content handler that uses upstream mechanism with connection pooling
 fn ngx_http_pgrest_upstream_handler(r: [*c]ngx_http_request_t) callconv(.c) ngx_int_t {
-    if (request_needs_body(r) and r.*.request_body == null) {
+    if (r.*.request_body == null) {
         const rc = http.ngx_http_read_client_request_body(r, ngx_http_pgrest_upstream_client_body_handler);
         if (rc >= http.NGX_HTTP_SPECIAL_RESPONSE) {
             return rc;
         }
         return core.NGX_DONE;
     }
-
-    // Set response content type to JSON
-    r.*.headers_out.content_type = ngx_string("application/json");
-    r.*.headers_out.content_type_len = 16;
 
     // Get location config to retrieve connection string
     const loc_conf = core.castPtr(
@@ -3315,15 +3580,29 @@ fn ngx_http_pgrest_upstream_handler(r: [*c]ngx_http_request_t) callconv(.c) ngx_
         }
     }
 
+    const opts = parse_request_options(r);
+    if (opts.response_format == .unsupported) {
+        return send_not_acceptable(r, "{\"message\":\"None of these media types are available\"}");
+    }
+
     // Check if this is an RPC (stored procedure) call
     if (is_rpc_endpoint(r.*.uri)) {
-        return handle_rpc_call_upstream(r);
+        return handle_rpc_call_upstream(r, opts, loc_conf);
     }
 
     // Extract table name from URI
     const table_name = extract_table_name(r.*.uri) orelse {
         return http.NGX_HTTP_BAD_REQUEST;
     };
+
+    const schema_name = extract_schema_name(r, r.*.method);
+    var qualified_table_buf: [512]u8 = undefined;
+    const qualified_table_len = build_qualified_table_name(
+        qualified_table_buf[0..],
+        schema_name,
+        table_name,
+    );
+    const qualified_table = qualified_table_buf[0..qualified_table_len];
 
     // Map HTTP method to SQL operation
     const sql_op = SqlOp.fromMethod(r.*.method) orelse {
@@ -3372,7 +3651,7 @@ fn ngx_http_pgrest_upstream_handler(r: [*c]ngx_http_request_t) callconv(.c) ngx_
     ctx.*.query_len = build_sql_query(
         &ctx[0].query,
         sql_op,
-        table_name,
+        qualified_table,
         filters[0..filter_count],
         json_fields[0..json_field_count],
         select_cols[0..select_count],
@@ -3385,55 +3664,37 @@ fn ngx_http_pgrest_upstream_handler(r: [*c]ngx_http_request_t) callconv(.c) ngx_
     ctx.*.query_state = .none;
     ctx.*.result = null;
     ctx.*.request = r;
+    ctx.*.response_format = opts.response_format;
+    ctx.*.singular_object = opts.singular_object;
+    ctx.*.strip_nulls = opts.strip_nulls;
+    ctx.*.is_head = opts.is_head;
+    ctx.*.prefer_params_single_object = opts.prefer.params_single_object;
+    ctx.*.emit_range_headers = opts.emit_range_headers;
 
-    // Create upstream
-    if (http.ngx_http_upstream_create(r) != NGX_OK) {
-        return http.NGX_HTTP_INTERNAL_SERVER_ERROR;
-    }
-
-    const u = r.*.upstream orelse return http.NGX_HTTP_INTERNAL_SERVER_ERROR;
-
-    // Configure upstream callbacks
-    u.*.create_request = ngx_pgrest_upstream_create_request;
-    u.*.process_header = ngx_pgrest_upstream_process_header;
-    u.*.finalize_request = ngx_pgrest_upstream_finalize_request;
-    u.*.input_filter_init = ngx_pgrest_upstream_input_filter_init;
-    u.*.input_filter = ngx_pgrest_upstream_input_filter;
-
-    // Set up peer callbacks
-    u.*.peer.get = ngx_pgrest_upstream_get_peer;
-    u.*.peer.free = ngx_pgrest_upstream_free_peer;
-    u.*.peer.data = ctx;
-
-    // Increase reference count
-    r.*.main.*.flags0.count += 1;
-
-    // Start the upstream process
-    http.ngx_http_upstream_init(r);
-
-    return NGX_AGAIN;
+    return start_pooled_request(ctx, loc_conf);
 }
 
 /// Connection-level write event handler
 /// Called when the socket is ready for writing
 fn ngx_pgrest_conn_write_handler(ev: [*c]core.ngx_event_t) callconv(.c) void {
     const c = core.castPtr(core.ngx_connection_t, ev.*.data) orelse return;
-    const ctx = core.castPtr(PgRequestCtx, c.*.data) orelse return;
-    const pool_conn = ctx.*.pool_conn orelse return;
+    const pool_conn = core.castPtr(PgPoolConn, c.*.data) orelse return;
+    const ctx = pool_conn.*.request_ctx orelse return;
 
-    if (pool_conn.state == .connecting) {
+    if (pool_conn.*.state == .connecting) {
         // Continue connection polling
         poll_pg_connection(ctx, pool_conn);
-    } else if (pool_conn.state == .busy and ctx.*.query_state == .sending) {
+    } else if (pool_conn.*.state == .busy and ctx.*.query_state == .sending) {
         // Continue sending query
-        if (pool_conn.conn != null) {
-            const flush_result = pgFlush(pool_conn.conn);
+        if (pool_conn.*.conn != null) {
+            const flush_result = pgFlush(pool_conn.*.conn);
             if (flush_result == 0) {
                 // Flushed successfully, wait for result
                 ctx.*.query_state = .waiting;
             } else if (flush_result < 0) {
                 // Error
                 ctx.*.query_state = .failed;
+                finalize_pooled_failure(ctx);
             }
             // flush_result > 0 means more data to write, wait for next event
         }
@@ -3444,29 +3705,30 @@ fn ngx_pgrest_conn_write_handler(ev: [*c]core.ngx_event_t) callconv(.c) void {
 /// Called when the socket is ready for reading
 fn ngx_pgrest_conn_read_handler(ev: [*c]core.ngx_event_t) callconv(.c) void {
     const c = core.castPtr(core.ngx_connection_t, ev.*.data) orelse return;
-    const ctx = core.castPtr(PgRequestCtx, c.*.data) orelse return;
-    const pool_conn = ctx.*.pool_conn orelse return;
+    const pool_conn = core.castPtr(PgPoolConn, c.*.data) orelse return;
+    const ctx = pool_conn.*.request_ctx orelse return;
 
-    if (pool_conn.state == .connecting) {
+    if (pool_conn.*.state == .connecting) {
         // Continue connection polling
         poll_pg_connection(ctx, pool_conn);
-    } else if (pool_conn.state == .busy and ctx.*.query_state == .waiting) {
+    } else if (pool_conn.*.state == .busy and ctx.*.query_state == .waiting) {
         // Read query result
-        if (pool_conn.conn != null) {
+        if (pool_conn.*.conn != null) {
             // Consume input from socket
-            if (pgConsumeInput(pool_conn.conn) == 0) {
+            if (pgConsumeInput(pool_conn.*.conn) == 0) {
                 ctx.*.query_state = .failed;
+                finalize_pooled_failure(ctx);
                 return;
             }
 
             // Check if we can get a result
-            if (pgIsBusy(pool_conn.conn) == 0) {
+            if (pgIsBusy(pool_conn.*.conn) == 0) {
                 // Get the result
-                ctx.*.result = pgGetResult(pool_conn.conn);
+                ctx.*.result = pgGetResult(pool_conn.*.conn);
                 ctx.*.query_state = .done;
 
                 // Need to drain remaining NULL results
-                while (pgGetResult(pool_conn.conn) != null) {}
+                while (pgGetResult(pool_conn.*.conn) != null) {}
 
                 // Now we can finalize the response
                 finalize_pg_response(ctx);
@@ -3508,6 +3770,7 @@ fn poll_pg_connection(ctx: *PgRequestCtx, pool_conn: *PgPoolConn) void {
             // Connection failed
             pool_conn.state = .conn_error;
             ctx.*.query_state = .failed;
+            finalize_pooled_failure(ctx);
         },
         PGRES_POLLING_READING, PGRES_POLLING_WRITING => {
             // Still connecting, wait for next event
@@ -3519,13 +3782,17 @@ fn poll_pg_connection(ctx: *PgRequestCtx, pool_conn: *PgPoolConn) void {
 /// Finalize the PostgreSQL response and send to client
 fn finalize_pg_response(ctx: *PgRequestCtx) void {
     const r = ctx.*.request orelse return;
+    const opts = RequestOptions{
+        .response_format = ctx.*.response_format,
+        .singular_object = ctx.*.singular_object,
+        .strip_nulls = ctx.*.strip_nulls,
+        .is_head = ctx.*.is_head,
+        .prefer = .{ .params_single_object = ctx.*.prefer_params_single_object },
+        .emit_range_headers = ctx.*.emit_range_headers,
+    };
 
     if (ctx.*.query_state != .done or ctx.*.result == null) {
-        // Query failed - send error response
-        r.*.headers_out.status = http.NGX_HTTP_INTERNAL_SERVER_ERROR;
-        r.*.headers_out.content_length_n = 0;
-        _ = http.ngx_http_send_header(r);
-        _ = http.ngx_http_send_special(r, http.NGX_HTTP_LAST);
+        finalize_pooled_failure(ctx);
         return;
     }
 
@@ -3533,46 +3800,78 @@ fn finalize_pg_response(ctx: *PgRequestCtx) void {
     const status = pgResultStatus(result);
 
     if (status != PGRES_TUPLES_OK and status != PGRES_COMMAND_OK) {
-        // Query error
-        r.*.headers_out.status = http.NGX_HTTP_INTERNAL_SERVER_ERROR;
-        r.*.headers_out.content_length_n = 0;
-        _ = http.ngx_http_send_header(r);
-        _ = http.ngx_http_send_special(r, http.NGX_HTTP_LAST);
+        finalize_pooled_failure(ctx);
         return;
     }
 
     // Format result as JSON
-    var json_buf: [MAX_JSON_SIZE]u8 = undefined;
     const ntuples = pgNtuples(result);
     const nfields = pgNfields(result);
-    const json_len = format_result_as_json(result, ntuples, nfields, &json_buf);
 
-    // Create response buffer
-    const b = buf.ngx_create_temp_buf(r.*.pool, json_len) orelse {
-        r.*.headers_out.status = http.NGX_HTTP_INTERNAL_SERVER_ERROR;
-        r.*.headers_out.content_length_n = 0;
-        _ = http.ngx_http_send_header(r);
-        _ = http.ngx_http_send_special(r, http.NGX_HTTP_LAST);
+    if (opts.response_format == .unsupported) {
+        const rc = send_not_acceptable(r, "{\"message\":\"None of these media types are available\"}");
+        ctx.*.request = null;
+        release_pooled_ctx(ctx, false);
+        http.ngx_http_finalize_request(r, rc);
         return;
-    };
+    }
 
-    @memcpy(b.*.last[0..json_len], json_buf[0..json_len]);
-    b.*.last += json_len;
-    b.*.flags.last_buf = true;
-    b.*.flags.last_in_chain = true;
+    if (opts.singular_object and ntuples != 1) {
+        const rc = send_not_acceptable(r, "{\"message\":\"JSON object requested, multiple (or no) rows returned\"}");
+        ctx.*.request = null;
+        release_pooled_ctx(ctx, false);
+        http.ngx_http_finalize_request(r, rc);
+        return;
+    }
 
-    var out: ngx_chain_t = std.mem.zeroes(ngx_chain_t);
-    out.buf = b;
-    out.next = null;
+    var response_buf: [MAX_JSON_SIZE]u8 = undefined;
+    var response_len: usize = 0;
+    var content_type: [*:0]const u8 = "application/json";
 
-    // Set response headers
-    r.*.headers_out.status = http.NGX_HTTP_OK;
-    r.*.headers_out.content_type = ngx_string("application/json");
-    r.*.headers_out.content_type_len = 16;
-    r.*.headers_out.content_length_n = @intCast(json_len);
+    switch (opts.response_format) {
+        .json => {
+            response_len = format_result_as_json_smart(
+                result,
+                ntuples,
+                nfields,
+                &response_buf,
+                opts.singular_object,
+                opts.strip_nulls,
+            );
+            content_type = "application/json";
+        },
+        .csv => {
+            response_len = format_result_as_csv(result, ntuples, nfields, &response_buf);
+            content_type = "text/csv; charset=utf-8";
+        },
+        .plain_text => {
+            if (ntuples > 0 and nfields > 0) {
+                response_len = format_result_as_plain_text(result, ntuples, &response_buf);
+            }
+            content_type = "text/plain; charset=utf-8";
+        },
+        .xml => {
+            response_len = format_result_as_xml(result, ntuples, nfields, &response_buf);
+            content_type = "text/xml; charset=utf-8";
+        },
+        .binary => {
+            response_len = format_result_as_json_smart(
+                result,
+                ntuples,
+                nfields,
+                &response_buf,
+                opts.singular_object,
+                opts.strip_nulls,
+            );
+            content_type = "application/json";
+        },
+        .unsupported => unreachable,
+    }
 
-    _ = http.ngx_http_send_header(r);
-    _ = http.ngx_http_output_filter(r, &out);
+    const rc = finalize_response_send(r, response_buf[0..response_len], content_type, ntuples, opts);
+    ctx.*.request = null;
+    release_pooled_ctx(ctx, false);
+    http.ngx_http_finalize_request(r, rc);
 }
 
 /// polling libpq state (upstream read event handler)
@@ -3830,8 +4129,9 @@ fn cleanup_pool_conn(pool_conn: *PgPoolConn) void {
         pgFinish(pool_conn.conn);
         pool_conn.conn = null;
     }
-    if (pool_conn.ngx_conn != core.nullptr(core.ngx_connection_t)) {
-        // Note: nginx connection should be freed separately
+    if (pool_conn.ngx_conn) |ngx_conn| {
+        pool_conn.request_ctx = null;
+        ngx_conn.*.data = null;
         pool_conn.ngx_conn = null;
     }
     pool_conn.state = .free;
