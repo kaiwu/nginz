@@ -348,6 +348,34 @@ describe("nftset-nginx-module container integration", () => {
     expect(listed).toContain("127.0.0.1");
   });
 
+  test("shared cache generation clears stale worker-local misses after autoadd", () => {
+    const warm = requestConcurrent("/shared-cache-probe", 8);
+    expect(warm.every((status) => status === 200)).toBe(true);
+
+    const write = request("/shared-cache-autoadd");
+    expect(write.status).toBe(200);
+    expect(write.body).toContain("shared-cache-autoadd ok");
+
+    const afterWrite = requestConcurrent("/shared-cache-probe", 8);
+    expect(afterWrite.every((status) => status === 403)).toBe(true);
+
+    const listed = dockerExec("nft list set ip nginz_test sharedcoherent").stdout;
+    expect(listed).toContain("127.0.0.1");
+  });
+
+  test("autoadd write errors do not poison lookup cache", () => {
+    const first = request("/autoadd-error-no-refresh");
+    expect(first.status).toBe(200);
+    expect(first.headers.get("x-nftset-result")).toBe("allow");
+    expect(first.headers.get("x-nftset-matched-set")).toBeUndefined();
+
+    const second = request("/autoadd-error-no-refresh");
+    expect(second.status).toBe(200);
+    expect(second.headers.get("x-nftset-result")).toBe("allow");
+    expect(second.headers.get("x-nftset-matched-set")).toBeUndefined();
+    expect(second.body).toContain("autoadd-error-no-refresh ok");
+  });
+
   test("autoadd family mismatch is logged but does not fail the request", () => {
     const res = request("/autoadd-family-mismatch");
     expect(res.status).toBe(200);
@@ -404,23 +432,25 @@ describe("nftset-nginx-module container integration", () => {
     expect(third.headers.get("x-nftset-result")).toBe("deny");
     expect(third.headers.get("x-nftset-matched-set")).toBe("nginz_test:ratelimit_banned");
 
+    const concurrent = requestConcurrent("/ratelimit-autoban", 4);
+    expect(concurrent.every((status) => status === 403)).toBe(true);
+
     await Bun.sleep(1400);
 
     const afterExpiry = dockerExec("nft list set ip nginz_test ratelimit_banned").stdout;
     expect(afterExpiry).not.toContain("127.0.0.1");
   });
 
-  test("missing set currently follows ENOENT-as-miss policy in blocklist mode", () => {
+  test("missing set is treated as lookup error and fails closed by default", () => {
     const res = request("/missing-set-fail-closed");
-    expect(res.status).toBe(200);
-    expect(res.headers.get("x-nftset-result")).toBe("allow");
-    expect(res.body).toContain("missing-set-fail-closed ok");
+    expect(res.status).toBe(403);
+    expect(res.headers.get("x-nftset-result")).toBe("error");
   });
 
-  test("missing set also passes in blocklist mode when fail_open is on", () => {
+  test("missing set still reports lookup error when fail_open allows the request", () => {
     const res = request("/missing-set-fail-open");
     expect(res.status).toBe(200);
-    expect(res.headers.get("x-nftset-result")).toBe("allow");
+    expect(res.headers.get("x-nftset-result")).toBe("error");
     expect(res.body).toContain("missing-set-fail-open ok");
   });
 
@@ -507,6 +537,8 @@ describe("nftset-nginx-module container integration", () => {
     expect(listedIp).toContain("set honeypot");
     expect(listedIp).toContain("set honeypot_timeout");
     expect(listedIp).toContain("set autoaddshared");
+    expect(listedIp).toContain("set sharedcoherent");
+    expect(listedIp).toContain("set autoaddguard");
     expect(listedIp).toContain("set ratelimit_banned");
     expect(listedIp).toContain("set cidrblock");
     expect(listedIp6).toContain("set blocklist6");

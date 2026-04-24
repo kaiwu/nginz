@@ -167,7 +167,7 @@ describe("nftset-nginx-module", () => {
       expect(await res.text()).toContain("multi-set ok");
     });
 
-    test("multi-set allowlist location parses under the current ENOENT-as-miss policy", async () => {
+    test("multi-set allowlist location parses and still passes through when lookup fails open", async () => {
       const res = await fetch(`${TEST_URL}/multi-set-allow`);
       expect(res.status).toBe(200);
       expect(await res.text()).toContain("multi-set-allow ok");

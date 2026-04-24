@@ -52,6 +52,8 @@ const SO_RCVTIMEO_C: c_int = 20;
 
 // nftables Netlink subsystem and message types
 const NFNL_SUBSYS_NFTABLES: u16 = 10;
+const NFT_MSG_NEWSET: u16 = 9; // response: set found
+const NFT_MSG_GETSET: u16 = 10; // request: get set metadata
 const NFT_MSG_GETSETELEM: u16 = 13; // request: get set element(s)
 const NFT_MSG_NEWSETELEM: u16 = 12; // response: element found
 const NLMSG_ERROR_TYPE: u16 = 2; // standard Netlink error / ACK
@@ -75,6 +77,8 @@ const NLA_F_NESTED: u16 = 0x8000; // kernel flag: attribute contains nested attr
 const NFTA_SET_ELEM_LIST_TABLE: u16 = 1;
 const NFTA_SET_ELEM_LIST_SET: u16 = 2;
 const NFTA_SET_ELEM_LIST_ELEMENTS: u16 = 3;
+const NFTA_SET_TABLE: u16 = 1;
+const NFTA_SET_NAME: u16 = 2;
 const NFTA_LIST_ELEM: u16 = 1; // one element in the list
 const NFTA_SET_ELEM_KEY: u16 = 1; // key nested under NFTA_LIST_ELEM
 const NFTA_SET_ELEM_TIMEOUT: u16 = 4;
@@ -169,6 +173,8 @@ var netlink_seq: u32 = 0;
 
 const NFTSET_CACHE_SIZE: usize = 128;
 const NFTSET_CACHE_KEY_MAX: usize = 512;
+const NFTSET_SHARED_CACHE_SIZE: usize = 256;
+const NFTSET_SHARED_CACHE_ZONE_SIZE: usize = 256 * 1024;
 const NFTSET_RATELIMIT_MAX_ENTRIES: usize = 1024;
 const NFTSET_RATELIMIT_STATUS: ngx_int_t = 429;
 const NFTSET_RATELIMIT_ZONE_SIZE: usize = 128 * 1024;
@@ -193,6 +199,23 @@ const CacheEntry = struct {
 };
 
 var nftset_cache = std.mem.zeroes([NFTSET_CACHE_SIZE]CacheEntry);
+var nftset_cache_generation_seen: u64 = 0;
+
+const SharedCacheEntry = extern struct {
+    key_hash: u64,
+    key_len: u16,
+    membership: CacheMembership,
+    expires_at: ngx_msec_t,
+    last_used_at: ngx_msec_t,
+    key: [NFTSET_CACHE_KEY_MAX]u8,
+};
+
+const nftset_lookup_cache_store = extern struct {
+    initialized: ngx_flag_t,
+    generation: u64,
+    entry_count: ngx_uint_t,
+    entries: [NFTSET_SHARED_CACHE_SIZE]SharedCacheEntry,
+};
 
 const RateLimitEntry = extern struct {
     key: u64,
@@ -208,6 +231,7 @@ const nftset_ratelimit_store = extern struct {
 };
 
 var ngx_http_nftset_ratelimit_zone: [*c]core.ngx_shm_zone_t = core.nullptr(core.ngx_shm_zone_t);
+var ngx_http_nftset_lookup_cache_zone: [*c]core.ngx_shm_zone_t = core.nullptr(core.ngx_shm_zone_t);
 
 const nftset_spec = extern struct {
     table: ngx_str_t,
@@ -321,6 +345,40 @@ fn build_query(
     writeStruct(buf, 0, Nlmsghdr{
         .len = @intCast(pos),
         .type_ = (NFNL_SUBSYS_NFTABLES << 8) | NFT_MSG_GETSETELEM,
+        .flags = NLM_F_REQUEST | NLM_F_ACK,
+        .seq = seq,
+        .pid = 0,
+    });
+
+    return pos;
+}
+
+fn build_getset_query(
+    buf: *[256]u8,
+    seq: u32,
+    table_fam: u8,
+    table: []const u8,
+    set_name: []const u8,
+) ?usize {
+    @memset(buf, 0);
+    var pos: usize = 0;
+
+    if (!ensureSpace(buf.len, pos, NLMSG_HDR_SZ)) return null;
+    pos += NLMSG_HDR_SZ;
+
+    if (!ensureSpace(buf.len, pos, NFGENMSG_SZ)) return null;
+    writeStruct(buf, pos, Nfgenmsg{ .family = table_fam, .version = NFNETLINK_V0, .res_id = 0 });
+    pos += NFGENMSG_SZ;
+
+    if (!ensureSpace(buf.len, pos, nla_align(NLATTR_HDR_SZ + table.len + 1))) return null;
+    pos = put_nla_str(buf, pos, NFTA_SET_TABLE, table);
+
+    if (!ensureSpace(buf.len, pos, nla_align(NLATTR_HDR_SZ + set_name.len + 1))) return null;
+    pos = put_nla_str(buf, pos, NFTA_SET_NAME, set_name);
+
+    writeStruct(buf, 0, Nlmsghdr{
+        .len = @intCast(pos),
+        .type_ = (NFNL_SUBSYS_NFTABLES << 8) | NFT_MSG_GETSET,
         .flags = NLM_F_REQUEST | NLM_F_ACK,
         .seq = seq,
         .pid = 0,
@@ -498,6 +556,19 @@ fn getRateLimitStore() ?[*c]nftset_ratelimit_store {
     return core.castPtr(nftset_ratelimit_store, ngx_http_nftset_ratelimit_zone.*.data);
 }
 
+fn getLookupCacheStore() ?[*c]nftset_lookup_cache_store {
+    if (ngx_http_nftset_lookup_cache_zone == core.nullptr(core.ngx_shm_zone_t)) return null;
+    return core.castPtr(nftset_lookup_cache_store, ngx_http_nftset_lookup_cache_zone.*.data);
+}
+
+fn getLookupCacheShpool() ?[*c]core.ngx_slab_pool_t {
+    const zone = ngx_http_nftset_lookup_cache_zone;
+    if (zone == core.nullptr(core.ngx_shm_zone_t) or zone.*.shm.addr == null or zone.*.data == null) {
+        return null;
+    }
+    return core.castPtr(core.ngx_slab_pool_t, zone.*.shm.addr);
+}
+
 fn getRateLimitShpool() ?[*c]core.ngx_slab_pool_t {
     const zone = ngx_http_nftset_ratelimit_zone;
     if (zone == core.nullptr(core.ngx_shm_zone_t) or zone.*.shm.addr == null or zone.*.data == null) {
@@ -521,6 +592,27 @@ fn ngx_http_nftset_ratelimit_zone_init(zone: [*c]core.ngx_shm_zone_t, data: ?*an
     const store_mem = shm.ngx_slab_calloc(shpool, @sizeOf(nftset_ratelimit_store)) orelse return NGX_ERROR;
     const store = core.castPtr(nftset_ratelimit_store, store_mem) orelse return NGX_ERROR;
     store.* = std.mem.zeroes(nftset_ratelimit_store);
+    store.*.initialized = 1;
+    shpool.*.data = store;
+    zone.*.data = store;
+    return NGX_OK;
+}
+
+fn ngx_http_nftset_lookup_cache_zone_init(zone: [*c]core.ngx_shm_zone_t, data: ?*anyopaque) callconv(.c) ngx_int_t {
+    if (data != null) {
+        zone.*.data = data;
+        return NGX_OK;
+    }
+
+    const shpool = core.castPtr(core.ngx_slab_pool_t, zone.*.shm.addr) orelse return NGX_ERROR;
+    if (shpool.*.data != null) {
+        zone.*.data = shpool.*.data;
+        return NGX_OK;
+    }
+
+    const store_mem = shm.ngx_slab_calloc(shpool, @sizeOf(nftset_lookup_cache_store)) orelse return NGX_ERROR;
+    const store = core.castPtr(nftset_lookup_cache_store, store_mem) orelse return NGX_ERROR;
+    store.* = std.mem.zeroes(nftset_lookup_cache_store);
     store.*.initialized = 1;
     shpool.*.data = store;
     zone.*.data = store;
@@ -629,6 +721,12 @@ const LookupOutcome = struct {
     matched_set: ngx_str_t,
 };
 
+const SetExistenceProbe = enum(u8) {
+    exists,
+    missing,
+    unknown,
+};
+
 fn cacheMembershipToLookup(membership: CacheMembership) LookupResult {
     return switch (membership) {
         .in_set => .in_set,
@@ -673,6 +771,23 @@ fn buildCacheKey(
     if (!appendKeyPart(key_buf, &pos, table)) return null;
     if (!appendKeyPart(key_buf, &pos, set_name)) return null;
     return key_buf[0..pos];
+}
+
+fn buildCacheKeyHash(key: []const u8) u64 {
+    const hash = fnv1a64(1469598103934665603, key);
+    return if (hash == 0) 1 else hash;
+}
+
+fn clearLocalCache() void {
+    nftset_cache = std.mem.zeroes([NFTSET_CACHE_SIZE]CacheEntry);
+}
+
+fn syncLocalCacheGeneration() void {
+    const store = getLookupCacheStore() orelse return;
+    const generation = @atomicLoad(u64, &store.*.generation, .acquire);
+    if (generation == nftset_cache_generation_seen) return;
+    clearLocalCache();
+    nftset_cache_generation_seen = generation;
 }
 
 fn cacheLookup(key: []const u8, now: ngx_msec_t) CacheLookup {
@@ -721,6 +836,88 @@ fn cacheStore(key: []const u8, membership: CacheMembership, now: ngx_msec_t, ttl
     slot.expires_at = now + ttl;
 }
 
+fn sharedCacheLookup(key: []const u8, now: ngx_msec_t) CacheLookup {
+    const shpool = getLookupCacheShpool() orelse return .miss;
+    const store = getLookupCacheStore() orelse return .miss;
+    const cache_store: *nftset_lookup_cache_store = @ptrCast(store);
+    const key_hash = buildCacheKeyHash(key);
+
+    shm.ngx_shmtx_lock(&shpool.*.mutex);
+    defer shm.ngx_shmtx_unlock(&shpool.*.mutex);
+
+    for (&cache_store.entries) |*entry| {
+        if (entry.key_hash == 0) continue;
+        if (entry.expires_at < now) {
+            entry.* = std.mem.zeroes(SharedCacheEntry);
+            continue;
+        }
+        if (entry.key_hash != key_hash or entry.key_len != key.len) continue;
+        if (!std.mem.eql(u8, entry.key[0..entry.key_len], key)) continue;
+        entry.last_used_at = now;
+        return .{ .hit = entry.membership };
+    }
+
+    return .miss;
+}
+
+fn sharedCacheStoreLocked(store: *nftset_lookup_cache_store, key: []const u8, membership: CacheMembership, now: ngx_msec_t, ttl: ngx_msec_t) void {
+    if (ttl == 0 or key.len == 0) return;
+
+    const key_hash = buildCacheKeyHash(key);
+    var target: ?*SharedCacheEntry = null;
+    var oldest: ?*SharedCacheEntry = null;
+
+    for (&store.entries) |*entry| {
+        if (entry.key_hash == 0) {
+            target = entry;
+            break;
+        }
+        if (entry.expires_at < now) {
+            target = entry;
+            break;
+        }
+        if (entry.key_hash == key_hash and entry.key_len == key.len and std.mem.eql(u8, entry.key[0..entry.key_len], key)) {
+            target = entry;
+            break;
+        }
+        if (oldest == null or entry.last_used_at < oldest.?.last_used_at) oldest = entry;
+    }
+
+    const slot = target orelse oldest orelse return;
+    if (slot.key_hash == 0) store.entry_count += 1;
+    slot.key_hash = key_hash;
+    slot.key_len = @intCast(key.len);
+    @memcpy(slot.key[0..key.len], key);
+    slot.membership = membership;
+    slot.last_used_at = now;
+    slot.expires_at = now + ttl;
+}
+
+fn sharedCacheStore(key: []const u8, membership: CacheMembership, now: ngx_msec_t, ttl: ngx_msec_t) void {
+    const shpool = getLookupCacheShpool() orelse return;
+    const store = getLookupCacheStore() orelse return;
+
+    shm.ngx_shmtx_lock(&shpool.*.mutex);
+    defer shm.ngx_shmtx_unlock(&shpool.*.mutex);
+
+    const cache_store: *nftset_lookup_cache_store = @ptrCast(store);
+    sharedCacheStoreLocked(cache_store, key, membership, now, ttl);
+}
+
+fn sharedCacheStoreAndBumpGeneration(key: []const u8, membership: CacheMembership, now: ngx_msec_t, ttl: ngx_msec_t) ?u64 {
+    const shpool = getLookupCacheShpool() orelse return null;
+    const store = getLookupCacheStore() orelse return null;
+    const cache_store: *nftset_lookup_cache_store = @ptrCast(store);
+
+    shm.ngx_shmtx_lock(&shpool.*.mutex);
+    defer shm.ngx_shmtx_unlock(&shpool.*.mutex);
+
+    sharedCacheStoreLocked(cache_store, key, membership, now, ttl);
+    const next_generation = cache_store.generation + 1;
+    @atomicStore(u64, &cache_store.generation, next_generation, .release);
+    return next_generation;
+}
+
 fn updateLookupCacheForSet(
     table: []const u8,
     set_name: []const u8,
@@ -731,7 +928,12 @@ fn updateLookupCacheForSet(
     if (ttl == 0) return;
     var key_buf: [NFTSET_CACHE_KEY_MAX]u8 = undefined;
     const cache_key = buildCacheKey(&key_buf, table, set_name, table_fam, ip_bytes) orelse return;
-    cacheStore(cache_key, .in_set, ngx_current_msec, ttl);
+    const now = ngx_current_msec;
+    if (sharedCacheStoreAndBumpGeneration(cache_key, .in_set, now, ttl)) |generation| {
+        clearLocalCache();
+        nftset_cache_generation_seen = generation;
+    }
+    cacheStore(cache_key, .in_set, now, ttl);
 }
 
 // Query whether ip_bytes is a member of the named set in the named table.
@@ -741,11 +943,63 @@ fn updateLookupCacheForSet(
 //   element found  → NFT_MSG_NEWSETELEM, then NLMSG_ERROR(error=0)
 //   element absent → NLMSG_ERROR(error=-ENOENT)   → not_in_set
 //   other error    → NLMSG_ERROR(error=<negative>) → lookup_error
-//
-// Note: -ENOENT is also returned when the table or set does not exist.
-// Operators must ensure table/set names are correct; misconfiguration
-// will surface as "not_in_set" and trigger deny/allow according to the
-// nftset_deny directive (which is the intended fail-safe behaviour).
+fn nftset_probe_set_exists(
+    table: []const u8,
+    set_name: []const u8,
+    table_fam: u8,
+) SetExistenceProbe {
+    if (netlink_fd < 0) return .unknown;
+
+    var qbuf: [256]u8 = undefined;
+    netlink_seq +%= 1;
+    const probe_seq = netlink_seq;
+    const msg_len = build_getset_query(&qbuf, probe_seq, table_fam, table, set_name) orelse return .unknown;
+
+    const kernel_addr = SockaddrNl{ .family = AF_NETLINK_SOCK, .pad = 0, .pid = 0, .groups = 0 };
+    const sent = sendto(netlink_fd, &qbuf, msg_len, 0, &kernel_addr, @sizeOf(SockaddrNl));
+    if (sent < 0) return .unknown;
+
+    var rbuf: [4096]u8 = undefined;
+    var saw_newset = false;
+    var iters: u8 = 0;
+    while (iters < 4) : (iters += 1) {
+        const rcvd = recv(netlink_fd, &rbuf, rbuf.len, 0);
+        if (rcvd <= 0) return .unknown;
+
+        const rcvd_sz: usize = @intCast(rcvd);
+        var off: usize = 0;
+
+        while (off + NLMSG_HDR_SZ <= rcvd_sz) {
+            const nlh = readStruct(Nlmsghdr, &rbuf, off);
+            if (nlh.len < NLMSG_HDR_SZ) break;
+            if (nlh.len > rcvd_sz - off) return .unknown;
+
+            const step = nla_align(@intCast(nlh.len));
+            if (step == 0 or step > rcvd_sz - off) return .unknown;
+
+            if (nlh.seq != probe_seq) {
+                off += step;
+                continue;
+            }
+
+            if (nlh.type_ == NLMSG_ERROR_TYPE) {
+                if (off + NLMSG_HDR_SZ + 4 > rcvd_sz) return .unknown;
+                const err_val = read_i32_native(&rbuf, off + NLMSG_HDR_SZ);
+                if (err_val == 0) return if (saw_newset) .exists else .unknown;
+                if (err_val == -2) return .missing;
+                return .unknown;
+            }
+
+            const newset_type: u16 = (NFNL_SUBSYS_NFTABLES << 8) | NFT_MSG_NEWSET;
+            if (nlh.type_ == newset_type) saw_newset = true;
+
+            off += step;
+        }
+    }
+
+    return .unknown;
+}
+
 fn nftset_ip_in_set(
     table: []const u8,
     set_name: []const u8,
@@ -799,10 +1053,11 @@ fn nftset_ip_in_set(
                     return if (found) .in_set else .not_in_set;
                 }
                 if (err_val == -2) {
-                    // Raw NFT_MSG_GETSETELEM overloads ENOENT for both
-                    // “element absent” and some missing-object cases. Keep the
-                    // point-lookup path stable by treating ENOENT as not_in_set.
-                    return .not_in_set;
+                    return switch (nftset_probe_set_exists(table, set_name, table_fam)) {
+                        .exists => .not_in_set,
+                        .missing => .{ .lookup_error = err_val },
+                        .unknown => .not_in_set,
+                    };
                 }
                 return .{ .lookup_error = err_val };
             }
@@ -858,6 +1113,7 @@ fn nftset_add_ip_to_set(
 
     var rbuf: [4096]u8 = undefined;
     var iters: u8 = 0;
+    var saw_done = false;
     while (iters < 4) : (iters += 1) {
         const rcvd = recv(netlink_fd, &rbuf, rbuf.len, 0);
         if (rcvd <= 0) return .{ .add_error = -4 };
@@ -885,13 +1141,13 @@ fn nftset_add_ip_to_set(
                 return .{ .add_error = err_val };
             }
 
-            if (nlh.type_ == NLMSG_DONE_TYPE) return .added;
+            if (nlh.type_ == NLMSG_DONE_TYPE) saw_done = true;
 
             off += step;
         }
     }
 
-    return .{ .add_error = -8 };
+    return .{ .add_error = if (saw_done) -9 else -8 };
 }
 
 // ──────────────────────────────────────────────────────────────────────────
@@ -899,7 +1155,8 @@ fn nftset_add_ip_to_set(
 // ──────────────────────────────────────────────────────────────────────────
 
 fn nftset_init_process(cycle: [*c]core.ngx_cycle_t) callconv(.c) ngx_int_t {
-    nftset_cache = std.mem.zeroes([NFTSET_CACHE_SIZE]CacheEntry);
+    clearLocalCache();
+    nftset_cache_generation_seen = 0;
     netlink_fd = socket(AF_NETLINK_SOCK, SOCK_RAW_C, NETLINK_NETFILTER_PROT);
     if (netlink_fd < 0) {
         // Socket failed (e.g. no CAP_NET_ADMIN) — module operates in
@@ -925,7 +1182,8 @@ fn nftset_init_process(cycle: [*c]core.ngx_cycle_t) callconv(.c) ngx_int_t {
 }
 
 fn nftset_exit_process(_: [*c]core.ngx_cycle_t) callconv(.c) void {
-    nftset_cache = std.mem.zeroes([NFTSET_CACHE_SIZE]CacheEntry);
+    clearLocalCache();
+    nftset_cache_generation_seen = 0;
     if (netlink_fd >= 0) {
         _ = close(netlink_fd);
         netlink_fd = -1;
@@ -1155,6 +1413,7 @@ fn lookup_single_set(
 
     return blk: {
         if (cache_ttl > 0) {
+            syncLocalCacheGeneration();
             if (cache_key) |key| {
                 switch (cacheLookup(key, now)) {
                     .hit => |membership| {
@@ -1169,6 +1428,21 @@ fn lookup_single_set(
                     },
                     .miss => {},
                 }
+
+                switch (sharedCacheLookup(key, now)) {
+                    .hit => |membership| {
+                        cacheStore(key, membership, now, cache_ttl);
+                        ngx.log.ngz_log_debug(
+                            ngx.log.NGX_LOG_DEBUG_HTTP,
+                            r.*.connection.*.log,
+                            0,
+                            "nftset: shared cache hit client=%V table=%V set=%V",
+                            .{ &r.*.connection.*.addr_text, &table_str, &set_str },
+                        );
+                        break :blk cacheMembershipToLookup(membership);
+                    },
+                    .miss => {},
+                }
             }
         }
 
@@ -1177,6 +1451,7 @@ fn lookup_single_set(
             if (cache_key) |key| {
                 if (lookupToCacheMembership(fresh)) |membership| {
                     cacheStore(key, membership, now, cache_ttl);
+                    sharedCacheStore(key, membership, now, cache_ttl);
                 }
             }
         }
@@ -1759,6 +2034,12 @@ fn merge_loc_conf(
 }
 
 fn postconfiguration(cf: [*c]ngx_conf_t) callconv(.c) ngx_int_t {
+    var lookup_zone_name = ngx_string("nftset_lookup_cache_zone");
+    const lookup_zone = shm.ngx_shared_memory_add(cf, &lookup_zone_name, NFTSET_SHARED_CACHE_ZONE_SIZE, @constCast(&ngx_http_nftset_module));
+    if (lookup_zone == core.nullptr(core.ngx_shm_zone_t)) return NGX_ERROR;
+    lookup_zone.*.init = ngx_http_nftset_lookup_cache_zone_init;
+    ngx_http_nftset_lookup_cache_zone = lookup_zone;
+
     var zone_name = ngx_string("nftset_ratelimit_zone");
     const zone = shm.ngx_shared_memory_add(cf, &zone_name, NFTSET_RATELIMIT_ZONE_SIZE, @constCast(&ngx_http_nftset_module));
     if (zone == core.nullptr(core.ngx_shm_zone_t)) return NGX_ERROR;
@@ -2107,6 +2388,22 @@ test "build_query emits get setelem message" {
     try expectEqual(@as(u32, 42), nlh.seq);
     try expectEqual(@as(u8, NFPROTO_IPV4), nfgen.family);
     try expectEqual(@as(u8, NFNETLINK_V0), nfgen.version);
+}
+
+test "build_getset_query emits get set message" {
+    var buf: [256]u8 = undefined;
+    const msg_len = build_getset_query(&buf, 77, NFPROTO_IPV4, "nginz_test", "blocklist") orelse return error.TestUnexpectedResult;
+    const nlh = readStruct(Nlmsghdr, &buf, 0);
+    const nfgen = readStruct(Nfgenmsg, &buf, NLMSG_HDR_SZ);
+    const msg_slice = buf[0..msg_len];
+
+    try expectEqual(msg_len, nlh.len);
+    try expectEqual(@as(u16, (NFNL_SUBSYS_NFTABLES << 8) | NFT_MSG_GETSET), nlh.type_);
+    try expectEqual(@as(u16, NLM_F_REQUEST | NLM_F_ACK), nlh.flags);
+    try expectEqual(@as(u32, 77), nlh.seq);
+    try expectEqual(@as(u8, NFPROTO_IPV4), nfgen.family);
+    try expect(std.mem.indexOf(u8, msg_slice, "nginz_test") != null);
+    try expect(std.mem.indexOf(u8, msg_slice, "blocklist") != null);
 }
 
 test "build_add_query emits new setelem message with timeout" {

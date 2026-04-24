@@ -4,7 +4,7 @@ Zero-latency IP blocking for nginx using Linux nftables named sets.
 
 ### Status
 
-**Implemented with limitations** — The module performs request-time kernel lookup via raw Netlink `NFT_MSG_GETSETELEM`, exposes `$nftset_result` and `$nftset_matched_set`, enforces `nftset_deny`, `nftset_status`, `nftset_fail_open`, `nftset_dryrun`, `nftset_cache_ttl`, `nftset_sets`, `nftset_autoadd`, and `nftset_ratelimit`/`nftset_autoban`, and runs live nftables coverage in Docker-isolated tests so host nftables never needs to be touched. The remaining gaps are now around cache sharing and deeper kernel hardening rather than the basic membership, write, or rate-limit paths.
+**Feature Ready** — The module performs request-time kernel lookup via raw Netlink `NFT_MSG_GETSETELEM`, exposes `$nftset_result` and `$nftset_matched_set`, enforces `nftset_deny`, `nftset_status`, `nftset_fail_open`, `nftset_dryrun`, `nftset_cache_ttl`, `nftset_sets`, `nftset_autoadd`, and `nftset_ratelimit`/`nftset_autoban`, and runs live nftables coverage in Docker-isolated tests so host nftables never needs to be touched. Lookup caching keeps the existing per-worker L1 hot path, adds a shared-memory L2 for cross-worker reuse, uses a shared invalidation generation so definitive writes can evict stale local misses safely, and now conservatively disambiguates `ENOENT` with a `NFT_MSG_GETSET` slow-path probe so missing sets surface as lookup errors without regressing the common miss path.
 
 See [GitHub issue #5](https://github.com/kaiwu/nginz/issues/5) for the original feature request.
 
@@ -16,7 +16,9 @@ See [GitHub issue #5](https://github.com/kaiwu/nginz/issues/5) for the original 
 - **Fixed in this audit:** the raw Netlink request path had unsafe unaligned packet-buffer access. The lookup code now uses byte-copy helpers instead of typed writes into unaligned buffers, which stopped nginx worker crashes on the first enabled request.
 - **Fixed in this audit:** the raw Netlink exchange now uses the correct nfnetlink subsystem/message constants, sends explicitly to the kernel, correlates replies by `nlmsg_seq`, and rejects malformed/truncated frames as lookup errors instead of trusting them.
 - **Fixed in this audit:** positive and negative membership behavior is now covered against live nftables sets in a Docker-isolated test namespace instead of relying only on fail-open / fail-closed fallback coverage.
-- **Fixed in this audit:** `nftset_cache_ttl` now drives a real per-worker membership cache for definitive hit/miss results, with live Docker coverage proving both TTL expiry and `0` disabling the cache.
+- **Fixed in this audit:** `nftset_cache_ttl` now drives a two-level membership cache: per-worker L1 for hot hits plus a shared-memory L2 for cross-worker reuse, with generation-based invalidation when module writes definitively make an IP present.
+- **Fixed in this audit:** the auto-add / auto-ban write path now refreshes caches only on definitive kernel outcomes (`added` / `exists`). Ambiguous completion without an ACK is treated as a write error instead of optimistic success.
+- **Fixed in this audit:** `GETSETELEM` `ENOENT` is now disambiguated conservatively. The fast path is unchanged for confirmed hits, but an `ENOENT` miss now performs a raw `NFT_MSG_GETSET` probe: existing set ⇒ `not_in_set`, missing set ⇒ lookup error, ambiguous probe ⇒ `not_in_set`.
 
 #### Motivation
 
@@ -52,7 +54,7 @@ Two implementation approaches were considered:
 
 The current module uses the raw Netlink path. `libnftables` remains a possible future fallback if the raw ABI path proves too brittle across kernels or capabilities.
 
-The relevant Netlink message type is `NFT_MSG_GETSETELEM` on `NFNL_SUBSYS_NFTABLES`. The lookup is a point query (single IP → present/absent) so it does not iterate the full set.
+The relevant Netlink message type is `NFT_MSG_GETSETELEM` on `NFNL_SUBSYS_NFTABLES`. The lookup is a point query (single IP → present/absent) so it does not iterate the full set. Because Linux overloads `ENOENT` for both “element missing” and “set missing”, the module now keeps the fast path on `GETSETELEM` and only performs a conservative `NFT_MSG_GETSET` existence probe after `ENOENT`.
 
 #### nftables Set Requirements
 
@@ -70,7 +72,7 @@ nft add element inet filter blocklist { 1.2.3.4 }
 nft delete element inet filter blocklist { 1.2.3.4 }
 ```
 
-The module reads the set at request time and can cache definitive membership results per worker for the configured TTL. Set `nftset_cache_ttl 0;` when you need every request to reflect nftables mutations immediately.
+The module reads the set at request time and can cache definitive membership results for the configured TTL. The fast path remains per-worker L1; L1 misses can reuse a shared-memory L2 entry written by another worker. Set `nftset_cache_ttl 0;` when you need every request to reflect nftables mutations immediately.
 
 For `nftset_autoadd`, the target set should allow runtime insertion. In practice this means creating it with `flags dynamic`; if you want per-element expiry, add `timeout` support as well.
 
@@ -199,7 +201,7 @@ When enabled, the module logs what it would block but never actually blocks. `$n
 *default:* `nftset_cache_ttl 60s;`
 *context:* `http, server, location`
 
-How long to cache the set membership result per worker process. Reduces kernel calls at high request rates. Set to `0` to disable caching and force every request through the kernel lookup path.
+How long to cache the set membership result. Hot hits stay in a per-worker L1 cache, and L1 misses can fall through to a shared-memory L2 before touching the kernel. Set to `0` to disable both cache layers and force every request through the kernel lookup path.
 
 #### nftset_autoadd
 
@@ -391,7 +393,7 @@ location /trap-temporary {
 }
 ```
 
-If `nftset_autoadd` targets the same set used by request-time lookup in that location, the module refreshes its per-worker cache so the next request sees the newly inserted membership immediately.
+If `nftset_autoadd` targets the same set used by request-time lookup in that location, a definitive `added`/`exists` result refreshes the shared L2 entry and bumps a shared invalidation generation so workers drop stale local L1 misses before the next lookup.
 
 #### Rate limit with temporary autoban
 
@@ -417,7 +419,7 @@ location /login {
 }
 ```
 
-When `nftset_autoban_set` matches the lookup set, the module refreshes the per-worker lookup cache after inserting the ban so the next request is denied by the normal nftset lookup path immediately.
+When `nftset_autoban_set` matches the lookup set, a definitive write refreshes the shared cache and invalidates worker-local L1 entries so subsequent requests are denied by the normal nftset lookup path immediately across workers.
 
 ---
 
@@ -435,7 +437,7 @@ The current implementation uses raw Netlink syscalls from Zig and does **not** l
 The nftset test directory now contains two layers of coverage:
 
 - `tests/nftset/nftset.test.js` validates directive parsing, inheritance, fail-open / fail-closed handling, and `$nftset_result` behavior without needing live nftables state.
-- `tests/nftset/nftset.container.test.js` provisions real nftables tables/sets inside a disposable Docker container and verifies hit/miss behavior there, including cache TTL expiry, `cache_ttl 0` live-refresh behavior, auto-add insertion/expiry/cache interaction, rate-limit overflow with optional auto-ban, multi-set OR matching, IPv6 hit/miss, and interval/CIDR set matching, so no host nftables rules are modified.
+- `tests/nftset/nftset.container.test.js` provisions real nftables tables/sets inside a disposable Docker container and verifies hit/miss behavior there, including cache TTL expiry, `cache_ttl 0` live-refresh behavior, shared-cache invalidation after definitive auto-add / auto-ban writes, write-failure no-refresh behavior, auto-add insertion/expiry/cache interaction, rate-limit overflow with optional auto-ban, missing-set error handling via the `GETSET` slow path, multi-set OR matching, IPv6 hit/miss, and interval/CIDR set matching, so no host nftables rules are modified.
 
 ---
 
@@ -444,10 +446,10 @@ The nftset test directory now contains two layers of coverage:
 - Linux only (nftables is a Linux kernel subsystem).
 - Requires the nginx worker process to be able to complete nftables Netlink lookups. When lookup fails, `nftset_fail_open` controls whether the request passes through or is denied.
 - IPv4-mapped IPv6 addresses are normalized onto the IPv4 lookup path. Native IPv6 hit/miss coverage now runs in Docker, but broader family / set-type interoperability still needs more real-kernel coverage.
-- The current cache is per-worker and only stores definitive hit/miss outcomes. Lookup errors are never cached, so transient kernel or capability failures still re-evaluate on the next request.
+- Lookup caching is two-level: per-worker L1 plus shared-memory L2. Lookup errors are never cached, so transient kernel or capability failures still re-evaluate on the next request.
 - The rate limiter now uses nginx shared memory so the same fixed 1-second budget is enforced across workers for a given location/IP bucket.
 - That shared rate-limit bucket is keyed by `server_name|location`, so its stability across workers/reloads depends on that pair remaining unique for the intended policy scope.
-- `NFT_MSG_GETSETELEM` still overloads `ENOENT`, so the module intentionally treats raw `ENOENT` as “not in set” to keep the point-lookup path stable. Operator-facing hardening is instead focused on explicit family-mismatch detection and documentation of this ambiguity.
+- Shared generation invalidation only covers lookup-relevant writes performed by this module (`nftset_autoadd` / `nftset_autoban`). Out-of-band `nft` mutations still age out by TTL unless caching is disabled.
 
 ---
 
@@ -470,7 +472,7 @@ Comparison against the [GetPageSpeed nftset-access module](https://nginx-extras.
 | Directive | Reference semantics | Status |
 |---|---|---|
 | `nftset_status <code>` | HTTP status on block (403/429/503/444) | ✅ Implemented |
-| `nftset_cache_ttl <time>` | Per-worker result cache, default 60 s | ✅ Implemented with live Docker coverage |
+| `nftset_cache_ttl <time>` | Per-worker result cache, default 60 s | ✅ Implemented as per-worker L1 + shared-memory L2 with live Docker coverage |
 | `nftset_sets <table:set> ...` | Variadic OR matching across multiple sets | ✅ Implemented |
 | `nftset_fail_open on\|off` | Allow/deny on lookup error | ✅ Implemented |
 | `nftset_dryrun on\|off` | Log decision, never block | ✅ Implemented |
@@ -489,9 +491,7 @@ Comparison against the [GetPageSpeed nftset-access module](https://nginx-extras.
 
 ### Remaining Work (hard)
 
-1. **Shared-worker membership cache** — if cache coherence across workers matters, move beyond the current per-worker definitive hit/miss cache.
-2. **Stronger ENOENT disambiguation** — if a safe object-existence strategy proves reliable across kernels, tighten the missing-set vs missing-element behavior without regressing common misses.
-3. **Broader write-path hardening** — more kernel/version coverage for auto-add / autoban edge cases such as interval sets, maps, and batch error reporting.
+1. **Broader write-path kernel coverage** — exercise more auto-add / autoban edge cases such as interval sets, maps, and version-specific batch reply shapes.
 
 ### Documentation Audit Checklist
 
@@ -501,4 +501,6 @@ Comparison against the [GetPageSpeed nftset-access module](https://nginx-extras.
 - [x] Gap fixed in this audit pass: the raw Netlink request path no longer performs unsafe unaligned struct access into packet buffers.
 - [x] Gap fixed in this audit pass: the raw Netlink lookup now uses the correct nfnetlink subsystem/message constants, which made live nftables membership checks work instead of failing with `EINVAL`.
 - [x] Bun integration coverage now verifies fail-open inheritance, fail-closed custom-status behavior, `$nftset_result` on lookup failure, dryrun behavior, directive inheritance across `server` / `location` blocks, and live membership hit/miss behavior in Docker-isolated nftables tests.
-- [x] `nftset_ratelimit` now uses a shared-memory zone for cross-worker fixed-window accounting, while the lookup cache intentionally remains per-worker.
+- [x] `nftset_ratelimit` now uses a shared-memory zone for cross-worker fixed-window accounting.
+- [x] The lookup cache now keeps per-worker L1 hits while adding a shared-memory L2 plus generation-based invalidation for definitive auto-add / auto-ban writes.
+- [x] `GETSETELEM` `ENOENT` is now conservatively disambiguated with a `GETSET` slow-path probe so missing sets become lookup errors while confirmed existing-set misses still return `not_in_set`.

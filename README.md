@@ -102,7 +102,7 @@ make install
 
 21 modules total. All modules have integration tests and individual README documentation.
 
-### Feature Ready (16)
+### Feature Ready (17)
 
 | Module | Description |
 |--------|-------------|
@@ -120,17 +120,17 @@ make install
 | **circuit-breaker** | Failure detection with half-open recovery |
 | **prometheus** | Native /metrics endpoint with histograms |
 | **cache-tags** | Tag-based cache invalidation |
+| **nftset** | nftables-backed IP allow/block checks via raw Netlink lookup |
 | **pgrest** | PostgreSQL REST API with JWT auth, content negotiation (JSON/CSV/XML) |
 | **wechatpay** | WeChat Pay signature verification |
 
-### Implemented with Limitations (4)
+### Implemented with Limitations (3)
 
 | Module | Description | Limitations |
 |--------|-------------|-------------|
 | **oidc** | OpenID Connect SSO with PKCE | No ID token signature verification |
 | **acme** | Let's Encrypt certificate automation | Not tested with real ACME servers; single worker only |
 | **healthcheck** | Health status endpoint | Passive only (no active probing) |
-| **nftset** | nftables-backed IP allow/block checks via raw Netlink lookup | Core lookup path and Docker-isolated live nftables coverage are implemented; cache, CIDR matching, and richer set features are still pending |
 
 ### Reference (1)
 
