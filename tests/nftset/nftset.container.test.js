@@ -1,4 +1,5 @@
 import { describe, test, expect, beforeAll, afterAll } from "bun:test";
+import { ensureBuild } from "../harness.js";
 const IMAGE = "nginz-nftset-test:local";
 const CONTAINER = `nginz-nftset-${Date.now()}`;
 const NGINX_CONF = "/workdir/tests/nftset/nginx.container.conf";
@@ -208,7 +209,9 @@ describe("nftset-nginx-module container integration", () => {
     stopNginzInContainer();
     stopContainer();
     cleanupRuntime();
-  }, 30000);
+    console.log("Rebuilding nginz on the host after cleaning nftset container artifacts...");
+    ensureBuild();
+  }, 180000);
 
   test("blocklist denies when client IP is present in the set", () => {
     const res = request("/block-hit");
