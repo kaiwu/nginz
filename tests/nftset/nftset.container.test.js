@@ -43,6 +43,7 @@ function createRuntimeDir() {
 function cleanupRuntime() {
   // Remove root-owned cache entries left by the in-container zig build.
   try {
+    console.log("Cleaning root-owned .zig-cache artifacts left by the nftset container build...");
     run(["sudo", "find", ".zig-cache", "-user", "root", "-delete"]);
   } catch {
     // best-effort; non-fatal if nothing to remove

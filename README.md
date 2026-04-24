@@ -21,6 +21,12 @@ For nftables-related work, `tests/nftset/` now includes a Docker-isolated live n
 It provisions temporary tables/sets inside a disposable container namespace via `sudo docker`,
 so nobody's host nftables ruleset needs to be modified during development or CI-like validation.
 
+For ACME-related work, `tests/acme/` uses disposable Dockerized ACME services to assert the live
+single-domain HTTP-01 flow against a real protocol implementation. The images currently used are:
+
+- `ghcr.io/letsencrypt/pebble:latest`
+- `ghcr.io/letsencrypt/pebble-challtestsrv:latest`
+
 > [!NOTE]
 > The SSL zig bindings are generated with `OpenSSL 3`.
 
@@ -102,7 +108,7 @@ make install
 
 21 modules total. All modules have integration tests and individual README documentation.
 
-### Feature Ready (19)
+### Feature Ready (20)
 
 | Module | Description |
 |--------|-------------|
@@ -120,17 +126,16 @@ make install
 | **circuit-breaker** | Failure detection with half-open recovery |
 | **prometheus** | Native /metrics endpoint with histograms |
 | **cache-tags** | Tag-based cache invalidation |
+| **acme** | Let's Encrypt certificate automation for single-domain HTTP-01 issuance with live Pebble/challtestsrv validation |
 | **nftset** | nftables-backed IP allow/block checks via raw Netlink lookup |
 | **oidc** | OpenID Connect SSO with PKCE and RS256 ID token verification |
 | **pgrest** | PostgreSQL REST API with JWT auth, content negotiation (JSON/CSV/XML) |
 | **healthcheck** | Health/readiness endpoints with shared-memory state and active HTTP probing |
-| **wechatpay** | WeChat Pay signature verification |
+| **wechatpay** | WeChat Pay signature signing and verification |
 
-### Implemented with Limitations (1)
+### Implemented with Limitations (0)
 
-| Module | Description | Limitations |
-|--------|-------------|-------------|
-| **acme** | Let's Encrypt certificate automation | Not tested with real ACME servers; multi-worker sequential flow is covered via shared-memory sessions and mock-backed tests, but concurrent trigger hardening is still limited |
+None currently.
 
 ### Reference (1)
 

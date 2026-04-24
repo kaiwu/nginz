@@ -20,6 +20,11 @@ pub const CRYPTO_set_mem_functions = ngx.CRYPTO_set_mem_functions;
 pub const OPENSSL_INIT_ADD_ALL_CIPHERS = ngx.OPENSSL_INIT_ADD_ALL_CIPHERS;
 pub const OPENSSL_INIT_ADD_ALL_DIGESTS = ngx.OPENSSL_INIT_ADD_ALL_DIGESTS;
 pub const OPENSSL_INIT_LOAD_CRYPTO_STRINGS = ngx.OPENSSL_INIT_LOAD_CRYPTO_STRINGS;
+pub const ngx_ssl_t = ngx.ngx_ssl_t;
+pub const NGX_SSL_DEFAULT_PROTOCOLS = ngx.NGX_SSL_DEFAULT_PROTOCOLS;
+pub const ngx_ssl_create = ngx.ngx_ssl_create;
+pub const ngx_ssl_client_session_cache = ngx.ngx_ssl_client_session_cache;
+pub const ngx_ssl_cleanup_ctx = ngx.ngx_ssl_cleanup_ctx;
 
 pub const RAND_bytes = ngx.RAND_bytes;
 pub const EVP_PKEY_free = ngx.EVP_PKEY_free;
@@ -92,18 +97,44 @@ pub const EVP_DigestSignUpdate = ngx.EVP_DigestSignUpdate;
 pub const EVP_DigestSignFinal = ngx.EVP_DigestSignFinal;
 
 // X509_REQ (CSR) generation for ACME
+pub const ASN1_STRING = ngx.ASN1_STRING;
+pub const GENERAL_NAMES = ngx.GENERAL_NAMES;
+pub const GENERAL_NAME = ngx.GENERAL_NAME;
 pub const X509_REQ = ngx.X509_REQ;
 pub const X509_NAME = ngx.X509_NAME;
+pub const X509_EXTENSION = ngx.X509_EXTENSION;
+pub const X509_EXTENSIONS = ngx.X509_EXTENSIONS;
+pub const X509V3_CTX = ngx.X509V3_CTX;
+pub const d2i_X509_REQ = ngx.d2i_X509_REQ;
 pub const X509_REQ_new = ngx.X509_REQ_new;
 pub const X509_REQ_free = ngx.X509_REQ_free;
 pub const X509_REQ_set_version = ngx.X509_REQ_set_version;
 pub const X509_REQ_get_subject_name = ngx.X509_REQ_get_subject_name;
+pub const X509_REQ_get_extensions = ngx.X509_REQ_get_extensions;
 pub const X509_REQ_set_pubkey = ngx.X509_REQ_set_pubkey;
 pub const X509_REQ_sign = ngx.X509_REQ_sign;
+pub const X509_REQ_add_extensions = ngx.X509_REQ_add_extensions;
+pub const X509_NAME_get_text_by_NID = ngx.X509_NAME_get_text_by_NID;
 pub const X509_NAME_add_entry_by_txt = ngx.X509_NAME_add_entry_by_txt;
+pub const ASN1_STRING_length = ngx.ASN1_STRING_length;
+pub const ASN1_STRING_get0_data = ngx.ASN1_STRING_get0_data;
+pub const GENERAL_NAME_get0_value = ngx.GENERAL_NAME_get0_value;
+pub const GENERAL_NAMES_free = ngx.GENERAL_NAMES_free;
+pub const X509_EXTENSION_free = ngx.X509_EXTENSION_free;
+pub const X509V3_EXT_conf_nid = ngx.X509V3_EXT_conf_nid;
+pub const X509V3_get_d2i = ngx.X509V3_get_d2i;
+pub const X509V3_set_ctx = ngx.X509V3_set_ctx;
+pub const X509v3_add_ext = ngx.X509v3_add_ext;
+pub const sk_GENERAL_NAME_num = ngx.sk_GENERAL_NAME_num;
+pub const sk_GENERAL_NAME_value = ngx.sk_GENERAL_NAME_value;
+pub const sk_X509_EXTENSION_pop_free = ngx.sk_X509_EXTENSION_pop_free;
 pub const i2d_X509_REQ = ngx.i2d_X509_REQ;
+pub const GEN_DNS = ngx.GEN_DNS;
 pub const MBSTRING_ASC = ngx.MBSTRING_ASC;
+pub const NID_commonName = ngx.NID_commonName;
+pub const NID_subject_alt_name = ngx.NID_subject_alt_name;
 pub const RSA = ngx.struct_rsa_st;
+pub const V_ASN1_IA5STRING = ngx.V_ASN1_IA5STRING;
 
 // X509 certificate parsing (for expiry checking)
 pub const X509 = ngx.X509;

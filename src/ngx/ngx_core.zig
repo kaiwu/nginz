@@ -74,6 +74,7 @@ pub const ngx_log_init = ngx.ngx_log_init;
 pub const ngx_time_init = ngx.ngx_time_init;
 pub const ngx_create_pool = ngx.ngx_create_pool;
 pub const ngx_destroy_pool = ngx.ngx_destroy_pool;
+pub const ngx_pool_cleanup_add = ngx.ngx_pool_cleanup_add;
 
 pub const NError = error{
     OOM,

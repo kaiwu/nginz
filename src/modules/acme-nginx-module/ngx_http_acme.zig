@@ -553,17 +553,81 @@ fn buildJwsJson(
 // ============================================================================
 
 // X509_REQ bindings
+const ASN1_STRING = ssl.ASN1_STRING;
+const GENERAL_NAMES = ssl.GENERAL_NAMES;
 const X509_REQ = ssl.X509_REQ;
 const X509_NAME = ssl.X509_NAME;
+const X509_EXTENSION = ssl.X509_EXTENSION;
+const X509_EXTENSIONS = ssl.X509_EXTENSIONS;
+const X509V3_CTX = ssl.X509V3_CTX;
+const d2i_X509_REQ = ssl.d2i_X509_REQ;
 const X509_REQ_new = ssl.X509_REQ_new;
 const X509_REQ_free = ssl.X509_REQ_free;
 const X509_REQ_set_version = ssl.X509_REQ_set_version;
 const X509_REQ_get_subject_name = ssl.X509_REQ_get_subject_name;
+const X509_REQ_get_extensions = ssl.X509_REQ_get_extensions;
 const X509_REQ_set_pubkey = ssl.X509_REQ_set_pubkey;
 const X509_REQ_sign = ssl.X509_REQ_sign;
+const X509_REQ_add_extensions = ssl.X509_REQ_add_extensions;
+const X509_NAME_get_text_by_NID = ssl.X509_NAME_get_text_by_NID;
 const X509_NAME_add_entry_by_txt = ssl.X509_NAME_add_entry_by_txt;
+const ASN1_STRING_length = ssl.ASN1_STRING_length;
+const ASN1_STRING_get0_data = ssl.ASN1_STRING_get0_data;
+const GENERAL_NAME_get0_value = ssl.GENERAL_NAME_get0_value;
+const GENERAL_NAMES_free = ssl.GENERAL_NAMES_free;
+const X509_EXTENSION_free = ssl.X509_EXTENSION_free;
+const X509V3_EXT_conf_nid = ssl.X509V3_EXT_conf_nid;
+const X509V3_get_d2i = ssl.X509V3_get_d2i;
+const X509V3_set_ctx = ssl.X509V3_set_ctx;
+const X509v3_add_ext = ssl.X509v3_add_ext;
+const sk_GENERAL_NAME_num = ssl.sk_GENERAL_NAME_num;
+const sk_GENERAL_NAME_value = ssl.sk_GENERAL_NAME_value;
+const sk_X509_EXTENSION_pop_free = ssl.sk_X509_EXTENSION_pop_free;
 const i2d_X509_REQ = ssl.i2d_X509_REQ;
+const GEN_DNS = ssl.GEN_DNS;
 const MBSTRING_ASC = ssl.MBSTRING_ASC;
+const NID_commonName = ssl.NID_commonName;
+const NID_subject_alt_name = ssl.NID_subject_alt_name;
+const V_ASN1_IA5STRING = ssl.V_ASN1_IA5STRING;
+
+fn decode_csr_request(pool: [*c]ngx_pool_t, csr: ngx_str_t) !*X509_REQ {
+    const der = base64url_decode(pool, csr) orelse return error.CsrDecodeFailed;
+    var der_ptr: [*c]const u8 = der.data;
+    return d2i_X509_REQ(null, &der_ptr, @intCast(der.len)) orelse error.CsrDecodeFailed;
+}
+
+fn assert_csr_subject_cn(req: *X509_REQ, expected_domain: []const u8) !void {
+    const subject_name = X509_REQ_get_subject_name(req) orelse return error.CsrSubjectFailed;
+    var cn_buf: [256]u8 = undefined;
+    const cn_len = X509_NAME_get_text_by_NID(subject_name, NID_commonName, cn_buf[0..].ptr, @intCast(cn_buf.len));
+    if (cn_len <= 0) return error.CsrCnFailed;
+    try std.testing.expectEqualStrings(expected_domain, cn_buf[0..@intCast(cn_len)]);
+}
+
+fn assert_csr_single_dns_san(req: *X509_REQ, expected_domain: []const u8) !void {
+    const exts = X509_REQ_get_extensions(req) orelse return error.CsrSanFailed;
+    defer sk_X509_EXTENSION_pop_free(exts, X509_EXTENSION_free);
+
+    const san_any = X509V3_get_d2i(exts, NID_subject_alt_name, null, null) orelse return error.CsrSanFailed;
+    const san_names: *GENERAL_NAMES = @ptrCast(@alignCast(san_any));
+    defer GENERAL_NAMES_free(san_names);
+
+    const san_count: usize = @intCast(sk_GENERAL_NAME_num(san_names));
+    try std.testing.expectEqual(@as(usize, 1), san_count);
+
+    const san_entry = sk_GENERAL_NAME_value(san_names, 0);
+    var san_type: c_int = 0;
+    const san_value_any = GENERAL_NAME_get0_value(san_entry, &san_type) orelse return error.CsrSanFailed;
+
+    try std.testing.expectEqual(@as(c_int, GEN_DNS), san_type);
+
+    const san_value: [*c]const ASN1_STRING = @ptrCast(@alignCast(san_value_any));
+    try std.testing.expectEqual(@as(c_int, V_ASN1_IA5STRING), san_value.*.type);
+
+    const san_len: usize = @intCast(ASN1_STRING_length(san_value));
+    const san_data = ASN1_STRING_get0_data(san_value);
+    try std.testing.expectEqualStrings(expected_domain, san_data[0..san_len]);
+}
 
 /// Generate a Certificate Signing Request (CSR) for a domain
 /// Returns base64url-encoded DER format CSR
@@ -598,6 +662,36 @@ pub fn generateCsr(pool: [*c]ngx_pool_t, domain: ngx_str_t, pkey: *EVP_PKEY) !ng
     // Set public key
     if (X509_REQ_set_pubkey(req, pkey) != 1) {
         return error.CsrPubkeyFailed;
+    }
+
+    var san_value_buf: [512]u8 = undefined;
+    if (domain.len + 4 > san_value_buf.len) {
+        return error.CsrSanFailed;
+    }
+    @memcpy(san_value_buf[0..4], "DNS:");
+    if (domain.len > 0) {
+        @memcpy(san_value_buf[4 .. 4 + domain.len], core.slicify(u8, domain.data, domain.len));
+    }
+    san_value_buf[4 + domain.len] = 0;
+
+    var v3_ctx: X509V3_CTX = undefined;
+    X509V3_set_ctx(&v3_ctx, null, null, req, null, 0);
+
+    const san_ext = X509V3_EXT_conf_nid(null, &v3_ctx, NID_subject_alt_name, &san_value_buf[0]) orelse {
+        return error.CsrSanFailed;
+    };
+
+    var exts: ?*X509_EXTENSIONS = null;
+    if (X509v3_add_ext(&exts, san_ext, -1) == null) {
+        X509_EXTENSION_free(san_ext);
+        return error.CsrSanFailed;
+    }
+    defer if (exts) |stack| {
+        sk_X509_EXTENSION_pop_free(stack, X509_EXTENSION_free);
+    };
+
+    if (X509_REQ_add_extensions(req, exts) != 1) {
+        return error.CsrSanFailed;
     }
 
     // Sign with SHA256
@@ -910,6 +1004,7 @@ pub const AcmeState = enum {
     need_nonce, // Need to get a fresh nonce
     need_account, // Need to register/lookup account
     need_order, // Need to create certificate order
+    need_order_poll, // Need to poll existing order status
     need_authorization, // Need to get authorization details
     need_challenge_ready, // Need to signal challenge ready
     waiting_validation, // Waiting for ACME server to validate
@@ -926,6 +1021,7 @@ fn acme_state_name(state: AcmeState) []const u8 {
         .need_nonce => "need_nonce",
         .need_account => "need_account",
         .need_order => "need_order",
+        .need_order_poll => "need_order_poll",
         .need_authorization => "need_authorization",
         .need_challenge_ready => "need_challenge_ready",
         .waiting_validation => "waiting_validation",
@@ -1252,6 +1348,27 @@ pub const AcmeClient = struct {
         };
     }
 
+    /// Build HTTP request for polling an existing order
+    pub fn buildOrderPollRequest(self: *Self) !AcmeHttpRequest {
+        const key = self.account_key orelse return error.NoAccountKey;
+
+        const jws = try createJws(
+            self.pool,
+            key,
+            self.current_nonce,
+            self.order.order_url,
+            self.account_url,
+            null,
+        );
+
+        return AcmeHttpRequest{
+            .method = .POST,
+            .url = self.order.order_url,
+            .body = jws,
+            .content_type = ngx_string("application/jose+json"),
+        };
+    }
+
     /// Build HTTP request for getting authorization details
     pub fn buildAuthorizationRequest(self: *Self) !AcmeHttpRequest {
         const key = self.account_key orelse return error.NoAccountKey;
@@ -1449,7 +1566,7 @@ pub const AcmeClient = struct {
             self.state = .need_certificate;
         } else if (std.mem.eql(u8, status, "processing")) {
             // Need to poll order status
-            self.state = .waiting_validation;
+            self.state = .need_order_poll;
         } else {
             self.state = .err;
             self.last_error = self.order.status;
@@ -1522,6 +1639,8 @@ pub const AcmeHttpRequest = struct {
     body: ngx_str_t,
     content_type: ngx_str_t,
 
+    const user_agent = "nginz-acme/0.1";
+
     /// Build raw HTTP/1.1 request bytes
     pub fn build(self: *const AcmeHttpRequest, pool: [*c]ngx_pool_t, host: ngx_str_t) !ngx_str_t {
         // Parse path from URL
@@ -1551,6 +1670,7 @@ pub const AcmeHttpRequest = struct {
         // Calculate request size
         var size: usize = method_str.len + 1 + path.len + " HTTP/1.1\r\n".len;
         size += "Host: ".len + host.len + "\r\n".len;
+        size += "User-Agent: ".len + user_agent.len + "\r\n".len;
 
         if (self.content_type.len > 0) {
             size += "Content-Type: ".len + self.content_type.len + "\r\n".len;
@@ -1582,6 +1702,16 @@ pub const AcmeHttpRequest = struct {
         pos += host_header.len;
         @memcpy(buf[pos .. pos + host.len], core.slicify(u8, host.data, host.len));
         pos += host.len;
+        buf[pos] = '\r';
+        buf[pos + 1] = '\n';
+        pos += 2;
+
+        // User-Agent header (Pebble requires this)
+        const ua_header = "User-Agent: ";
+        @memcpy(buf[pos .. pos + ua_header.len], ua_header);
+        pos += ua_header.len;
+        @memcpy(buf[pos .. pos + user_agent.len], user_agent);
+        pos += user_agent.len;
         buf[pos] = '\r';
         buf[pos + 1] = '\n';
         pos += 2;
@@ -2061,7 +2191,6 @@ fn create_main_conf(cf: [*c]ngx_conf_t) callconv(.c) ?*anyopaque {
 }
 
 fn init_main_conf(cf: [*c]ngx_conf_t, c: ?*anyopaque) callconv(.c) [*c]u8 {
-    _ = cf;
     const mcf = core.castPtr(acme_main_conf, c) orelse return conf.NGX_CONF_ERROR;
 
     if (mcf.*.enabled == conf.NGX_CONF_UNSET) {
@@ -2080,6 +2209,28 @@ fn init_main_conf(cf: [*c]ngx_conf_t, c: ?*anyopaque) callconv(.c) [*c]u8 {
     // Default storage path
     if (mcf.*.storage_path.len == 0) {
         mcf.*.storage_path = ngx_string("/etc/nginx/acme");
+    }
+
+    if (mcf.*.ups.ssl == core.nullptr(ssl.ngx_ssl_t)) {
+        const ups_ssl = core.ngz_pcalloc_c(ssl.ngx_ssl_t, cf.*.pool) orelse return conf.NGX_CONF_ERROR;
+        mcf.*.ups.ssl = ups_ssl;
+    }
+
+    if (mcf.*.ups.ssl.*.ctx == null) {
+        if (ssl.ngx_ssl_create(mcf.*.ups.ssl, ssl.NGX_SSL_DEFAULT_PROTOCOLS, null) != NGX_OK) {
+            return conf.NGX_CONF_ERROR;
+        }
+
+        const cln = core.ngx_pool_cleanup_add(cf.*.pool, 0) orelse {
+            ssl.ngx_ssl_cleanup_ctx(mcf.*.ups.ssl);
+            return conf.NGX_CONF_ERROR;
+        };
+        cln.*.handler = ssl.ngx_ssl_cleanup_ctx;
+        cln.*.data = mcf.*.ups.ssl;
+
+        if (ssl.ngx_ssl_client_session_cache(cf, mcf.*.ups.ssl, @intCast(mcf.*.ups.ssl_session_reuse)) != NGX_OK) {
+            return conf.NGX_CONF_ERROR;
+        }
     }
 
     return conf.NGX_CONF_OK;
@@ -2217,6 +2368,38 @@ fn build_acme_status_json(pool: [*c]ngx_pool_t, status: []const u8, message: []c
     return ngx_str_t{ .len = response.len, .data = buf };
 }
 
+fn extract_acme_problem_detail(body: []const u8) ?[]const u8 {
+    const key = "\"detail\"";
+    const key_idx = std.mem.indexOf(u8, body, key) orelse return null;
+    const after_key = body[key_idx + key.len ..];
+    const colon_idx = std.mem.indexOfScalar(u8, after_key, ':') orelse return null;
+    var rest = after_key[colon_idx + 1 ..];
+
+    while (rest.len > 0 and (rest[0] == ' ' or rest[0] == '\n' or rest[0] == '\r' or rest[0] == '\t')) {
+        rest = rest[1..];
+    }
+    if (rest.len == 0 or rest[0] != '"') return null;
+    rest = rest[1..];
+
+    var i: usize = 0;
+    while (i < rest.len) : (i += 1) {
+        if (rest[i] == '"' and (i == 0 or rest[i - 1] != '\\')) {
+            return rest[0..i];
+        }
+    }
+    return null;
+}
+
+fn build_acme_upstream_error_json(pool: [*c]ngx_pool_t, status_code: ngx_uint_t, body: []const u8) ?ngx_str_t {
+    var msg_buf: [256]u8 = undefined;
+    const message = if (extract_acme_problem_detail(body)) |detail|
+        std.fmt.bufPrint(&msg_buf, "ACME upstream {d}: {s}", .{ status_code, detail }) catch return null
+    else
+        std.fmt.bufPrint(&msg_buf, "ACME upstream step failed ({d})", .{status_code}) catch return null;
+
+    return build_acme_status_json(pool, "error", message);
+}
+
 fn challenge_progress_message(pool: [*c]ngx_pool_t, client: *AcmeClient) ?ngx_str_t {
     if (client.last_debug.len > 0 and client.last_debug.data != core.nullptr(u8)) {
         return build_acme_status_json(pool, "started", core.slicify(u8, client.last_debug.data, client.last_debug.len));
@@ -2318,6 +2501,24 @@ fn parse_acme_url(url: ngx_str_t) struct { host: ngx_str_t, port: u16, use_ssl: 
     };
 }
 
+fn build_host_header(pool: [*c]ngx_pool_t, host: ngx_str_t, port: u16, use_ssl: bool) ?ngx_str_t {
+    const default_port: u16 = if (use_ssl) 443 else 80;
+    if (port == default_port) {
+        return host;
+    }
+
+    var port_buf: [8]u8 = undefined;
+    const port_str = std.fmt.bufPrint(&port_buf, "{d}", .{port}) catch return null;
+    const total_len = host.len + 1 + port_str.len;
+    const buf = core.castPtr(u8, core.ngx_pnalloc(pool, total_len)) orelse return null;
+
+    @memcpy(buf[0..host.len], core.slicify(u8, host.data, host.len));
+    buf[host.len] = ':';
+    @memcpy(buf[host.len + 1 .. total_len], port_str);
+
+    return ngx_str_t{ .len = total_len, .data = buf };
+}
+
 /// Create upstream request callback
 fn ngx_http_acme_upstream_create_request(r: [*c]ngx_http_request_t) callconv(.c) ngx_int_t {
     const rctx_c = core.castPtr(acme_request_context, r.*.ctx[ngx_http_acme_module.ctx_index]) orelse {
@@ -2332,6 +2533,7 @@ fn ngx_http_acme_upstream_create_request(r: [*c]ngx_http_request_t) callconv(.c)
         .need_nonce => client.buildNonceRequest() catch return NGX_ERROR,
         .need_account => client.buildAccountRequest() catch return NGX_ERROR,
         .need_order => client.buildOrderRequest() catch return NGX_ERROR,
+        .need_order_poll => client.buildOrderPollRequest() catch return NGX_ERROR,
         .need_authorization => client.buildAuthorizationRequest() catch return NGX_ERROR,
         .need_challenge_ready => client.buildChallengeReadyRequest() catch return NGX_ERROR,
         .need_finalize => client.buildFinalizeRequest() catch return NGX_ERROR,
@@ -2343,7 +2545,9 @@ fn ngx_http_acme_upstream_create_request(r: [*c]ngx_http_request_t) callconv(.c)
     const url_info = parse_acme_url(request.url);
 
     // Build raw HTTP request
-    const raw_request = request.build(r.*.pool, url_info.host) catch return NGX_ERROR;
+    const host_header = build_host_header(r.*.pool, url_info.host, url_info.port, url_info.use_ssl) orelse return NGX_ERROR;
+
+    const raw_request = request.build(r.*.pool, host_header) catch return NGX_ERROR;
 
     // Allocate chain for request
     var chain = NChain.init(r.*.pool);
@@ -2444,8 +2648,13 @@ fn ngx_http_acme_upstream_process_header(r: [*c]ngx_http_request_t) callconv(.c)
                 rctx.response_body = ngx_null_str;
             }
 
+            const body_slice = if (rctx.response_body.data != core.nullptr(u8) and rctx.response_body.len > 0)
+                core.slicify(u8, rctx.response_body.data, rctx.response_body.len)
+            else
+                &.{};
+
             const local_response = (if (rctx.status.code >= 400)
-                build_acme_status_json(r.*.pool, "error", "ACME upstream step failed")
+                build_acme_upstream_error_json(r.*.pool, @intCast(rctx.status.code), body_slice)
             else
                 challenge_progress_message(r.*.pool, rctx.getClient()) orelse build_acme_status_json(r.*.pool, "started", "ACME step completed, call trigger again to continue")) orelse return NGX_ERROR;
 
@@ -2583,6 +2792,37 @@ fn ngx_http_acme_upstream_finalize_request(r: [*c]ngx_http_request_t, rc: ngx_in
                 acme_client.state = .err;
             }
         },
+        .need_order_poll => {
+            if (status == 200) {
+                const parsed_ok = blk: {
+                    acme_client.order.parse(client_pool, stable_body) catch {
+                        acme_client.setDebug("need_order_poll parse failed", .{});
+                        acme_client.state = .err;
+                        break :blk false;
+                    };
+                    break :blk true;
+                };
+
+                if (parsed_ok) {
+                    const order_status = ngx_str_slice(acme_client.order.status);
+                    if (std.mem.eql(u8, order_status, "valid")) {
+                        acme_client.state = .need_certificate;
+                    } else if (std.mem.eql(u8, order_status, "processing")) {
+                        acme_client.state = .need_order_poll;
+                    } else if (std.mem.eql(u8, order_status, "ready")) {
+                        acme_client.state = .need_finalize;
+                    } else if (std.mem.eql(u8, order_status, "pending")) {
+                        acme_client.state = .need_authorization;
+                    } else {
+                        acme_client.last_error = acme_client.order.status;
+                        acme_client.state = .err;
+                    }
+                }
+            } else {
+                acme_client.setDebug("need_order_poll status={d}", .{status});
+                acme_client.state = .err;
+            }
+        },
         .need_authorization => {
             if (status == 200) {
                 acme_client.handleAuthorizationResponse(stable_body) catch {
@@ -2699,6 +2939,7 @@ fn create_acme_upstream(r: [*c]ngx_http_request_t, rctx: *acme_request_context) 
         .need_nonce => acme_client.directory.new_nonce,
         .need_account => acme_client.directory.new_account,
         .need_order => acme_client.directory.new_order,
+        .need_order_poll => acme_client.order.order_url,
         .need_authorization => acme_client.order.authorization_urls[acme_client.current_auth_index],
         .need_challenge_ready => acme_client.authorization.challenge_url,
         .need_finalize => acme_client.order.finalize_url,
@@ -2723,8 +2964,6 @@ fn create_acme_upstream(r: [*c]ngx_http_request_t, rctx: *acme_request_context) 
     r.*.upstream.*.resolved.*.host = url_info.host;
     r.*.upstream.*.resolved.*.port = url_info.port;
     r.*.upstream.*.flags.ssl = url_info.use_ssl;
-    r.*.upstream.*.resolved.*.naddrs = 1;
-
     // Initialize response chain
     const chain = core.ngz_pcalloc_c(ngx_chain_t, r.*.pool) orelse return error.AllocFailed;
     rctx.res = chain;
@@ -3499,6 +3738,12 @@ test "CSR generation" {
     // Base64url encoded DER CSR is typically 600-1000 bytes for 2048-bit key
     try std.testing.expect(csr.len > 400);
     try std.testing.expect(csr.len < 1500);
+
+    const req = decode_csr_request(pool, csr) catch return error.TestFailed;
+    defer X509_REQ_free(req);
+
+    assert_csr_subject_cn(req, "example.com") catch return error.TestFailed;
+    assert_csr_single_dns_san(req, "example.com") catch return error.TestFailed;
 }
 
 test "CSR with different domain" {
@@ -3519,6 +3764,16 @@ test "CSR with different domain" {
         core.slicify(u8, csr1.data, csr1.len),
         core.slicify(u8, csr2.data, csr2.len),
     ));
+
+    const req1 = decode_csr_request(pool, csr1) catch return error.TestFailed;
+    defer X509_REQ_free(req1);
+    assert_csr_subject_cn(req1, "example.com") catch return error.TestFailed;
+    assert_csr_single_dns_san(req1, "example.com") catch return error.TestFailed;
+
+    const req2 = decode_csr_request(pool, csr2) catch return error.TestFailed;
+    defer X509_REQ_free(req2);
+    assert_csr_subject_cn(req2, "test.example.com") catch return error.TestFailed;
+    assert_csr_single_dns_san(req2, "test.example.com") catch return error.TestFailed;
 }
 
 test "AcmeStorage directory creation" {

@@ -4,7 +4,7 @@ Automatic SSL certificate provisioning and renewal using the ACME protocol (RFC 
 
 ### Status
 
-**In Progress** - Trigger-driven HTTP-01 issuance now works end-to-end against the mock ACME server, including challenge serving and persisted certificate storage. Real ACME server validation is still pending.
+**Feature Ready** - Single-domain trigger-driven HTTP-01 issuance works end-to-end against both the mock ACME server and a live Pebble + challtestsrv Docker suite, including challenge serving, SAN-bearing CSR finalization, and persisted certificate storage.
 
 #### Implemented Features
 - [x] Base64url encoding/decoding (RFC 4648)
@@ -24,14 +24,15 @@ Automatic SSL certificate provisioning and renewal using the ACME protocol (RFC 
 - [x] Trigger endpoint (`/.well-known/acme-trigger`) to initiate ACME flow
 - [x] Upstream integration skeleton (callbacks implemented)
 - [x] End-to-end mock ACME issuance through account initialization, challenge registration, authorization polling, finalization, and persisted `fullchain.pem` / `privkey.pem` output
+- [x] Docker-backed live HTTP-01 issuance against Pebble + challtestsrv, including real validation on port 80 and persisted `account.key` / `fullchain.pem` / `privkey.pem` output
 
 #### Current Limitations
-- Real ACME servers (Let's Encrypt staging / Pebble) are not covered yet
 - Error recovery is still simple; repeated trigger calls advance the state machine but do not implement rich retry/backoff policy
-- Shared session/challenge state is nginx-shared-memory backed, but live coverage is still limited to the mock harness
+- Verified issuance coverage is currently the single-domain HTTP-01 path; multi-identifier/SAN orders are not yet exercised by the live suite
+- Shared session/challenge state is nginx-shared-memory backed, but live coverage is still limited to a sequential trigger-driven Pebble harness rather than concurrent trigger stress
 
 #### Pending Features
-- [ ] End-to-end testing with Let's Encrypt staging / Pebble
+- [x] End-to-end testing with Pebble + challtestsrv
 - [x] Multi-worker support for trigger-progress/challenge state via shm-backed per-domain sessions
 - [ ] Error recovery and retry logic
 
