@@ -1,0 +1,8 @@
+127.0.0.1 - - [24/Apr/2026:12:36:57 +0800] "GET /protected HTTP/1.1" 500 35 "-" "Python-urllib/3.14"
+127.0.0.1 - - [24/Apr/2026:12:38:16 +0800] "GET /protected HTTP/1.1" 500 35 "-" "Python-urllib/3.14"
+127.0.0.1 - - [24/Apr/2026:12:41:23 +0800] "GET /protected HTTP/1.1" 500 35 "-" "Python-urllib/3.14"
+127.0.0.1 - - [24/Apr/2026:12:43:42 +0800] "GET /protected HTTP/1.1" 500 35 "-" "Python-urllib/3.14"
+127.0.0.1 - - [24/Apr/2026:12:44:40 +0800] "GET /protected HTTP/1.1" 500 35 "-" "Python-urllib/3.14"
+127.0.0.1 - - [24/Apr/2026:12:45:14 +0800] "GET /protected HTTP/1.1" 500 35 "-" "Python-urllib/3.14"
+127.0.0.1 - - [24/Apr/2026:12:46:27 +0800] "GET /protected HTTP/1.1" 500 35 "-" "Python-urllib/3.14"
+127.0.0.1 - - [24/Apr/2026:12:47:34 +0800] "GET /protected HTTP/1.1" 500 27 "-" "Python-urllib/3.14"

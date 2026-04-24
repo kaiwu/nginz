@@ -102,7 +102,7 @@ make install
 
 21 modules total. All modules have integration tests and individual README documentation.
 
-### Feature Ready (17)
+### Feature Ready (19)
 
 | Module | Description |
 |--------|-------------|
@@ -121,16 +121,16 @@ make install
 | **prometheus** | Native /metrics endpoint with histograms |
 | **cache-tags** | Tag-based cache invalidation |
 | **nftset** | nftables-backed IP allow/block checks via raw Netlink lookup |
+| **oidc** | OpenID Connect SSO with PKCE and RS256 ID token verification |
 | **pgrest** | PostgreSQL REST API with JWT auth, content negotiation (JSON/CSV/XML) |
+| **healthcheck** | Health/readiness endpoints with shared-memory state and active HTTP probing |
 | **wechatpay** | WeChat Pay signature verification |
 
-### Implemented with Limitations (3)
+### Implemented with Limitations (1)
 
 | Module | Description | Limitations |
 |--------|-------------|-------------|
-| **oidc** | OpenID Connect SSO with PKCE | No ID token signature verification |
-| **acme** | Let's Encrypt certificate automation | Not tested with real ACME servers; single worker only |
-| **healthcheck** | Health status endpoint | Passive only (no active probing) |
+| **acme** | Let's Encrypt certificate automation | Not tested with real ACME servers; multi-worker sequential flow is covered via shared-memory sessions and mock-backed tests, but concurrent trigger hardening is still limited |
 
 ### Reference (1)
 

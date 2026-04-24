@@ -14,7 +14,7 @@ Automatic SSL certificate provisioning and renewal using the ACME protocol (RFC 
 - [x] JWS signing with RS256 (RFC 7515)
 - [x] CSR generation (X509_REQ)
 - [x] HTTP-01 challenge handler (ACCESS phase, intercepts regardless of location handler)
-- [x] Challenge storage (in-memory, max 32 active challenges)
+- [x] Shared-memory challenge storage (max 32 active challenges)
 - [x] File storage (account keys, domain keys, certificates)
 - [x] Certificate expiry checking
 - [x] Module configuration and directives
@@ -28,11 +28,11 @@ Automatic SSL certificate provisioning and renewal using the ACME protocol (RFC 
 #### Current Limitations
 - Real ACME servers (Let's Encrypt staging / Pebble) are not covered yet
 - Error recovery is still simple; repeated trigger calls advance the state machine but do not implement rich retry/backoff policy
-- Single worker process support only (global state not shared)
+- Shared session/challenge state is nginx-shared-memory backed, but live coverage is still limited to the mock harness
 
 #### Pending Features
 - [ ] End-to-end testing with Let's Encrypt staging / Pebble
-- [ ] Multi-worker support (shared state via shm)
+- [x] Multi-worker support for trigger-progress/challenge state via shm-backed per-domain sessions
 - [ ] Error recovery and retry logic
 
 #### Renewal Strategy
@@ -53,9 +53,10 @@ This approach is simpler, more debuggable, and follows the same pattern as certb
 
 - Both `/.well-known/acme-challenge/*` and `/.well-known/acme-trigger` are intercepted in the nginx **ACCESS** phase, so they run before normal location content handlers.
 - `/.well-known/acme-trigger` advances the ACME state machine one step at a time and returns JSON statuses such as `initialized`, `started`, `complete`, or `error`.
-- ACME runtime state is currently held in worker-global variables (`global_acme_client`, `global_account_key`, `global_domain_key`, `global_storage`), which is why the module is single-worker today and why fully isolated Bun tests restart nginx.
+- Live ACME progress is now stored in an nginx shared-memory zone keyed by domain, so later trigger requests can land on different workers and still resume the same step-driven flow.
 - Persistent storage is part of the working design: the module loads or creates `account.key`, then writes `certs/<domain>/fullchain.pem` and `certs/<domain>/privkey.pem` when issuance completes.
-- Renewal is intentionally **external-trigger driven**, not timer driven inside nginx. Repeated trigger calls resume or advance the current worker's ACME state.
+- Domain private keys are now persisted as soon as finalization needs them, which lets finalize/certificate steps survive cross-worker requests without relying on worker globals.
+- Renewal is intentionally **external-trigger driven**, not timer driven inside nginx. Repeated trigger calls resume or advance the shared per-domain ACME session state.
 
 ### Implementation Plan
 

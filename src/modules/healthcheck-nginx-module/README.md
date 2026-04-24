@@ -1,17 +1,18 @@
 ## Health Check Module
 
-Health status endpoints for Kubernetes probes and load balancer health checks.
+Passive/self-health endpoints for nginx with shared-memory aggregation and a minimal active HTTP probe.
 
 ### Status
 
-**Implemented** - Basic functionality complete
+**Feature Ready (bounded scope)** - shared-memory request counters, shared readiness state, and a single module-global active HTTP probe are implemented.
 
 ### Features
 
-- **Health Status**: JSON endpoint with health metrics and status
-- **Liveness Probe**: Kubernetes-compatible `/healthz` endpoint
-- **Readiness Probe**: Kubernetes-compatible `/ready` endpoint
-- **JSON Responses**: Machine-readable health information
+- **Shared-memory counters**: passive request and failure counts aggregate across nginx workers
+- **Shared readiness state**: `/ready` and `/health` read the same probe result from shared memory
+- **Active HTTP probing**: one worker periodically probes a configured `http://host:port/path` target
+- **Threshold-based health transitions**: configurable consecutive fail/pass thresholds drive readiness
+- **JSON endpoints**: `/health`, `/healthz`, and `/ready` return machine-readable responses
 
 ### Directives
 
@@ -20,21 +21,60 @@ Health status endpoints for Kubernetes probes and load balancer health checks.
 *syntax:* `health_status;`
 *context:* `location`
 
-Enable detailed health status endpoint. Returns JSON with health metrics.
+Enable the JSON health endpoint for this location.
 
 #### health_liveness
 
 *syntax:* `health_liveness;`
 *context:* `location`
 
-Enable liveness probe endpoint. Always returns 200 if nginx is running.
+Enable a simple liveness endpoint. It returns `200` as long as nginx is serving requests.
 
 #### health_readiness
 
 *syntax:* `health_readiness;`
 *context:* `location`
 
-Enable readiness probe endpoint. Returns 200 when ready to serve traffic, 503 otherwise.
+Enable a readiness endpoint. When active probing is configured, readiness follows the shared probe state; otherwise it stays ready.
+
+#### health_probe
+
+*syntax:* `health_probe http://host:port/path;`
+*context:* `location`
+
+Configure the module-global active probe target. The current implementation supports plain HTTP targets only.
+
+#### health_probe_interval
+
+*syntax:* `health_probe_interval <time>;`
+*default:* `5000ms`
+*context:* `location`
+
+Interval between active probes. Accepts raw milliseconds, `Nms`, or `Ns`.
+
+#### health_probe_timeout
+
+*syntax:* `health_probe_timeout <time>;`
+*default:* `1000ms`
+*context:* `location`
+
+Socket send/receive timeout used by active probes. Accepts raw milliseconds, `Nms`, or `Ns`.
+
+#### health_probe_fails
+
+*syntax:* `health_probe_fails <count>;`
+*default:* `2`
+*context:* `location`
+
+Number of consecutive failed probes required to mark readiness unhealthy.
+
+#### health_probe_passes
+
+*syntax:* `health_probe_passes <count>;`
+*default:* `1`
+*context:* `location`
+
+Number of consecutive successful probes required to recover readiness.
 
 ### Usage
 
@@ -43,22 +83,23 @@ http {
     server {
         listen 8080;
 
-        # Detailed health status
         location /health {
             health_status;
+            health_probe http://127.0.0.1:9001/probe;
+            health_probe_interval 1s;
+            health_probe_timeout 250ms;
+            health_probe_fails 2;
+            health_probe_passes 2;
         }
 
-        # Kubernetes liveness probe
         location /healthz {
             health_liveness;
         }
 
-        # Kubernetes readiness probe
         location /ready {
             health_readiness;
         }
 
-        # Application endpoints
         location / {
             proxy_pass http://backend;
         }
@@ -68,84 +109,54 @@ http {
 
 ### Response Examples
 
-**health_status:**
+**healthy `/health`:**
 ```json
 {
   "status": "healthy",
   "healthy": true,
   "ready": true,
-  "requests": 12345,
-  "failed": 5,
-  "success_rate": 99
+  "requests": 123,
+  "failed": 4,
+  "success_rate": 96,
+  "probe_enabled": true,
+  "probe_healthy": true,
+  "probe_last_status": 200,
+  "probe_total_successes": 8,
+  "probe_total_failures": 1,
+  "probe_consecutive_successes": 2,
+  "probe_consecutive_failures": 0
 }
 ```
 
-**health_liveness:**
+**unhealthy `/ready`:**
 ```json
-{"status": "alive"}
+{"status":"not_ready"}
 ```
 
-**health_readiness:**
-```json
-{"status": "ready"}
-```
+### Behavior Notes
 
-### Kubernetes Configuration
-
-```yaml
-apiVersion: v1
-kind: Pod
-spec:
-  containers:
-  - name: nginx
-    livenessProbe:
-      httpGet:
-        path: /healthz
-        port: 8080
-      initialDelaySeconds: 3
-      periodSeconds: 10
-    readinessProbe:
-      httpGet:
-        path: /ready
-        port: 8080
-      initialDelaySeconds: 3
-      periodSeconds: 5
-```
-
-### Load Balancer Configuration
-
-**AWS ALB:**
-```
-Health check path: /health
-Healthy threshold: 2
-Unhealthy threshold: 3
-Interval: 30 seconds
-```
+- Passive `requests`, `failed`, and `success_rate` counters exclude the health endpoints themselves.
+- Active probe results are shared across workers, but only one worker performs the periodic probe loop.
+- Probe success currently means an HTTP status in the `2xx` or `3xx` range.
 
 ### Limitations
 
-Current implementation has these limitations:
-
-- **No Active Probing**: Does not actively probe upstream servers
-- **Per-Worker State**: Health state is per-worker, not shared
-- **No Upstream Integration**: Does not mark upstream servers up/down
+- **Single module-global probe target**: the active probe configuration is shared by the module, not keyed per location/upstream.
+- **HTTP only**: no HTTPS/TLS probing yet.
+- **No upstream peer marking**: probe failures affect module readiness endpoints only; upstream peers are not marked down in nginx.
+- **Best-effort timeout scope**: the configured probe timeout covers socket send/receive timeouts; full nonblocking connect/poll logic is not implemented.
+- **Reload/restart reset**: shared-memory state resets when the shared zone is recreated.
 
 ### Future Enhancements
 
-- **Active Health Checks**: Periodic probes to upstream servers
-- **Upstream Integration**: Mark servers healthy/unhealthy based on probes
-- **Shared State**: Cross-worker health state using shared memory
-- **Custom Match Rules**: Validate response body/headers
-- **Slow Start**: Gradually increase traffic to recovered servers
-
-### References
-
-- [Kubernetes Probes](https://kubernetes.io/docs/tasks/configure-pod-container/configure-liveness-readiness-startup-probes/)
-- [NGINX Plus Health Checks](https://docs.nginx.com/nginx/admin-guide/load-balancer/http-health-check/)
+- HTTPS probe support
+- Multiple keyed probe definitions
+- Richer match rules (headers/body)
+- Export probe metrics through the prometheus module
 
 ### Documentation Audit Checklist
 
-- [x] Audit date: 2026-04-10
+- [x] Audit date: 2026-04-24
 - [x] Bun integration coverage exists at `tests/healthcheck/`.
-- [x] Gap recorded: `requests`, `failed`, and `success_rate` were previously static in the implementation; request/failure tracking and Bun guardrails were added in this audit pass to match the documented behavior.
-- [x] No additional documentation gaps were identified in this audit pass.
+- [x] README now matches the implemented shared-memory passive counters, shared readiness state, and module-global active HTTP probe behavior.
+- [x] Remaining limitations are documented without claiming unsupported upstream marking or per-target feature matrices.

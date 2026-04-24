@@ -4,6 +4,7 @@ const ngx = @import("ngx");
 const core = ngx.core;
 const conf = ngx.conf;
 const http = ngx.http;
+const shm = ngx.shm;
 const ssl = ngx.ssl;
 
 const NGX_OK = core.NGX_OK;
@@ -76,6 +77,37 @@ fn base64url_to_base64(data: []u8, out: []u8) []u8 {
     }
 
     return out[0..i];
+}
+
+fn ngx_str_slice(value: ngx_str_t) []const u8 {
+    if (value.len == 0 or value.data == core.nullptr(u8)) {
+        return &.{};
+    }
+    return core.slicify(u8, value.data, value.len);
+}
+
+fn fixed_string_write(dest: []u8, len_out: *usize, value: []const u8) bool {
+    if (value.len > dest.len) return false;
+    if (value.len > 0) {
+        @memcpy(dest[0..value.len], value);
+    }
+    len_out.* = value.len;
+    return true;
+}
+
+fn fixed_string_clear(dest: []u8, len_out: *usize) void {
+    _ = dest;
+    len_out.* = 0;
+}
+
+fn fixed_string_slice(dest: []const u8, len: usize) []const u8 {
+    return dest[0..len];
+}
+
+fn pool_string_from_slice(pool: [*c]ngx_pool_t, value: []const u8) ?ngx_str_t {
+    if (value.len == 0) return ngx_null_str;
+    const copied = duplicate_bytes(pool, value) orelse return null;
+    return ngx_str_t{ .len = copied.len, .data = @constCast(copied.ptr) };
 }
 
 // Encode bytes to base64url string (no padding)
@@ -1458,13 +1490,16 @@ pub const AcmeClient = struct {
         self.setDebug("register start token_len={d}", .{self.authorization.challenge_token.len});
         const key_auth = try self.prepareChallenge();
         const token_slice = core.slicify(u8, self.authorization.challenge_token.data, self.authorization.challenge_token.len);
+        const shpool = getAcmeShpool();
+        if (shpool) |sp| shm.ngx_shmtx_lock(&sp.*.mutex);
+        defer if (shpool) |sp| shm.ngx_shmtx_unlock(&sp.*.mutex);
 
         // Add to challenge storage (expires in 5 minutes)
         if (!add_challenge(
             self.authorization.challenge_token,
             key_auth,
             self.domain,
-            std.math.maxInt(ngx_msec_t), // Use max for now, will be cleaned up after validation
+            if (http.ngx_cycle == core.nullptr(core.ngx_cycle_t)) std.math.maxInt(ngx_msec_t) else ngx_current_msec + 5 * 60 * 1000,
         )) {
             self.setDebug("register failed add_challenge token_len={d}", .{token_slice.len});
             return error.ChallengeFull;
@@ -1614,6 +1649,121 @@ pub const acme_srv_conf = extern struct {
     domain: ngx_str_t,
 };
 
+const ACME_ZONE_SIZE: usize = 1024 * 1024;
+const MAX_ACME_SESSIONS = 16;
+const MAX_ACME_AUTH_URLS = 8;
+const ACME_MAX_DOMAIN_LEN = 256;
+const ACME_MAX_URL_LEN = 1024;
+const ACME_MAX_TOKEN_LEN = 256;
+const ACME_MAX_KEY_AUTH_LEN = 768;
+const ACME_MAX_STATUS_LEN = 64;
+const ACME_MAX_DEBUG_LEN = 256;
+
+const acme_challenge_entry = extern struct {
+    in_use: ngx_flag_t,
+    expires: ngx_msec_t,
+    token_len: usize,
+    key_authorization_len: usize,
+    domain_len: usize,
+    token: [ACME_MAX_TOKEN_LEN]u8,
+    key_authorization: [ACME_MAX_KEY_AUTH_LEN]u8,
+    domain: [ACME_MAX_DOMAIN_LEN]u8,
+};
+
+const acme_session_entry = extern struct {
+    in_use: ngx_flag_t,
+    state: u32,
+    current_auth_index: usize,
+    authorization_count: usize,
+    domain_len: usize,
+    directory_url_len: usize,
+    current_nonce_len: usize,
+    account_url_len: usize,
+    directory_new_nonce_len: usize,
+    directory_new_account_len: usize,
+    directory_new_order_len: usize,
+    directory_revoke_cert_len: usize,
+    directory_key_change_len: usize,
+    order_url_len: usize,
+    finalize_url_len: usize,
+    certificate_url_len: usize,
+    order_status_len: usize,
+    authorization_challenge_url_len: usize,
+    authorization_challenge_token_len: usize,
+    authorization_status_len: usize,
+    last_error_len: usize,
+    last_debug_len: usize,
+    auth_url_lens: [MAX_ACME_AUTH_URLS]usize,
+    domain: [ACME_MAX_DOMAIN_LEN]u8,
+    directory_url: [ACME_MAX_URL_LEN]u8,
+    current_nonce: [ACME_MAX_URL_LEN]u8,
+    account_url: [ACME_MAX_URL_LEN]u8,
+    directory_new_nonce: [ACME_MAX_URL_LEN]u8,
+    directory_new_account: [ACME_MAX_URL_LEN]u8,
+    directory_new_order: [ACME_MAX_URL_LEN]u8,
+    directory_revoke_cert: [ACME_MAX_URL_LEN]u8,
+    directory_key_change: [ACME_MAX_URL_LEN]u8,
+    order_url: [ACME_MAX_URL_LEN]u8,
+    finalize_url: [ACME_MAX_URL_LEN]u8,
+    certificate_url: [ACME_MAX_URL_LEN]u8,
+    order_status: [ACME_MAX_STATUS_LEN]u8,
+    authorization_challenge_url: [ACME_MAX_URL_LEN]u8,
+    authorization_challenge_token: [ACME_MAX_TOKEN_LEN]u8,
+    authorization_status: [ACME_MAX_STATUS_LEN]u8,
+    last_error: [ACME_MAX_DEBUG_LEN]u8,
+    last_debug: [ACME_MAX_DEBUG_LEN]u8,
+    auth_urls: [MAX_ACME_AUTH_URLS][ACME_MAX_URL_LEN]u8,
+};
+
+const acme_store = extern struct {
+    initialized: ngx_flag_t,
+    challenge_count: ngx_uint_t,
+    session_count: ngx_uint_t,
+    challenges: [MAX_CHALLENGES]acme_challenge_entry,
+    sessions: [MAX_ACME_SESSIONS]acme_session_entry,
+};
+
+var ngx_http_acme_zone: [*c]core.ngx_shm_zone_t = core.nullptr(core.ngx_shm_zone_t);
+var acme_test_store: acme_store = std.mem.zeroes(acme_store);
+
+fn getAcmeStore() ?*acme_store {
+    if (ngx_http_acme_zone != core.nullptr(core.ngx_shm_zone_t)) {
+        if (core.castPtr(acme_store, ngx_http_acme_zone.*.data)) |store| {
+            return store;
+        }
+    }
+    return &acme_test_store;
+}
+
+fn getAcmeShpool() ?[*c]core.ngx_slab_pool_t {
+    const zone = ngx_http_acme_zone;
+    if (zone == core.nullptr(core.ngx_shm_zone_t) or zone.*.shm.addr == null or zone.*.data == null) {
+        return null;
+    }
+    return core.castPtr(core.ngx_slab_pool_t, zone.*.shm.addr);
+}
+
+fn ngx_http_acme_zone_init(zone: [*c]core.ngx_shm_zone_t, data: ?*anyopaque) callconv(.c) ngx_int_t {
+    if (data != null) {
+        zone.*.data = data;
+        return NGX_OK;
+    }
+
+    const shpool = core.castPtr(core.ngx_slab_pool_t, zone.*.shm.addr) orelse return NGX_ERROR;
+    if (shpool.*.data != null) {
+        zone.*.data = shpool.*.data;
+        return NGX_OK;
+    }
+
+    const store_mem = shm.ngx_slab_calloc(shpool, @sizeOf(acme_store)) orelse return NGX_ERROR;
+    const store = core.castPtr(acme_store, store_mem) orelse return NGX_ERROR;
+    store.* = std.mem.zeroes(acme_store);
+    store.*.initialized = 1;
+    shpool.*.data = store;
+    zone.*.data = store;
+    return NGX_OK;
+}
+
 fn init_upstream_conf(ups: [*c]http.ngx_http_upstream_conf_t) void {
     ups.*.buffering = 0;
     ups.*.buffer_size = 32 * ngx_pagesize;
@@ -1638,10 +1788,8 @@ pub const acme_challenge_t = struct {
     expires: ngx_msec_t,
 };
 
-// Simple challenge storage (for now, array-based; can upgrade to rbtree later)
+// Simple challenge storage (shared-memory, array-based)
 const MAX_CHALLENGES = 32;
-var challenges: [MAX_CHALLENGES]?acme_challenge_t = [_]?acme_challenge_t{null} ** MAX_CHALLENGES;
-var challenge_count: usize = 0;
 
 fn duplicate_ngx_str(pool: [*c]ngx_pool_t, value: ngx_str_t) ?ngx_str_t {
     if (value.len == 0 or value.data == core.nullptr(u8)) {
@@ -1664,46 +1812,44 @@ fn duplicate_bytes(pool: [*c]ngx_pool_t, value: []const u8) ?[]const u8 {
 }
 
 pub fn add_challenge(token: ngx_str_t, key_auth: ngx_str_t, domain: ngx_str_t, expires: ngx_msec_t) bool {
-    if (challenge_count >= MAX_CHALLENGES) {
-        // Try to remove expired challenges first
+    const store = getAcmeStore() orelse return false;
+
+    if (store.*.challenge_count >= MAX_CHALLENGES) {
         cleanup_expired_challenges();
-        if (challenge_count >= MAX_CHALLENGES) {
+        if (store.*.challenge_count >= MAX_CHALLENGES) {
             return false;
         }
     }
 
-    for (&challenges) |*slot| {
-        if (slot.* == null) {
-            var stored_token = token;
-            var stored_key_auth = key_auth;
-            var stored_domain = domain;
-
-            if (worker_pool()) |pool| {
-                stored_token = duplicate_ngx_str(pool, token) orelse return false;
-                stored_key_auth = duplicate_ngx_str(pool, key_auth) orelse return false;
-                stored_domain = duplicate_ngx_str(pool, domain) orelse return false;
-            }
-
-            slot.* = acme_challenge_t{
-                .token = stored_token,
-                .key_authorization = stored_key_auth,
-                .domain = stored_domain,
-                .expires = expires,
-            };
-            challenge_count += 1;
+    for (0..MAX_CHALLENGES) |i| {
+        const slot = &(store.*.challenges[i]);
+        if (slot.*.in_use == 0) {
+            if (!fixed_string_write(&slot.*.token, &slot.*.token_len, ngx_str_slice(token))) return false;
+            if (!fixed_string_write(&slot.*.key_authorization, &slot.*.key_authorization_len, ngx_str_slice(key_auth))) return false;
+            if (!fixed_string_write(&slot.*.domain, &slot.*.domain_len, ngx_str_slice(domain))) return false;
+            slot.*.expires = expires;
+            slot.*.in_use = 1;
+            store.*.challenge_count += 1;
             return true;
         }
     }
     return false;
 }
 
-pub fn find_challenge(token: []const u8) ?*const acme_challenge_t {
-    for (&challenges) |*slot| {
-        if (slot.*) |*ch| {
-            if (ch.token.len == token.len) {
-                if (std.mem.eql(u8, core.slicify(u8, ch.token.data, ch.token.len), token)) {
-                    return ch;
-                }
+pub fn find_challenge(pool: [*c]ngx_pool_t, token: []const u8, domain: []const u8) ?acme_challenge_t {
+    const store = getAcmeStore() orelse return null;
+    for (0..MAX_CHALLENGES) |i| {
+        const slot = &(store.*.challenges[i]);
+        if (slot.*.in_use == 1) {
+            const stored_token = fixed_string_slice(&slot.*.token, slot.*.token_len);
+            const stored_domain = fixed_string_slice(&slot.*.domain, slot.*.domain_len);
+            if (std.mem.eql(u8, stored_token, token) and std.mem.eql(u8, stored_domain, domain)) {
+                return acme_challenge_t{
+                    .token = pool_string_from_slice(pool, stored_token) orelse return null,
+                    .key_authorization = pool_string_from_slice(pool, fixed_string_slice(&slot.*.key_authorization, slot.*.key_authorization_len)) orelse return null,
+                    .domain = pool_string_from_slice(pool, stored_domain) orelse return null,
+                    .expires = slot.*.expires,
+                };
             }
         }
     }
@@ -1711,14 +1857,15 @@ pub fn find_challenge(token: []const u8) ?*const acme_challenge_t {
 }
 
 pub fn remove_challenge(token: []const u8) void {
-    for (&challenges) |*slot| {
-        if (slot.*) |ch| {
-            if (ch.token.len == token.len) {
-                if (std.mem.eql(u8, core.slicify(u8, ch.token.data, ch.token.len), token)) {
-                    slot.* = null;
-                    challenge_count -= 1;
-                    return;
-                }
+    const store = getAcmeStore() orelse return;
+    for (0..MAX_CHALLENGES) |i| {
+        const slot = &(store.*.challenges[i]);
+        if (slot.*.in_use == 1) {
+            const stored_token = fixed_string_slice(&slot.*.token, slot.*.token_len);
+            if (std.mem.eql(u8, stored_token, token)) {
+                slot.* = std.mem.zeroes(acme_challenge_entry);
+                if (store.*.challenge_count > 0) store.*.challenge_count -= 1;
+                return;
             }
         }
     }
@@ -1731,14 +1878,174 @@ fn cleanup_expired_challenges() void {
     // Note: ngx_current_msec is only available at nginx runtime
     // During tests, we use maxInt for expires so this won't affect tests
     const now = ngx_current_msec;
-    for (&challenges) |*slot| {
-        if (slot.*) |ch| {
-            if (ch.expires < now) {
-                slot.* = null;
-                challenge_count -= 1;
-            }
+    const store = getAcmeStore() orelse return;
+    for (0..MAX_CHALLENGES) |i| {
+        const slot = &(store.*.challenges[i]);
+        if (slot.*.in_use == 1 and slot.*.expires < now) {
+            slot.* = std.mem.zeroes(acme_challenge_entry);
+            if (store.*.challenge_count > 0) store.*.challenge_count -= 1;
         }
     }
+}
+
+fn find_session_entry(store: *acme_store, domain: []const u8) ?*acme_session_entry {
+    for (0..MAX_ACME_SESSIONS) |i| {
+        const entry = &store.sessions[i];
+        if (entry.*.in_use == 1 and std.mem.eql(u8, fixed_string_slice(&entry.*.domain, entry.*.domain_len), domain)) {
+            return entry;
+        }
+    }
+    return null;
+}
+
+fn get_or_create_session_entry(store: *acme_store, domain: []const u8) ?*acme_session_entry {
+    if (find_session_entry(store, domain)) |entry| return entry;
+
+    for (0..MAX_ACME_SESSIONS) |i| {
+        const entry = &store.sessions[i];
+        if (entry.*.in_use == 0) {
+            entry.* = std.mem.zeroes(acme_session_entry);
+            entry.*.in_use = 1;
+            if (!fixed_string_write(&entry.*.domain, &entry.*.domain_len, domain)) {
+                entry.* = std.mem.zeroes(acme_session_entry);
+                return null;
+            }
+            entry.*.state = @intFromEnum(AcmeState.idle);
+            store.session_count += 1;
+            return entry;
+        }
+    }
+    return null;
+}
+
+fn session_string_to_pool(pool: [*c]ngx_pool_t, bytes: []const u8) !ngx_str_t {
+    return pool_string_from_slice(pool, bytes) orelse error.AllocFailed;
+}
+
+fn session_write_ngx_str(dest: []u8, dest_len: *usize, value: ngx_str_t) !void {
+    if (!fixed_string_write(dest, dest_len, ngx_str_slice(value))) return error.StringTooLong;
+}
+
+fn session_clear_ngx_str(dest: []u8, dest_len: *usize) void {
+    fixed_string_clear(dest, dest_len);
+}
+
+fn load_client_from_session(
+    pool: [*c]ngx_pool_t,
+    entry: *const acme_session_entry,
+    directory_url: ngx_str_t,
+    domain: ngx_str_t,
+) !AcmeClient {
+    var client = AcmeClient.init(pool, directory_url, domain);
+
+    client.state = @enumFromInt(entry.state);
+    client.directory_url = try session_string_to_pool(pool, fixed_string_slice(&entry.directory_url, entry.directory_url_len));
+    if (client.directory_url.len == 0) {
+        client.directory_url = directory_url;
+    }
+    client.current_nonce = try session_string_to_pool(pool, fixed_string_slice(&entry.current_nonce, entry.current_nonce_len));
+    client.account_url = try session_string_to_pool(pool, fixed_string_slice(&entry.account_url, entry.account_url_len));
+    client.directory.new_nonce = try session_string_to_pool(pool, fixed_string_slice(&entry.directory_new_nonce, entry.directory_new_nonce_len));
+    client.directory.new_account = try session_string_to_pool(pool, fixed_string_slice(&entry.directory_new_account, entry.directory_new_account_len));
+    client.directory.new_order = try session_string_to_pool(pool, fixed_string_slice(&entry.directory_new_order, entry.directory_new_order_len));
+    client.directory.revoke_cert = try session_string_to_pool(pool, fixed_string_slice(&entry.directory_revoke_cert, entry.directory_revoke_cert_len));
+    client.directory.key_change = try session_string_to_pool(pool, fixed_string_slice(&entry.directory_key_change, entry.directory_key_change_len));
+    client.order.order_url = try session_string_to_pool(pool, fixed_string_slice(&entry.order_url, entry.order_url_len));
+    client.order.finalize_url = try session_string_to_pool(pool, fixed_string_slice(&entry.finalize_url, entry.finalize_url_len));
+    client.order.certificate_url = try session_string_to_pool(pool, fixed_string_slice(&entry.certificate_url, entry.certificate_url_len));
+    client.order.status = try session_string_to_pool(pool, fixed_string_slice(&entry.order_status, entry.order_status_len));
+    client.authorization.challenge_url = try session_string_to_pool(pool, fixed_string_slice(&entry.authorization_challenge_url, entry.authorization_challenge_url_len));
+    client.authorization.challenge_token = try session_string_to_pool(pool, fixed_string_slice(&entry.authorization_challenge_token, entry.authorization_challenge_token_len));
+    client.authorization.status = try session_string_to_pool(pool, fixed_string_slice(&entry.authorization_status, entry.authorization_status_len));
+    client.last_error = try session_string_to_pool(pool, fixed_string_slice(&entry.last_error, entry.last_error_len));
+    client.last_debug = try session_string_to_pool(pool, fixed_string_slice(&entry.last_debug, entry.last_debug_len));
+    client.current_auth_index = entry.current_auth_index;
+    client.order.authorization_count = entry.authorization_count;
+
+    for (0..entry.authorization_count) |i| {
+        client.order.authorization_urls[i] = try session_string_to_pool(pool, fixed_string_slice(&entry.auth_urls[i], entry.auth_url_lens[i]));
+    }
+
+    return client;
+}
+
+fn save_client_to_session(entry: *acme_session_entry, client: *const AcmeClient) !void {
+    entry.*.state = @intFromEnum(client.state);
+    entry.*.current_auth_index = client.current_auth_index;
+    entry.*.authorization_count = client.order.authorization_count;
+    try session_write_ngx_str(&entry.*.directory_url, &entry.*.directory_url_len, client.directory_url);
+    try session_write_ngx_str(&entry.*.current_nonce, &entry.*.current_nonce_len, client.current_nonce);
+    try session_write_ngx_str(&entry.*.account_url, &entry.*.account_url_len, client.account_url);
+    try session_write_ngx_str(&entry.*.directory_new_nonce, &entry.*.directory_new_nonce_len, client.directory.new_nonce);
+    try session_write_ngx_str(&entry.*.directory_new_account, &entry.*.directory_new_account_len, client.directory.new_account);
+    try session_write_ngx_str(&entry.*.directory_new_order, &entry.*.directory_new_order_len, client.directory.new_order);
+    try session_write_ngx_str(&entry.*.directory_revoke_cert, &entry.*.directory_revoke_cert_len, client.directory.revoke_cert);
+    try session_write_ngx_str(&entry.*.directory_key_change, &entry.*.directory_key_change_len, client.directory.key_change);
+    try session_write_ngx_str(&entry.*.order_url, &entry.*.order_url_len, client.order.order_url);
+    try session_write_ngx_str(&entry.*.finalize_url, &entry.*.finalize_url_len, client.order.finalize_url);
+    try session_write_ngx_str(&entry.*.certificate_url, &entry.*.certificate_url_len, client.order.certificate_url);
+    try session_write_ngx_str(&entry.*.order_status, &entry.*.order_status_len, client.order.status);
+    try session_write_ngx_str(&entry.*.authorization_challenge_url, &entry.*.authorization_challenge_url_len, client.authorization.challenge_url);
+    try session_write_ngx_str(&entry.*.authorization_challenge_token, &entry.*.authorization_challenge_token_len, client.authorization.challenge_token);
+    try session_write_ngx_str(&entry.*.authorization_status, &entry.*.authorization_status_len, client.authorization.status);
+    try session_write_ngx_str(&entry.*.last_error, &entry.*.last_error_len, client.last_error);
+    try session_write_ngx_str(&entry.*.last_debug, &entry.*.last_debug_len, client.last_debug);
+
+    for (0..MAX_ACME_AUTH_URLS) |i| {
+        if (i < client.order.authorization_count) {
+            try session_write_ngx_str(&entry.*.auth_urls[i], &entry.*.auth_url_lens[i], client.order.authorization_urls[i]);
+        } else {
+            fixed_string_clear(&entry.*.auth_urls[i], &entry.*.auth_url_lens[i]);
+        }
+    }
+}
+
+fn initialize_session_for_domain(entry: *acme_session_entry, mcf: *acme_main_conf, domain: ngx_str_t) !void {
+    entry.*.state = @intFromEnum(AcmeState.need_directory);
+    entry.*.current_auth_index = 0;
+    entry.*.authorization_count = 0;
+    try session_write_ngx_str(&entry.*.domain, &entry.*.domain_len, domain);
+    try session_write_ngx_str(&entry.*.directory_url, &entry.*.directory_url_len, mcf.directory_url);
+    session_clear_ngx_str(&entry.*.current_nonce, &entry.*.current_nonce_len);
+    session_clear_ngx_str(&entry.*.account_url, &entry.*.account_url_len);
+    session_clear_ngx_str(&entry.*.directory_new_nonce, &entry.*.directory_new_nonce_len);
+    session_clear_ngx_str(&entry.*.directory_new_account, &entry.*.directory_new_account_len);
+    session_clear_ngx_str(&entry.*.directory_new_order, &entry.*.directory_new_order_len);
+    session_clear_ngx_str(&entry.*.directory_revoke_cert, &entry.*.directory_revoke_cert_len);
+    session_clear_ngx_str(&entry.*.directory_key_change, &entry.*.directory_key_change_len);
+    session_clear_ngx_str(&entry.*.order_url, &entry.*.order_url_len);
+    session_clear_ngx_str(&entry.*.finalize_url, &entry.*.finalize_url_len);
+    session_clear_ngx_str(&entry.*.certificate_url, &entry.*.certificate_url_len);
+    session_clear_ngx_str(&entry.*.order_status, &entry.*.order_status_len);
+    session_clear_ngx_str(&entry.*.authorization_challenge_url, &entry.*.authorization_challenge_url_len);
+    session_clear_ngx_str(&entry.*.authorization_challenge_token, &entry.*.authorization_challenge_token_len);
+    session_clear_ngx_str(&entry.*.authorization_status, &entry.*.authorization_status_len);
+    session_clear_ngx_str(&entry.*.last_error, &entry.*.last_error_len);
+    session_clear_ngx_str(&entry.*.last_debug, &entry.*.last_debug_len);
+    for (0..MAX_ACME_AUTH_URLS) |i| {
+        fixed_string_clear(&entry.*.auth_urls[i], &entry.*.auth_url_lens[i]);
+    }
+}
+
+fn load_or_create_account_key(pool: [*c]ngx_pool_t, storage: *AcmeStorage) !AcmeAccountKey {
+    if (storage.accountKeyExists()) {
+        var key_buf: [8192]u8 = undefined;
+        const pem = try storage.loadAccountKey(&key_buf);
+        return AcmeAccountKey.loadFromPem(ngx_str_t{ .len = pem.len, .data = @constCast(pem.ptr) }, pool);
+    }
+
+    var key = try AcmeAccountKey.generate(pool);
+    const pem = try key.toPem(pool);
+    try storage.saveAccountKey(ngx_str_slice(pem));
+    return key;
+}
+
+fn load_domain_key_if_present(storage: *AcmeStorage, domain: []const u8) !?AcmeDomainKey {
+    if (!storage.domainKeyExists(domain)) return null;
+
+    var key_buf: [8192]u8 = undefined;
+    const pem = try storage.loadDomainKey(domain, &key_buf);
+    return try AcmeDomainKey.loadFromPem(ngx_str_t{ .len = pem.len, .data = @constCast(pem.ptr) });
 }
 
 // ============================================================================
@@ -1846,7 +2153,11 @@ export fn ngx_http_acme_challenge_handler(r: [*c]ngx_http_request_t) callconv(.c
     };
 
     // Look up challenge
-    const challenge = find_challenge(token) orelse {
+    const shpool = getAcmeShpool();
+    if (shpool) |sp| shm.ngx_shmtx_lock(&sp.*.mutex);
+    defer if (shpool) |sp| shm.ngx_shmtx_unlock(&sp.*.mutex);
+
+    const challenge = find_challenge(r.*.pool, token, ngx_str_slice(scf.*.domain)) orelse {
         return http.NGX_HTTP_NOT_FOUND;
     };
 
@@ -1934,6 +2245,7 @@ const acme_request_context = extern struct {
     account_key: ?*anyopaque,
     domain_key: ?*anyopaque,
     storage: ?*anyopaque,
+    previous_challenge_token: ngx_str_t,
 
     // Response parsing
     status: http.ngx_http_status_t,
@@ -2234,6 +2546,8 @@ fn ngx_http_acme_upstream_finalize_request(r: [*c]ngx_http_request_t, rc: ngx_in
     else
         body;
 
+    const previous_token = ngx_str_slice(rctx.previous_challenge_token);
+
     switch (acme_client.state) {
         .need_directory => {
             if (status == 200) {
@@ -2282,6 +2596,13 @@ fn ngx_http_acme_upstream_finalize_request(r: [*c]ngx_http_request_t, rc: ngx_in
                         acme_client.setDebug("registerChallenge failed", .{});
                         acme_client.state = .err;
                     };
+                }
+
+                if (previous_token.len > 0 and acme_client.state != .need_challenge_ready and acme_client.state != .waiting_validation) {
+                    const shpool = getAcmeShpool();
+                    if (shpool) |sp| shm.ngx_shmtx_lock(&sp.*.mutex);
+                    remove_challenge(previous_token);
+                    if (shpool) |sp| shm.ngx_shmtx_unlock(&sp.*.mutex);
                 }
             } else {
                 acme_client.setDebug("need_authorization status={d}", .{status});
@@ -2339,6 +2660,26 @@ fn ngx_http_acme_upstream_finalize_request(r: [*c]ngx_http_request_t, rc: ngx_in
         },
         else => {},
     }
+
+    const domain_slice = ngx_str_slice(rctx.domain);
+    const shpool = getAcmeShpool();
+    if (shpool) |sp| shm.ngx_shmtx_lock(&sp.*.mutex);
+    defer if (shpool) |sp| shm.ngx_shmtx_unlock(&sp.*.mutex);
+
+    const store = getAcmeStore() orelse {
+        acme_client.state = .err;
+        acme_client.setDebug("shared store unavailable", .{});
+        return;
+    };
+    const session = get_or_create_session_entry(store, domain_slice) orelse {
+        acme_client.state = .err;
+        acme_client.setDebug("session store full", .{});
+        return;
+    };
+    save_client_to_session(session, acme_client) catch {
+        acme_client.state = .err;
+        acme_client.setDebug("session save failed", .{});
+    };
 }
 
 /// Create upstream and start request
@@ -2410,14 +2751,6 @@ fn is_acme_trigger_uri(uri: ngx_str_t) bool {
     return std.mem.eql(u8, prefix, ACME_TRIGGER_PREFIX);
 }
 
-/// Global ACME client state (one per worker)
-var global_acme_client: ?*AcmeClient = null;
-var global_account_key: ?*AcmeAccountKey = null;
-var global_domain_key: ?*AcmeDomainKey = null;
-var global_storage_path_buf: [512]u8 = undefined;
-var global_storage_instance: AcmeStorage = undefined;
-var global_storage: ?*AcmeStorage = null;
-
 fn worker_pool() ?[*c]ngx_pool_t {
     if (http.ngx_cycle == core.nullptr(core.ngx_cycle_t)) {
         return null;
@@ -2452,64 +2785,71 @@ export fn ngx_http_acme_trigger_handler(r: [*c]ngx_http_request_t) callconv(.c) 
         return NGX_DECLINED;
     }
 
-    // Initialize global ACME state if needed
-    if (global_acme_client == null) {
-        // Initialize storage
-        const storage_path = core.slicify(u8, mcf.*.storage_path.data, mcf.*.storage_path.len);
-        if (storage_path.len >= global_storage_path_buf.len) {
-            return send_acme_status_and_finalize(r, "error", "Storage path too long");
-        }
-        @memcpy(global_storage_path_buf[0..storage_path.len], storage_path);
-        global_storage_instance = AcmeStorage.init(global_storage_path_buf[0..storage_path.len]);
-        global_storage_instance.ensureDirectories() catch {
-            return send_acme_status_and_finalize(r, "error", "Failed to create storage directories");
-        };
-        global_storage = &global_storage_instance;
+    const storage_ptr = core.ngz_pcalloc(AcmeStorage, r.*.pool) orelse {
+        return send_acme_status_and_finalize(r, "error", "Failed to allocate storage");
+    };
+    storage_ptr.* = AcmeStorage.init(ngx_str_slice(mcf.*.storage_path));
+    storage_ptr.ensureDirectories() catch {
+        return send_acme_status_and_finalize(r, "error", "Failed to create storage directories");
+    };
 
-        // Load or generate account key
-        const pool = worker_pool() orelse {
-            return send_acme_status_and_finalize(r, "error", "Worker pool unavailable");
-        };
-        const account_key_ptr = core.ngz_pcalloc(AcmeAccountKey, pool) orelse {
-            return send_acme_status_and_finalize(r, "error", "Failed to allocate account key");
-        };
-        if (global_storage.?.accountKeyExists()) {
-            var key_buf: [8192]u8 = undefined;
-            const pem = global_storage.?.loadAccountKey(&key_buf) catch {
-                return send_acme_status_and_finalize(r, "error", "Failed to load account key");
-            };
-            account_key_ptr.* = AcmeAccountKey.loadFromPem(ngx_str_t{ .len = pem.len, .data = @constCast(pem.ptr) }, pool) catch {
-                return send_acme_status_and_finalize(r, "error", "Failed to parse account key");
-            };
-        } else {
-            account_key_ptr.* = AcmeAccountKey.generate(pool) catch {
-                return send_acme_status_and_finalize(r, "error", "Failed to generate account key");
-            };
-            // Save account key
-            const pem = account_key_ptr.toPem(pool) catch {
-                return send_acme_status_and_finalize(r, "error", "Failed to export account key");
-            };
-            global_storage.?.saveAccountKey(core.slicify(u8, pem.data, pem.len)) catch {
-                return send_acme_status_and_finalize(r, "error", "Failed to save account key");
-            };
-        }
-        global_account_key = account_key_ptr;
+    const account_key_ptr = core.ngz_pcalloc(AcmeAccountKey, r.*.pool) orelse {
+        return send_acme_status_and_finalize(r, "error", "Failed to allocate account key");
+    };
+    account_key_ptr.* = load_or_create_account_key(r.*.pool, storage_ptr) catch {
+        return send_acme_status_and_finalize(r, "error", "Failed to load account key");
+    };
 
-        // Create ACME client
-        const client_ptr = core.ngz_pcalloc(AcmeClient, pool) orelse {
-            return send_acme_status_and_finalize(r, "error", "Failed to allocate ACME client");
-        };
-        client_ptr.* = AcmeClient.init(pool, mcf.*.directory_url, scf.*.domain);
-        client_ptr.setAccountKey(account_key_ptr);
-        client_ptr.start();
-        global_acme_client = client_ptr;
+    const domain_slice = ngx_str_slice(scf.*.domain);
+    const shpool = getAcmeShpool();
+    if (shpool) |sp| shm.ngx_shmtx_lock(&sp.*.mutex);
 
+    const shared_store = getAcmeStore() orelse {
+        if (shpool) |sp| shm.ngx_shmtx_unlock(&sp.*.mutex);
+        return send_acme_status_and_finalize(r, "error", "Shared ACME store unavailable");
+    };
+    const session = get_or_create_session_entry(shared_store, domain_slice) orelse {
+        if (shpool) |sp| shm.ngx_shmtx_unlock(&sp.*.mutex);
+        return send_acme_status_and_finalize(r, "error", "Shared ACME session store full");
+    };
+
+    const was_initialized = session.*.directory_url_len > 0 or session.*.state != @intFromEnum(AcmeState.idle);
+    if (!was_initialized) {
+        initialize_session_for_domain(session, mcf, scf.*.domain) catch {
+            if (shpool) |sp| shm.ngx_shmtx_unlock(&sp.*.mutex);
+            return send_acme_status_and_finalize(r, "error", "Failed to initialize ACME session");
+        };
+    }
+
+    const previous_token = pool_string_from_slice(r.*.pool, fixed_string_slice(&session.*.authorization_challenge_token, session.*.authorization_challenge_token_len)) orelse ngx_null_str;
+    const client_snapshot = load_client_from_session(r.*.pool, session, mcf.*.directory_url, scf.*.domain) catch {
+        if (shpool) |sp| shm.ngx_shmtx_unlock(&sp.*.mutex);
+        return send_acme_status_and_finalize(r, "error", "Failed to restore ACME session");
+    };
+
+    if (shpool) |sp| shm.ngx_shmtx_unlock(&sp.*.mutex);
+
+    if (!was_initialized) {
         return send_acme_status_and_finalize(r, "initialized", "ACME client initialized, call again to start flow");
     }
 
-    const client = global_acme_client.?;
-    const account_key = global_account_key.?;
-    const storage = global_storage.?;
+    const client = core.ngz_pcalloc(AcmeClient, r.*.pool) orelse {
+        return send_acme_status_and_finalize(r, "error", "Failed to allocate ACME client");
+    };
+    client.* = client_snapshot;
+    client.setAccountKey(account_key_ptr);
+
+    const loaded_domain_key = load_domain_key_if_present(storage_ptr, domain_slice) catch {
+        return send_acme_status_and_finalize(r, "error", "Failed to load domain key");
+    };
+    var domain_key_ptr: ?*AcmeDomainKey = null;
+    if (loaded_domain_key) |dk| {
+        domain_key_ptr = core.ngz_pcalloc(AcmeDomainKey, r.*.pool) orelse {
+            return send_acme_status_and_finalize(r, "error", "Failed to allocate domain key");
+        };
+        domain_key_ptr.?.* = dk;
+        client.setDomainKey(domain_key_ptr.?);
+    }
 
     // Check current state and respond appropriately
     if (client.state == .complete) {
@@ -2526,29 +2866,26 @@ export fn ngx_http_acme_trigger_handler(r: [*c]ngx_http_request_t) callconv(.c) 
         return send_acme_status_and_finalize(r, "error", "ACME error occurred");
     }
 
-    if (client.state == .idle) {
-        client.start();
-        return send_acme_status_and_finalize(r, "started", "ACME flow started");
-    }
-
     if (client.state == .waiting_validation) {
         // Need to poll for validation - advance to check authorization
         client.state = .need_authorization;
     }
 
     // Generate domain key if needed for finalization
-    if (client.state == .need_finalize and global_domain_key == null) {
-        const pool = worker_pool() orelse {
-            return send_acme_status_and_finalize(r, "error", "Worker pool unavailable");
-        };
-        const domain_key_ptr = core.ngz_pcalloc(AcmeDomainKey, pool) orelse {
+    if (client.state == .need_finalize and domain_key_ptr == null) {
+        domain_key_ptr = core.ngz_pcalloc(AcmeDomainKey, r.*.pool) orelse {
             return send_acme_status_and_finalize(r, "error", "Failed to allocate domain key");
         };
-        domain_key_ptr.* = AcmeDomainKey.generate(pool) catch {
+        domain_key_ptr.?.* = AcmeDomainKey.generate(r.*.pool) catch {
             return send_acme_status_and_finalize(r, "error", "Failed to generate domain key");
         };
-        client.setDomainKey(domain_key_ptr);
-        global_domain_key = domain_key_ptr;
+        const pem = domain_key_ptr.?.toPem(r.*.pool) catch {
+            return send_acme_status_and_finalize(r, "error", "Failed to export domain key");
+        };
+        storage_ptr.saveDomainKey(domain_slice, ngx_str_slice(pem)) catch {
+            return send_acme_status_and_finalize(r, "error", "Failed to save domain key");
+        };
+        client.setDomainKey(domain_key_ptr.?);
     }
 
     // Create request context for upstream
@@ -2557,9 +2894,10 @@ export fn ngx_http_acme_trigger_handler(r: [*c]ngx_http_request_t) callconv(.c) 
     };
     rctx.* = acme_request_context{
         .client = @ptrCast(client),
-        .account_key = @ptrCast(account_key),
-        .domain_key = if (global_domain_key) |dk| @ptrCast(dk) else null,
-        .storage = @ptrCast(storage),
+        .account_key = @ptrCast(account_key_ptr),
+        .domain_key = if (domain_key_ptr) |dk| @ptrCast(dk) else null,
+        .storage = @ptrCast(storage_ptr),
+        .previous_challenge_token = previous_token,
         .status = std.mem.zeroes(http.ngx_http_status_t),
         .response_body = ngx_null_str,
         .response_nonce = ngx_null_str,
@@ -2629,6 +2967,12 @@ extern var ngx_http_core_module: ngx_module_t;
 const NArray = ngx.array.NArray;
 
 fn postconfiguration(cf: [*c]ngx_conf_t) callconv(.c) ngx_int_t {
+    var zone_name = ngx_string("acme_zone");
+    const zone = shm.ngx_shared_memory_add(cf, &zone_name, ACME_ZONE_SIZE, @constCast(&ngx_http_acme_module));
+    if (zone == core.nullptr(core.ngx_shm_zone_t)) return NGX_ERROR;
+    zone.*.init = ngx_http_acme_zone_init;
+    ngx_http_acme_zone = zone;
+
     // Register handlers in ACCESS phase - this runs before content handlers
     // and allows us to intercept requests regardless of location content handler
     const cmcf = core.castPtr(http.ngx_http_core_main_conf_t, conf.ngx_http_conf_get_module_main_conf(cf, &ngx_http_core_module)) orelse {
@@ -2849,11 +3193,11 @@ test "extract_token" {
 }
 
 test "challenge storage" {
-    // Clear any existing challenges
-    for (&challenges) |*slot| {
-        slot.* = null;
-    }
-    challenge_count = 0;
+    acme_test_store = std.mem.zeroes(acme_store);
+
+    const nlog = ngx_log_init(core.c_str(""), core.c_str(""));
+    const pool = ngx_create_pool(4096, nlog);
+    defer ngx_destroy_pool(pool);
 
     // Add a challenge
     const token1 = ngx_string("token1");
@@ -2862,22 +3206,22 @@ test "challenge storage" {
 
     const added = add_challenge(token1, key_auth1, domain1, std.math.maxInt(ngx_msec_t));
     try std.testing.expect(added);
-    try std.testing.expectEqual(challenge_count, 1);
+    try std.testing.expectEqual(acme_test_store.challenge_count, 1);
 
     // Find the challenge
-    const found = find_challenge("token1");
+    const found = find_challenge(pool, "token1", "example.com");
     try std.testing.expect(found != null);
     try std.testing.expectEqualStrings("token1.thumbprint123", core.slicify(u8, found.?.key_authorization.data, found.?.key_authorization.len));
 
     // Not found
-    const not_found = find_challenge("token2");
+    const not_found = find_challenge(pool, "token2", "example.com");
     try std.testing.expect(not_found == null);
 
     // Remove the challenge
     remove_challenge("token1");
-    try std.testing.expectEqual(challenge_count, 0);
+    try std.testing.expectEqual(acme_test_store.challenge_count, 0);
 
-    const after_remove = find_challenge("token1");
+    const after_remove = find_challenge(pool, "token1", "example.com");
     try std.testing.expect(after_remove == null);
 }
 

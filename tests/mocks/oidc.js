@@ -1,37 +1,69 @@
 /**
- * Mock OIDC/OAuth2 Provider
- * Supports authorization code flow, token endpoint, userinfo, and JWKS
+ * Mock OIDC/OAuth2 Provider with RS256-signed ID tokens.
  */
 
-import { createHash, randomBytes } from "crypto";
+import { createHash, createPrivateKey, createPublicKey, randomBytes, sign } from "crypto";
+
+const PRIVATE_KEY_PEM = `-----BEGIN PRIVATE KEY-----
+MIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQC+d7npgnxZpnjy
+0r6jVxkMI7qeLTRi5iqqo8d8DI0ttyN1o8POLgDo0L5df6zn/N5rX2Ai5ZQR4+cO
+Tp5A3SKZTQ+7GIEfTJHVSoZN7OTFIZu87S8zHvn2/gsLdRYGVm49QxI917wQSxjI
+8xxb0WR0Y2qIA0NWjLsCDB+qHCUDgSaohKcpXOE5zADCOkZcwbOjKR6ALcwES4DS
+P4+1Xypp+Ovao2oO4+0JXfBTx/FPTdgwoYPNn4f/NpDHWlEwaUktcRuPKiL9o8Tp
+vKazLBSkknHETMcQzN7G+K3vXHU0MaT7YG+TF14j8bsnVqhmSUG9IlwB/KIcamz5
+eR/JMJ+BAgMBAAECggEAAmy7JFmvuDM0Jti3mjQalrbJelgmWqQ2GrckK+xLu49R
+W2742BoKM0yNgNqWTpt/sB+eJWGVcosbgtlNvtMF3MxgKPRHWAj5Mg09Y5ZyhN8w
+OK3vD/Q678nVBYnBfJYK+BsPi1Og0ncHRy8fnzxdnlTx6y558+sNmimB+XAbaUWM
+7vQebIVcPItf1DyOzozsZOE4LCWVFjfFZBdGRG3OHYjPI37B8u6GCFYH+NJlGSvq
+N62ru0r9cn68/rmZeMwsfr22d/rHdLWKw3ItRiEPqBNM/7p+Uhg+SR90o0FuxDpl
+Fswfq8n2l8xLZ0lMlRmWaUZBiqSAwL4j2B93oFNdwQKBgQDu/QfetpQIGhZvzcSg
+hvJfW23pkwQlW9RsEYISD7FZWB/8K/xAfIHltYT9Qhk/Hmov1nvDn7fsXa1MX1Jt
+oy5kOECMJAerZezNkJnv8Mx81nD6kd4BDw58rLNtMm2hg59DizSTJRTWb1kkgquZ
+oVo3NvMsXbdCNxZaaZbuCVKVIQKBgQDMBoaom/eepIR91t12FqLCNVMOnM7BPea3
+0qihgRDucPi8p00uAFEMYDxZAQnyoESYbOYg2Ek5aJlSYPucx7IgdAXw6k0UgZqN
+uO0aWY/GZyRDC2PFCkIN1uwEUlx+/bYqEkVM0TsyiOzUrTxi7oj5puhESd+6TLpR
+uojYxaReYQKBgQDkLvgKr6zbp3zwtzkcRHy6i2OAdvyoZuuFW5ojgJRGyBuR/LVX
+JQopt40I+sl8OKAOmO2GtMM5jZ/focvkHsA2tHb815HzFtho1b4FGJdGQsGQnSGp
+RSUB6StQAawnYLL6HLnQHMGulJY6hAEwKJ0oxvCb1ccaE9rl7JdNI92TwQKBgCtc
+F7Its2pbvGyiBV7bYKu1eXlZifc3mJjohD4Ol/KUv8gYJibomlDvAuRHfD28Idfj
+DOVeEfHJcQw44EBpkEmlXr3cjZUWFiqYaot3DT81HFfDS+jMTU1zp6Uje9ThRp2a
+VHAG53XN88cfKf48g4/LEQGyUYHeXJqR8hNfrZcBAoGAQhfkGnVOcHvLbWZcbtNi
+drQJ3gHBFyGMF/WOjGhGbr9C1r+shE+oS0lOa34pMXB/WeKKOrwXqkrcQjJkdwrh
+WfwfAry/uZdccrgVj1X8niiuopcRWLrFLsXRI2yZddUyv3R0oG4dPKPp0rorSnaS
+NVrMBFiaJjC7CPH6DScxnrw=
+-----END PRIVATE KEY-----`;
+
+function base64urlJson(value) {
+  return Buffer.from(JSON.stringify(value)).toString("base64url");
+}
 
 export class OIDCMock {
   constructor(port = 9000) {
     this.port = port;
     this.server = null;
     this.issuer = `http://127.0.0.1:${port}`;
-    this.authorizationCodes = new Map(); // code -> { clientId, redirectUri, scope, nonce }
-    this.tokens = new Map(); // access_token -> { sub, scope, exp }
-    this.refreshTokens = new Map(); // refresh_token -> { sub, scope }
-    this.users = new Map(); // sub -> user info
-    this.clients = new Map(); // client_id -> { secret, redirectUris }
+    this.authorizationCodes = new Map();
+    this.tokens = new Map();
+    this.refreshTokens = new Map();
+    this.users = new Map();
+    this.clients = new Map();
+    this.nextTokenOverrides = null;
 
-    // Default test client
+    this.privateKey = createPrivateKey(PRIVATE_KEY_PEM);
+    this.publicKey = createPublicKey(this.privateKey);
+    this.keyId = "test-key-1";
+
     this.registerClient("test-client", "test-secret", [
       "http://localhost:8888/callback",
       "http://127.0.0.1:8888/callback",
     ]);
 
-    // Default test user
     this.registerUser("user1", {
       sub: "user1",
       name: "Test User",
       email: "test@example.com",
       email_verified: true,
     });
-
-    // RSA key for signing (simplified - in real use, generate proper keys)
-    this.keyId = "test-key-1";
   }
 
   start() {
@@ -50,6 +82,27 @@ export class OIDCMock {
     this.authorizationCodes.clear();
     this.tokens.clear();
     this.refreshTokens.clear();
+    this.nextTokenOverrides = null;
+  }
+
+  setNextTokenOverrides(overrides) {
+    this.nextTokenOverrides = { ...overrides };
+  }
+
+  getJwks() {
+    const jwk = this.publicKey.export({ format: "jwk" });
+    return {
+      keys: [
+        {
+          kty: "RSA",
+          kid: this.keyId,
+          use: "sig",
+          alg: "RS256",
+          n: jwk.n,
+          e: jwk.e,
+        },
+      ],
+    };
   }
 
   async handleRequest(req) {
@@ -57,7 +110,6 @@ export class OIDCMock {
     const path = url.pathname;
     const method = req.method;
 
-    // OpenID Configuration (Discovery)
     if (path === "/.well-known/openid-configuration") {
       return this.jsonResponse({
         issuer: this.issuer,
@@ -65,84 +117,34 @@ export class OIDCMock {
         token_endpoint: `${this.issuer}/token`,
         userinfo_endpoint: `${this.issuer}/userinfo`,
         jwks_uri: `${this.issuer}/.well-known/jwks.json`,
-        revocation_endpoint: `${this.issuer}/revoke`,
-        introspection_endpoint: `${this.issuer}/introspect`,
-        end_session_endpoint: `${this.issuer}/logout`,
-        response_types_supported: ["code", "token", "id_token", "code token"],
+        response_types_supported: ["code"],
         subject_types_supported: ["public"],
-        id_token_signing_alg_values_supported: ["RS256", "HS256"],
-        scopes_supported: ["openid", "profile", "email", "offline_access"],
+        id_token_signing_alg_values_supported: ["RS256"],
+        scopes_supported: ["openid", "profile", "email"],
         token_endpoint_auth_methods_supported: [
-          "client_secret_basic",
           "client_secret_post",
+          "client_secret_basic",
         ],
-        claims_supported: [
-          "sub",
-          "iss",
-          "aud",
-          "exp",
-          "iat",
-          "name",
-          "email",
-          "email_verified",
-        ],
+        claims_supported: ["sub", "iss", "aud", "exp", "iat", "nonce", "email", "name"],
         code_challenge_methods_supported: ["S256", "plain"],
-        grant_types_supported: [
-          "authorization_code",
-          "refresh_token",
-          "client_credentials",
-        ],
+        grant_types_supported: ["authorization_code", "refresh_token"],
       });
     }
 
-    // JWKS endpoint
     if (path === "/.well-known/jwks.json") {
-      return this.jsonResponse({
-        keys: [
-          {
-            kty: "RSA",
-            kid: this.keyId,
-            use: "sig",
-            alg: "RS256",
-            n: "0vx7agoebGcQSuuPiLJXZptN9nndrQmbXEps2aiAFbWhM78LhWx4cbbfAAtVT86zwu1RK7aPFFxuhDR1L6tSoc_BJECPebWKRXjBZCiFV4n3oknjhMstn64tZ_2W-5JsGY4Hc5n9yBXArwl93lqt7_RN5w6Cf0h4QyQ5v-65YGjQR0_FDW2QvzqY368QQMicAtaSqzs8KJZgnYb9c7d0zgdAZHzu6qMQvRL5hajrn1n91CbOpbISD08qNLyrdkt-bFTWhAI4vMQFh6WeZu0fM4lFd2NcRwr3XPksINHaQ-G_xBniIqbw0Ls1jF44-csFCur-kEgU8awapJzKnqDKgw",
-            e: "AQAB",
-          },
-        ],
-      });
+      return this.jsonResponse(this.getJwks());
     }
 
-    // Authorization endpoint
     if (path === "/authorize") {
       return this.handleAuthorize(url);
     }
 
-    // Token endpoint
     if (path === "/token" && method === "POST") {
       return await this.handleToken(req);
     }
 
-    // UserInfo endpoint
     if (path === "/userinfo") {
       return this.handleUserInfo(req);
-    }
-
-    // Token introspection
-    if (path === "/introspect" && method === "POST") {
-      return await this.handleIntrospect(req);
-    }
-
-    // Token revocation
-    if (path === "/revoke" && method === "POST") {
-      return await this.handleRevoke(req);
-    }
-
-    // Logout endpoint
-    if (path === "/logout") {
-      const redirectUri = url.searchParams.get("post_logout_redirect_uri");
-      if (redirectUri) {
-        return Response.redirect(redirectUri, 302);
-      }
-      return new Response("Logged out", { status: 200 });
     }
 
     return new Response("Not Found", { status: 404 });
@@ -151,7 +153,6 @@ export class OIDCMock {
   handleAuthorize(url) {
     const clientId = url.searchParams.get("client_id");
     const redirectUri = url.searchParams.get("redirect_uri");
-    const responseType = url.searchParams.get("response_type") || "code";
     const scope = url.searchParams.get("scope") || "openid";
     const state = url.searchParams.get("state");
     const nonce = url.searchParams.get("nonce");
@@ -159,22 +160,15 @@ export class OIDCMock {
     const codeChallengeMethod =
       url.searchParams.get("code_challenge_method") || "plain";
 
-    // Validate client
     const client = this.clients.get(clientId);
     if (!client) {
-      return this.errorRedirect(
-        redirectUri,
-        "invalid_client",
-        "Unknown client",
-        state
-      );
+      return this.errorRedirect(redirectUri, "invalid_client", "Unknown client", state);
     }
 
     if (!client.redirectUris.includes(redirectUri)) {
       return new Response("Invalid redirect_uri", { status: 400 });
     }
 
-    // Generate authorization code
     const code = this.generateCode();
     this.authorizationCodes.set(code, {
       clientId,
@@ -183,15 +177,15 @@ export class OIDCMock {
       nonce,
       codeChallenge,
       codeChallengeMethod,
-      sub: "user1", // Default user
-      exp: Date.now() + 600000, // 10 minutes
+      sub: "user1",
+      exp: Date.now() + 600_000,
+      tokenOverrides: this.nextTokenOverrides,
     });
+    this.nextTokenOverrides = null;
 
-    // Redirect back with code
     const redirectUrl = new URL(redirectUri);
     redirectUrl.searchParams.set("code", code);
     if (state) redirectUrl.searchParams.set("state", state);
-
     return Response.redirect(redirectUrl.toString(), 302);
   }
 
@@ -200,49 +194,36 @@ export class OIDCMock {
     let params;
 
     if (contentType.includes("application/x-www-form-urlencoded")) {
-      const body = await req.text();
-      params = new URLSearchParams(body);
+      params = new URLSearchParams(await req.text());
     } else if (contentType.includes("application/json")) {
-      const body = await req.json();
-      params = new URLSearchParams(body);
+      params = new URLSearchParams(await req.json());
     } else {
       return this.jsonError("invalid_request", "Invalid content type");
     }
 
-    const grantType = params.get("grant_type");
-
-    // Get client credentials
     let clientId = params.get("client_id");
     let clientSecret = params.get("client_secret");
-
-    // Check Authorization header for client credentials
     const authHeader = req.headers.get("authorization");
-    if (authHeader && authHeader.startsWith("Basic ")) {
+    if (authHeader?.startsWith("Basic ")) {
       const decoded = atob(authHeader.slice(6));
       const [id, secret] = decoded.split(":");
-      clientId = clientId || id;
-      clientSecret = clientSecret || secret;
+      clientId ||= id;
+      clientSecret ||= secret;
     }
 
-    // Validate client
     const client = this.clients.get(clientId);
     if (!client || client.secret !== clientSecret) {
       return this.jsonError("invalid_client", "Invalid client credentials");
     }
 
-    switch (grantType) {
-      case "authorization_code":
-        return this.handleAuthCodeGrant(params, clientId);
-
-      case "refresh_token":
-        return this.handleRefreshTokenGrant(params, clientId);
-
-      case "client_credentials":
-        return this.handleClientCredentialsGrant(clientId);
-
-      default:
-        return this.jsonError("unsupported_grant_type", "Unsupported grant type");
+    const grantType = params.get("grant_type");
+    if (grantType === "authorization_code") {
+      return this.handleAuthCodeGrant(params, clientId);
     }
+    if (grantType === "refresh_token") {
+      return this.handleRefreshTokenGrant(params, clientId);
+    }
+    return this.jsonError("unsupported_grant_type", "Unsupported grant type");
   }
 
   handleAuthCodeGrant(params, clientId) {
@@ -255,13 +236,11 @@ export class OIDCMock {
       return this.jsonError("invalid_grant", "Invalid authorization code");
     }
 
-    // Check expiration
     if (Date.now() > authCode.exp) {
       this.authorizationCodes.delete(code);
       return this.jsonError("invalid_grant", "Authorization code expired");
     }
 
-    // Validate
     if (authCode.clientId !== clientId) {
       return this.jsonError("invalid_grant", "Client ID mismatch");
     }
@@ -270,7 +249,6 @@ export class OIDCMock {
       return this.jsonError("invalid_grant", "Redirect URI mismatch");
     }
 
-    // Validate PKCE
     if (authCode.codeChallenge) {
       if (!codeVerifier) {
         return this.jsonError("invalid_grant", "Code verifier required");
@@ -284,81 +262,96 @@ export class OIDCMock {
       }
     }
 
-    // Consume the code
     this.authorizationCodes.delete(code);
-
-    // Generate tokens
-    return this.generateTokenResponse(authCode.sub, authCode.scope, authCode.nonce);
+    return this.generateTokenResponse(
+      authCode.sub,
+      authCode.scope,
+      authCode.nonce,
+      authCode.clientId,
+      authCode.tokenOverrides || {}
+    );
   }
 
-  handleRefreshTokenGrant(params, clientId) {
+  handleRefreshTokenGrant(params) {
     const refreshToken = params.get("refresh_token");
     const tokenData = this.refreshTokens.get(refreshToken);
-
     if (!tokenData) {
       return this.jsonError("invalid_grant", "Invalid refresh token");
     }
 
-    return this.generateTokenResponse(tokenData.sub, tokenData.scope);
+    return this.generateTokenResponse(
+      tokenData.sub,
+      tokenData.scope,
+      null,
+      tokenData.clientId,
+      {}
+    );
   }
 
-  handleClientCredentialsGrant(clientId) {
-    return this.generateTokenResponse(clientId, "openid");
-  }
-
-  generateTokenResponse(sub, scope, nonce) {
+  generateTokenResponse(sub, scope, nonce, clientId, overrides = {}) {
     const accessToken = this.generateToken();
     const refreshToken = this.generateToken();
     const expiresIn = 3600;
 
-    // Store tokens
     this.tokens.set(accessToken, {
       sub,
       scope,
       exp: Date.now() + expiresIn * 1000,
     });
-    this.refreshTokens.set(refreshToken, { sub, scope });
-
-    // Generate ID token (simplified JWT)
-    const idToken = this.generateIdToken(sub, nonce);
+    this.refreshTokens.set(refreshToken, { sub, scope, clientId });
 
     return this.jsonResponse({
       access_token: accessToken,
       token_type: "Bearer",
       expires_in: expiresIn,
       refresh_token: refreshToken,
-      id_token: idToken,
+      id_token: this.generateIdToken(sub, nonce, clientId, overrides),
       scope,
     });
   }
 
-  generateIdToken(sub, nonce) {
-    const header = { alg: "HS256", typ: "JWT", kid: this.keyId };
-
-    // Get user info to include in ID token
-    const user = this.users.get(sub) || {};
+  generateIdToken(sub, nonce, clientId, overrides = {}) {
+    const now = Math.floor(Date.now() / 1000);
+    const user = this.users.get(overrides.sub || sub) || {};
+    const header = {
+      alg: overrides.alg || "RS256",
+      typ: "JWT",
+      kid: overrides.kid || this.keyId,
+    };
 
     const payload = {
-      iss: this.issuer,
-      sub,
-      aud: "test-client",
-      exp: Math.floor(Date.now() / 1000) + 3600,
-      iat: Math.floor(Date.now() / 1000),
-      ...(nonce && { nonce }),
-      // Include profile claims if available
+      iss: overrides.issuer || this.issuer,
+      sub: overrides.sub || sub,
+      aud: overrides.audience || clientId,
+      exp:
+        overrides.exp ??
+        now + (overrides.expiresInSec !== undefined ? overrides.expiresInSec : 3600),
+      iat: overrides.iat || now,
+      nonce: overrides.nonce ?? nonce,
       ...(user.email && { email: user.email }),
-      ...(user.email_verified !== undefined && { email_verified: user.email_verified }),
+      ...(user.email_verified !== undefined && {
+        email_verified: user.email_verified,
+      }),
       ...(user.name && { name: user.name }),
     };
 
-    // Simplified JWT (not cryptographically signed for testing)
-    const headerB64 = Buffer.from(JSON.stringify(header)).toString("base64url");
-    const payloadB64 = Buffer.from(JSON.stringify(payload)).toString(
-      "base64url"
-    );
-    const signature = Buffer.from("mock-signature").toString("base64url");
+    if (overrides.removeNonce) {
+      delete payload.nonce;
+    }
+    if (overrides.removeSub) {
+      delete payload.sub;
+    }
 
-    return `${headerB64}.${payloadB64}.${signature}`;
+    const signingInput = `${base64urlJson(header)}.${base64urlJson(payload)}`;
+    const signature = sign("RSA-SHA256", Buffer.from(signingInput), this.privateKey);
+
+    let signatureB64 = Buffer.from(signature).toString("base64url");
+    if (overrides.tamperSignature) {
+      const last = signatureB64.at(-1);
+      signatureB64 = `${signatureB64.slice(0, -1)}${last === "A" ? "B" : "A"}`;
+    }
+
+    return `${signingInput}.${signatureB64}`;
   }
 
   handleUserInfo(req) {
@@ -369,57 +362,21 @@ export class OIDCMock {
 
     const token = authHeader.slice(7);
     const tokenData = this.tokens.get(token);
-
     if (!tokenData || Date.now() > tokenData.exp) {
       return new Response("Invalid token", { status: 401 });
     }
 
     const user = this.users.get(tokenData.sub);
-    if (!user) {
-      return this.jsonResponse({ sub: tokenData.sub });
-    }
-
-    return this.jsonResponse(user);
-  }
-
-  async handleIntrospect(req) {
-    const body = await req.text();
-    const params = new URLSearchParams(body);
-    const token = params.get("token");
-
-    const tokenData = this.tokens.get(token);
-    if (!tokenData || Date.now() > tokenData.exp) {
-      return this.jsonResponse({ active: false });
-    }
-
-    return this.jsonResponse({
-      active: true,
-      sub: tokenData.sub,
-      scope: tokenData.scope,
-      exp: Math.floor(tokenData.exp / 1000),
-      iat: Math.floor((tokenData.exp - 3600000) / 1000),
-      token_type: "Bearer",
-    });
-  }
-
-  async handleRevoke(req) {
-    const body = await req.text();
-    const params = new URLSearchParams(body);
-    const token = params.get("token");
-
-    this.tokens.delete(token);
-    this.refreshTokens.delete(token);
-
-    return new Response(null, { status: 200 });
+    return this.jsonResponse(user || { sub: tokenData.sub });
   }
 
   computeCodeChallenge(verifier, method) {
     if (method === "plain") {
       return verifier;
     }
-    // S256
-    const hash = createHash("sha256").update(verifier).digest();
-    return Buffer.from(hash).toString("base64url");
+    return Buffer.from(createHash("sha256").update(verifier).digest()).toString(
+      "base64url"
+    );
   }
 
   generateCode() {
@@ -437,10 +394,10 @@ export class OIDCMock {
   }
 
   jsonError(error, description) {
-    return new Response(
-      JSON.stringify({ error, error_description: description }),
-      { status: 400, headers: { "Content-Type": "application/json" } }
-    );
+    return new Response(JSON.stringify({ error, error_description: description }), {
+      status: 400,
+      headers: { "Content-Type": "application/json" },
+    });
   }
 
   errorRedirect(redirectUri, error, description, state) {
@@ -451,28 +408,12 @@ export class OIDCMock {
     return Response.redirect(url.toString(), 302);
   }
 
-  // Helper methods for test setup
   registerClient(clientId, secret, redirectUris) {
     this.clients.set(clientId, { secret, redirectUris });
   }
 
   registerUser(sub, userInfo) {
     this.users.set(sub, { sub, ...userInfo });
-  }
-
-  createAccessToken(sub, scope = "openid", expiresIn = 3600) {
-    const token = this.generateToken();
-    this.tokens.set(token, {
-      sub,
-      scope,
-      exp: Date.now() + expiresIn * 1000,
-    });
-    return token;
-  }
-
-  invalidateToken(token) {
-    this.tokens.delete(token);
-    this.refreshTokens.delete(token);
   }
 }
 

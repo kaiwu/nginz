@@ -11,7 +11,6 @@ import {
 } from "../harness.js";
 
 const MODULE = "acme";
-const TEST_URL_8889 = "http://127.0.0.1:8889";
 const TEST_URL_8890 = "http://127.0.0.1:8890";
 const ACME_MOCK_URL = `http://127.0.0.1:${MOCK_PORTS.ACME}`;
 
@@ -337,7 +336,7 @@ describe("acme module", () => {
       expect(body.status).toBe("ok");
     });
 
-    test("trigger endpoint survives repeated calls and registers a live HTTP-01 challenge", async () => {
+    test("trigger endpoint survives repeated calls across multi-worker nginx and registers a live HTTP-01 challenge", async () => {
       acmeMock.clearState();
 
       const first = await triggerAcmeFlow();
@@ -403,7 +402,7 @@ describe("acme module", () => {
       expect(key).toContain("-----BEGIN ");
     });
 
-    test("certificate is stored after successful issuance", async () => {
+    test("certificate is stored after successful issuance with shared ACME progress", async () => {
       await restartAcmeEnvironment();
 
       const certPath = `tests/${MODULE}/runtime/acme/certs/test.example.com/fullchain.pem`;

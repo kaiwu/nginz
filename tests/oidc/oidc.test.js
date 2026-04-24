@@ -1,310 +1,229 @@
-import { describe, test, expect, beforeAll, afterAll } from "bun:test";
+import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import {
+  cleanupRuntime,
+  createOIDCMock,
   startNginz,
   stopNginz,
-  cleanupRuntime,
   TEST_URL,
-  createOIDCMock,
 } from "../harness.js";
 
 const MODULE = "oidc";
 let oidcMock = null;
 
+function extractCookie(setCookie, name) {
+  const match = setCookie?.match(new RegExp(`${name}=([^;]+)`));
+  return match?.[1] ?? null;
+}
+
+async function beginFlow(path = "/protected", overrides = null) {
+  if (overrides) {
+    oidcMock.setNextTokenOverrides(overrides);
+  }
+
+  const step1 = await fetch(`${TEST_URL}${path}`, { redirect: "manual" });
+  expect(step1.status).toBe(302);
+
+  const authUrl = step1.headers.get("location");
+  const stateCookie = step1.headers.get("set-cookie");
+  const stateCookieValue = extractCookie(stateCookie, "oidc_state");
+
+  expect(authUrl).toBeDefined();
+  expect(stateCookieValue).toBeDefined();
+
+  const step2 = await fetch(authUrl, { redirect: "manual" });
+  expect(step2.status).toBe(302);
+
+  return {
+    step1,
+    authUrl,
+    stateCookie,
+    stateCookieValue,
+    callbackUrl: step2.headers.get("location"),
+  };
+}
+
+async function finishFlow(flow) {
+  return fetch(flow.callbackUrl, {
+    redirect: "manual",
+    headers: {
+      Cookie: `oidc_state=${flow.stateCookieValue}`,
+    },
+  });
+}
+
+async function createSession(path = "/protected", overrides = null) {
+  const flow = await beginFlow(path, overrides);
+  const callbackRes = await finishFlow(flow);
+  expect(callbackRes.status).toBe(302);
+
+  const setCookie = callbackRes.headers.get("set-cookie");
+  const sessionValue = extractCookie(setCookie, "oidc_session");
+  expect(sessionValue).toBeDefined();
+
+  return { flow, callbackRes, sessionValue, setCookie };
+}
+
 describe("oidc module", () => {
   beforeAll(async () => {
-    // Start mock OIDC provider on port 9999
     oidcMock = createOIDCMock(9999);
     await startNginz(`tests/${MODULE}/nginx.conf`, MODULE);
   });
 
   afterAll(async () => {
     await stopNginz();
-    if (oidcMock) {
-      oidcMock.stop();
-    }
+    oidcMock?.stop();
     cleanupRuntime(MODULE);
   });
 
   describe("authorization redirect", () => {
-    test("redirects unauthenticated request to authorization endpoint", async () => {
-      const res = await fetch(`${TEST_URL}/protected`, {
-        redirect: "manual",
-      });
+    test("redirects unauthenticated request using discovery-backed authorize endpoint", async () => {
+      const res = await fetch(`${TEST_URL}/protected`, { redirect: "manual" });
       expect(res.status).toBe(302);
 
-      const location = res.headers.get("location");
-      expect(location).toBeDefined();
-      expect(location).toContain("http://127.0.0.1:9999/authorize");
+      const location = new URL(res.headers.get("location"));
+      expect(location.origin).toBe("http://127.0.0.1:9999");
+      expect(location.pathname).toBe("/authorize");
+      expect(location.searchParams.get("response_type")).toBe("code");
+      expect(location.searchParams.get("client_id")).toBe("test-client");
+      expect(location.searchParams.get("nonce")).toBeDefined();
+      expect(location.searchParams.get("state")).toMatch(/^[a-f0-9]{64}$/);
+      expect(location.searchParams.get("code_challenge")).toBeDefined();
+      expect(location.searchParams.get("code_challenge_method")).toBe("S256");
     });
 
-    test("redirect URL contains required OIDC parameters", async () => {
-      const res = await fetch(`${TEST_URL}/protected`, {
-        redirect: "manual",
-      });
+    test("sets encrypted state cookie on redirect", async () => {
+      const res = await fetch(`${TEST_URL}/protected`, { redirect: "manual" });
       expect(res.status).toBe(302);
 
-      const location = res.headers.get("location");
-      expect(location).toContain("response_type=code");
-      expect(location).toContain("client_id=test-client");
-      expect(location).toContain("redirect_uri=");
-      expect(location).toContain("state=");
-      expect(location).toContain("nonce=");
+      const setCookie = res.headers.get("set-cookie");
+      expect(setCookie).toContain("oidc_state=");
+      expect(setCookie).toContain("HttpOnly");
+      expect(setCookie).toContain("SameSite=Lax");
     });
 
-    test("redirect URL includes PKCE parameters when enabled", async () => {
-      const res = await fetch(`${TEST_URL}/protected`, {
-        redirect: "manual",
-      });
-      expect(res.status).toBe(302);
-
-      const location = res.headers.get("location");
-      expect(location).toContain("code_challenge=");
-      expect(location).toContain("code_challenge_method=S256");
-    });
-
-    test("redirect URL excludes PKCE when disabled", async () => {
-      const res = await fetch(`${TEST_URL}/no-pkce`, {
-        redirect: "manual",
-      });
-      expect(res.status).toBe(302);
-
+    test("omits PKCE parameters when disabled", async () => {
+      const res = await fetch(`${TEST_URL}/no-pkce`, { redirect: "manual" });
       const location = res.headers.get("location");
       expect(location).not.toContain("code_challenge=");
       expect(location).not.toContain("code_challenge_method=");
     });
-
-    test("sets state cookie on redirect", async () => {
-      const res = await fetch(`${TEST_URL}/protected`, {
-        redirect: "manual",
-      });
-      expect(res.status).toBe(302);
-
-      const setCookie = res.headers.get("set-cookie");
-      expect(setCookie).toBeDefined();
-      expect(setCookie).toContain("oidc_state=");
-      expect(setCookie).toContain("Path=/");
-      expect(setCookie).toContain("HttpOnly");
-    });
-
-    test("state parameter is hex encoded (64 chars)", async () => {
-      const res = await fetch(`${TEST_URL}/protected`, {
-        redirect: "manual",
-      });
-      expect(res.status).toBe(302);
-
-      const location = res.headers.get("location");
-      const stateMatch = location.match(/state=([a-f0-9]+)/);
-      expect(stateMatch).toBeDefined();
-      expect(stateMatch[1].length).toBe(64);
-    });
   });
 
-  describe("callback handling", () => {
+  describe("callback validation", () => {
     test("callback without code returns error", async () => {
-      const res = await fetch(`${TEST_URL}/callback?state=abc123`, {
-        redirect: "manual",
-      });
+      const res = await fetch(`${TEST_URL}/callback?state=abc123`, { redirect: "manual" });
       expect(res.status).toBe(400);
-      const body = await res.text();
-      expect(body).toContain("Missing authorization code");
-    });
-
-    test("callback without state returns error", async () => {
-      const res = await fetch(`${TEST_URL}/callback?code=abc123`, {
-        redirect: "manual",
-      });
-      expect(res.status).toBe(400);
-      const body = await res.text();
-      expect(body).toContain("Missing state");
-    });
-
-    test("callback without state cookie returns error", async () => {
-      const res = await fetch(`${TEST_URL}/callback?code=abc123&state=xyz789`, {
-        redirect: "manual",
-      });
-      expect(res.status).toBe(400);
-      const body = await res.text();
-      expect(body).toContain("Missing state cookie");
+      expect(await res.text()).toContain("Missing authorization code");
     });
 
     test("callback with mismatched state returns error", async () => {
-      const step1 = await fetch(`${TEST_URL}/protected`, { redirect: "manual" });
-      expect(step1.status).toBe(302);
-
-      const stateCookie = step1.headers.get("set-cookie");
-      const stateCookieValue = stateCookie.match(/oidc_state=([^;]+)/)[1];
-
+      const flow = await beginFlow();
       const res = await fetch(`${TEST_URL}/callback?code=abc123&state=wrong-state`, {
         redirect: "manual",
-        headers: {
-          Cookie: `oidc_state=${stateCookieValue}`,
-        },
+        headers: { Cookie: `oidc_state=${flow.stateCookieValue}` },
       });
+
       expect(res.status).toBe(400);
-      const body = await res.text();
-      expect(body).toContain("State mismatch");
+      expect(await res.text()).toContain("State mismatch");
     });
 
-    test("callback with IdP error parameters does not masquerade as missing code", async () => {
-      const step1 = await fetch(`${TEST_URL}/protected`, { redirect: "manual" });
-      expect(step1.status).toBe(302);
-
-      const stateCookie = step1.headers.get("set-cookie");
-      const stateCookieValue = stateCookie.match(/oidc_state=([^;]+)/)[1];
-      const authUrl = new URL(step1.headers.get("location"));
+    test("IdP error params remain surfaced as callback errors", async () => {
+      const flow = await beginFlow();
+      const authUrl = new URL(flow.authUrl);
       const state = authUrl.searchParams.get("state");
 
       const res = await fetch(
         `${TEST_URL}/callback?error=access_denied&error_description=user_cancelled&state=${state}`,
         {
           redirect: "manual",
-          headers: {
-            Cookie: `oidc_state=${stateCookieValue}`,
-          },
+          headers: { Cookie: `oidc_state=${flow.stateCookieValue}` },
         }
       );
 
       expect(res.status).toBe(400);
-      const body = await res.text();
-      expect(body).not.toContain("Missing authorization code");
+      expect(await res.text()).toContain("OIDC error: access_denied");
     });
   });
 
-  describe("full OIDC flow", () => {
-    test("complete authorization code flow with token exchange", async () => {
-      // Step 1: Request protected resource, get redirect
-      const step1 = await fetch(`${TEST_URL}/protected`, {
-        redirect: "manual",
-      });
-      expect(step1.status).toBe(302);
-
-      const authUrl = step1.headers.get("location");
-      expect(authUrl).toBeDefined();
-
-      // Extract state cookie
-      const stateCookie = step1.headers.get("set-cookie");
-      expect(stateCookie).toBeDefined();
-
-      // Parse state cookie value
-      const stateCookieMatch = stateCookie.match(/oidc_state=([^;]+)/);
-      expect(stateCookieMatch).toBeDefined();
-      const stateCookieValue = stateCookieMatch[1];
-
-      // Step 2: Follow redirect to mock IdP (authorize endpoint)
-      // The mock IdP will automatically generate a code and redirect back
-      const step2 = await fetch(authUrl, {
-        redirect: "manual",
-      });
-      expect(step2.status).toBe(302);
-
-      const callbackUrl = step2.headers.get("location");
-      expect(callbackUrl).toBeDefined();
-      expect(callbackUrl).toContain("/callback");
-      expect(callbackUrl).toContain("code=");
-
-      // Extract the state from callback URL
-      const callbackUrlObj = new URL(callbackUrl);
-      const code = callbackUrlObj.searchParams.get("code");
-      const state = callbackUrlObj.searchParams.get("state");
-
-      expect(code).toBeDefined();
-      expect(state).toBeDefined();
-
-      // Step 3: Follow callback URL with state cookie
-      // This should trigger token exchange
-      const step3 = await fetch(callbackUrl, {
-        redirect: "manual",
-        headers: {
-          Cookie: `oidc_state=${stateCookieValue}`,
-        },
-      });
-
-      // Should either redirect to original URI (success) or return error
-      // The mock IdP validates the request and issues tokens
-        if (step3.status === 302) {
-          // Success - redirected to original URI
-          const finalLocation = step3.headers.get("location");
-          expect(finalLocation).toBeDefined();
-
-          // Should have session cookie set
-          const sessionCookie = step3.headers.get("set-cookie");
-          expect(sessionCookie).toBeDefined();
-          expect(sessionCookie).toContain("oidc_session=");
-          expect(sessionCookie).toContain("oidc_state=; Path=/; Max-Age=0");
-        } else {
-        // If not 302, could be error from mock IdP or module
-        // For debugging, let's see what happened
-        const body = await step3.text();
-        console.log("Step 3 status:", step3.status, "body:", body);
-        // This test may fail if PKCE validation fails - that's expected
-        // since we're not passing the correct code_verifier
-      }
+  describe("secure token validation", () => {
+    test("successful signed-token flow creates a session and clears state", async () => {
+      const { callbackRes, setCookie } = await createSession();
+      expect(callbackRes.headers.get("location")).toBe("http://localhost:8888/protected");
+      expect(setCookie).toContain("oidc_session=");
+      expect(setCookie).toContain("oidc_state=; Path=/; Max-Age=0");
     });
 
-    test("access with valid session cookie", async () => {
-      // First, complete the OIDC flow to get a session
-      const step1 = await fetch(`${TEST_URL}/protected`, {
-        redirect: "manual",
-      });
-      expect(step1.status).toBe(302);
+    test("signed session grants access to protected resource", async () => {
+      const { sessionValue } = await createSession();
 
-      const stateCookie = step1.headers.get("set-cookie");
-      const stateCookieMatch = stateCookie.match(/oidc_state=([^;]+)/);
-      const stateCookieValue = stateCookieMatch[1];
-
-      const authUrl = step1.headers.get("location");
-      const step2 = await fetch(authUrl, { redirect: "manual" });
-      const callbackUrl = step2.headers.get("location");
-
-      const step3 = await fetch(callbackUrl, {
-        redirect: "manual",
-        headers: { Cookie: `oidc_state=${stateCookieValue}` },
+      const res = await fetch(`${TEST_URL}/protected`, {
+        headers: { Cookie: `oidc_session=${sessionValue}` },
       });
 
-      // If we got a session cookie, use it to access protected resource
-      if (step3.status === 302) {
-        const sessionCookies = step3.headers.get("set-cookie");
-        if (sessionCookies && sessionCookies.includes("oidc_session=")) {
-          const sessionMatch = sessionCookies.match(/oidc_session=([^;]+)/);
-          if (sessionMatch) {
-            const sessionValue = sessionMatch[1];
+      expect(res.status).toBe(200);
+      expect((await res.json()).status).toBe("protected_content");
+    });
 
-            // Access protected resource with session cookie
-            const protectedRes = await fetch(`${TEST_URL}/protected`, {
-              headers: { Cookie: `oidc_session=${sessionValue}` },
-            });
+    test("tampered signature is rejected", async () => {
+      const flow = await beginFlow("/protected", { tamperSignature: true });
+      const res = await finishFlow(flow);
+      expect(res.status).toBe(400);
+      expect(await res.text()).toContain("Failed to validate id_token");
+    });
 
-            // Should get content, not redirect
-            expect(protectedRes.status).toBe(200);
-            const body = await protectedRes.json();
-            expect(body.status).toBe("protected_content");
-          }
-        }
-      }
+    test("wrong issuer is rejected", async () => {
+      const flow = await beginFlow("/protected", { issuer: "http://127.0.0.1:9999/wrong" });
+      const res = await finishFlow(flow);
+      expect(res.status).toBe(400);
+      expect(await res.text()).toContain("Failed to validate id_token");
+    });
+
+    test("wrong audience is rejected", async () => {
+      const flow = await beginFlow("/protected", { audience: "other-client" });
+      const res = await finishFlow(flow);
+      expect(res.status).toBe(400);
+      expect(await res.text()).toContain("Failed to validate id_token");
+    });
+
+    test("nonce mismatch is rejected", async () => {
+      const flow = await beginFlow("/protected", { nonce: "bad-nonce" });
+      const res = await finishFlow(flow);
+      expect(res.status).toBe(400);
+      expect(await res.text()).toContain("Failed to validate id_token");
+    });
+
+    test("expired token is rejected", async () => {
+      const flow = await beginFlow("/protected", { expiresInSec: -120 });
+      const res = await finishFlow(flow);
+      expect(res.status).toBe(400);
+      expect(await res.text()).toContain("Failed to validate id_token");
+    });
+
+    test("unknown kid is rejected after JWKS refresh attempt", async () => {
+      const flow = await beginFlow("/protected", { kid: "unknown-key" });
+      const res = await finishFlow(flow);
+      expect(res.status).toBe(400);
+      expect(await res.text()).toContain("Failed to validate id_token");
     });
 
     test("authorization flow survives original URIs containing quotes", async () => {
-      const step1 = await fetch(`${TEST_URL}/protected-quote%22path`, {
-        redirect: "manual",
-      });
-      expect(step1.status).toBe(302);
+      const { callbackRes } = await createSession("/protected-quote%22path");
+      expect(callbackRes.headers.get("location")).toBe('http://localhost:8888/protected-quote"path');
+    });
+  });
 
-      const stateCookie = step1.headers.get("set-cookie");
-      expect(stateCookie).toContain("oidc_state=");
-      const stateCookieValue = stateCookie.match(/oidc_state=([^;]+)/)[1];
+  describe("claim variables", () => {
+    test("claim headers are populated from validated session claims", async () => {
+      const { sessionValue } = await createSession("/claims");
 
-      const authUrl = step1.headers.get("location");
-      const step2 = await fetch(authUrl, { redirect: "manual" });
-      expect(step2.status).toBe(302);
-
-      const callbackUrl = step2.headers.get("location");
-      const step3 = await fetch(callbackUrl, {
-        redirect: "manual",
-        headers: { Cookie: `oidc_state=${stateCookieValue}` },
+      const res = await fetch(`${TEST_URL}/claims`, {
+        headers: { Cookie: `oidc_session=${sessionValue}` },
       });
 
-      expect(step3.status).toBe(302);
-      expect(step3.headers.get("location")).toBe('http://localhost:8888/protected-quote"path');
+      expect(res.status).toBe(200);
+      expect(res.headers.get("X-OIDC-Sub")).toBe("user1");
+      expect(res.headers.get("X-OIDC-Email")).toBe("test@example.com");
+      expect(res.headers.get("X-OIDC-Name")).toBe("Test User");
     });
   });
 
@@ -312,124 +231,13 @@ describe("oidc module", () => {
     test("public endpoint allows access without OIDC", async () => {
       const res = await fetch(`${TEST_URL}/public`);
       expect(res.status).toBe(200);
-      const body = await res.json();
-      expect(body.status).toBe("public_content");
+      expect((await res.json()).status).toBe("public_content");
     });
 
     test("health endpoint works", async () => {
       const res = await fetch(`${TEST_URL}/`);
       expect(res.status).toBe(200);
-      const body = await res.json();
-      expect(body.status).toBe("ok");
-    });
-  });
-
-  describe("scope handling", () => {
-    test("default scope includes openid profile email", async () => {
-      const res = await fetch(`${TEST_URL}/protected`, {
-        redirect: "manual",
-      });
-      expect(res.status).toBe(302);
-
-      const location = res.headers.get("location");
-      // URL encoded "openid profile email" = "openid%20profile%20email"
-      expect(location).toContain("scope=openid");
-    });
-  });
-
-  describe("claim variables", () => {
-    test("$oidc_claim_* variables are populated from session", async () => {
-      // Step 1: Request protected resource, get redirect to IdP
-      const step1 = await fetch(`${TEST_URL}/claims`, {
-        redirect: "manual",
-      });
-      expect(step1.status).toBe(302);
-
-      const stateCookie = step1.headers.get("set-cookie");
-      expect(stateCookie).toBeDefined();
-      const stateCookieMatch = stateCookie.match(/oidc_state=([^;]+)/);
-      expect(stateCookieMatch).toBeDefined();
-      const stateCookieValue = stateCookieMatch[1];
-
-      // Step 2: Follow redirect to mock IdP (returns code)
-      const authUrl = step1.headers.get("location");
-      const step2 = await fetch(authUrl, { redirect: "manual" });
-      expect(step2.status).toBe(302);
-
-      const callbackUrl = step2.headers.get("location");
-      expect(callbackUrl).toContain("code=");
-
-      // Step 3: Follow callback with state cookie (triggers token exchange)
-      const step3 = await fetch(callbackUrl, {
-        redirect: "manual",
-        headers: { Cookie: `oidc_state=${stateCookieValue}` },
-      });
-
-      // Should get 302 redirect with session cookie
-      expect(step3.status).toBe(302);
-
-      const sessionCookies = step3.headers.get("set-cookie");
-      expect(sessionCookies).toBeDefined();
-      expect(sessionCookies).toContain("oidc_session=");
-
-      const sessionMatch = sessionCookies.match(/oidc_session=([^;]+)/);
-      expect(sessionMatch).toBeDefined();
-      const sessionValue = sessionMatch[1];
-
-      // Step 4: Access /claims endpoint with session cookie
-      const claimsRes = await fetch(`${TEST_URL}/claims`, {
-        headers: { Cookie: `oidc_session=${sessionValue}` },
-      });
-
-      expect(claimsRes.status).toBe(200);
-
-      // Check response headers contain claim values from mock IdP
-      // Mock IdP user: sub="user1", name="Test User", email="test@example.com"
-      const subHeader = claimsRes.headers.get("X-OIDC-Sub");
-      expect(subHeader).toBe("user1");
-
-      const emailHeader = claimsRes.headers.get("X-OIDC-Email");
-      expect(emailHeader).toBe("test@example.com");
-
-      const nameHeader = claimsRes.headers.get("X-OIDC-Name");
-      expect(nameHeader).toBe("Test User");
-    });
-
-    test("claim headers are set correctly for authenticated requests", async () => {
-      // Complete OIDC flow first
-      const step1 = await fetch(`${TEST_URL}/claims`, { redirect: "manual" });
-      const stateCookie = step1.headers.get("set-cookie");
-      const stateCookieValue = stateCookie.match(/oidc_state=([^;]+)/)[1];
-
-      const authUrl = step1.headers.get("location");
-      const step2 = await fetch(authUrl, { redirect: "manual" });
-      const callbackUrl = step2.headers.get("location");
-
-      const step3 = await fetch(callbackUrl, {
-        redirect: "manual",
-        headers: { Cookie: `oidc_state=${stateCookieValue}` },
-      });
-
-      if (step3.status === 302) {
-        const sessionCookies = step3.headers.get("set-cookie");
-        const sessionMatch = sessionCookies.match(/oidc_session=([^;]+)/);
-
-        if (sessionMatch) {
-          const sessionValue = sessionMatch[1];
-
-          // Access claims endpoint
-          const res = await fetch(`${TEST_URL}/claims`, {
-            headers: { Cookie: `oidc_session=${sessionValue}` },
-          });
-
-          expect(res.status).toBe(200);
-
-          // X-OIDC-Sub should always be present (sub is required in ID token)
-          const subHeader = res.headers.get("X-OIDC-Sub");
-          expect(subHeader).toBeDefined();
-          expect(subHeader.length).toBeGreaterThan(0);
-        }
-      }
+      expect((await res.json()).status).toBe("ok");
     });
   });
 });

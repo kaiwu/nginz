@@ -1,0 +1,1696 @@
+2026/04/24 12:36:55 [debug] 94999#0: {"status":"protected_content"}
+2026/04/24 12:36:55 [debug] 94999#0: {"status":"claims_content","sub":"$oidc_claim_sub","email":"$oidc_claim_email","name":"$oidc_claim_name"}
+2026/04/24 12:36:55 [debug] 94999#0: {"status":"quoted_path_content"}
+2026/04/24 12:36:55 [debug] 94999#0: {"status":"callback_handled"}
+2026/04/24 12:36:55 [debug] 94999#0: {"status":"no_pkce_content"}
+2026/04/24 12:36:55 [debug] 94999#0: {"status":"public_content"}
+2026/04/24 12:36:55 [debug] 94999#0: {"status":"ok"}
+2026/04/24 12:36:55 [debug] 94999#0: bind() 0.0.0.0:8888 #6 
+2026/04/24 12:36:55 [notice] 94999#0: using the "epoll" event method
+2026/04/24 12:36:55 [debug] 94999#0: counter: 00007FC9B1335080, 1
+2026/04/24 12:36:55 [notice] 94999#0: nginx/1.30.0
+2026/04/24 12:36:55 [notice] 94999#0: built by gcc 15.2.1 20260209 (GCC) 
+2026/04/24 12:36:55 [notice] 94999#0: OS: Linux 6.19.12-arch1-1
+2026/04/24 12:36:55 [notice] 94999#0: getrlimit(RLIMIT_NOFILE): 524288:524288
+2026/04/24 12:36:55 [debug] 94999#0: write: 7, 00007FFE858FAA30, 6, 0
+2026/04/24 12:36:55 [debug] 94999#0: setproctitle: "nginx: master process ./zig-out/bin/nginz -c /home/kaiwu/Documents/gitea/nginz/tests/oidc/nginx.conf -p /home/kaiwu/Documents/gitea/nginz/tests/oidc/runtime-debug"
+2026/04/24 12:36:55 [notice] 94999#0: start worker processes
+2026/04/24 12:36:55 [debug] 94999#0: channel 3:7
+2026/04/24 12:36:55 [notice] 94999#0: start worker process 95012
+2026/04/24 12:36:55 [debug] 94999#0: sigsuspend
+2026/04/24 12:36:55 [debug] 95012#0: add cleanup: 00000000304520F0
+2026/04/24 12:36:55 [debug] 95012#0: malloc: 00000000304B4BB0:8
+2026/04/24 12:36:55 [debug] 95012#0: notify eventfd: 9
+2026/04/24 12:36:55 [debug] 95012#0: testing the EPOLLRDHUP flag: success
+2026/04/24 12:36:55 [debug] 95012#0: malloc: 00000000304292F0:6144
+2026/04/24 12:36:55 [debug] 95012#0: malloc: 00000000304202C0:14848
+2026/04/24 12:36:55 [debug] 95012#0: malloc: 000000003042AB00:6144
+2026/04/24 12:36:55 [debug] 95012#0: malloc: 00000000304BF1C0:6144
+2026/04/24 12:36:55 [debug] 95012#0: epoll add event: fd:6 op:1 ev:00002001
+2026/04/24 12:36:55 [debug] 95012#0: epoll add event: fd:7 op:1 ev:00002001
+2026/04/24 12:36:55 [debug] 95012#0: setproctitle: "nginx: worker process"
+2026/04/24 12:36:55 [debug] 95012#0: worker cycle
+2026/04/24 12:36:55 [debug] 95012#0: epoll timer: -1
+2026/04/24 12:36:57 [debug] 95012#0: epoll: fd:6 ev:0001 d:00000000304202C0
+2026/04/24 12:36:57 [debug] 95012#0: accept on 0.0.0.0:8888, ready: 0
+2026/04/24 12:36:57 [debug] 95012#0: posix_memalign: 000000003042C310:512 @16
+2026/04/24 12:36:57 [debug] 95012#0: *1 accept: 127.0.0.1:50150 fd:3
+2026/04/24 12:36:57 [debug] 95012#0: *1 event timer add: 3: 60000:14936947
+2026/04/24 12:36:57 [debug] 95012#0: *1 reusable connection: 1
+2026/04/24 12:36:57 [debug] 95012#0: *1 epoll add event: fd:3 op:1 ev:80002001
+2026/04/24 12:36:57 [debug] 95012#0: timer delta: 2238
+2026/04/24 12:36:57 [debug] 95012#0: worker cycle
+2026/04/24 12:36:57 [debug] 95012#0: epoll timer: 60000
+2026/04/24 12:36:57 [debug] 95012#0: epoll: fd:3 ev:0001 d:0000000030420490
+2026/04/24 12:36:57 [debug] 95012#0: *1 http wait request handler
+2026/04/24 12:36:57 [debug] 95012#0: *1 malloc: 0000000030418220:1024
+2026/04/24 12:36:57 [debug] 95012#0: *1 recv: eof:0, avail:-1
+2026/04/24 12:36:57 [debug] 95012#0: *1 recv: fd:3 127 of 1024
+2026/04/24 12:36:57 [debug] 95012#0: *1 reusable connection: 0
+2026/04/24 12:36:57 [debug] 95012#0: *1 posix_memalign: 00000000304B8880:4096 @16
+2026/04/24 12:36:57 [debug] 95012#0: *1 http process request line
+2026/04/24 12:36:57 [debug] 95012#0: *1 http request line: "GET /protected HTTP/1.1"
+2026/04/24 12:36:57 [debug] 95012#0: *1 http uri: "/protected"
+2026/04/24 12:36:57 [debug] 95012#0: *1 http args: ""
+2026/04/24 12:36:57 [debug] 95012#0: *1 http exten: ""
+2026/04/24 12:36:57 [debug] 95012#0: *1 posix_memalign: 0000000030423CD0:4096 @16
+2026/04/24 12:36:57 [debug] 95012#0: *1 http process request header line
+2026/04/24 12:36:57 [debug] 95012#0: *1 http header: "Accept-Encoding: identity"
+2026/04/24 12:36:57 [debug] 95012#0: *1 http header: "Host: localhost:8888"
+2026/04/24 12:36:57 [debug] 95012#0: *1 http header: "User-Agent: Python-urllib/3.14"
+2026/04/24 12:36:57 [debug] 95012#0: *1 http header: "Connection: close"
+2026/04/24 12:36:57 [debug] 95012#0: *1 http header done
+2026/04/24 12:36:57 [debug] 95012#0: *1 event timer del: 3: 14936947
+2026/04/24 12:36:57 [debug] 95012#0: *1 rewrite phase: 0
+2026/04/24 12:36:57 [debug] 95012#0: *1 test location: "/"
+2026/04/24 12:36:57 [debug] 95012#0: *1 test location: "no-pkce"
+2026/04/24 12:36:57 [debug] 95012#0: *1 test location: "public"
+2026/04/24 12:36:57 [debug] 95012#0: *1 test location: "protected"
+2026/04/24 12:36:57 [debug] 95012#0: *1 using configuration "/protected"
+2026/04/24 12:36:57 [debug] 95012#0: *1 http cl:-1 max:1048576
+2026/04/24 12:36:57 [debug] 95012#0: *1 rewrite phase: 2
+2026/04/24 12:36:57 [debug] 95012#0: *1 post rewrite phase: 3
+2026/04/24 12:36:57 [debug] 95012#0: *1 generic phase: 4
+2026/04/24 12:36:57 [debug] 95012#0: *1 generic phase: 5
+2026/04/24 12:36:57 [debug] 95012#0: *1 access phase: 6
+2026/04/24 12:36:57 [debug] 95012#0: *1 access phase: 7
+2026/04/24 12:36:57 [debug] 95012#0: *1 access phase: 8
+2026/04/24 12:36:57 [debug] 95012#0: *1 access phase: 9
+2026/04/24 12:36:57 [debug] 95012#0: *1 xslt filter header
+2026/04/24 12:36:57 [debug] 95012#0: *1 HTTP/1.1 500 Internal Server Error
+Server: nginx/1.30.0
+Date: Fri, 24 Apr 2026 04:36:57 GMT
+Content-Type: text/plain
+Content-Length: 35
+Connection: close
+
+2026/04/24 12:36:57 [debug] 95012#0: *1 write new buf t:1 f:0 0000000030424150, pos 0000000030424150, size: 162 file: 0, size: 0
+2026/04/24 12:36:57 [debug] 95012#0: *1 http write filter: l:0 f:0 s:162
+2026/04/24 12:36:57 [debug] 95012#0: *1 http output filter "/protected?"
+2026/04/24 12:36:57 [debug] 95012#0: *1 http copy filter: "/protected?"
+2026/04/24 12:36:57 [debug] 95012#0: *1 xslt filter body
+2026/04/24 12:36:57 [debug] 95012#0: *1 http postpone filter "/protected?" 00007FFE858FA350
+2026/04/24 12:36:57 [debug] 95012#0: *1 write old buf t:1 f:0 0000000030424150, pos 0000000030424150, size: 162 file: 0, size: 0
+2026/04/24 12:36:57 [debug] 95012#0: *1 write new buf t:0 f:0 0000000000000000, pos 000000000631880D, size: 35 file: 0, size: 0
+2026/04/24 12:36:57 [debug] 95012#0: *1 http write filter: l:1 f:0 s:197
+2026/04/24 12:36:57 [debug] 95012#0: *1 http write filter limit 2097152
+2026/04/24 12:36:57 [debug] 95012#0: *1 writev: 197 of 197
+2026/04/24 12:36:57 [debug] 95012#0: *1 http write filter 0000000000000000
+2026/04/24 12:36:57 [debug] 95012#0: *1 http copy filter: 0 "/protected?"
+2026/04/24 12:36:57 [debug] 95012#0: *1 access phase: 10
+2026/04/24 12:36:57 [debug] 95012#0: *1 access phase: 11
+2026/04/24 12:36:57 [debug] 95012#0: *1 access phase: 12
+2026/04/24 12:36:57 [debug] 95012#0: *1 access phase: 13
+2026/04/24 12:36:57 [debug] 95012#0: *1 access phase: 14
+2026/04/24 12:36:57 [debug] 95012#0: *1 access phase: 15
+2026/04/24 12:36:57 [debug] 95012#0: *1 access phase: 16
+2026/04/24 12:36:57 [debug] 95012#0: *1 access phase: 17
+2026/04/24 12:36:57 [debug] 95012#0: *1 access phase: 18
+2026/04/24 12:36:57 [debug] 95012#0: *1 post access phase: 19
+2026/04/24 12:36:57 [debug] 95012#0: *1 generic phase: 20
+2026/04/24 12:36:57 [debug] 95012#0: *1 generic phase: 21
+2026/04/24 12:36:57 [alert] 95012#0: *1 header already sent, client: 127.0.0.1, server: , request: "GET /protected HTTP/1.1", host: "localhost:8888"
+2026/04/24 12:36:57 [debug] 95012#0: *1 http finalize request: 500, "/protected?" a:1, c:1
+2026/04/24 12:36:57 [debug] 95012#0: *1 http special response: 500, "/protected?"
+2026/04/24 12:36:57 [debug] 95012#0: *1 http set discard body
+2026/04/24 12:36:57 [alert] 95012#0: *1 header already sent, client: 127.0.0.1, server: , request: "GET /protected HTTP/1.1", host: "localhost:8888"
+2026/04/24 12:36:57 [debug] 95012#0: *1 http finalize request: -1, "/protected?" a:1, c:1
+2026/04/24 12:36:57 [debug] 95012#0: *1 http terminate request count:1
+2026/04/24 12:36:57 [debug] 95012#0: *1 http terminate cleanup count:1 blk:0
+2026/04/24 12:36:57 [debug] 95012#0: *1 http posted request: "/protected?"
+2026/04/24 12:36:57 [debug] 95012#0: *1 http terminate handler count:1
+2026/04/24 12:36:57 [debug] 95012#0: *1 http request count:1 blk:0
+2026/04/24 12:36:57 [debug] 95012#0: *1 http close request
+2026/04/24 12:36:57 [debug] 95012#0: *1 http log handler
+2026/04/24 12:36:57 [debug] 95012#0: shmtx lock
+2026/04/24 12:36:57 [debug] 95012#0: shmtx unlock
+2026/04/24 12:36:57 [debug] 95012#0: shmtx lock
+2026/04/24 12:36:57 [debug] 95012#0: shmtx unlock
+2026/04/24 12:36:57 [debug] 95012#0: *1 free: 00000000304B8880, unused: 0
+2026/04/24 12:36:57 [debug] 95012#0: *1 free: 0000000030423CD0, unused: 2304
+2026/04/24 12:36:57 [debug] 95012#0: *1 close http connection: 3
+2026/04/24 12:36:57 [debug] 95012#0: *1 reusable connection: 0
+2026/04/24 12:36:57 [debug] 95012#0: *1 free: 0000000030418220
+2026/04/24 12:36:57 [debug] 95012#0: *1 free: 000000003042C310, unused: 128
+2026/04/24 12:36:57 [debug] 95012#0: timer delta: 0
+2026/04/24 12:36:57 [debug] 95012#0: worker cycle
+2026/04/24 12:36:57 [debug] 95012#0: epoll timer: -1
+2026/04/24 12:36:57 [notice] 94999#0: signal 15 (SIGTERM) received from 94996, exiting
+2026/04/24 12:36:57 [debug] 94999#0: wake up, sigio 0
+2026/04/24 12:36:57 [debug] 94999#0: child: 0 95012 e:0 t:0 d:0 r:1 j:0
+2026/04/24 12:36:57 [debug] 94999#0: termination cycle: 50
+2026/04/24 12:36:57 [debug] 94999#0: sigsuspend
+2026/04/24 12:36:57 [debug] 95012#0: epoll: fd:7 ev:0001 d:00000000304203A8
+2026/04/24 12:36:57 [debug] 95012#0: channel handler
+2026/04/24 12:36:57 [debug] 95012#0: channel: 32
+2026/04/24 12:36:57 [debug] 95012#0: channel command: 4
+2026/04/24 12:36:57 [debug] 95012#0: channel: -2
+2026/04/24 12:36:57 [debug] 95012#0: timer delta: 24
+2026/04/24 12:36:57 [notice] 95012#0: exiting
+2026/04/24 12:36:57 [debug] 95012#0: flush files
+2026/04/24 12:36:57 [debug] 95012#0: run cleanup: 00000000304520F0
+2026/04/24 12:36:57 [debug] 95012#0: run cleanup: 0000000030450648
+2026/04/24 12:36:57 [debug] 95012#0: run cleanup: 000000003044DAD8
+2026/04/24 12:36:57 [debug] 95012#0: cleanup resolver
+2026/04/24 12:36:57 [debug] 95012#0: run cleanup: 000000003041E468
+2026/04/24 12:36:57 [debug] 95012#0: run cleanup: 000000003041E440
+2026/04/24 12:36:57 [debug] 95012#0: free: 00000000304BD3B0
+2026/04/24 12:36:57 [debug] 95012#0: free: 00000000304BBBF0
+2026/04/24 12:36:57 [debug] 95012#0: free: 00000000304B9BE0
+2026/04/24 12:36:57 [debug] 95012#0: free: 0000000030433780
+2026/04/24 12:36:57 [debug] 95012#0: free: 000000003042E6B0
+2026/04/24 12:36:57 [debug] 95012#0: free: 000000003042D5F0
+2026/04/24 12:36:57 [debug] 95012#0: free: 000000003042C530
+2026/04/24 12:36:57 [debug] 95012#0: free: 000000003041C2B0, unused: 0
+2026/04/24 12:36:57 [debug] 95012#0: free: 00000000304252E0, unused: 1
+2026/04/24 12:36:57 [debug] 95012#0: free: 000000003042F770, unused: 0
+2026/04/24 12:36:57 [debug] 95012#0: free: 00000000304365B0, unused: 0
+2026/04/24 12:36:57 [debug] 95012#0: free: 000000003043A5C0, unused: 0
+2026/04/24 12:36:57 [debug] 95012#0: free: 000000003043E5D0, unused: 0
+2026/04/24 12:36:57 [debug] 95012#0: free: 00000000304425E0, unused: 0
+2026/04/24 12:36:57 [debug] 95012#0: free: 00000000304465F0, unused: 0
+2026/04/24 12:36:57 [debug] 95012#0: free: 000000003044A600, unused: 0
+2026/04/24 12:36:57 [debug] 95012#0: free: 000000003044E610, unused: 1288
+2026/04/24 12:36:57 [notice] 95012#0: exit
+2026/04/24 12:36:57 [notice] 94999#0: signal 17 (SIGCHLD) received from 95012
+2026/04/24 12:36:57 [notice] 94999#0: worker process 95012 exited with code 0
+2026/04/24 12:36:57 [debug] 94999#0: shmtx forced unlock
+2026/04/24 12:36:57 [debug] 94999#0: shmtx forced unlock
+2026/04/24 12:36:57 [debug] 94999#0: shmtx forced unlock
+2026/04/24 12:36:57 [debug] 94999#0: shmtx forced unlock
+2026/04/24 12:36:57 [debug] 94999#0: shmtx forced unlock
+2026/04/24 12:36:57 [debug] 94999#0: shmtx forced unlock
+2026/04/24 12:36:57 [debug] 94999#0: shmtx forced unlock
+2026/04/24 12:36:57 [debug] 94999#0: shmtx forced unlock
+2026/04/24 12:36:57 [debug] 94999#0: shmtx forced unlock
+2026/04/24 12:36:57 [debug] 94999#0: wake up, sigio 3
+2026/04/24 12:36:57 [debug] 94999#0: reap children
+2026/04/24 12:36:57 [debug] 94999#0: child: 0 95012 e:1 t:1 d:0 r:1 j:0
+2026/04/24 12:36:57 [notice] 94999#0: exit
+2026/04/24 12:36:57 [debug] 94999#0: close listening 0.0.0.0:8888 #6 
+2026/04/24 12:36:57 [debug] 94999#0: run cleanup: 0000000030450648
+2026/04/24 12:36:57 [debug] 94999#0: run cleanup: 000000003044DAD8
+2026/04/24 12:36:57 [debug] 94999#0: cleanup resolver
+2026/04/24 12:36:57 [debug] 94999#0: run cleanup: 000000003041E468
+2026/04/24 12:36:57 [debug] 94999#0: run cleanup: 000000003041E440
+2026/04/24 12:36:57 [debug] 94999#0: free: 00000000304BD3B0
+2026/04/24 12:36:57 [debug] 94999#0: free: 00000000304BBBF0
+2026/04/24 12:36:57 [debug] 94999#0: free: 00000000304B9BE0
+2026/04/24 12:36:57 [debug] 94999#0: free: 0000000030433780
+2026/04/24 12:36:57 [debug] 94999#0: free: 000000003042E6B0
+2026/04/24 12:36:57 [debug] 94999#0: free: 000000003042D5F0
+2026/04/24 12:36:57 [debug] 94999#0: free: 000000003042C530
+2026/04/24 12:36:57 [debug] 94999#0: free: 000000003041C2B0, unused: 0
+2026/04/24 12:36:57 [debug] 94999#0: free: 00000000304252E0, unused: 1
+2026/04/24 12:36:57 [debug] 94999#0: free: 000000003042F770, unused: 0
+2026/04/24 12:36:57 [debug] 94999#0: free: 00000000304365B0, unused: 0
+2026/04/24 12:36:57 [debug] 94999#0: free: 000000003043A5C0, unused: 0
+2026/04/24 12:36:57 [debug] 94999#0: free: 000000003043E5D0, unused: 0
+2026/04/24 12:36:57 [debug] 94999#0: free: 00000000304425E0, unused: 0
+2026/04/24 12:36:57 [debug] 94999#0: free: 00000000304465F0, unused: 0
+2026/04/24 12:36:57 [debug] 94999#0: free: 000000003044A600, unused: 0
+2026/04/24 12:36:57 [debug] 94999#0: free: 000000003044E610, unused: 1316
+2026/04/24 12:38:14 [debug] 95413#0: {"status":"protected_content"}
+2026/04/24 12:38:14 [debug] 95413#0: {"status":"claims_content","sub":"$oidc_claim_sub","email":"$oidc_claim_email","name":"$oidc_claim_name"}
+2026/04/24 12:38:14 [debug] 95413#0: {"status":"quoted_path_content"}
+2026/04/24 12:38:14 [debug] 95413#0: {"status":"callback_handled"}
+2026/04/24 12:38:14 [debug] 95413#0: {"status":"no_pkce_content"}
+2026/04/24 12:38:14 [debug] 95413#0: {"status":"public_content"}
+2026/04/24 12:38:14 [debug] 95413#0: {"status":"ok"}
+2026/04/24 12:38:14 [debug] 95413#0: bind() 0.0.0.0:8888 #6 
+2026/04/24 12:38:14 [notice] 95413#0: using the "epoll" event method
+2026/04/24 12:38:14 [debug] 95413#0: counter: 00007F03060CF080, 1
+2026/04/24 12:38:14 [notice] 95413#0: nginx/1.30.0
+2026/04/24 12:38:14 [notice] 95413#0: built by gcc 15.2.1 20260209 (GCC) 
+2026/04/24 12:38:14 [notice] 95413#0: OS: Linux 6.19.12-arch1-1
+2026/04/24 12:38:14 [notice] 95413#0: getrlimit(RLIMIT_NOFILE): 524288:524288
+2026/04/24 12:38:14 [debug] 95413#0: write: 7, 00007FFF5A9E9AD0, 6, 0
+2026/04/24 12:38:14 [debug] 95413#0: setproctitle: "nginx: master process ./zig-out/bin/nginz -c /home/kaiwu/Documents/gitea/nginz/tests/oidc/nginx.conf -p /home/kaiwu/Documents/gitea/nginz/tests/oidc/runtime-debug"
+2026/04/24 12:38:14 [notice] 95413#0: start worker processes
+2026/04/24 12:38:14 [debug] 95413#0: channel 3:7
+2026/04/24 12:38:14 [notice] 95413#0: start worker process 95426
+2026/04/24 12:38:14 [debug] 95413#0: sigsuspend
+2026/04/24 12:38:14 [debug] 95426#0: add cleanup: 000000003F3060F0
+2026/04/24 12:38:14 [debug] 95426#0: malloc: 000000003F368BB0:8
+2026/04/24 12:38:14 [debug] 95426#0: notify eventfd: 9
+2026/04/24 12:38:14 [debug] 95426#0: testing the EPOLLRDHUP flag: success
+2026/04/24 12:38:14 [debug] 95426#0: malloc: 000000003F2DD2F0:6144
+2026/04/24 12:38:14 [debug] 95426#0: malloc: 000000003F2D42C0:14848
+2026/04/24 12:38:14 [debug] 95426#0: malloc: 000000003F2DEB00:6144
+2026/04/24 12:38:14 [debug] 95426#0: malloc: 000000003F3731C0:6144
+2026/04/24 12:38:14 [debug] 95426#0: epoll add event: fd:6 op:1 ev:00002001
+2026/04/24 12:38:14 [debug] 95426#0: epoll add event: fd:7 op:1 ev:00002001
+2026/04/24 12:38:14 [debug] 95426#0: setproctitle: "nginx: worker process"
+2026/04/24 12:38:14 [debug] 95426#0: worker cycle
+2026/04/24 12:38:14 [debug] 95426#0: epoll timer: -1
+2026/04/24 12:38:16 [debug] 95426#0: epoll: fd:6 ev:0001 d:000000003F2D42C0
+2026/04/24 12:38:16 [debug] 95426#0: accept on 0.0.0.0:8888, ready: 0
+2026/04/24 12:38:16 [debug] 95426#0: posix_memalign: 000000003F2E0310:512 @16
+2026/04/24 12:38:16 [debug] 95426#0: *1 accept: 127.0.0.1:38606 fd:3
+2026/04/24 12:38:16 [debug] 95426#0: *1 event timer add: 3: 60000:15015469
+2026/04/24 12:38:16 [debug] 95426#0: *1 reusable connection: 1
+2026/04/24 12:38:16 [debug] 95426#0: *1 epoll add event: fd:3 op:1 ev:80002001
+2026/04/24 12:38:16 [debug] 95426#0: timer delta: 1971
+2026/04/24 12:38:16 [debug] 95426#0: worker cycle
+2026/04/24 12:38:16 [debug] 95426#0: epoll timer: 60000
+2026/04/24 12:38:16 [debug] 95426#0: epoll: fd:3 ev:0001 d:000000003F2D4490
+2026/04/24 12:38:16 [debug] 95426#0: *1 http wait request handler
+2026/04/24 12:38:16 [debug] 95426#0: *1 malloc: 000000003F2CC220:1024
+2026/04/24 12:38:16 [debug] 95426#0: *1 recv: eof:0, avail:-1
+2026/04/24 12:38:16 [debug] 95426#0: *1 recv: fd:3 127 of 1024
+2026/04/24 12:38:16 [debug] 95426#0: *1 reusable connection: 0
+2026/04/24 12:38:16 [debug] 95426#0: *1 posix_memalign: 000000003F36C880:4096 @16
+2026/04/24 12:38:16 [debug] 95426#0: *1 http process request line
+2026/04/24 12:38:16 [debug] 95426#0: *1 http request line: "GET /protected HTTP/1.1"
+2026/04/24 12:38:16 [debug] 95426#0: *1 http uri: "/protected"
+2026/04/24 12:38:16 [debug] 95426#0: *1 http args: ""
+2026/04/24 12:38:16 [debug] 95426#0: *1 http exten: ""
+2026/04/24 12:38:16 [debug] 95426#0: *1 posix_memalign: 000000003F2D7CD0:4096 @16
+2026/04/24 12:38:16 [debug] 95426#0: *1 http process request header line
+2026/04/24 12:38:16 [debug] 95426#0: *1 http header: "Accept-Encoding: identity"
+2026/04/24 12:38:16 [debug] 95426#0: *1 http header: "Host: localhost:8888"
+2026/04/24 12:38:16 [debug] 95426#0: *1 http header: "User-Agent: Python-urllib/3.14"
+2026/04/24 12:38:16 [debug] 95426#0: *1 http header: "Connection: close"
+2026/04/24 12:38:16 [debug] 95426#0: *1 http header done
+2026/04/24 12:38:16 [debug] 95426#0: *1 event timer del: 3: 15015469
+2026/04/24 12:38:16 [debug] 95426#0: *1 rewrite phase: 0
+2026/04/24 12:38:16 [debug] 95426#0: *1 test location: "/"
+2026/04/24 12:38:16 [debug] 95426#0: *1 test location: "no-pkce"
+2026/04/24 12:38:16 [debug] 95426#0: *1 test location: "public"
+2026/04/24 12:38:16 [debug] 95426#0: *1 test location: "protected"
+2026/04/24 12:38:16 [debug] 95426#0: *1 using configuration "/protected"
+2026/04/24 12:38:16 [debug] 95426#0: *1 http cl:-1 max:1048576
+2026/04/24 12:38:16 [debug] 95426#0: *1 rewrite phase: 2
+2026/04/24 12:38:16 [debug] 95426#0: *1 post rewrite phase: 3
+2026/04/24 12:38:16 [debug] 95426#0: *1 generic phase: 4
+2026/04/24 12:38:16 [debug] 95426#0: *1 generic phase: 5
+2026/04/24 12:38:16 [debug] 95426#0: *1 access phase: 6
+2026/04/24 12:38:16 [debug] 95426#0: *1 access phase: 7
+2026/04/24 12:38:16 [debug] 95426#0: *1 access phase: 8
+2026/04/24 12:38:16 [debug] 95426#0: *1 access phase: 9
+2026/04/24 12:38:16 [debug] 95426#0: *1 xslt filter header
+2026/04/24 12:38:16 [debug] 95426#0: *1 HTTP/1.1 500 Internal Server Error
+Server: nginx/1.30.0
+Date: Fri, 24 Apr 2026 04:38:16 GMT
+Content-Type: text/plain
+Content-Length: 35
+Connection: close
+
+2026/04/24 12:38:16 [debug] 95426#0: *1 write new buf t:1 f:0 000000003F2D8150, pos 000000003F2D8150, size: 162 file: 0, size: 0
+2026/04/24 12:38:16 [debug] 95426#0: *1 http write filter: l:0 f:0 s:162
+2026/04/24 12:38:16 [debug] 95426#0: *1 http output filter "/protected?"
+2026/04/24 12:38:16 [debug] 95426#0: *1 http copy filter: "/protected?"
+2026/04/24 12:38:16 [debug] 95426#0: *1 xslt filter body
+2026/04/24 12:38:16 [debug] 95426#0: *1 http postpone filter "/protected?" 00007FFF5A9E93F0
+2026/04/24 12:38:16 [debug] 95426#0: *1 write old buf t:1 f:0 000000003F2D8150, pos 000000003F2D8150, size: 162 file: 0, size: 0
+2026/04/24 12:38:16 [debug] 95426#0: *1 write new buf t:0 f:0 0000000000000000, pos 000000000631880D, size: 35 file: 0, size: 0
+2026/04/24 12:38:16 [debug] 95426#0: *1 http write filter: l:1 f:0 s:197
+2026/04/24 12:38:16 [debug] 95426#0: *1 http write filter limit 2097152
+2026/04/24 12:38:16 [debug] 95426#0: *1 writev: 197 of 197
+2026/04/24 12:38:16 [debug] 95426#0: *1 http write filter 0000000000000000
+2026/04/24 12:38:16 [debug] 95426#0: *1 http copy filter: 0 "/protected?"
+2026/04/24 12:38:16 [debug] 95426#0: *1 access phase: 10
+2026/04/24 12:38:16 [debug] 95426#0: *1 access phase: 11
+2026/04/24 12:38:16 [debug] 95426#0: *1 access phase: 12
+2026/04/24 12:38:16 [debug] 95426#0: *1 access phase: 13
+2026/04/24 12:38:16 [debug] 95426#0: *1 access phase: 14
+2026/04/24 12:38:16 [debug] 95426#0: *1 access phase: 15
+2026/04/24 12:38:16 [debug] 95426#0: *1 access phase: 16
+2026/04/24 12:38:16 [debug] 95426#0: *1 access phase: 17
+2026/04/24 12:38:16 [debug] 95426#0: *1 access phase: 18
+2026/04/24 12:38:16 [debug] 95426#0: *1 post access phase: 19
+2026/04/24 12:38:16 [debug] 95426#0: *1 generic phase: 20
+2026/04/24 12:38:16 [debug] 95426#0: *1 generic phase: 21
+2026/04/24 12:38:16 [alert] 95426#0: *1 header already sent, client: 127.0.0.1, server: , request: "GET /protected HTTP/1.1", host: "localhost:8888"
+2026/04/24 12:38:16 [debug] 95426#0: *1 http finalize request: 500, "/protected?" a:1, c:1
+2026/04/24 12:38:16 [debug] 95426#0: *1 http special response: 500, "/protected?"
+2026/04/24 12:38:16 [debug] 95426#0: *1 http set discard body
+2026/04/24 12:38:16 [alert] 95426#0: *1 header already sent, client: 127.0.0.1, server: , request: "GET /protected HTTP/1.1", host: "localhost:8888"
+2026/04/24 12:38:16 [debug] 95426#0: *1 http finalize request: -1, "/protected?" a:1, c:1
+2026/04/24 12:38:16 [debug] 95426#0: *1 http terminate request count:1
+2026/04/24 12:38:16 [debug] 95426#0: *1 http terminate cleanup count:1 blk:0
+2026/04/24 12:38:16 [debug] 95426#0: *1 http posted request: "/protected?"
+2026/04/24 12:38:16 [debug] 95426#0: *1 http terminate handler count:1
+2026/04/24 12:38:16 [debug] 95426#0: *1 http request count:1 blk:0
+2026/04/24 12:38:16 [debug] 95426#0: *1 http close request
+2026/04/24 12:38:16 [debug] 95426#0: *1 http log handler
+2026/04/24 12:38:16 [debug] 95426#0: shmtx lock
+2026/04/24 12:38:16 [debug] 95426#0: shmtx unlock
+2026/04/24 12:38:16 [debug] 95426#0: shmtx lock
+2026/04/24 12:38:16 [debug] 95426#0: shmtx unlock
+2026/04/24 12:38:16 [debug] 95426#0: *1 free: 000000003F36C880, unused: 0
+2026/04/24 12:38:16 [debug] 95426#0: *1 free: 000000003F2D7CD0, unused: 2304
+2026/04/24 12:38:16 [debug] 95426#0: *1 close http connection: 3
+2026/04/24 12:38:16 [debug] 95426#0: *1 reusable connection: 0
+2026/04/24 12:38:16 [debug] 95426#0: *1 free: 000000003F2CC220
+2026/04/24 12:38:16 [debug] 95426#0: *1 free: 000000003F2E0310, unused: 128
+2026/04/24 12:38:16 [debug] 95426#0: timer delta: 0
+2026/04/24 12:38:16 [debug] 95426#0: worker cycle
+2026/04/24 12:38:16 [debug] 95426#0: epoll timer: -1
+2026/04/24 12:38:16 [notice] 95413#0: signal 15 (SIGTERM) received from 95411, exiting
+2026/04/24 12:38:16 [debug] 95413#0: wake up, sigio 0
+2026/04/24 12:38:16 [debug] 95413#0: child: 0 95426 e:0 t:0 d:0 r:1 j:0
+2026/04/24 12:38:16 [debug] 95413#0: termination cycle: 50
+2026/04/24 12:38:16 [debug] 95413#0: sigsuspend
+2026/04/24 12:38:16 [debug] 95426#0: epoll: fd:7 ev:0001 d:000000003F2D43A8
+2026/04/24 12:38:16 [debug] 95426#0: channel handler
+2026/04/24 12:38:16 [debug] 95426#0: channel: 32
+2026/04/24 12:38:16 [debug] 95426#0: channel command: 4
+2026/04/24 12:38:16 [debug] 95426#0: channel: -2
+2026/04/24 12:38:16 [debug] 95426#0: timer delta: 29
+2026/04/24 12:38:16 [notice] 95426#0: exiting
+2026/04/24 12:38:16 [debug] 95426#0: flush files
+2026/04/24 12:38:16 [debug] 95426#0: run cleanup: 000000003F3060F0
+2026/04/24 12:38:16 [debug] 95426#0: run cleanup: 000000003F304648
+2026/04/24 12:38:16 [debug] 95426#0: run cleanup: 000000003F301AD8
+2026/04/24 12:38:16 [debug] 95426#0: cleanup resolver
+2026/04/24 12:38:16 [debug] 95426#0: run cleanup: 000000003F2D2468
+2026/04/24 12:38:16 [debug] 95426#0: run cleanup: 000000003F2D2440
+2026/04/24 12:38:16 [debug] 95426#0: free: 000000003F3713B0
+2026/04/24 12:38:16 [debug] 95426#0: free: 000000003F36FBF0
+2026/04/24 12:38:16 [debug] 95426#0: free: 000000003F36DBE0
+2026/04/24 12:38:16 [debug] 95426#0: free: 000000003F2E7780
+2026/04/24 12:38:16 [debug] 95426#0: free: 000000003F2E26B0
+2026/04/24 12:38:16 [debug] 95426#0: free: 000000003F2E15F0
+2026/04/24 12:38:16 [debug] 95426#0: free: 000000003F2E0530
+2026/04/24 12:38:16 [debug] 95426#0: free: 000000003F2D02B0, unused: 0
+2026/04/24 12:38:16 [debug] 95426#0: free: 000000003F2D92E0, unused: 1
+2026/04/24 12:38:16 [debug] 95426#0: free: 000000003F2E3770, unused: 0
+2026/04/24 12:38:16 [debug] 95426#0: free: 000000003F2EA5B0, unused: 0
+2026/04/24 12:38:16 [debug] 95426#0: free: 000000003F2EE5C0, unused: 0
+2026/04/24 12:38:16 [debug] 95426#0: free: 000000003F2F25D0, unused: 0
+2026/04/24 12:38:16 [debug] 95426#0: free: 000000003F2F65E0, unused: 0
+2026/04/24 12:38:16 [debug] 95426#0: free: 000000003F2FA5F0, unused: 0
+2026/04/24 12:38:16 [debug] 95426#0: free: 000000003F2FE600, unused: 0
+2026/04/24 12:38:16 [debug] 95426#0: free: 000000003F302610, unused: 1288
+2026/04/24 12:38:16 [notice] 95426#0: exit
+2026/04/24 12:38:16 [notice] 95413#0: signal 17 (SIGCHLD) received from 95426
+2026/04/24 12:38:16 [notice] 95413#0: worker process 95426 exited with code 0
+2026/04/24 12:38:16 [debug] 95413#0: shmtx forced unlock
+2026/04/24 12:38:16 [debug] 95413#0: shmtx forced unlock
+2026/04/24 12:38:16 [debug] 95413#0: shmtx forced unlock
+2026/04/24 12:38:16 [debug] 95413#0: shmtx forced unlock
+2026/04/24 12:38:16 [debug] 95413#0: shmtx forced unlock
+2026/04/24 12:38:16 [debug] 95413#0: shmtx forced unlock
+2026/04/24 12:38:16 [debug] 95413#0: shmtx forced unlock
+2026/04/24 12:38:16 [debug] 95413#0: shmtx forced unlock
+2026/04/24 12:38:16 [debug] 95413#0: shmtx forced unlock
+2026/04/24 12:38:16 [debug] 95413#0: wake up, sigio 3
+2026/04/24 12:38:16 [debug] 95413#0: reap children
+2026/04/24 12:38:16 [debug] 95413#0: child: 0 95426 e:1 t:1 d:0 r:1 j:0
+2026/04/24 12:38:16 [notice] 95413#0: exit
+2026/04/24 12:38:16 [debug] 95413#0: close listening 0.0.0.0:8888 #6 
+2026/04/24 12:38:16 [debug] 95413#0: run cleanup: 000000003F304648
+2026/04/24 12:38:16 [debug] 95413#0: run cleanup: 000000003F301AD8
+2026/04/24 12:38:16 [debug] 95413#0: cleanup resolver
+2026/04/24 12:38:16 [debug] 95413#0: run cleanup: 000000003F2D2468
+2026/04/24 12:38:16 [debug] 95413#0: run cleanup: 000000003F2D2440
+2026/04/24 12:38:16 [debug] 95413#0: free: 000000003F3713B0
+2026/04/24 12:38:16 [debug] 95413#0: free: 000000003F36FBF0
+2026/04/24 12:38:16 [debug] 95413#0: free: 000000003F36DBE0
+2026/04/24 12:38:16 [debug] 95413#0: free: 000000003F2E7780
+2026/04/24 12:38:16 [debug] 95413#0: free: 000000003F2E26B0
+2026/04/24 12:38:16 [debug] 95413#0: free: 000000003F2E15F0
+2026/04/24 12:38:16 [debug] 95413#0: free: 000000003F2E0530
+2026/04/24 12:38:16 [debug] 95413#0: free: 000000003F2D02B0, unused: 0
+2026/04/24 12:38:16 [debug] 95413#0: free: 000000003F2D92E0, unused: 1
+2026/04/24 12:38:16 [debug] 95413#0: free: 000000003F2E3770, unused: 0
+2026/04/24 12:38:16 [debug] 95413#0: free: 000000003F2EA5B0, unused: 0
+2026/04/24 12:38:16 [debug] 95413#0: free: 000000003F2EE5C0, unused: 0
+2026/04/24 12:38:16 [debug] 95413#0: free: 000000003F2F25D0, unused: 0
+2026/04/24 12:38:16 [debug] 95413#0: free: 000000003F2F65E0, unused: 0
+2026/04/24 12:38:16 [debug] 95413#0: free: 000000003F2FA5F0, unused: 0
+2026/04/24 12:38:16 [debug] 95413#0: free: 000000003F2FE600, unused: 0
+2026/04/24 12:38:16 [debug] 95413#0: free: 000000003F302610, unused: 1316
+2026/04/24 12:41:21 [debug] 96262#0: {"status":"protected_content"}
+2026/04/24 12:41:21 [debug] 96262#0: {"status":"claims_content","sub":"$oidc_claim_sub","email":"$oidc_claim_email","name":"$oidc_claim_name"}
+2026/04/24 12:41:21 [debug] 96262#0: {"status":"quoted_path_content"}
+2026/04/24 12:41:21 [debug] 96262#0: {"status":"callback_handled"}
+2026/04/24 12:41:21 [debug] 96262#0: {"status":"no_pkce_content"}
+2026/04/24 12:41:21 [debug] 96262#0: {"status":"public_content"}
+2026/04/24 12:41:21 [debug] 96262#0: {"status":"ok"}
+2026/04/24 12:41:21 [debug] 96262#0: bind() 0.0.0.0:8888 #6 
+2026/04/24 12:41:21 [notice] 96262#0: using the "epoll" event method
+2026/04/24 12:41:21 [debug] 96262#0: counter: 00007F2C1BA15080, 1
+2026/04/24 12:41:21 [notice] 96262#0: nginx/1.30.0
+2026/04/24 12:41:21 [notice] 96262#0: built by gcc 15.2.1 20260209 (GCC) 
+2026/04/24 12:41:21 [notice] 96262#0: OS: Linux 6.19.12-arch1-1
+2026/04/24 12:41:21 [notice] 96262#0: getrlimit(RLIMIT_NOFILE): 524288:524288
+2026/04/24 12:41:21 [debug] 96262#0: write: 7, 00007FFE84DF0720, 6, 0
+2026/04/24 12:41:21 [debug] 96262#0: setproctitle: "nginx: master process ./zig-out/bin/nginz -c /home/kaiwu/Documents/gitea/nginz/tests/oidc/nginx.conf -p /home/kaiwu/Documents/gitea/nginz/tests/oidc/runtime-debug"
+2026/04/24 12:41:21 [notice] 96262#0: start worker processes
+2026/04/24 12:41:21 [debug] 96262#0: channel 3:7
+2026/04/24 12:41:21 [notice] 96262#0: start worker process 96275
+2026/04/24 12:41:21 [debug] 96262#0: sigsuspend
+2026/04/24 12:41:21 [debug] 96275#0: add cleanup: 00000000330B80F0
+2026/04/24 12:41:21 [debug] 96275#0: malloc: 000000003311ABB0:8
+2026/04/24 12:41:21 [debug] 96275#0: notify eventfd: 9
+2026/04/24 12:41:21 [debug] 96275#0: testing the EPOLLRDHUP flag: success
+2026/04/24 12:41:21 [debug] 96275#0: malloc: 000000003308F2F0:6144
+2026/04/24 12:41:21 [debug] 96275#0: malloc: 00000000330862C0:14848
+2026/04/24 12:41:21 [debug] 96275#0: malloc: 0000000033090B00:6144
+2026/04/24 12:41:21 [debug] 96275#0: malloc: 00000000331251C0:6144
+2026/04/24 12:41:21 [debug] 96275#0: epoll add event: fd:6 op:1 ev:00002001
+2026/04/24 12:41:21 [debug] 96275#0: epoll add event: fd:7 op:1 ev:00002001
+2026/04/24 12:41:21 [debug] 96275#0: setproctitle: "nginx: worker process"
+2026/04/24 12:41:21 [debug] 96275#0: worker cycle
+2026/04/24 12:41:21 [debug] 96275#0: epoll timer: -1
+2026/04/24 12:41:23 [debug] 96275#0: epoll: fd:6 ev:0001 d:00000000330862C0
+2026/04/24 12:41:23 [debug] 96275#0: accept on 0.0.0.0:8888, ready: 0
+2026/04/24 12:41:23 [debug] 96275#0: posix_memalign: 0000000033092310:512 @16
+2026/04/24 12:41:23 [debug] 96275#0: *1 accept: 127.0.0.1:43960 fd:3
+2026/04/24 12:41:23 [debug] 96275#0: *1 event timer add: 3: 60000:15202971
+2026/04/24 12:41:23 [debug] 96275#0: *1 reusable connection: 1
+2026/04/24 12:41:23 [debug] 96275#0: *1 epoll add event: fd:3 op:1 ev:80002001
+2026/04/24 12:41:23 [debug] 96275#0: timer delta: 1945
+2026/04/24 12:41:23 [debug] 96275#0: worker cycle
+2026/04/24 12:41:23 [debug] 96275#0: epoll timer: 60000
+2026/04/24 12:41:23 [debug] 96275#0: epoll: fd:3 ev:0001 d:0000000033086490
+2026/04/24 12:41:23 [debug] 96275#0: *1 http wait request handler
+2026/04/24 12:41:23 [debug] 96275#0: *1 malloc: 000000003307E220:1024
+2026/04/24 12:41:23 [debug] 96275#0: *1 recv: eof:0, avail:-1
+2026/04/24 12:41:23 [debug] 96275#0: *1 recv: fd:3 127 of 1024
+2026/04/24 12:41:23 [debug] 96275#0: *1 reusable connection: 0
+2026/04/24 12:41:23 [debug] 96275#0: *1 posix_memalign: 000000003311E880:4096 @16
+2026/04/24 12:41:23 [debug] 96275#0: *1 http process request line
+2026/04/24 12:41:23 [debug] 96275#0: *1 http request line: "GET /protected HTTP/1.1"
+2026/04/24 12:41:23 [debug] 96275#0: *1 http uri: "/protected"
+2026/04/24 12:41:23 [debug] 96275#0: *1 http args: ""
+2026/04/24 12:41:23 [debug] 96275#0: *1 http exten: ""
+2026/04/24 12:41:23 [debug] 96275#0: *1 posix_memalign: 0000000033089CD0:4096 @16
+2026/04/24 12:41:23 [debug] 96275#0: *1 http process request header line
+2026/04/24 12:41:23 [debug] 96275#0: *1 http header: "Accept-Encoding: identity"
+2026/04/24 12:41:23 [debug] 96275#0: *1 http header: "Host: localhost:8888"
+2026/04/24 12:41:23 [debug] 96275#0: *1 http header: "User-Agent: Python-urllib/3.14"
+2026/04/24 12:41:23 [debug] 96275#0: *1 http header: "Connection: close"
+2026/04/24 12:41:23 [debug] 96275#0: *1 http header done
+2026/04/24 12:41:23 [debug] 96275#0: *1 event timer del: 3: 15202971
+2026/04/24 12:41:23 [debug] 96275#0: *1 rewrite phase: 0
+2026/04/24 12:41:23 [debug] 96275#0: *1 test location: "/"
+2026/04/24 12:41:23 [debug] 96275#0: *1 test location: "no-pkce"
+2026/04/24 12:41:23 [debug] 96275#0: *1 test location: "public"
+2026/04/24 12:41:23 [debug] 96275#0: *1 test location: "protected"
+2026/04/24 12:41:23 [debug] 96275#0: *1 using configuration "/protected"
+2026/04/24 12:41:23 [debug] 96275#0: *1 http cl:-1 max:1048576
+2026/04/24 12:41:23 [debug] 96275#0: *1 rewrite phase: 2
+2026/04/24 12:41:23 [debug] 96275#0: *1 post rewrite phase: 3
+2026/04/24 12:41:23 [debug] 96275#0: *1 generic phase: 4
+2026/04/24 12:41:23 [debug] 96275#0: *1 generic phase: 5
+2026/04/24 12:41:23 [debug] 96275#0: *1 access phase: 6
+2026/04/24 12:41:23 [debug] 96275#0: *1 access phase: 7
+2026/04/24 12:41:23 [debug] 96275#0: *1 access phase: 8
+2026/04/24 12:41:23 [debug] 96275#0: *1 access phase: 9
+2026/04/24 12:41:23 [debug] 96275#0: *1 xslt filter header
+2026/04/24 12:41:23 [debug] 96275#0: *1 HTTP/1.1 500 Internal Server Error
+Server: nginx/1.30.0
+Date: Fri, 24 Apr 2026 04:41:23 GMT
+Content-Type: text/plain
+Content-Length: 35
+Connection: close
+
+2026/04/24 12:41:23 [debug] 96275#0: *1 write new buf t:1 f:0 000000003308A150, pos 000000003308A150, size: 162 file: 0, size: 0
+2026/04/24 12:41:23 [debug] 96275#0: *1 http write filter: l:0 f:0 s:162
+2026/04/24 12:41:23 [debug] 96275#0: *1 http output filter "/protected?"
+2026/04/24 12:41:23 [debug] 96275#0: *1 http copy filter: "/protected?"
+2026/04/24 12:41:23 [debug] 96275#0: *1 xslt filter body
+2026/04/24 12:41:23 [debug] 96275#0: *1 http postpone filter "/protected?" 00007FFE84DF0040
+2026/04/24 12:41:23 [debug] 96275#0: *1 write old buf t:1 f:0 000000003308A150, pos 000000003308A150, size: 162 file: 0, size: 0
+2026/04/24 12:41:23 [debug] 96275#0: *1 write new buf t:0 f:0 0000000000000000, pos 000000000631880D, size: 35 file: 0, size: 0
+2026/04/24 12:41:23 [debug] 96275#0: *1 http write filter: l:1 f:0 s:197
+2026/04/24 12:41:23 [debug] 96275#0: *1 http write filter limit 2097152
+2026/04/24 12:41:23 [debug] 96275#0: *1 writev: 197 of 197
+2026/04/24 12:41:23 [debug] 96275#0: *1 http write filter 0000000000000000
+2026/04/24 12:41:23 [debug] 96275#0: *1 http copy filter: 0 "/protected?"
+2026/04/24 12:41:23 [debug] 96275#0: *1 access phase: 10
+2026/04/24 12:41:23 [debug] 96275#0: *1 access phase: 11
+2026/04/24 12:41:23 [debug] 96275#0: *1 access phase: 12
+2026/04/24 12:41:23 [debug] 96275#0: *1 access phase: 13
+2026/04/24 12:41:23 [debug] 96275#0: *1 access phase: 14
+2026/04/24 12:41:23 [debug] 96275#0: *1 access phase: 15
+2026/04/24 12:41:23 [debug] 96275#0: *1 access phase: 16
+2026/04/24 12:41:23 [debug] 96275#0: *1 access phase: 17
+2026/04/24 12:41:23 [debug] 96275#0: *1 access phase: 18
+2026/04/24 12:41:23 [debug] 96275#0: *1 post access phase: 19
+2026/04/24 12:41:23 [debug] 96275#0: *1 generic phase: 20
+2026/04/24 12:41:23 [debug] 96275#0: *1 generic phase: 21
+2026/04/24 12:41:23 [alert] 96275#0: *1 header already sent, client: 127.0.0.1, server: , request: "GET /protected HTTP/1.1", host: "localhost:8888"
+2026/04/24 12:41:23 [debug] 96275#0: *1 http finalize request: 500, "/protected?" a:1, c:1
+2026/04/24 12:41:23 [debug] 96275#0: *1 http special response: 500, "/protected?"
+2026/04/24 12:41:23 [debug] 96275#0: *1 http set discard body
+2026/04/24 12:41:23 [alert] 96275#0: *1 header already sent, client: 127.0.0.1, server: , request: "GET /protected HTTP/1.1", host: "localhost:8888"
+2026/04/24 12:41:23 [debug] 96275#0: *1 http finalize request: -1, "/protected?" a:1, c:1
+2026/04/24 12:41:23 [debug] 96275#0: *1 http terminate request count:1
+2026/04/24 12:41:23 [debug] 96275#0: *1 http terminate cleanup count:1 blk:0
+2026/04/24 12:41:23 [debug] 96275#0: *1 http posted request: "/protected?"
+2026/04/24 12:41:23 [debug] 96275#0: *1 http terminate handler count:1
+2026/04/24 12:41:23 [debug] 96275#0: *1 http request count:1 blk:0
+2026/04/24 12:41:23 [debug] 96275#0: *1 http close request
+2026/04/24 12:41:23 [debug] 96275#0: *1 http log handler
+2026/04/24 12:41:23 [debug] 96275#0: shmtx lock
+2026/04/24 12:41:23 [debug] 96275#0: shmtx unlock
+2026/04/24 12:41:23 [debug] 96275#0: shmtx lock
+2026/04/24 12:41:23 [debug] 96275#0: shmtx unlock
+2026/04/24 12:41:23 [debug] 96275#0: *1 free: 000000003311E880, unused: 0
+2026/04/24 12:41:23 [debug] 96275#0: *1 free: 0000000033089CD0, unused: 2304
+2026/04/24 12:41:23 [debug] 96275#0: *1 close http connection: 3
+2026/04/24 12:41:23 [debug] 96275#0: *1 reusable connection: 0
+2026/04/24 12:41:23 [debug] 96275#0: *1 free: 000000003307E220
+2026/04/24 12:41:23 [debug] 96275#0: *1 free: 0000000033092310, unused: 128
+2026/04/24 12:41:23 [debug] 96275#0: timer delta: 0
+2026/04/24 12:41:23 [debug] 96275#0: worker cycle
+2026/04/24 12:41:23 [debug] 96275#0: epoll timer: -1
+2026/04/24 12:41:23 [notice] 96262#0: signal 15 (SIGTERM) received from 96260, exiting
+2026/04/24 12:41:23 [debug] 96262#0: wake up, sigio 0
+2026/04/24 12:41:23 [debug] 96262#0: child: 0 96275 e:0 t:0 d:0 r:1 j:0
+2026/04/24 12:41:23 [debug] 96262#0: termination cycle: 50
+2026/04/24 12:41:23 [debug] 96262#0: sigsuspend
+2026/04/24 12:41:23 [debug] 96275#0: epoll: fd:7 ev:0001 d:00000000330863A8
+2026/04/24 12:41:23 [debug] 96275#0: channel handler
+2026/04/24 12:41:23 [debug] 96275#0: channel: 32
+2026/04/24 12:41:23 [debug] 96275#0: channel command: 4
+2026/04/24 12:41:23 [debug] 96275#0: channel: -2
+2026/04/24 12:41:23 [debug] 96275#0: timer delta: 26
+2026/04/24 12:41:23 [notice] 96275#0: exiting
+2026/04/24 12:41:23 [debug] 96275#0: flush files
+2026/04/24 12:41:23 [debug] 96275#0: run cleanup: 00000000330B80F0
+2026/04/24 12:41:23 [debug] 96275#0: run cleanup: 00000000330B6648
+2026/04/24 12:41:23 [debug] 96275#0: run cleanup: 00000000330B3AD8
+2026/04/24 12:41:23 [debug] 96275#0: cleanup resolver
+2026/04/24 12:41:23 [debug] 96275#0: run cleanup: 0000000033084468
+2026/04/24 12:41:23 [debug] 96275#0: run cleanup: 0000000033084440
+2026/04/24 12:41:23 [debug] 96275#0: free: 00000000331233B0
+2026/04/24 12:41:23 [debug] 96275#0: free: 0000000033121BF0
+2026/04/24 12:41:23 [debug] 96275#0: free: 000000003311FBE0
+2026/04/24 12:41:23 [debug] 96275#0: free: 0000000033099780
+2026/04/24 12:41:23 [debug] 96275#0: free: 00000000330946B0
+2026/04/24 12:41:23 [debug] 96275#0: free: 00000000330935F0
+2026/04/24 12:41:23 [debug] 96275#0: free: 0000000033092530
+2026/04/24 12:41:23 [debug] 96275#0: free: 00000000330822B0, unused: 0
+2026/04/24 12:41:23 [debug] 96275#0: free: 000000003308B2E0, unused: 1
+2026/04/24 12:41:23 [debug] 96275#0: free: 0000000033095770, unused: 0
+2026/04/24 12:41:23 [debug] 96275#0: free: 000000003309C5B0, unused: 0
+2026/04/24 12:41:23 [debug] 96275#0: free: 00000000330A05C0, unused: 0
+2026/04/24 12:41:23 [debug] 96275#0: free: 00000000330A45D0, unused: 0
+2026/04/24 12:41:23 [debug] 96275#0: free: 00000000330A85E0, unused: 0
+2026/04/24 12:41:23 [debug] 96275#0: free: 00000000330AC5F0, unused: 0
+2026/04/24 12:41:23 [debug] 96275#0: free: 00000000330B0600, unused: 0
+2026/04/24 12:41:23 [debug] 96275#0: free: 00000000330B4610, unused: 1288
+2026/04/24 12:41:23 [notice] 96275#0: exit
+2026/04/24 12:41:23 [notice] 96262#0: signal 17 (SIGCHLD) received from 96275
+2026/04/24 12:41:23 [notice] 96262#0: worker process 96275 exited with code 0
+2026/04/24 12:41:23 [debug] 96262#0: shmtx forced unlock
+2026/04/24 12:41:23 [debug] 96262#0: shmtx forced unlock
+2026/04/24 12:41:23 [debug] 96262#0: shmtx forced unlock
+2026/04/24 12:41:23 [debug] 96262#0: shmtx forced unlock
+2026/04/24 12:41:23 [debug] 96262#0: shmtx forced unlock
+2026/04/24 12:41:23 [debug] 96262#0: shmtx forced unlock
+2026/04/24 12:41:23 [debug] 96262#0: shmtx forced unlock
+2026/04/24 12:41:23 [debug] 96262#0: shmtx forced unlock
+2026/04/24 12:41:23 [debug] 96262#0: shmtx forced unlock
+2026/04/24 12:41:23 [debug] 96262#0: wake up, sigio 3
+2026/04/24 12:41:23 [debug] 96262#0: reap children
+2026/04/24 12:41:23 [debug] 96262#0: child: 0 96275 e:1 t:1 d:0 r:1 j:0
+2026/04/24 12:41:23 [notice] 96262#0: exit
+2026/04/24 12:41:23 [debug] 96262#0: close listening 0.0.0.0:8888 #6 
+2026/04/24 12:41:23 [debug] 96262#0: run cleanup: 00000000330B6648
+2026/04/24 12:41:23 [debug] 96262#0: run cleanup: 00000000330B3AD8
+2026/04/24 12:41:23 [debug] 96262#0: cleanup resolver
+2026/04/24 12:41:23 [debug] 96262#0: run cleanup: 0000000033084468
+2026/04/24 12:41:23 [debug] 96262#0: run cleanup: 0000000033084440
+2026/04/24 12:41:23 [debug] 96262#0: free: 00000000331233B0
+2026/04/24 12:41:23 [debug] 96262#0: free: 0000000033121BF0
+2026/04/24 12:41:23 [debug] 96262#0: free: 000000003311FBE0
+2026/04/24 12:41:23 [debug] 96262#0: free: 0000000033099780
+2026/04/24 12:41:23 [debug] 96262#0: free: 00000000330946B0
+2026/04/24 12:41:23 [debug] 96262#0: free: 00000000330935F0
+2026/04/24 12:41:23 [debug] 96262#0: free: 0000000033092530
+2026/04/24 12:41:23 [debug] 96262#0: free: 00000000330822B0, unused: 0
+2026/04/24 12:41:23 [debug] 96262#0: free: 000000003308B2E0, unused: 1
+2026/04/24 12:41:23 [debug] 96262#0: free: 0000000033095770, unused: 0
+2026/04/24 12:41:23 [debug] 96262#0: free: 000000003309C5B0, unused: 0
+2026/04/24 12:41:23 [debug] 96262#0: free: 00000000330A05C0, unused: 0
+2026/04/24 12:41:23 [debug] 96262#0: free: 00000000330A45D0, unused: 0
+2026/04/24 12:41:23 [debug] 96262#0: free: 00000000330A85E0, unused: 0
+2026/04/24 12:41:23 [debug] 96262#0: free: 00000000330AC5F0, unused: 0
+2026/04/24 12:41:23 [debug] 96262#0: free: 00000000330B0600, unused: 0
+2026/04/24 12:41:23 [debug] 96262#0: free: 00000000330B4610, unused: 1316
+2026/04/24 12:43:40 [debug] 96698#0: {"status":"protected_content"}
+2026/04/24 12:43:40 [debug] 96698#0: {"status":"claims_content","sub":"$oidc_claim_sub","email":"$oidc_claim_email","name":"$oidc_claim_name"}
+2026/04/24 12:43:40 [debug] 96698#0: {"status":"quoted_path_content"}
+2026/04/24 12:43:40 [debug] 96698#0: {"status":"callback_handled"}
+2026/04/24 12:43:40 [debug] 96698#0: {"status":"no_pkce_content"}
+2026/04/24 12:43:40 [debug] 96698#0: {"status":"public_content"}
+2026/04/24 12:43:40 [debug] 96698#0: {"status":"ok"}
+2026/04/24 12:43:40 [debug] 96698#0: bind() 0.0.0.0:8888 #6 
+2026/04/24 12:43:40 [notice] 96698#0: using the "epoll" event method
+2026/04/24 12:43:40 [debug] 96698#0: counter: 00007FA3227C0080, 1
+2026/04/24 12:43:40 [notice] 96698#0: nginx/1.30.0
+2026/04/24 12:43:40 [notice] 96698#0: built by gcc 15.2.1 20260209 (GCC) 
+2026/04/24 12:43:40 [notice] 96698#0: OS: Linux 6.19.12-arch1-1
+2026/04/24 12:43:40 [notice] 96698#0: getrlimit(RLIMIT_NOFILE): 524288:524288
+2026/04/24 12:43:40 [debug] 96698#0: write: 7, 00007FFC50BBF050, 6, 0
+2026/04/24 12:43:40 [debug] 96698#0: setproctitle: "nginx: master process ./zig-out/bin/nginz -c /home/kaiwu/Documents/gitea/nginz/tests/oidc/nginx.conf -p /home/kaiwu/Documents/gitea/nginz/tests/oidc/runtime-debug"
+2026/04/24 12:43:40 [notice] 96698#0: start worker processes
+2026/04/24 12:43:40 [debug] 96698#0: channel 3:7
+2026/04/24 12:43:40 [notice] 96698#0: start worker process 96712
+2026/04/24 12:43:40 [debug] 96698#0: sigsuspend
+2026/04/24 12:43:40 [debug] 96712#0: add cleanup: 000000000DC94FC8
+2026/04/24 12:43:40 [debug] 96712#0: malloc: 000000000DCF7BB0:8
+2026/04/24 12:43:40 [debug] 96712#0: notify eventfd: 9
+2026/04/24 12:43:40 [debug] 96712#0: testing the EPOLLRDHUP flag: success
+2026/04/24 12:43:40 [debug] 96712#0: malloc: 000000000DC6C2F0:6144
+2026/04/24 12:43:40 [debug] 96712#0: malloc: 000000000DC632C0:14848
+2026/04/24 12:43:40 [debug] 96712#0: malloc: 000000000DC6DB00:6144
+2026/04/24 12:43:40 [debug] 96712#0: malloc: 000000000DD021C0:6144
+2026/04/24 12:43:40 [debug] 96712#0: epoll add event: fd:6 op:1 ev:00002001
+2026/04/24 12:43:40 [debug] 96712#0: epoll add event: fd:7 op:1 ev:00002001
+2026/04/24 12:43:40 [debug] 96712#0: setproctitle: "nginx: worker process"
+2026/04/24 12:43:40 [debug] 96712#0: worker cycle
+2026/04/24 12:43:40 [debug] 96712#0: epoll timer: -1
+2026/04/24 12:43:42 [debug] 96712#0: epoll: fd:6 ev:0001 d:000000000DC632C0
+2026/04/24 12:43:42 [debug] 96712#0: accept on 0.0.0.0:8888, ready: 0
+2026/04/24 12:43:42 [debug] 96712#0: posix_memalign: 000000000DC6F310:512 @16
+2026/04/24 12:43:42 [debug] 96712#0: *1 accept: 127.0.0.1:57508 fd:3
+2026/04/24 12:43:42 [debug] 96712#0: *1 event timer add: 3: 60000:15341780
+2026/04/24 12:43:42 [debug] 96712#0: *1 reusable connection: 1
+2026/04/24 12:43:42 [debug] 96712#0: *1 epoll add event: fd:3 op:1 ev:80002001
+2026/04/24 12:43:42 [debug] 96712#0: timer delta: 1965
+2026/04/24 12:43:42 [debug] 96712#0: worker cycle
+2026/04/24 12:43:42 [debug] 96712#0: epoll timer: 60000
+2026/04/24 12:43:42 [debug] 96712#0: epoll: fd:3 ev:0001 d:000000000DC63490
+2026/04/24 12:43:42 [debug] 96712#0: *1 http wait request handler
+2026/04/24 12:43:42 [debug] 96712#0: *1 malloc: 000000000DC5B220:1024
+2026/04/24 12:43:42 [debug] 96712#0: *1 recv: eof:0, avail:-1
+2026/04/24 12:43:42 [debug] 96712#0: *1 recv: fd:3 127 of 1024
+2026/04/24 12:43:42 [debug] 96712#0: *1 reusable connection: 0
+2026/04/24 12:43:42 [debug] 96712#0: *1 posix_memalign: 000000000DCFB880:4096 @16
+2026/04/24 12:43:42 [debug] 96712#0: *1 http process request line
+2026/04/24 12:43:42 [debug] 96712#0: *1 http request line: "GET /protected HTTP/1.1"
+2026/04/24 12:43:42 [debug] 96712#0: *1 http uri: "/protected"
+2026/04/24 12:43:42 [debug] 96712#0: *1 http args: ""
+2026/04/24 12:43:42 [debug] 96712#0: *1 http exten: ""
+2026/04/24 12:43:42 [debug] 96712#0: *1 posix_memalign: 000000000DC66CD0:4096 @16
+2026/04/24 12:43:42 [debug] 96712#0: *1 http process request header line
+2026/04/24 12:43:42 [debug] 96712#0: *1 http header: "Accept-Encoding: identity"
+2026/04/24 12:43:42 [debug] 96712#0: *1 http header: "Host: localhost:8888"
+2026/04/24 12:43:42 [debug] 96712#0: *1 http header: "User-Agent: Python-urllib/3.14"
+2026/04/24 12:43:42 [debug] 96712#0: *1 http header: "Connection: close"
+2026/04/24 12:43:42 [debug] 96712#0: *1 http header done
+2026/04/24 12:43:42 [debug] 96712#0: *1 event timer del: 3: 15341780
+2026/04/24 12:43:42 [debug] 96712#0: *1 rewrite phase: 0
+2026/04/24 12:43:42 [debug] 96712#0: *1 test location: "/"
+2026/04/24 12:43:42 [debug] 96712#0: *1 test location: "no-pkce"
+2026/04/24 12:43:42 [debug] 96712#0: *1 test location: "public"
+2026/04/24 12:43:42 [debug] 96712#0: *1 test location: "protected"
+2026/04/24 12:43:42 [debug] 96712#0: *1 using configuration "/protected"
+2026/04/24 12:43:42 [debug] 96712#0: *1 http cl:-1 max:1048576
+2026/04/24 12:43:42 [debug] 96712#0: *1 rewrite phase: 2
+2026/04/24 12:43:42 [debug] 96712#0: *1 post rewrite phase: 3
+2026/04/24 12:43:42 [debug] 96712#0: *1 generic phase: 4
+2026/04/24 12:43:42 [debug] 96712#0: *1 generic phase: 5
+2026/04/24 12:43:42 [debug] 96712#0: *1 access phase: 6
+2026/04/24 12:43:42 [debug] 96712#0: *1 access phase: 7
+2026/04/24 12:43:42 [debug] 96712#0: *1 access phase: 8
+2026/04/24 12:43:42 [debug] 96712#0: *1 access phase: 9
+2026/04/24 12:43:42 [debug] 96712#0: *1 xslt filter header
+2026/04/24 12:43:42 [debug] 96712#0: *1 HTTP/1.1 500 Internal Server Error
+Server: nginx/1.30.0
+Date: Fri, 24 Apr 2026 04:43:42 GMT
+Content-Type: text/plain
+Content-Length: 35
+Connection: close
+
+2026/04/24 12:43:42 [debug] 96712#0: *1 write new buf t:1 f:0 000000000DC67150, pos 000000000DC67150, size: 162 file: 0, size: 0
+2026/04/24 12:43:42 [debug] 96712#0: *1 http write filter: l:0 f:0 s:162
+2026/04/24 12:43:42 [debug] 96712#0: *1 http output filter "/protected?"
+2026/04/24 12:43:42 [debug] 96712#0: *1 http copy filter: "/protected?"
+2026/04/24 12:43:42 [debug] 96712#0: *1 xslt filter body
+2026/04/24 12:43:42 [debug] 96712#0: *1 http postpone filter "/protected?" 00007FFC50BBE970
+2026/04/24 12:43:42 [debug] 96712#0: *1 write old buf t:1 f:0 000000000DC67150, pos 000000000DC67150, size: 162 file: 0, size: 0
+2026/04/24 12:43:42 [debug] 96712#0: *1 write new buf t:0 f:0 0000000000000000, pos 000000000631880D, size: 35 file: 0, size: 0
+2026/04/24 12:43:42 [debug] 96712#0: *1 http write filter: l:1 f:0 s:197
+2026/04/24 12:43:42 [debug] 96712#0: *1 http write filter limit 2097152
+2026/04/24 12:43:42 [debug] 96712#0: *1 writev: 197 of 197
+2026/04/24 12:43:42 [debug] 96712#0: *1 http write filter 0000000000000000
+2026/04/24 12:43:42 [debug] 96712#0: *1 http copy filter: 0 "/protected?"
+2026/04/24 12:43:42 [debug] 96712#0: *1 access phase: 10
+2026/04/24 12:43:42 [debug] 96712#0: *1 access phase: 11
+2026/04/24 12:43:42 [debug] 96712#0: *1 access phase: 12
+2026/04/24 12:43:42 [debug] 96712#0: *1 access phase: 13
+2026/04/24 12:43:42 [debug] 96712#0: *1 access phase: 14
+2026/04/24 12:43:42 [debug] 96712#0: *1 access phase: 15
+2026/04/24 12:43:42 [debug] 96712#0: *1 access phase: 16
+2026/04/24 12:43:42 [debug] 96712#0: *1 access phase: 17
+2026/04/24 12:43:42 [debug] 96712#0: *1 access phase: 18
+2026/04/24 12:43:42 [debug] 96712#0: *1 post access phase: 19
+2026/04/24 12:43:42 [debug] 96712#0: *1 generic phase: 20
+2026/04/24 12:43:42 [debug] 96712#0: *1 generic phase: 21
+2026/04/24 12:43:42 [alert] 96712#0: *1 header already sent, client: 127.0.0.1, server: , request: "GET /protected HTTP/1.1", host: "localhost:8888"
+2026/04/24 12:43:42 [debug] 96712#0: *1 http finalize request: 500, "/protected?" a:1, c:1
+2026/04/24 12:43:42 [debug] 96712#0: *1 http special response: 500, "/protected?"
+2026/04/24 12:43:42 [debug] 96712#0: *1 http set discard body
+2026/04/24 12:43:42 [alert] 96712#0: *1 header already sent, client: 127.0.0.1, server: , request: "GET /protected HTTP/1.1", host: "localhost:8888"
+2026/04/24 12:43:42 [debug] 96712#0: *1 http finalize request: -1, "/protected?" a:1, c:1
+2026/04/24 12:43:42 [debug] 96712#0: *1 http terminate request count:1
+2026/04/24 12:43:42 [debug] 96712#0: *1 http terminate cleanup count:1 blk:0
+2026/04/24 12:43:42 [debug] 96712#0: *1 http posted request: "/protected?"
+2026/04/24 12:43:42 [debug] 96712#0: *1 http terminate handler count:1
+2026/04/24 12:43:42 [debug] 96712#0: *1 http request count:1 blk:0
+2026/04/24 12:43:42 [debug] 96712#0: *1 http close request
+2026/04/24 12:43:42 [debug] 96712#0: *1 http log handler
+2026/04/24 12:43:42 [debug] 96712#0: shmtx lock
+2026/04/24 12:43:42 [debug] 96712#0: shmtx unlock
+2026/04/24 12:43:42 [debug] 96712#0: shmtx lock
+2026/04/24 12:43:42 [debug] 96712#0: shmtx unlock
+2026/04/24 12:43:42 [debug] 96712#0: *1 free: 000000000DCFB880, unused: 0
+2026/04/24 12:43:42 [debug] 96712#0: *1 free: 000000000DC66CD0, unused: 2304
+2026/04/24 12:43:42 [debug] 96712#0: *1 close http connection: 3
+2026/04/24 12:43:42 [debug] 96712#0: *1 reusable connection: 0
+2026/04/24 12:43:42 [debug] 96712#0: *1 free: 000000000DC5B220
+2026/04/24 12:43:42 [debug] 96712#0: *1 free: 000000000DC6F310, unused: 128
+2026/04/24 12:43:42 [debug] 96712#0: timer delta: 0
+2026/04/24 12:43:42 [debug] 96712#0: worker cycle
+2026/04/24 12:43:42 [debug] 96712#0: epoll timer: -1
+2026/04/24 12:43:42 [notice] 96698#0: signal 15 (SIGTERM) received from 96696, exiting
+2026/04/24 12:43:42 [debug] 96698#0: wake up, sigio 0
+2026/04/24 12:43:42 [debug] 96698#0: child: 0 96712 e:0 t:0 d:0 r:1 j:0
+2026/04/24 12:43:42 [debug] 96698#0: termination cycle: 50
+2026/04/24 12:43:42 [debug] 96698#0: sigsuspend
+2026/04/24 12:43:42 [debug] 96712#0: epoll: fd:7 ev:0001 d:000000000DC633A8
+2026/04/24 12:43:42 [debug] 96712#0: channel handler
+2026/04/24 12:43:42 [debug] 96712#0: channel: 32
+2026/04/24 12:43:42 [debug] 96712#0: channel command: 4
+2026/04/24 12:43:42 [debug] 96712#0: channel: -2
+2026/04/24 12:43:42 [debug] 96712#0: timer delta: 20
+2026/04/24 12:43:42 [notice] 96712#0: exiting
+2026/04/24 12:43:42 [debug] 96712#0: flush files
+2026/04/24 12:43:42 [debug] 96712#0: run cleanup: 000000000DC94FC8
+2026/04/24 12:43:42 [debug] 96712#0: run cleanup: 000000000DC93520
+2026/04/24 12:43:42 [debug] 96712#0: run cleanup: 000000000DC909B0
+2026/04/24 12:43:42 [debug] 96712#0: cleanup resolver
+2026/04/24 12:43:42 [debug] 96712#0: run cleanup: 000000000DC61468
+2026/04/24 12:43:42 [debug] 96712#0: run cleanup: 000000000DC61440
+2026/04/24 12:43:42 [debug] 96712#0: free: 000000000DD003B0
+2026/04/24 12:43:42 [debug] 96712#0: free: 000000000DCFEBF0
+2026/04/24 12:43:42 [debug] 96712#0: free: 000000000DCFCBE0
+2026/04/24 12:43:42 [debug] 96712#0: free: 000000000DC76780
+2026/04/24 12:43:42 [debug] 96712#0: free: 000000000DC716B0
+2026/04/24 12:43:42 [debug] 96712#0: free: 000000000DC705F0
+2026/04/24 12:43:42 [debug] 96712#0: free: 000000000DC6F530
+2026/04/24 12:43:42 [debug] 96712#0: free: 000000000DC5F2B0, unused: 0
+2026/04/24 12:43:42 [debug] 96712#0: free: 000000000DC682E0, unused: 2
+2026/04/24 12:43:42 [debug] 96712#0: free: 000000000DC72770, unused: 0
+2026/04/24 12:43:42 [debug] 96712#0: free: 000000000DC795B0, unused: 0
+2026/04/24 12:43:42 [debug] 96712#0: free: 000000000DC7D5C0, unused: 0
+2026/04/24 12:43:42 [debug] 96712#0: free: 000000000DC815D0, unused: 0
+2026/04/24 12:43:42 [debug] 96712#0: free: 000000000DC855E0, unused: 0
+2026/04/24 12:43:42 [debug] 96712#0: free: 000000000DC895F0, unused: 1
+2026/04/24 12:43:42 [debug] 96712#0: free: 000000000DC8D600, unused: 0
+2026/04/24 12:43:42 [debug] 96712#0: free: 000000000DC91610, unused: 1584
+2026/04/24 12:43:42 [notice] 96712#0: exit
+2026/04/24 12:43:42 [notice] 96698#0: signal 17 (SIGCHLD) received from 96712
+2026/04/24 12:43:42 [notice] 96698#0: worker process 96712 exited with code 0
+2026/04/24 12:43:42 [debug] 96698#0: shmtx forced unlock
+2026/04/24 12:43:42 [debug] 96698#0: shmtx forced unlock
+2026/04/24 12:43:42 [debug] 96698#0: shmtx forced unlock
+2026/04/24 12:43:42 [debug] 96698#0: shmtx forced unlock
+2026/04/24 12:43:42 [debug] 96698#0: shmtx forced unlock
+2026/04/24 12:43:42 [debug] 96698#0: shmtx forced unlock
+2026/04/24 12:43:42 [debug] 96698#0: shmtx forced unlock
+2026/04/24 12:43:42 [debug] 96698#0: shmtx forced unlock
+2026/04/24 12:43:42 [debug] 96698#0: shmtx forced unlock
+2026/04/24 12:43:42 [debug] 96698#0: wake up, sigio 3
+2026/04/24 12:43:42 [debug] 96698#0: reap children
+2026/04/24 12:43:42 [debug] 96698#0: child: 0 96712 e:1 t:1 d:0 r:1 j:0
+2026/04/24 12:43:42 [notice] 96698#0: exit
+2026/04/24 12:43:42 [debug] 96698#0: close listening 0.0.0.0:8888 #6 
+2026/04/24 12:43:42 [debug] 96698#0: run cleanup: 000000000DC93520
+2026/04/24 12:43:42 [debug] 96698#0: run cleanup: 000000000DC909B0
+2026/04/24 12:43:42 [debug] 96698#0: cleanup resolver
+2026/04/24 12:43:42 [debug] 96698#0: run cleanup: 000000000DC61468
+2026/04/24 12:43:42 [debug] 96698#0: run cleanup: 000000000DC61440
+2026/04/24 12:43:42 [debug] 96698#0: free: 000000000DD003B0
+2026/04/24 12:43:42 [debug] 96698#0: free: 000000000DCFEBF0
+2026/04/24 12:43:42 [debug] 96698#0: free: 000000000DCFCBE0
+2026/04/24 12:43:42 [debug] 96698#0: free: 000000000DC76780
+2026/04/24 12:43:42 [debug] 96698#0: free: 000000000DC716B0
+2026/04/24 12:43:42 [debug] 96698#0: free: 000000000DC705F0
+2026/04/24 12:43:42 [debug] 96698#0: free: 000000000DC6F530
+2026/04/24 12:43:42 [debug] 96698#0: free: 000000000DC5F2B0, unused: 0
+2026/04/24 12:43:42 [debug] 96698#0: free: 000000000DC682E0, unused: 2
+2026/04/24 12:43:42 [debug] 96698#0: free: 000000000DC72770, unused: 0
+2026/04/24 12:43:42 [debug] 96698#0: free: 000000000DC795B0, unused: 0
+2026/04/24 12:43:42 [debug] 96698#0: free: 000000000DC7D5C0, unused: 0
+2026/04/24 12:43:42 [debug] 96698#0: free: 000000000DC815D0, unused: 0
+2026/04/24 12:43:42 [debug] 96698#0: free: 000000000DC855E0, unused: 0
+2026/04/24 12:43:42 [debug] 96698#0: free: 000000000DC895F0, unused: 1
+2026/04/24 12:43:42 [debug] 96698#0: free: 000000000DC8D600, unused: 0
+2026/04/24 12:43:42 [debug] 96698#0: free: 000000000DC91610, unused: 1612
+2026/04/24 12:44:38 [debug] 96983#0: {"status":"protected_content"}
+2026/04/24 12:44:38 [debug] 96983#0: {"status":"claims_content","sub":"$oidc_claim_sub","email":"$oidc_claim_email","name":"$oidc_claim_name"}
+2026/04/24 12:44:38 [debug] 96983#0: {"status":"quoted_path_content"}
+2026/04/24 12:44:38 [debug] 96983#0: {"status":"callback_handled"}
+2026/04/24 12:44:38 [debug] 96983#0: {"status":"no_pkce_content"}
+2026/04/24 12:44:38 [debug] 96983#0: {"status":"public_content"}
+2026/04/24 12:44:38 [debug] 96983#0: {"status":"ok"}
+2026/04/24 12:44:38 [debug] 96983#0: bind() 0.0.0.0:8888 #6 
+2026/04/24 12:44:38 [notice] 96983#0: using the "epoll" event method
+2026/04/24 12:44:38 [debug] 96983#0: counter: 00007F2020B29080, 1
+2026/04/24 12:44:38 [notice] 96983#0: nginx/1.30.0
+2026/04/24 12:44:38 [notice] 96983#0: built by gcc 15.2.1 20260209 (GCC) 
+2026/04/24 12:44:38 [notice] 96983#0: OS: Linux 6.19.12-arch1-1
+2026/04/24 12:44:38 [notice] 96983#0: getrlimit(RLIMIT_NOFILE): 524288:524288
+2026/04/24 12:44:38 [debug] 96983#0: write: 7, 00007FFC2A2E0120, 6, 0
+2026/04/24 12:44:38 [debug] 96983#0: setproctitle: "nginx: master process ./zig-out/bin/nginz -c /home/kaiwu/Documents/gitea/nginz/tests/oidc/nginx.conf -p /home/kaiwu/Documents/gitea/nginz/tests/oidc/runtime-debug"
+2026/04/24 12:44:38 [notice] 96983#0: start worker processes
+2026/04/24 12:44:38 [debug] 96983#0: channel 3:7
+2026/04/24 12:44:38 [notice] 96983#0: start worker process 96996
+2026/04/24 12:44:38 [debug] 96983#0: sigsuspend
+2026/04/24 12:44:38 [debug] 96996#0: add cleanup: 0000000035ACCFC8
+2026/04/24 12:44:38 [debug] 96996#0: malloc: 0000000035B2FBB0:8
+2026/04/24 12:44:38 [debug] 96996#0: notify eventfd: 9
+2026/04/24 12:44:38 [debug] 96996#0: testing the EPOLLRDHUP flag: success
+2026/04/24 12:44:38 [debug] 96996#0: malloc: 0000000035AA42F0:6144
+2026/04/24 12:44:38 [debug] 96996#0: malloc: 0000000035A9B2C0:14848
+2026/04/24 12:44:38 [debug] 96996#0: malloc: 0000000035AA5B00:6144
+2026/04/24 12:44:38 [debug] 96996#0: malloc: 0000000035B3A1C0:6144
+2026/04/24 12:44:38 [debug] 96996#0: epoll add event: fd:6 op:1 ev:00002001
+2026/04/24 12:44:38 [debug] 96996#0: epoll add event: fd:7 op:1 ev:00002001
+2026/04/24 12:44:38 [debug] 96996#0: setproctitle: "nginx: worker process"
+2026/04/24 12:44:38 [debug] 96996#0: worker cycle
+2026/04/24 12:44:38 [debug] 96996#0: epoll timer: -1
+2026/04/24 12:44:40 [debug] 96996#0: epoll: fd:6 ev:0001 d:0000000035A9B2C0
+2026/04/24 12:44:40 [debug] 96996#0: accept on 0.0.0.0:8888, ready: 0
+2026/04/24 12:44:40 [debug] 96996#0: posix_memalign: 0000000035AA7310:512 @16
+2026/04/24 12:44:40 [debug] 96996#0: *1 accept: 127.0.0.1:57948 fd:3
+2026/04/24 12:44:40 [debug] 96996#0: *1 event timer add: 3: 60000:15400044
+2026/04/24 12:44:40 [debug] 96996#0: *1 reusable connection: 1
+2026/04/24 12:44:40 [debug] 96996#0: *1 epoll add event: fd:3 op:1 ev:80002001
+2026/04/24 12:44:40 [debug] 96996#0: timer delta: 1975
+2026/04/24 12:44:40 [debug] 96996#0: worker cycle
+2026/04/24 12:44:40 [debug] 96996#0: epoll timer: 60000
+2026/04/24 12:44:40 [debug] 96996#0: epoll: fd:3 ev:0001 d:0000000035A9B490
+2026/04/24 12:44:40 [debug] 96996#0: *1 http wait request handler
+2026/04/24 12:44:40 [debug] 96996#0: *1 malloc: 0000000035A93220:1024
+2026/04/24 12:44:40 [debug] 96996#0: *1 recv: eof:0, avail:-1
+2026/04/24 12:44:40 [debug] 96996#0: *1 recv: fd:3 127 of 1024
+2026/04/24 12:44:40 [debug] 96996#0: *1 reusable connection: 0
+2026/04/24 12:44:40 [debug] 96996#0: *1 posix_memalign: 0000000035B33880:4096 @16
+2026/04/24 12:44:40 [debug] 96996#0: *1 http process request line
+2026/04/24 12:44:40 [debug] 96996#0: *1 http request line: "GET /protected HTTP/1.1"
+2026/04/24 12:44:40 [debug] 96996#0: *1 http uri: "/protected"
+2026/04/24 12:44:40 [debug] 96996#0: *1 http args: ""
+2026/04/24 12:44:40 [debug] 96996#0: *1 http exten: ""
+2026/04/24 12:44:40 [debug] 96996#0: *1 posix_memalign: 0000000035A9ECD0:4096 @16
+2026/04/24 12:44:40 [debug] 96996#0: *1 http process request header line
+2026/04/24 12:44:40 [debug] 96996#0: *1 http header: "Accept-Encoding: identity"
+2026/04/24 12:44:40 [debug] 96996#0: *1 http header: "Host: localhost:8888"
+2026/04/24 12:44:40 [debug] 96996#0: *1 http header: "User-Agent: Python-urllib/3.14"
+2026/04/24 12:44:40 [debug] 96996#0: *1 http header: "Connection: close"
+2026/04/24 12:44:40 [debug] 96996#0: *1 http header done
+2026/04/24 12:44:40 [debug] 96996#0: *1 event timer del: 3: 15400044
+2026/04/24 12:44:40 [debug] 96996#0: *1 rewrite phase: 0
+2026/04/24 12:44:40 [debug] 96996#0: *1 test location: "/"
+2026/04/24 12:44:40 [debug] 96996#0: *1 test location: "no-pkce"
+2026/04/24 12:44:40 [debug] 96996#0: *1 test location: "public"
+2026/04/24 12:44:40 [debug] 96996#0: *1 test location: "protected"
+2026/04/24 12:44:40 [debug] 96996#0: *1 using configuration "/protected"
+2026/04/24 12:44:40 [debug] 96996#0: *1 http cl:-1 max:1048576
+2026/04/24 12:44:40 [debug] 96996#0: *1 rewrite phase: 2
+2026/04/24 12:44:40 [debug] 96996#0: *1 post rewrite phase: 3
+2026/04/24 12:44:40 [debug] 96996#0: *1 generic phase: 4
+2026/04/24 12:44:40 [debug] 96996#0: *1 generic phase: 5
+2026/04/24 12:44:40 [debug] 96996#0: *1 access phase: 6
+2026/04/24 12:44:40 [debug] 96996#0: *1 access phase: 7
+2026/04/24 12:44:40 [debug] 96996#0: *1 access phase: 8
+2026/04/24 12:44:40 [debug] 96996#0: *1 access phase: 9
+2026/04/24 12:44:40 [debug] 96996#0: *1 xslt filter header
+2026/04/24 12:44:40 [debug] 96996#0: *1 HTTP/1.1 500 Internal Server Error
+Server: nginx/1.30.0
+Date: Fri, 24 Apr 2026 04:44:40 GMT
+Content-Type: text/plain
+Content-Length: 35
+Connection: close
+
+2026/04/24 12:44:40 [debug] 96996#0: *1 write new buf t:1 f:0 0000000035A9F150, pos 0000000035A9F150, size: 162 file: 0, size: 0
+2026/04/24 12:44:40 [debug] 96996#0: *1 http write filter: l:0 f:0 s:162
+2026/04/24 12:44:40 [debug] 96996#0: *1 http output filter "/protected?"
+2026/04/24 12:44:40 [debug] 96996#0: *1 http copy filter: "/protected?"
+2026/04/24 12:44:40 [debug] 96996#0: *1 xslt filter body
+2026/04/24 12:44:40 [debug] 96996#0: *1 http postpone filter "/protected?" 00007FFC2A2DFA40
+2026/04/24 12:44:40 [debug] 96996#0: *1 write old buf t:1 f:0 0000000035A9F150, pos 0000000035A9F150, size: 162 file: 0, size: 0
+2026/04/24 12:44:40 [debug] 96996#0: *1 write new buf t:0 f:0 0000000000000000, pos 000000000631880D, size: 35 file: 0, size: 0
+2026/04/24 12:44:40 [debug] 96996#0: *1 http write filter: l:1 f:0 s:197
+2026/04/24 12:44:40 [debug] 96996#0: *1 http write filter limit 2097152
+2026/04/24 12:44:40 [debug] 96996#0: *1 writev: 197 of 197
+2026/04/24 12:44:40 [debug] 96996#0: *1 http write filter 0000000000000000
+2026/04/24 12:44:40 [debug] 96996#0: *1 http copy filter: 0 "/protected?"
+2026/04/24 12:44:40 [debug] 96996#0: *1 access phase: 10
+2026/04/24 12:44:40 [debug] 96996#0: *1 access phase: 11
+2026/04/24 12:44:40 [debug] 96996#0: *1 access phase: 12
+2026/04/24 12:44:40 [debug] 96996#0: *1 access phase: 13
+2026/04/24 12:44:40 [debug] 96996#0: *1 access phase: 14
+2026/04/24 12:44:40 [debug] 96996#0: *1 access phase: 15
+2026/04/24 12:44:40 [debug] 96996#0: *1 access phase: 16
+2026/04/24 12:44:40 [debug] 96996#0: *1 access phase: 17
+2026/04/24 12:44:40 [debug] 96996#0: *1 access phase: 18
+2026/04/24 12:44:40 [debug] 96996#0: *1 post access phase: 19
+2026/04/24 12:44:40 [debug] 96996#0: *1 generic phase: 20
+2026/04/24 12:44:40 [debug] 96996#0: *1 generic phase: 21
+2026/04/24 12:44:40 [alert] 96996#0: *1 header already sent, client: 127.0.0.1, server: , request: "GET /protected HTTP/1.1", host: "localhost:8888"
+2026/04/24 12:44:40 [debug] 96996#0: *1 http finalize request: 500, "/protected?" a:1, c:1
+2026/04/24 12:44:40 [debug] 96996#0: *1 http special response: 500, "/protected?"
+2026/04/24 12:44:40 [debug] 96996#0: *1 http set discard body
+2026/04/24 12:44:40 [alert] 96996#0: *1 header already sent, client: 127.0.0.1, server: , request: "GET /protected HTTP/1.1", host: "localhost:8888"
+2026/04/24 12:44:40 [debug] 96996#0: *1 http finalize request: -1, "/protected?" a:1, c:1
+2026/04/24 12:44:40 [debug] 96996#0: *1 http terminate request count:1
+2026/04/24 12:44:40 [debug] 96996#0: *1 http terminate cleanup count:1 blk:0
+2026/04/24 12:44:40 [debug] 96996#0: *1 http posted request: "/protected?"
+2026/04/24 12:44:40 [debug] 96996#0: *1 http terminate handler count:1
+2026/04/24 12:44:40 [debug] 96996#0: *1 http request count:1 blk:0
+2026/04/24 12:44:40 [debug] 96996#0: *1 http close request
+2026/04/24 12:44:40 [debug] 96996#0: *1 http log handler
+2026/04/24 12:44:40 [debug] 96996#0: shmtx lock
+2026/04/24 12:44:40 [debug] 96996#0: shmtx unlock
+2026/04/24 12:44:40 [debug] 96996#0: shmtx lock
+2026/04/24 12:44:40 [debug] 96996#0: shmtx unlock
+2026/04/24 12:44:40 [debug] 96996#0: *1 free: 0000000035B33880, unused: 0
+2026/04/24 12:44:40 [debug] 96996#0: *1 free: 0000000035A9ECD0, unused: 2304
+2026/04/24 12:44:40 [debug] 96996#0: *1 close http connection: 3
+2026/04/24 12:44:40 [debug] 96996#0: *1 reusable connection: 0
+2026/04/24 12:44:40 [debug] 96996#0: *1 free: 0000000035A93220
+2026/04/24 12:44:40 [debug] 96996#0: *1 free: 0000000035AA7310, unused: 128
+2026/04/24 12:44:40 [debug] 96996#0: timer delta: 0
+2026/04/24 12:44:40 [debug] 96996#0: worker cycle
+2026/04/24 12:44:40 [debug] 96996#0: epoll timer: -1
+2026/04/24 12:44:40 [notice] 96983#0: signal 15 (SIGTERM) received from 96981, exiting
+2026/04/24 12:44:40 [debug] 96983#0: wake up, sigio 0
+2026/04/24 12:44:40 [debug] 96983#0: child: 0 96996 e:0 t:0 d:0 r:1 j:0
+2026/04/24 12:44:40 [debug] 96983#0: termination cycle: 50
+2026/04/24 12:44:40 [debug] 96983#0: sigsuspend
+2026/04/24 12:44:40 [debug] 96996#0: epoll: fd:7 ev:0001 d:0000000035A9B3A8
+2026/04/24 12:44:40 [debug] 96996#0: channel handler
+2026/04/24 12:44:40 [debug] 96996#0: channel: 32
+2026/04/24 12:44:40 [debug] 96996#0: channel command: 4
+2026/04/24 12:44:40 [debug] 96996#0: channel: -2
+2026/04/24 12:44:40 [debug] 96996#0: timer delta: 28
+2026/04/24 12:44:40 [notice] 96996#0: exiting
+2026/04/24 12:44:40 [debug] 96996#0: flush files
+2026/04/24 12:44:40 [debug] 96996#0: run cleanup: 0000000035ACCFC8
+2026/04/24 12:44:40 [debug] 96996#0: run cleanup: 0000000035ACB520
+2026/04/24 12:44:40 [debug] 96996#0: run cleanup: 0000000035AC89B0
+2026/04/24 12:44:40 [debug] 96996#0: cleanup resolver
+2026/04/24 12:44:40 [debug] 96996#0: run cleanup: 0000000035A99468
+2026/04/24 12:44:40 [debug] 96996#0: run cleanup: 0000000035A99440
+2026/04/24 12:44:40 [debug] 96996#0: free: 0000000035B383B0
+2026/04/24 12:44:40 [debug] 96996#0: free: 0000000035B36BF0
+2026/04/24 12:44:40 [debug] 96996#0: free: 0000000035B34BE0
+2026/04/24 12:44:40 [debug] 96996#0: free: 0000000035AAE780
+2026/04/24 12:44:40 [debug] 96996#0: free: 0000000035AA96B0
+2026/04/24 12:44:40 [debug] 96996#0: free: 0000000035AA85F0
+2026/04/24 12:44:40 [debug] 96996#0: free: 0000000035AA7530
+2026/04/24 12:44:40 [debug] 96996#0: free: 0000000035A972B0, unused: 0
+2026/04/24 12:44:40 [debug] 96996#0: free: 0000000035AA02E0, unused: 2
+2026/04/24 12:44:40 [debug] 96996#0: free: 0000000035AAA770, unused: 0
+2026/04/24 12:44:40 [debug] 96996#0: free: 0000000035AB15B0, unused: 0
+2026/04/24 12:44:40 [debug] 96996#0: free: 0000000035AB55C0, unused: 0
+2026/04/24 12:44:40 [debug] 96996#0: free: 0000000035AB95D0, unused: 0
+2026/04/24 12:44:40 [debug] 96996#0: free: 0000000035ABD5E0, unused: 0
+2026/04/24 12:44:40 [debug] 96996#0: free: 0000000035AC15F0, unused: 1
+2026/04/24 12:44:40 [debug] 96996#0: free: 0000000035AC5600, unused: 0
+2026/04/24 12:44:40 [debug] 96996#0: free: 0000000035AC9610, unused: 1584
+2026/04/24 12:44:40 [notice] 96996#0: exit
+2026/04/24 12:44:40 [notice] 96983#0: signal 17 (SIGCHLD) received from 96996
+2026/04/24 12:44:40 [notice] 96983#0: worker process 96996 exited with code 0
+2026/04/24 12:44:40 [debug] 96983#0: shmtx forced unlock
+2026/04/24 12:44:40 [debug] 96983#0: shmtx forced unlock
+2026/04/24 12:44:40 [debug] 96983#0: shmtx forced unlock
+2026/04/24 12:44:40 [debug] 96983#0: shmtx forced unlock
+2026/04/24 12:44:40 [debug] 96983#0: shmtx forced unlock
+2026/04/24 12:44:40 [debug] 96983#0: shmtx forced unlock
+2026/04/24 12:44:40 [debug] 96983#0: shmtx forced unlock
+2026/04/24 12:44:40 [debug] 96983#0: shmtx forced unlock
+2026/04/24 12:44:40 [debug] 96983#0: shmtx forced unlock
+2026/04/24 12:44:40 [debug] 96983#0: wake up, sigio 3
+2026/04/24 12:44:40 [debug] 96983#0: reap children
+2026/04/24 12:44:40 [debug] 96983#0: child: 0 96996 e:1 t:1 d:0 r:1 j:0
+2026/04/24 12:44:40 [notice] 96983#0: exit
+2026/04/24 12:44:40 [debug] 96983#0: close listening 0.0.0.0:8888 #6 
+2026/04/24 12:44:40 [debug] 96983#0: run cleanup: 0000000035ACB520
+2026/04/24 12:44:40 [debug] 96983#0: run cleanup: 0000000035AC89B0
+2026/04/24 12:44:40 [debug] 96983#0: cleanup resolver
+2026/04/24 12:44:40 [debug] 96983#0: run cleanup: 0000000035A99468
+2026/04/24 12:44:40 [debug] 96983#0: run cleanup: 0000000035A99440
+2026/04/24 12:44:40 [debug] 96983#0: free: 0000000035B383B0
+2026/04/24 12:44:40 [debug] 96983#0: free: 0000000035B36BF0
+2026/04/24 12:44:40 [debug] 96983#0: free: 0000000035B34BE0
+2026/04/24 12:44:40 [debug] 96983#0: free: 0000000035AAE780
+2026/04/24 12:44:40 [debug] 96983#0: free: 0000000035AA96B0
+2026/04/24 12:44:40 [debug] 96983#0: free: 0000000035AA85F0
+2026/04/24 12:44:40 [debug] 96983#0: free: 0000000035AA7530
+2026/04/24 12:44:40 [debug] 96983#0: free: 0000000035A972B0, unused: 0
+2026/04/24 12:44:40 [debug] 96983#0: free: 0000000035AA02E0, unused: 2
+2026/04/24 12:44:40 [debug] 96983#0: free: 0000000035AAA770, unused: 0
+2026/04/24 12:44:40 [debug] 96983#0: free: 0000000035AB15B0, unused: 0
+2026/04/24 12:44:40 [debug] 96983#0: free: 0000000035AB55C0, unused: 0
+2026/04/24 12:44:40 [debug] 96983#0: free: 0000000035AB95D0, unused: 0
+2026/04/24 12:44:40 [debug] 96983#0: free: 0000000035ABD5E0, unused: 0
+2026/04/24 12:44:40 [debug] 96983#0: free: 0000000035AC15F0, unused: 1
+2026/04/24 12:44:40 [debug] 96983#0: free: 0000000035AC5600, unused: 0
+2026/04/24 12:44:40 [debug] 96983#0: free: 0000000035AC9610, unused: 1612
+2026/04/24 12:45:12 [debug] 97136#0: {"status":"protected_content"}
+2026/04/24 12:45:12 [debug] 97136#0: {"status":"claims_content","sub":"$oidc_claim_sub","email":"$oidc_claim_email","name":"$oidc_claim_name"}
+2026/04/24 12:45:12 [debug] 97136#0: {"status":"quoted_path_content"}
+2026/04/24 12:45:12 [debug] 97136#0: {"status":"callback_handled"}
+2026/04/24 12:45:12 [debug] 97136#0: {"status":"no_pkce_content"}
+2026/04/24 12:45:12 [debug] 97136#0: {"status":"public_content"}
+2026/04/24 12:45:12 [debug] 97136#0: {"status":"ok"}
+2026/04/24 12:45:12 [debug] 97136#0: bind() 0.0.0.0:8888 #6 
+2026/04/24 12:45:12 [notice] 97136#0: using the "epoll" event method
+2026/04/24 12:45:12 [debug] 97136#0: counter: 00007F43BFB97080, 1
+2026/04/24 12:45:12 [notice] 97136#0: nginx/1.30.0
+2026/04/24 12:45:12 [notice] 97136#0: built by gcc 15.2.1 20260209 (GCC) 
+2026/04/24 12:45:12 [notice] 97136#0: OS: Linux 6.19.12-arch1-1
+2026/04/24 12:45:12 [notice] 97136#0: getrlimit(RLIMIT_NOFILE): 524288:524288
+2026/04/24 12:45:12 [debug] 97136#0: write: 7, 00007FFE73CFF480, 6, 0
+2026/04/24 12:45:12 [debug] 97136#0: setproctitle: "nginx: master process ./zig-out/bin/nginz -c /home/kaiwu/Documents/gitea/nginz/tests/oidc/nginx.conf -p /home/kaiwu/Documents/gitea/nginz/tests/oidc/runtime-debug"
+2026/04/24 12:45:12 [notice] 97136#0: start worker processes
+2026/04/24 12:45:12 [debug] 97136#0: channel 3:7
+2026/04/24 12:45:12 [notice] 97136#0: start worker process 97150
+2026/04/24 12:45:12 [debug] 97136#0: sigsuspend
+2026/04/24 12:45:12 [debug] 97150#0: add cleanup: 0000000037DE4118
+2026/04/24 12:45:12 [debug] 97150#0: malloc: 0000000037E46BB0:8
+2026/04/24 12:45:12 [debug] 97150#0: notify eventfd: 9
+2026/04/24 12:45:12 [debug] 97150#0: testing the EPOLLRDHUP flag: success
+2026/04/24 12:45:12 [debug] 97150#0: malloc: 0000000037DBB2F0:6144
+2026/04/24 12:45:12 [debug] 97150#0: malloc: 0000000037DB22C0:14848
+2026/04/24 12:45:12 [debug] 97150#0: malloc: 0000000037DBCB00:6144
+2026/04/24 12:45:12 [debug] 97150#0: malloc: 0000000037E511C0:6144
+2026/04/24 12:45:12 [debug] 97150#0: epoll add event: fd:6 op:1 ev:00002001
+2026/04/24 12:45:12 [debug] 97150#0: epoll add event: fd:7 op:1 ev:00002001
+2026/04/24 12:45:12 [debug] 97150#0: setproctitle: "nginx: worker process"
+2026/04/24 12:45:12 [debug] 97150#0: worker cycle
+2026/04/24 12:45:12 [debug] 97150#0: epoll timer: -1
+2026/04/24 12:45:14 [debug] 97150#0: epoll: fd:6 ev:0001 d:0000000037DB22C0
+2026/04/24 12:45:14 [debug] 97150#0: accept on 0.0.0.0:8888, ready: 0
+2026/04/24 12:45:14 [debug] 97150#0: posix_memalign: 0000000037DBE310:512 @16
+2026/04/24 12:45:14 [debug] 97150#0: *1 accept: 127.0.0.1:44198 fd:3
+2026/04/24 12:45:14 [debug] 97150#0: *1 event timer add: 3: 60000:15433728
+2026/04/24 12:45:14 [debug] 97150#0: *1 reusable connection: 1
+2026/04/24 12:45:14 [debug] 97150#0: *1 epoll add event: fd:3 op:1 ev:80002001
+2026/04/24 12:45:14 [debug] 97150#0: timer delta: 1960
+2026/04/24 12:45:14 [debug] 97150#0: worker cycle
+2026/04/24 12:45:14 [debug] 97150#0: epoll timer: 60000
+2026/04/24 12:45:14 [debug] 97150#0: epoll: fd:3 ev:0001 d:0000000037DB2490
+2026/04/24 12:45:14 [debug] 97150#0: *1 http wait request handler
+2026/04/24 12:45:14 [debug] 97150#0: *1 malloc: 0000000037DAA220:1024
+2026/04/24 12:45:14 [debug] 97150#0: *1 recv: eof:0, avail:-1
+2026/04/24 12:45:14 [debug] 97150#0: *1 recv: fd:3 127 of 1024
+2026/04/24 12:45:14 [debug] 97150#0: *1 reusable connection: 0
+2026/04/24 12:45:14 [debug] 97150#0: *1 posix_memalign: 0000000037E4A880:4096 @16
+2026/04/24 12:45:14 [debug] 97150#0: *1 http process request line
+2026/04/24 12:45:14 [debug] 97150#0: *1 http request line: "GET /protected HTTP/1.1"
+2026/04/24 12:45:14 [debug] 97150#0: *1 http uri: "/protected"
+2026/04/24 12:45:14 [debug] 97150#0: *1 http args: ""
+2026/04/24 12:45:14 [debug] 97150#0: *1 http exten: ""
+2026/04/24 12:45:14 [debug] 97150#0: *1 posix_memalign: 0000000037DB5CD0:4096 @16
+2026/04/24 12:45:14 [debug] 97150#0: *1 http process request header line
+2026/04/24 12:45:14 [debug] 97150#0: *1 http header: "Accept-Encoding: identity"
+2026/04/24 12:45:14 [debug] 97150#0: *1 http header: "Host: localhost:8888"
+2026/04/24 12:45:14 [debug] 97150#0: *1 http header: "User-Agent: Python-urllib/3.14"
+2026/04/24 12:45:14 [debug] 97150#0: *1 http header: "Connection: close"
+2026/04/24 12:45:14 [debug] 97150#0: *1 http header done
+2026/04/24 12:45:14 [debug] 97150#0: *1 event timer del: 3: 15433728
+2026/04/24 12:45:14 [debug] 97150#0: *1 rewrite phase: 0
+2026/04/24 12:45:14 [debug] 97150#0: *1 test location: "/"
+2026/04/24 12:45:14 [debug] 97150#0: *1 test location: "no-pkce"
+2026/04/24 12:45:14 [debug] 97150#0: *1 test location: "public"
+2026/04/24 12:45:14 [debug] 97150#0: *1 test location: "protected"
+2026/04/24 12:45:14 [debug] 97150#0: *1 using configuration "/protected"
+2026/04/24 12:45:14 [debug] 97150#0: *1 http cl:-1 max:1048576
+2026/04/24 12:45:14 [debug] 97150#0: *1 rewrite phase: 2
+2026/04/24 12:45:14 [debug] 97150#0: *1 post rewrite phase: 3
+2026/04/24 12:45:14 [debug] 97150#0: *1 generic phase: 4
+2026/04/24 12:45:14 [debug] 97150#0: *1 generic phase: 5
+2026/04/24 12:45:14 [debug] 97150#0: *1 access phase: 6
+2026/04/24 12:45:14 [debug] 97150#0: *1 access phase: 7
+2026/04/24 12:45:14 [debug] 97150#0: *1 access phase: 8
+2026/04/24 12:45:14 [debug] 97150#0: *1 access phase: 9
+2026/04/24 12:45:14 [debug] 97150#0: *1 xslt filter header
+2026/04/24 12:45:14 [debug] 97150#0: *1 HTTP/1.1 500 Internal Server Error
+Server: nginx/1.30.0
+Date: Fri, 24 Apr 2026 04:45:14 GMT
+Content-Type: text/plain
+Content-Length: 35
+Connection: close
+
+2026/04/24 12:45:14 [debug] 97150#0: *1 write new buf t:1 f:0 0000000037DB6150, pos 0000000037DB6150, size: 162 file: 0, size: 0
+2026/04/24 12:45:14 [debug] 97150#0: *1 http write filter: l:0 f:0 s:162
+2026/04/24 12:45:14 [debug] 97150#0: *1 http output filter "/protected?"
+2026/04/24 12:45:14 [debug] 97150#0: *1 http copy filter: "/protected?"
+2026/04/24 12:45:14 [debug] 97150#0: *1 xslt filter body
+2026/04/24 12:45:14 [debug] 97150#0: *1 http postpone filter "/protected?" 00007FFE73CFEDA0
+2026/04/24 12:45:14 [debug] 97150#0: *1 write old buf t:1 f:0 0000000037DB6150, pos 0000000037DB6150, size: 162 file: 0, size: 0
+2026/04/24 12:45:14 [debug] 97150#0: *1 write new buf t:0 f:0 0000000000000000, pos 000000000631880D, size: 35 file: 0, size: 0
+2026/04/24 12:45:14 [debug] 97150#0: *1 http write filter: l:1 f:0 s:197
+2026/04/24 12:45:14 [debug] 97150#0: *1 http write filter limit 2097152
+2026/04/24 12:45:14 [debug] 97150#0: *1 writev: 197 of 197
+2026/04/24 12:45:14 [debug] 97150#0: *1 http write filter 0000000000000000
+2026/04/24 12:45:14 [debug] 97150#0: *1 http copy filter: 0 "/protected?"
+2026/04/24 12:45:14 [debug] 97150#0: *1 access phase: 10
+2026/04/24 12:45:14 [debug] 97150#0: *1 access phase: 11
+2026/04/24 12:45:14 [debug] 97150#0: *1 access phase: 12
+2026/04/24 12:45:14 [debug] 97150#0: *1 access phase: 13
+2026/04/24 12:45:14 [debug] 97150#0: *1 access phase: 14
+2026/04/24 12:45:14 [debug] 97150#0: *1 access phase: 15
+2026/04/24 12:45:14 [debug] 97150#0: *1 access phase: 16
+2026/04/24 12:45:14 [debug] 97150#0: *1 access phase: 17
+2026/04/24 12:45:14 [debug] 97150#0: *1 access phase: 18
+2026/04/24 12:45:14 [debug] 97150#0: *1 post access phase: 19
+2026/04/24 12:45:14 [debug] 97150#0: *1 generic phase: 20
+2026/04/24 12:45:14 [debug] 97150#0: *1 generic phase: 21
+2026/04/24 12:45:14 [alert] 97150#0: *1 header already sent, client: 127.0.0.1, server: , request: "GET /protected HTTP/1.1", host: "localhost:8888"
+2026/04/24 12:45:14 [debug] 97150#0: *1 http finalize request: 500, "/protected?" a:1, c:1
+2026/04/24 12:45:14 [debug] 97150#0: *1 http special response: 500, "/protected?"
+2026/04/24 12:45:14 [debug] 97150#0: *1 http set discard body
+2026/04/24 12:45:14 [alert] 97150#0: *1 header already sent, client: 127.0.0.1, server: , request: "GET /protected HTTP/1.1", host: "localhost:8888"
+2026/04/24 12:45:14 [debug] 97150#0: *1 http finalize request: -1, "/protected?" a:1, c:1
+2026/04/24 12:45:14 [debug] 97150#0: *1 http terminate request count:1
+2026/04/24 12:45:14 [debug] 97150#0: *1 http terminate cleanup count:1 blk:0
+2026/04/24 12:45:14 [debug] 97150#0: *1 http posted request: "/protected?"
+2026/04/24 12:45:14 [debug] 97150#0: *1 http terminate handler count:1
+2026/04/24 12:45:14 [debug] 97150#0: *1 http request count:1 blk:0
+2026/04/24 12:45:14 [debug] 97150#0: *1 http close request
+2026/04/24 12:45:14 [debug] 97150#0: *1 http log handler
+2026/04/24 12:45:14 [debug] 97150#0: shmtx lock
+2026/04/24 12:45:14 [debug] 97150#0: shmtx unlock
+2026/04/24 12:45:14 [debug] 97150#0: shmtx lock
+2026/04/24 12:45:14 [debug] 97150#0: shmtx unlock
+2026/04/24 12:45:14 [debug] 97150#0: *1 free: 0000000037E4A880, unused: 0
+2026/04/24 12:45:14 [debug] 97150#0: *1 free: 0000000037DB5CD0, unused: 2304
+2026/04/24 12:45:14 [debug] 97150#0: *1 close http connection: 3
+2026/04/24 12:45:14 [debug] 97150#0: *1 reusable connection: 0
+2026/04/24 12:45:14 [debug] 97150#0: *1 free: 0000000037DAA220
+2026/04/24 12:45:14 [debug] 97150#0: *1 free: 0000000037DBE310, unused: 128
+2026/04/24 12:45:14 [debug] 97150#0: timer delta: 0
+2026/04/24 12:45:14 [debug] 97150#0: worker cycle
+2026/04/24 12:45:14 [debug] 97150#0: epoll timer: -1
+2026/04/24 12:45:14 [notice] 97136#0: signal 15 (SIGTERM) received from 97134, exiting
+2026/04/24 12:45:14 [debug] 97136#0: wake up, sigio 0
+2026/04/24 12:45:14 [debug] 97136#0: child: 0 97150 e:0 t:0 d:0 r:1 j:0
+2026/04/24 12:45:14 [debug] 97136#0: termination cycle: 50
+2026/04/24 12:45:14 [debug] 97136#0: sigsuspend
+2026/04/24 12:45:14 [debug] 97150#0: epoll: fd:7 ev:0001 d:0000000037DB23A8
+2026/04/24 12:45:14 [debug] 97150#0: channel handler
+2026/04/24 12:45:14 [debug] 97150#0: channel: 32
+2026/04/24 12:45:14 [debug] 97150#0: channel command: 4
+2026/04/24 12:45:14 [debug] 97150#0: channel: -2
+2026/04/24 12:45:14 [debug] 97150#0: timer delta: 21
+2026/04/24 12:45:14 [notice] 97150#0: exiting
+2026/04/24 12:45:14 [debug] 97150#0: flush files
+2026/04/24 12:45:14 [debug] 97150#0: run cleanup: 0000000037DE4118
+2026/04/24 12:45:14 [debug] 97150#0: run cleanup: 0000000037DE2670
+2026/04/24 12:45:14 [debug] 97150#0: run cleanup: 0000000037DDFB00
+2026/04/24 12:45:14 [debug] 97150#0: cleanup resolver
+2026/04/24 12:45:14 [debug] 97150#0: run cleanup: 0000000037DB0468
+2026/04/24 12:45:14 [debug] 97150#0: run cleanup: 0000000037DB0440
+2026/04/24 12:45:14 [debug] 97150#0: free: 0000000037E4F3B0
+2026/04/24 12:45:14 [debug] 97150#0: free: 0000000037E4DBF0
+2026/04/24 12:45:14 [debug] 97150#0: free: 0000000037E4BBE0
+2026/04/24 12:45:14 [debug] 97150#0: free: 0000000037DC5780
+2026/04/24 12:45:14 [debug] 97150#0: free: 0000000037DC06B0
+2026/04/24 12:45:14 [debug] 97150#0: free: 0000000037DBF5F0
+2026/04/24 12:45:14 [debug] 97150#0: free: 0000000037DBE530
+2026/04/24 12:45:14 [debug] 97150#0: free: 0000000037DAE2B0, unused: 0
+2026/04/24 12:45:14 [debug] 97150#0: free: 0000000037DB72E0, unused: 0
+2026/04/24 12:45:14 [debug] 97150#0: free: 0000000037DC1770, unused: 1
+2026/04/24 12:45:14 [debug] 97150#0: free: 0000000037DC85B0, unused: 0
+2026/04/24 12:45:14 [debug] 97150#0: free: 0000000037DCC5C0, unused: 0
+2026/04/24 12:45:14 [debug] 97150#0: free: 0000000037DD05D0, unused: 0
+2026/04/24 12:45:14 [debug] 97150#0: free: 0000000037DD45E0, unused: 0
+2026/04/24 12:45:14 [debug] 97150#0: free: 0000000037DD85F0, unused: 0
+2026/04/24 12:45:14 [debug] 97150#0: free: 0000000037DDC600, unused: 4
+2026/04/24 12:45:14 [debug] 97150#0: free: 0000000037DE0610, unused: 1248
+2026/04/24 12:45:14 [notice] 97150#0: exit
+2026/04/24 12:45:14 [notice] 97136#0: signal 17 (SIGCHLD) received from 97150
+2026/04/24 12:45:14 [notice] 97136#0: worker process 97150 exited with code 0
+2026/04/24 12:45:14 [debug] 97136#0: shmtx forced unlock
+2026/04/24 12:45:14 [debug] 97136#0: shmtx forced unlock
+2026/04/24 12:45:14 [debug] 97136#0: shmtx forced unlock
+2026/04/24 12:45:14 [debug] 97136#0: shmtx forced unlock
+2026/04/24 12:45:14 [debug] 97136#0: shmtx forced unlock
+2026/04/24 12:45:14 [debug] 97136#0: shmtx forced unlock
+2026/04/24 12:45:14 [debug] 97136#0: shmtx forced unlock
+2026/04/24 12:45:14 [debug] 97136#0: shmtx forced unlock
+2026/04/24 12:45:14 [debug] 97136#0: shmtx forced unlock
+2026/04/24 12:45:14 [debug] 97136#0: wake up, sigio 3
+2026/04/24 12:45:14 [debug] 97136#0: reap children
+2026/04/24 12:45:14 [debug] 97136#0: child: 0 97150 e:1 t:1 d:0 r:1 j:0
+2026/04/24 12:45:14 [notice] 97136#0: exit
+2026/04/24 12:45:14 [debug] 97136#0: close listening 0.0.0.0:8888 #6 
+2026/04/24 12:45:14 [debug] 97136#0: run cleanup: 0000000037DE2670
+2026/04/24 12:45:14 [debug] 97136#0: run cleanup: 0000000037DDFB00
+2026/04/24 12:45:14 [debug] 97136#0: cleanup resolver
+2026/04/24 12:45:14 [debug] 97136#0: run cleanup: 0000000037DB0468
+2026/04/24 12:45:14 [debug] 97136#0: run cleanup: 0000000037DB0440
+2026/04/24 12:45:14 [debug] 97136#0: free: 0000000037E4F3B0
+2026/04/24 12:45:14 [debug] 97136#0: free: 0000000037E4DBF0
+2026/04/24 12:45:14 [debug] 97136#0: free: 0000000037E4BBE0
+2026/04/24 12:45:14 [debug] 97136#0: free: 0000000037DC5780
+2026/04/24 12:45:14 [debug] 97136#0: free: 0000000037DC06B0
+2026/04/24 12:45:14 [debug] 97136#0: free: 0000000037DBF5F0
+2026/04/24 12:45:14 [debug] 97136#0: free: 0000000037DBE530
+2026/04/24 12:45:14 [debug] 97136#0: free: 0000000037DAE2B0, unused: 0
+2026/04/24 12:45:14 [debug] 97136#0: free: 0000000037DB72E0, unused: 0
+2026/04/24 12:45:14 [debug] 97136#0: free: 0000000037DC1770, unused: 1
+2026/04/24 12:45:14 [debug] 97136#0: free: 0000000037DC85B0, unused: 0
+2026/04/24 12:45:14 [debug] 97136#0: free: 0000000037DCC5C0, unused: 0
+2026/04/24 12:45:14 [debug] 97136#0: free: 0000000037DD05D0, unused: 0
+2026/04/24 12:45:14 [debug] 97136#0: free: 0000000037DD45E0, unused: 0
+2026/04/24 12:45:14 [debug] 97136#0: free: 0000000037DD85F0, unused: 0
+2026/04/24 12:45:14 [debug] 97136#0: free: 0000000037DDC600, unused: 4
+2026/04/24 12:45:14 [debug] 97136#0: free: 0000000037DE0610, unused: 1276
+2026/04/24 12:46:25 [debug] 97422#0: {"status":"protected_content"}
+2026/04/24 12:46:25 [debug] 97422#0: {"status":"claims_content","sub":"$oidc_claim_sub","email":"$oidc_claim_email","name":"$oidc_claim_name"}
+2026/04/24 12:46:25 [debug] 97422#0: {"status":"quoted_path_content"}
+2026/04/24 12:46:25 [debug] 97422#0: {"status":"callback_handled"}
+2026/04/24 12:46:25 [debug] 97422#0: {"status":"no_pkce_content"}
+2026/04/24 12:46:25 [debug] 97422#0: {"status":"public_content"}
+2026/04/24 12:46:25 [debug] 97422#0: {"status":"ok"}
+2026/04/24 12:46:25 [debug] 97422#0: bind() 0.0.0.0:8888 #6 
+2026/04/24 12:46:25 [notice] 97422#0: using the "epoll" event method
+2026/04/24 12:46:25 [debug] 97422#0: counter: 00007F8AF9417080, 1
+2026/04/24 12:46:25 [notice] 97422#0: nginx/1.30.0
+2026/04/24 12:46:25 [notice] 97422#0: built by gcc 15.2.1 20260209 (GCC) 
+2026/04/24 12:46:25 [notice] 97422#0: OS: Linux 6.19.12-arch1-1
+2026/04/24 12:46:25 [notice] 97422#0: getrlimit(RLIMIT_NOFILE): 524288:524288
+2026/04/24 12:46:25 [debug] 97422#0: write: 7, 00007FFDA849ACC0, 6, 0
+2026/04/24 12:46:25 [debug] 97422#0: setproctitle: "nginx: master process ./zig-out/bin/nginz -c /home/kaiwu/Documents/gitea/nginz/tests/oidc/nginx.conf -p /home/kaiwu/Documents/gitea/nginz/tests/oidc/runtime-debug"
+2026/04/24 12:46:25 [notice] 97422#0: start worker processes
+2026/04/24 12:46:25 [debug] 97422#0: channel 3:7
+2026/04/24 12:46:25 [notice] 97422#0: start worker process 97435
+2026/04/24 12:46:25 [debug] 97422#0: sigsuspend
+2026/04/24 12:46:25 [debug] 97435#0: add cleanup: 0000000044A89118
+2026/04/24 12:46:25 [debug] 97435#0: malloc: 0000000044AEBBB0:8
+2026/04/24 12:46:25 [debug] 97435#0: notify eventfd: 9
+2026/04/24 12:46:25 [debug] 97435#0: testing the EPOLLRDHUP flag: success
+2026/04/24 12:46:25 [debug] 97435#0: malloc: 0000000044A602F0:6144
+2026/04/24 12:46:25 [debug] 97435#0: malloc: 0000000044A572C0:14848
+2026/04/24 12:46:25 [debug] 97435#0: malloc: 0000000044A61B00:6144
+2026/04/24 12:46:25 [debug] 97435#0: malloc: 0000000044AF61C0:6144
+2026/04/24 12:46:25 [debug] 97435#0: epoll add event: fd:6 op:1 ev:00002001
+2026/04/24 12:46:25 [debug] 97435#0: epoll add event: fd:7 op:1 ev:00002001
+2026/04/24 12:46:25 [debug] 97435#0: setproctitle: "nginx: worker process"
+2026/04/24 12:46:25 [debug] 97435#0: worker cycle
+2026/04/24 12:46:25 [debug] 97435#0: epoll timer: -1
+2026/04/24 12:46:27 [debug] 97435#0: epoll: fd:6 ev:0001 d:0000000044A572C0
+2026/04/24 12:46:27 [debug] 97435#0: accept on 0.0.0.0:8888, ready: 0
+2026/04/24 12:46:27 [debug] 97435#0: posix_memalign: 0000000044A63310:512 @16
+2026/04/24 12:46:27 [debug] 97435#0: *1 accept: 127.0.0.1:42244 fd:3
+2026/04/24 12:46:27 [debug] 97435#0: *1 event timer add: 3: 60000:15506373
+2026/04/24 12:46:27 [debug] 97435#0: *1 reusable connection: 1
+2026/04/24 12:46:27 [debug] 97435#0: *1 epoll add event: fd:3 op:1 ev:80002001
+2026/04/24 12:46:27 [debug] 97435#0: timer delta: 1958
+2026/04/24 12:46:27 [debug] 97435#0: worker cycle
+2026/04/24 12:46:27 [debug] 97435#0: epoll timer: 60000
+2026/04/24 12:46:27 [debug] 97435#0: epoll: fd:3 ev:0001 d:0000000044A57490
+2026/04/24 12:46:27 [debug] 97435#0: *1 http wait request handler
+2026/04/24 12:46:27 [debug] 97435#0: *1 malloc: 0000000044A4F220:1024
+2026/04/24 12:46:27 [debug] 97435#0: *1 recv: eof:0, avail:-1
+2026/04/24 12:46:27 [debug] 97435#0: *1 recv: fd:3 127 of 1024
+2026/04/24 12:46:27 [debug] 97435#0: *1 reusable connection: 0
+2026/04/24 12:46:27 [debug] 97435#0: *1 posix_memalign: 0000000044AEF880:4096 @16
+2026/04/24 12:46:27 [debug] 97435#0: *1 http process request line
+2026/04/24 12:46:27 [debug] 97435#0: *1 http request line: "GET /protected HTTP/1.1"
+2026/04/24 12:46:27 [debug] 97435#0: *1 http uri: "/protected"
+2026/04/24 12:46:27 [debug] 97435#0: *1 http args: ""
+2026/04/24 12:46:27 [debug] 97435#0: *1 http exten: ""
+2026/04/24 12:46:27 [debug] 97435#0: *1 posix_memalign: 0000000044A5ACD0:4096 @16
+2026/04/24 12:46:27 [debug] 97435#0: *1 http process request header line
+2026/04/24 12:46:27 [debug] 97435#0: *1 http header: "Accept-Encoding: identity"
+2026/04/24 12:46:27 [debug] 97435#0: *1 http header: "Host: localhost:8888"
+2026/04/24 12:46:27 [debug] 97435#0: *1 http header: "User-Agent: Python-urllib/3.14"
+2026/04/24 12:46:27 [debug] 97435#0: *1 http header: "Connection: close"
+2026/04/24 12:46:27 [debug] 97435#0: *1 http header done
+2026/04/24 12:46:27 [debug] 97435#0: *1 event timer del: 3: 15506373
+2026/04/24 12:46:27 [debug] 97435#0: *1 rewrite phase: 0
+2026/04/24 12:46:27 [debug] 97435#0: *1 test location: "/"
+2026/04/24 12:46:27 [debug] 97435#0: *1 test location: "no-pkce"
+2026/04/24 12:46:27 [debug] 97435#0: *1 test location: "public"
+2026/04/24 12:46:27 [debug] 97435#0: *1 test location: "protected"
+2026/04/24 12:46:27 [debug] 97435#0: *1 using configuration "/protected"
+2026/04/24 12:46:27 [debug] 97435#0: *1 http cl:-1 max:1048576
+2026/04/24 12:46:27 [debug] 97435#0: *1 rewrite phase: 2
+2026/04/24 12:46:27 [debug] 97435#0: *1 post rewrite phase: 3
+2026/04/24 12:46:27 [debug] 97435#0: *1 generic phase: 4
+2026/04/24 12:46:27 [debug] 97435#0: *1 generic phase: 5
+2026/04/24 12:46:27 [debug] 97435#0: *1 access phase: 6
+2026/04/24 12:46:27 [debug] 97435#0: *1 access phase: 7
+2026/04/24 12:46:27 [debug] 97435#0: *1 access phase: 8
+2026/04/24 12:46:27 [debug] 97435#0: *1 access phase: 9
+2026/04/24 12:46:27 [debug] 97435#0: *1 xslt filter header
+2026/04/24 12:46:27 [debug] 97435#0: *1 HTTP/1.1 500 Internal Server Error
+Server: nginx/1.30.0
+Date: Fri, 24 Apr 2026 04:46:27 GMT
+Content-Type: text/plain
+Content-Length: 35
+Connection: close
+
+2026/04/24 12:46:27 [debug] 97435#0: *1 write new buf t:1 f:0 0000000044A5B150, pos 0000000044A5B150, size: 162 file: 0, size: 0
+2026/04/24 12:46:27 [debug] 97435#0: *1 http write filter: l:0 f:0 s:162
+2026/04/24 12:46:27 [debug] 97435#0: *1 http output filter "/protected?"
+2026/04/24 12:46:27 [debug] 97435#0: *1 http copy filter: "/protected?"
+2026/04/24 12:46:27 [debug] 97435#0: *1 xslt filter body
+2026/04/24 12:46:27 [debug] 97435#0: *1 http postpone filter "/protected?" 00007FFDA849A5E0
+2026/04/24 12:46:27 [debug] 97435#0: *1 write old buf t:1 f:0 0000000044A5B150, pos 0000000044A5B150, size: 162 file: 0, size: 0
+2026/04/24 12:46:27 [debug] 97435#0: *1 write new buf t:0 f:0 0000000000000000, pos 000000000631880D, size: 35 file: 0, size: 0
+2026/04/24 12:46:27 [debug] 97435#0: *1 http write filter: l:1 f:0 s:197
+2026/04/24 12:46:27 [debug] 97435#0: *1 http write filter limit 2097152
+2026/04/24 12:46:27 [debug] 97435#0: *1 writev: 197 of 197
+2026/04/24 12:46:27 [debug] 97435#0: *1 http write filter 0000000000000000
+2026/04/24 12:46:27 [debug] 97435#0: *1 http copy filter: 0 "/protected?"
+2026/04/24 12:46:27 [debug] 97435#0: *1 access phase: 10
+2026/04/24 12:46:27 [debug] 97435#0: *1 access phase: 11
+2026/04/24 12:46:27 [debug] 97435#0: *1 access phase: 12
+2026/04/24 12:46:27 [debug] 97435#0: *1 access phase: 13
+2026/04/24 12:46:27 [debug] 97435#0: *1 access phase: 14
+2026/04/24 12:46:27 [debug] 97435#0: *1 access phase: 15
+2026/04/24 12:46:27 [debug] 97435#0: *1 access phase: 16
+2026/04/24 12:46:27 [debug] 97435#0: *1 access phase: 17
+2026/04/24 12:46:27 [debug] 97435#0: *1 access phase: 18
+2026/04/24 12:46:27 [debug] 97435#0: *1 post access phase: 19
+2026/04/24 12:46:27 [debug] 97435#0: *1 generic phase: 20
+2026/04/24 12:46:27 [debug] 97435#0: *1 generic phase: 21
+2026/04/24 12:46:27 [alert] 97435#0: *1 header already sent, client: 127.0.0.1, server: , request: "GET /protected HTTP/1.1", host: "localhost:8888"
+2026/04/24 12:46:27 [debug] 97435#0: *1 http finalize request: 500, "/protected?" a:1, c:1
+2026/04/24 12:46:27 [debug] 97435#0: *1 http special response: 500, "/protected?"
+2026/04/24 12:46:27 [debug] 97435#0: *1 http set discard body
+2026/04/24 12:46:27 [alert] 97435#0: *1 header already sent, client: 127.0.0.1, server: , request: "GET /protected HTTP/1.1", host: "localhost:8888"
+2026/04/24 12:46:27 [debug] 97435#0: *1 http finalize request: -1, "/protected?" a:1, c:1
+2026/04/24 12:46:27 [debug] 97435#0: *1 http terminate request count:1
+2026/04/24 12:46:27 [debug] 97435#0: *1 http terminate cleanup count:1 blk:0
+2026/04/24 12:46:27 [debug] 97435#0: *1 http posted request: "/protected?"
+2026/04/24 12:46:27 [debug] 97435#0: *1 http terminate handler count:1
+2026/04/24 12:46:27 [debug] 97435#0: *1 http request count:1 blk:0
+2026/04/24 12:46:27 [debug] 97435#0: *1 http close request
+2026/04/24 12:46:27 [debug] 97435#0: *1 http log handler
+2026/04/24 12:46:27 [debug] 97435#0: shmtx lock
+2026/04/24 12:46:27 [debug] 97435#0: shmtx unlock
+2026/04/24 12:46:27 [debug] 97435#0: shmtx lock
+2026/04/24 12:46:27 [debug] 97435#0: shmtx unlock
+2026/04/24 12:46:27 [debug] 97435#0: *1 free: 0000000044AEF880, unused: 0
+2026/04/24 12:46:27 [debug] 97435#0: *1 free: 0000000044A5ACD0, unused: 2304
+2026/04/24 12:46:27 [debug] 97435#0: *1 close http connection: 3
+2026/04/24 12:46:27 [debug] 97435#0: *1 reusable connection: 0
+2026/04/24 12:46:27 [debug] 97435#0: *1 free: 0000000044A4F220
+2026/04/24 12:46:27 [debug] 97435#0: *1 free: 0000000044A63310, unused: 128
+2026/04/24 12:46:27 [debug] 97435#0: timer delta: 0
+2026/04/24 12:46:27 [debug] 97435#0: worker cycle
+2026/04/24 12:46:27 [debug] 97435#0: epoll timer: -1
+2026/04/24 12:46:27 [notice] 97422#0: signal 15 (SIGTERM) received from 97420, exiting
+2026/04/24 12:46:27 [debug] 97422#0: wake up, sigio 0
+2026/04/24 12:46:27 [debug] 97422#0: child: 0 97435 e:0 t:0 d:0 r:1 j:0
+2026/04/24 12:46:27 [debug] 97422#0: termination cycle: 50
+2026/04/24 12:46:27 [debug] 97422#0: sigsuspend
+2026/04/24 12:46:27 [debug] 97435#0: epoll: fd:7 ev:0001 d:0000000044A573A8
+2026/04/24 12:46:27 [debug] 97435#0: channel handler
+2026/04/24 12:46:27 [debug] 97435#0: channel: 32
+2026/04/24 12:46:27 [debug] 97435#0: channel command: 4
+2026/04/24 12:46:27 [debug] 97435#0: channel: -2
+2026/04/24 12:46:27 [debug] 97435#0: timer delta: 18
+2026/04/24 12:46:27 [notice] 97435#0: exiting
+2026/04/24 12:46:27 [debug] 97435#0: flush files
+2026/04/24 12:46:27 [debug] 97435#0: run cleanup: 0000000044A89118
+2026/04/24 12:46:27 [debug] 97435#0: run cleanup: 0000000044A87670
+2026/04/24 12:46:27 [debug] 97435#0: run cleanup: 0000000044A84B00
+2026/04/24 12:46:27 [debug] 97435#0: cleanup resolver
+2026/04/24 12:46:27 [debug] 97435#0: run cleanup: 0000000044A55468
+2026/04/24 12:46:27 [debug] 97435#0: run cleanup: 0000000044A55440
+2026/04/24 12:46:27 [debug] 97435#0: free: 0000000044AF43B0
+2026/04/24 12:46:27 [debug] 97435#0: free: 0000000044AF2BF0
+2026/04/24 12:46:27 [debug] 97435#0: free: 0000000044AF0BE0
+2026/04/24 12:46:27 [debug] 97435#0: free: 0000000044A6A780
+2026/04/24 12:46:27 [debug] 97435#0: free: 0000000044A656B0
+2026/04/24 12:46:27 [debug] 97435#0: free: 0000000044A645F0
+2026/04/24 12:46:27 [debug] 97435#0: free: 0000000044A63530
+2026/04/24 12:46:27 [debug] 97435#0: free: 0000000044A532B0, unused: 0
+2026/04/24 12:46:27 [debug] 97435#0: free: 0000000044A5C2E0, unused: 0
+2026/04/24 12:46:27 [debug] 97435#0: free: 0000000044A66770, unused: 1
+2026/04/24 12:46:27 [debug] 97435#0: free: 0000000044A6D5B0, unused: 0
+2026/04/24 12:46:27 [debug] 97435#0: free: 0000000044A715C0, unused: 0
+2026/04/24 12:46:27 [debug] 97435#0: free: 0000000044A755D0, unused: 0
+2026/04/24 12:46:27 [debug] 97435#0: free: 0000000044A795E0, unused: 0
+2026/04/24 12:46:27 [debug] 97435#0: free: 0000000044A7D5F0, unused: 0
+2026/04/24 12:46:27 [debug] 97435#0: free: 0000000044A81600, unused: 4
+2026/04/24 12:46:27 [debug] 97435#0: free: 0000000044A85610, unused: 1248
+2026/04/24 12:46:27 [notice] 97435#0: exit
+2026/04/24 12:46:27 [notice] 97422#0: signal 17 (SIGCHLD) received from 97435
+2026/04/24 12:46:27 [notice] 97422#0: worker process 97435 exited with code 0
+2026/04/24 12:46:27 [debug] 97422#0: shmtx forced unlock
+2026/04/24 12:46:27 [debug] 97422#0: shmtx forced unlock
+2026/04/24 12:46:27 [debug] 97422#0: shmtx forced unlock
+2026/04/24 12:46:27 [debug] 97422#0: shmtx forced unlock
+2026/04/24 12:46:27 [debug] 97422#0: shmtx forced unlock
+2026/04/24 12:46:27 [debug] 97422#0: shmtx forced unlock
+2026/04/24 12:46:27 [debug] 97422#0: shmtx forced unlock
+2026/04/24 12:46:27 [debug] 97422#0: shmtx forced unlock
+2026/04/24 12:46:27 [debug] 97422#0: shmtx forced unlock
+2026/04/24 12:46:27 [debug] 97422#0: wake up, sigio 3
+2026/04/24 12:46:27 [debug] 97422#0: reap children
+2026/04/24 12:46:27 [debug] 97422#0: child: 0 97435 e:1 t:1 d:0 r:1 j:0
+2026/04/24 12:46:27 [notice] 97422#0: exit
+2026/04/24 12:46:27 [debug] 97422#0: close listening 0.0.0.0:8888 #6 
+2026/04/24 12:46:27 [debug] 97422#0: run cleanup: 0000000044A87670
+2026/04/24 12:46:27 [debug] 97422#0: run cleanup: 0000000044A84B00
+2026/04/24 12:46:27 [debug] 97422#0: cleanup resolver
+2026/04/24 12:46:27 [debug] 97422#0: run cleanup: 0000000044A55468
+2026/04/24 12:46:27 [debug] 97422#0: run cleanup: 0000000044A55440
+2026/04/24 12:46:27 [debug] 97422#0: free: 0000000044AF43B0
+2026/04/24 12:46:27 [debug] 97422#0: free: 0000000044AF2BF0
+2026/04/24 12:46:27 [debug] 97422#0: free: 0000000044AF0BE0
+2026/04/24 12:46:27 [debug] 97422#0: free: 0000000044A6A780
+2026/04/24 12:46:27 [debug] 97422#0: free: 0000000044A656B0
+2026/04/24 12:46:27 [debug] 97422#0: free: 0000000044A645F0
+2026/04/24 12:46:27 [debug] 97422#0: free: 0000000044A63530
+2026/04/24 12:46:27 [debug] 97422#0: free: 0000000044A532B0, unused: 0
+2026/04/24 12:46:27 [debug] 97422#0: free: 0000000044A5C2E0, unused: 0
+2026/04/24 12:46:27 [debug] 97422#0: free: 0000000044A66770, unused: 1
+2026/04/24 12:46:27 [debug] 97422#0: free: 0000000044A6D5B0, unused: 0
+2026/04/24 12:46:27 [debug] 97422#0: free: 0000000044A715C0, unused: 0
+2026/04/24 12:46:27 [debug] 97422#0: free: 0000000044A755D0, unused: 0
+2026/04/24 12:46:27 [debug] 97422#0: free: 0000000044A795E0, unused: 0
+2026/04/24 12:46:27 [debug] 97422#0: free: 0000000044A7D5F0, unused: 0
+2026/04/24 12:46:27 [debug] 97422#0: free: 0000000044A81600, unused: 4
+2026/04/24 12:46:27 [debug] 97422#0: free: 0000000044A85610, unused: 1276
+2026/04/24 12:47:32 [debug] 98076#0: {"status":"protected_content"}
+2026/04/24 12:47:32 [debug] 98076#0: {"status":"claims_content","sub":"$oidc_claim_sub","email":"$oidc_claim_email","name":"$oidc_claim_name"}
+2026/04/24 12:47:32 [debug] 98076#0: {"status":"quoted_path_content"}
+2026/04/24 12:47:32 [debug] 98076#0: {"status":"callback_handled"}
+2026/04/24 12:47:32 [debug] 98076#0: {"status":"no_pkce_content"}
+2026/04/24 12:47:32 [debug] 98076#0: {"status":"public_content"}
+2026/04/24 12:47:32 [debug] 98076#0: {"status":"ok"}
+2026/04/24 12:47:32 [debug] 98076#0: bind() 0.0.0.0:8888 #6 
+2026/04/24 12:47:32 [notice] 98076#0: using the "epoll" event method
+2026/04/24 12:47:32 [debug] 98076#0: counter: 00007FD41B6EC080, 1
+2026/04/24 12:47:32 [notice] 98076#0: nginx/1.30.0
+2026/04/24 12:47:32 [notice] 98076#0: built by gcc 15.2.1 20260209 (GCC) 
+2026/04/24 12:47:32 [notice] 98076#0: OS: Linux 6.19.12-arch1-1
+2026/04/24 12:47:32 [notice] 98076#0: getrlimit(RLIMIT_NOFILE): 524288:524288
+2026/04/24 12:47:32 [debug] 98076#0: write: 7, 00007FFD254CB260, 6, 0
+2026/04/24 12:47:32 [debug] 98076#0: setproctitle: "nginx: master process ./zig-out/bin/nginz -c /home/kaiwu/Documents/gitea/nginz/tests/oidc/nginx.conf -p /home/kaiwu/Documents/gitea/nginz/tests/oidc/runtime-debug"
+2026/04/24 12:47:32 [notice] 98076#0: start worker processes
+2026/04/24 12:47:32 [debug] 98076#0: channel 3:7
+2026/04/24 12:47:32 [notice] 98076#0: start worker process 98089
+2026/04/24 12:47:32 [debug] 98076#0: sigsuspend
+2026/04/24 12:47:32 [debug] 98089#0: add cleanup: 000000000811F118
+2026/04/24 12:47:32 [debug] 98089#0: malloc: 0000000008181BB0:8
+2026/04/24 12:47:32 [debug] 98089#0: notify eventfd: 9
+2026/04/24 12:47:32 [debug] 98089#0: testing the EPOLLRDHUP flag: success
+2026/04/24 12:47:32 [debug] 98089#0: malloc: 00000000080F62F0:6144
+2026/04/24 12:47:32 [debug] 98089#0: malloc: 00000000080ED2C0:14848
+2026/04/24 12:47:32 [debug] 98089#0: malloc: 00000000080F7B00:6144
+2026/04/24 12:47:32 [debug] 98089#0: malloc: 000000000818C1C0:6144
+2026/04/24 12:47:32 [debug] 98089#0: epoll add event: fd:6 op:1 ev:00002001
+2026/04/24 12:47:32 [debug] 98089#0: epoll add event: fd:7 op:1 ev:00002001
+2026/04/24 12:47:32 [debug] 98089#0: setproctitle: "nginx: worker process"
+2026/04/24 12:47:32 [debug] 98089#0: worker cycle
+2026/04/24 12:47:32 [debug] 98089#0: epoll timer: -1
+2026/04/24 12:47:34 [debug] 98089#0: epoll: fd:6 ev:0001 d:00000000080ED2C0
+2026/04/24 12:47:34 [debug] 98089#0: accept on 0.0.0.0:8888, ready: 0
+2026/04/24 12:47:34 [debug] 98089#0: posix_memalign: 00000000080F9310:512 @16
+2026/04/24 12:47:34 [debug] 98089#0: *1 accept: 127.0.0.1:58610 fd:3
+2026/04/24 12:47:34 [debug] 98089#0: *1 event timer add: 3: 60000:15573823
+2026/04/24 12:47:34 [debug] 98089#0: *1 reusable connection: 1
+2026/04/24 12:47:34 [debug] 98089#0: *1 epoll add event: fd:3 op:1 ev:80002001
+2026/04/24 12:47:34 [debug] 98089#0: timer delta: 1992
+2026/04/24 12:47:34 [debug] 98089#0: worker cycle
+2026/04/24 12:47:34 [debug] 98089#0: epoll timer: 60000
+2026/04/24 12:47:34 [debug] 98089#0: epoll: fd:3 ev:0001 d:00000000080ED490
+2026/04/24 12:47:34 [debug] 98089#0: *1 http wait request handler
+2026/04/24 12:47:34 [debug] 98089#0: *1 malloc: 00000000080E5220:1024
+2026/04/24 12:47:34 [debug] 98089#0: *1 recv: eof:0, avail:-1
+2026/04/24 12:47:34 [debug] 98089#0: *1 recv: fd:3 127 of 1024
+2026/04/24 12:47:34 [debug] 98089#0: *1 reusable connection: 0
+2026/04/24 12:47:34 [debug] 98089#0: *1 posix_memalign: 0000000008185880:4096 @16
+2026/04/24 12:47:34 [debug] 98089#0: *1 http process request line
+2026/04/24 12:47:34 [debug] 98089#0: *1 http request line: "GET /protected HTTP/1.1"
+2026/04/24 12:47:34 [debug] 98089#0: *1 http uri: "/protected"
+2026/04/24 12:47:34 [debug] 98089#0: *1 http args: ""
+2026/04/24 12:47:34 [debug] 98089#0: *1 http exten: ""
+2026/04/24 12:47:34 [debug] 98089#0: *1 posix_memalign: 00000000080F0CD0:4096 @16
+2026/04/24 12:47:34 [debug] 98089#0: *1 http process request header line
+2026/04/24 12:47:34 [debug] 98089#0: *1 http header: "Accept-Encoding: identity"
+2026/04/24 12:47:34 [debug] 98089#0: *1 http header: "Host: localhost:8888"
+2026/04/24 12:47:34 [debug] 98089#0: *1 http header: "User-Agent: Python-urllib/3.14"
+2026/04/24 12:47:34 [debug] 98089#0: *1 http header: "Connection: close"
+2026/04/24 12:47:34 [debug] 98089#0: *1 http header done
+2026/04/24 12:47:34 [debug] 98089#0: *1 event timer del: 3: 15573823
+2026/04/24 12:47:34 [debug] 98089#0: *1 rewrite phase: 0
+2026/04/24 12:47:34 [debug] 98089#0: *1 test location: "/"
+2026/04/24 12:47:34 [debug] 98089#0: *1 test location: "no-pkce"
+2026/04/24 12:47:34 [debug] 98089#0: *1 test location: "public"
+2026/04/24 12:47:34 [debug] 98089#0: *1 test location: "protected"
+2026/04/24 12:47:34 [debug] 98089#0: *1 using configuration "/protected"
+2026/04/24 12:47:34 [debug] 98089#0: *1 http cl:-1 max:1048576
+2026/04/24 12:47:34 [debug] 98089#0: *1 rewrite phase: 2
+2026/04/24 12:47:34 [debug] 98089#0: *1 post rewrite phase: 3
+2026/04/24 12:47:34 [debug] 98089#0: *1 generic phase: 4
+2026/04/24 12:47:34 [debug] 98089#0: *1 generic phase: 5
+2026/04/24 12:47:34 [debug] 98089#0: *1 access phase: 6
+2026/04/24 12:47:34 [debug] 98089#0: *1 access phase: 7
+2026/04/24 12:47:34 [debug] 98089#0: *1 access phase: 8
+2026/04/24 12:47:34 [debug] 98089#0: *1 access phase: 9
+2026/04/24 12:47:34 [debug] 98089#0: *1 xslt filter header
+2026/04/24 12:47:34 [debug] 98089#0: *1 HTTP/1.1 500 Internal Server Error
+Server: nginx/1.30.0
+Date: Fri, 24 Apr 2026 04:47:34 GMT
+Content-Type: text/plain
+Content-Length: 27
+Connection: close
+
+2026/04/24 12:47:34 [debug] 98089#0: *1 write new buf t:1 f:0 00000000080F1150, pos 00000000080F1150, size: 162 file: 0, size: 0
+2026/04/24 12:47:34 [debug] 98089#0: *1 http write filter: l:0 f:0 s:162
+2026/04/24 12:47:34 [debug] 98089#0: *1 http output filter "/protected?"
+2026/04/24 12:47:34 [debug] 98089#0: *1 http copy filter: "/protected?"
+2026/04/24 12:47:34 [debug] 98089#0: *1 xslt filter body
+2026/04/24 12:47:34 [debug] 98089#0: *1 http postpone filter "/protected?" 00007FFD254CAB70
+2026/04/24 12:47:34 [debug] 98089#0: *1 write old buf t:1 f:0 00000000080F1150, pos 00000000080F1150, size: 162 file: 0, size: 0
+2026/04/24 12:47:34 [debug] 98089#0: *1 write new buf t:0 f:0 0000000000000000, pos 0000000005AAA290, size: 27 file: 0, size: 0
+2026/04/24 12:47:34 [debug] 98089#0: *1 http write filter: l:1 f:0 s:189
+2026/04/24 12:47:34 [debug] 98089#0: *1 http write filter limit 2097152
+2026/04/24 12:47:34 [debug] 98089#0: *1 writev: 189 of 189
+2026/04/24 12:47:34 [debug] 98089#0: *1 http write filter 0000000000000000
+2026/04/24 12:47:34 [debug] 98089#0: *1 http copy filter: 0 "/protected?"
+2026/04/24 12:47:34 [debug] 98089#0: *1 access phase: 10
+2026/04/24 12:47:34 [debug] 98089#0: *1 access phase: 11
+2026/04/24 12:47:34 [debug] 98089#0: *1 access phase: 12
+2026/04/24 12:47:34 [debug] 98089#0: *1 access phase: 13
+2026/04/24 12:47:34 [debug] 98089#0: *1 access phase: 14
+2026/04/24 12:47:34 [debug] 98089#0: *1 access phase: 15
+2026/04/24 12:47:34 [debug] 98089#0: *1 access phase: 16
+2026/04/24 12:47:34 [debug] 98089#0: *1 access phase: 17
+2026/04/24 12:47:34 [debug] 98089#0: *1 access phase: 18
+2026/04/24 12:47:34 [debug] 98089#0: *1 post access phase: 19
+2026/04/24 12:47:34 [debug] 98089#0: *1 generic phase: 20
+2026/04/24 12:47:34 [debug] 98089#0: *1 generic phase: 21
+2026/04/24 12:47:34 [alert] 98089#0: *1 header already sent, client: 127.0.0.1, server: , request: "GET /protected HTTP/1.1", host: "localhost:8888"
+2026/04/24 12:47:34 [debug] 98089#0: *1 http finalize request: 500, "/protected?" a:1, c:1
+2026/04/24 12:47:34 [debug] 98089#0: *1 http special response: 500, "/protected?"
+2026/04/24 12:47:34 [debug] 98089#0: *1 http set discard body
+2026/04/24 12:47:34 [alert] 98089#0: *1 header already sent, client: 127.0.0.1, server: , request: "GET /protected HTTP/1.1", host: "localhost:8888"
+2026/04/24 12:47:34 [debug] 98089#0: *1 http finalize request: -1, "/protected?" a:1, c:1
+2026/04/24 12:47:34 [debug] 98089#0: *1 http terminate request count:1
+2026/04/24 12:47:34 [debug] 98089#0: *1 http terminate cleanup count:1 blk:0
+2026/04/24 12:47:34 [debug] 98089#0: *1 http posted request: "/protected?"
+2026/04/24 12:47:34 [debug] 98089#0: *1 http terminate handler count:1
+2026/04/24 12:47:34 [debug] 98089#0: *1 http request count:1 blk:0
+2026/04/24 12:47:34 [debug] 98089#0: *1 http close request
+2026/04/24 12:47:34 [debug] 98089#0: *1 http log handler
+2026/04/24 12:47:34 [debug] 98089#0: shmtx lock
+2026/04/24 12:47:34 [debug] 98089#0: shmtx unlock
+2026/04/24 12:47:34 [debug] 98089#0: shmtx lock
+2026/04/24 12:47:34 [debug] 98089#0: shmtx unlock
+2026/04/24 12:47:34 [debug] 98089#0: *1 free: 0000000008185880, unused: 0
+2026/04/24 12:47:34 [debug] 98089#0: *1 free: 00000000080F0CD0, unused: 2304
+2026/04/24 12:47:34 [debug] 98089#0: *1 close http connection: 3
+2026/04/24 12:47:34 [debug] 98089#0: *1 reusable connection: 0
+2026/04/24 12:47:34 [debug] 98089#0: *1 free: 00000000080E5220
+2026/04/24 12:47:34 [debug] 98089#0: *1 free: 00000000080F9310, unused: 128
+2026/04/24 12:47:34 [debug] 98089#0: timer delta: 0
+2026/04/24 12:47:34 [debug] 98089#0: worker cycle
+2026/04/24 12:47:34 [debug] 98089#0: epoll timer: -1
+2026/04/24 12:47:34 [notice] 98076#0: signal 15 (SIGTERM) received from 98074, exiting
+2026/04/24 12:47:34 [debug] 98076#0: wake up, sigio 0
+2026/04/24 12:47:34 [debug] 98076#0: child: 0 98089 e:0 t:0 d:0 r:1 j:0
+2026/04/24 12:47:34 [debug] 98076#0: termination cycle: 50
+2026/04/24 12:47:34 [debug] 98076#0: sigsuspend
+2026/04/24 12:47:34 [debug] 98089#0: epoll: fd:7 ev:0001 d:00000000080ED3A8
+2026/04/24 12:47:34 [debug] 98089#0: channel handler
+2026/04/24 12:47:34 [debug] 98089#0: channel: 32
+2026/04/24 12:47:34 [debug] 98089#0: channel command: 4
+2026/04/24 12:47:34 [debug] 98089#0: channel: -2
+2026/04/24 12:47:34 [debug] 98089#0: timer delta: 20
+2026/04/24 12:47:34 [notice] 98089#0: exiting
+2026/04/24 12:47:34 [debug] 98089#0: flush files
+2026/04/24 12:47:34 [debug] 98089#0: run cleanup: 000000000811F118
+2026/04/24 12:47:34 [debug] 98089#0: run cleanup: 000000000811D670
+2026/04/24 12:47:34 [debug] 98089#0: run cleanup: 000000000811AB00
+2026/04/24 12:47:34 [debug] 98089#0: cleanup resolver
+2026/04/24 12:47:34 [debug] 98089#0: run cleanup: 00000000080EB468
+2026/04/24 12:47:34 [debug] 98089#0: run cleanup: 00000000080EB440
+2026/04/24 12:47:34 [debug] 98089#0: free: 000000000818A3B0
+2026/04/24 12:47:34 [debug] 98089#0: free: 0000000008188BF0
+2026/04/24 12:47:34 [debug] 98089#0: free: 0000000008186BE0
+2026/04/24 12:47:34 [debug] 98089#0: free: 0000000008100780
+2026/04/24 12:47:34 [debug] 98089#0: free: 00000000080FB6B0
+2026/04/24 12:47:34 [debug] 98089#0: free: 00000000080FA5F0
+2026/04/24 12:47:34 [debug] 98089#0: free: 00000000080F9530
+2026/04/24 12:47:34 [debug] 98089#0: free: 00000000080E92B0, unused: 0
+2026/04/24 12:47:34 [debug] 98089#0: free: 00000000080F22E0, unused: 0
+2026/04/24 12:47:34 [debug] 98089#0: free: 00000000080FC770, unused: 1
+2026/04/24 12:47:34 [debug] 98089#0: free: 00000000081035B0, unused: 0
+2026/04/24 12:47:34 [debug] 98089#0: free: 00000000081075C0, unused: 0
+2026/04/24 12:47:34 [debug] 98089#0: free: 000000000810B5D0, unused: 0
+2026/04/24 12:47:34 [debug] 98089#0: free: 000000000810F5E0, unused: 0
+2026/04/24 12:47:34 [debug] 98089#0: free: 00000000081135F0, unused: 0
+2026/04/24 12:47:34 [debug] 98089#0: free: 0000000008117600, unused: 4
+2026/04/24 12:47:34 [debug] 98089#0: free: 000000000811B610, unused: 1248
+2026/04/24 12:47:34 [notice] 98089#0: exit
+2026/04/24 12:47:34 [notice] 98076#0: signal 17 (SIGCHLD) received from 98089
+2026/04/24 12:47:34 [notice] 98076#0: worker process 98089 exited with code 0
+2026/04/24 12:47:34 [debug] 98076#0: shmtx forced unlock
+2026/04/24 12:47:34 [debug] 98076#0: shmtx forced unlock
+2026/04/24 12:47:34 [debug] 98076#0: shmtx forced unlock
+2026/04/24 12:47:34 [debug] 98076#0: shmtx forced unlock
+2026/04/24 12:47:34 [debug] 98076#0: shmtx forced unlock
+2026/04/24 12:47:34 [debug] 98076#0: shmtx forced unlock
+2026/04/24 12:47:34 [debug] 98076#0: shmtx forced unlock
+2026/04/24 12:47:34 [debug] 98076#0: shmtx forced unlock
+2026/04/24 12:47:34 [debug] 98076#0: shmtx forced unlock
+2026/04/24 12:47:34 [debug] 98076#0: wake up, sigio 3
+2026/04/24 12:47:34 [debug] 98076#0: reap children
+2026/04/24 12:47:34 [debug] 98076#0: child: 0 98089 e:1 t:1 d:0 r:1 j:0
+2026/04/24 12:47:34 [notice] 98076#0: exit
+2026/04/24 12:47:34 [debug] 98076#0: close listening 0.0.0.0:8888 #6 
+2026/04/24 12:47:34 [debug] 98076#0: run cleanup: 000000000811D670
+2026/04/24 12:47:34 [debug] 98076#0: run cleanup: 000000000811AB00
+2026/04/24 12:47:34 [debug] 98076#0: cleanup resolver
+2026/04/24 12:47:34 [debug] 98076#0: run cleanup: 00000000080EB468
+2026/04/24 12:47:34 [debug] 98076#0: run cleanup: 00000000080EB440
+2026/04/24 12:47:34 [debug] 98076#0: free: 000000000818A3B0
+2026/04/24 12:47:34 [debug] 98076#0: free: 0000000008188BF0
+2026/04/24 12:47:34 [debug] 98076#0: free: 0000000008186BE0
+2026/04/24 12:47:34 [debug] 98076#0: free: 0000000008100780
+2026/04/24 12:47:34 [debug] 98076#0: free: 00000000080FB6B0
+2026/04/24 12:47:34 [debug] 98076#0: free: 00000000080FA5F0
+2026/04/24 12:47:34 [debug] 98076#0: free: 00000000080F9530
+2026/04/24 12:47:34 [debug] 98076#0: free: 00000000080E92B0, unused: 0
+2026/04/24 12:47:34 [debug] 98076#0: free: 00000000080F22E0, unused: 0
+2026/04/24 12:47:34 [debug] 98076#0: free: 00000000080FC770, unused: 1
+2026/04/24 12:47:34 [debug] 98076#0: free: 00000000081035B0, unused: 0
+2026/04/24 12:47:34 [debug] 98076#0: free: 00000000081075C0, unused: 0
+2026/04/24 12:47:34 [debug] 98076#0: free: 000000000810B5D0, unused: 0
+2026/04/24 12:47:34 [debug] 98076#0: free: 000000000810F5E0, unused: 0
+2026/04/24 12:47:34 [debug] 98076#0: free: 00000000081135F0, unused: 0
+2026/04/24 12:47:34 [debug] 98076#0: free: 0000000008117600, unused: 4
+2026/04/24 12:47:34 [debug] 98076#0: free: 000000000811B610, unused: 1276
