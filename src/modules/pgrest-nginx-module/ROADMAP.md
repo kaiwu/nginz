@@ -381,6 +381,14 @@ This module is not a standalone PostgREST server. It is an nginx upstream module
 **Unlocks**
 - Predictable write behavior for later bulk-write and upsert work
 
+### Batch 3 progress update
+
+- ✅ Completed: central Prefer parsing now covers `return=minimal|headers-only|representation`, `handling=strict|lenient`, and `max-affected` while preserving `params=single-object`.
+- ✅ Completed: current table write paths honor the Batch 3 write-response contract across both blocking and pooled execution paths.
+- ✅ Completed: `Preference-Applied` now reflects the newly honored write-side Prefer values in addition to the existing RPC parameter wrapper preference.
+- ✅ Completed: strict handling rejects malformed/unsupported Prefer values before SQL execution, while lenient handling ignores them.
+- ℹ️ Intentional Batch 3 boundary: enforcement and response semantics are complete for the current write paths, but broader bulk/upsert/transaction semantics remain later-batch work.
+
 ### Batch 4: URL Grammar Expansion
 
 **Theme:** Expand the request grammar in a controlled way.

@@ -210,7 +210,15 @@ const PgRequestCtx = extern struct {
     strip_nulls: bool,
     is_head: bool,
     prefer_params_single_object: bool,
+    prefer_return_mode: PreferReturnMode,
+    prefer_handling: PreferHandling,
+    prefer_max_affected: usize,
+    prefer_has_max_affected: bool,
+    prefer_invalid: bool,
     emit_range_headers: bool,
+    write_status: ngx_uint_t,
+    write_send_body: bool,
+    is_write_request: bool,
 };
 
 fn ensure_pool_conninfo(conninfo: []const u8) bool {
@@ -495,6 +503,21 @@ fn parse_single_value_body(
 
 const PreferOptions = struct {
     params_single_object: bool = false,
+    return_mode: PreferReturnMode = .representation,
+    handling: PreferHandling = .lenient,
+    max_affected: ?usize = null,
+    invalid: bool = false,
+};
+
+const PreferReturnMode = enum(u8) {
+    representation,
+    minimal,
+    headers_only,
+};
+
+const PreferHandling = enum(u8) {
+    lenient,
+    strict,
 };
 
 const RequestBodyFormat = enum(u8) {
@@ -515,6 +538,12 @@ const RequestOptions = struct {
     is_head: bool = false,
     prefer: PreferOptions = .{},
     emit_range_headers: bool = false,
+};
+
+const WriteResponseContract = struct {
+    status: ngx_uint_t,
+    send_body: bool,
+    include_returning: bool,
 };
 
 fn trim_ascii_spaces(value: []const u8) []const u8 {
@@ -540,6 +569,24 @@ fn parse_prefer_header(r: [*c]ngx_http_request_t) PreferOptions {
         const token = trim_ascii_spaces(part);
         if (std.mem.eql(u8, token, "params=single-object")) {
             prefer.params_single_object = true;
+        } else if (std.mem.eql(u8, token, "return=representation")) {
+            prefer.return_mode = .representation;
+        } else if (std.mem.eql(u8, token, "return=minimal")) {
+            prefer.return_mode = .minimal;
+        } else if (std.mem.eql(u8, token, "return=headers-only")) {
+            prefer.return_mode = .headers_only;
+        } else if (std.mem.eql(u8, token, "handling=strict")) {
+            prefer.handling = .strict;
+        } else if (std.mem.eql(u8, token, "handling=lenient")) {
+            prefer.handling = .lenient;
+        } else if (std.mem.startsWith(u8, token, "max-affected=")) {
+            const value = token["max-affected=".len..];
+            prefer.max_affected = std.fmt.parseInt(usize, value, 10) catch {
+                prefer.invalid = true;
+                continue;
+            };
+        } else if (token.len != 0) {
+            prefer.invalid = true;
         }
     }
 
@@ -584,8 +631,40 @@ fn append_response_header(
 }
 
 fn append_preference_applied_header(r: [*c]ngx_http_request_t, opts: RequestOptions) void {
+    var buf_out: [256]u8 = undefined;
+    var pos: usize = 0;
+
     if (opts.prefer.params_single_object) {
-        _ = append_response_header(r, "Preference-Applied", "preference-applied", "params=single-object");
+        const token = "params=single-object";
+        @memcpy(buf_out[pos..][0..token.len], token);
+        pos += token.len;
+    }
+
+    if (opts.prefer.return_mode != .representation) {
+        if (pos > 0) {
+            buf_out[pos] = ',';
+            pos += 1;
+        }
+        const token = switch (opts.prefer.return_mode) {
+            .representation => "return=representation",
+            .minimal => "return=minimal",
+            .headers_only => "return=headers-only",
+        };
+        @memcpy(buf_out[pos..][0..token.len], token);
+        pos += token.len;
+    }
+
+    if (opts.prefer.max_affected) |max_affected| {
+        if (pos > 0) {
+            buf_out[pos] = ',';
+            pos += 1;
+        }
+        const token = std.fmt.bufPrint(buf_out[pos..], "max-affected={d}", .{max_affected}) catch return;
+        pos += token.len;
+    }
+
+    if (pos > 0) {
+        _ = append_response_header(r, "Preference-Applied", "preference-applied", buf_out[0..pos]);
     }
 }
 
@@ -642,18 +721,55 @@ fn send_unsupported_media_type(r: [*c]ngx_http_request_t, body: []const u8) ngx_
     return send_json_error(r, NGX_HTTP_UNSUPPORTED_MEDIA_TYPE, body);
 }
 
+fn prefer_invalid_status() ngx_uint_t {
+    return http.NGX_HTTP_BAD_REQUEST;
+}
+
+fn reject_invalid_prefer(r: [*c]ngx_http_request_t) ngx_int_t {
+    return send_json_error(r, prefer_invalid_status(), "{\"message\":\"Invalid Prefer header\"}");
+}
+
+fn should_reject_invalid_prefer(opts: RequestOptions) bool {
+    return opts.prefer.handling == .strict and opts.prefer.invalid;
+}
+
+fn write_response_contract(sql_op: SqlOp, prefer: PreferOptions) WriteResponseContract {
+    const status = switch (sql_op) {
+        .insert => @as(ngx_uint_t, 201),
+        .update, .delete => http.NGX_HTTP_OK,
+        else => http.NGX_HTTP_OK,
+    };
+
+    return .{
+        .status = status,
+        .send_body = prefer.return_mode == .representation,
+        .include_returning = prefer.return_mode == .representation or prefer.max_affected != null,
+    };
+}
+
+fn enforce_max_affected(r: [*c]ngx_http_request_t, opts: RequestOptions, ntuples: i32) ?ngx_int_t {
+    const max_affected = opts.prefer.max_affected orelse return null;
+    const affected: usize = @intCast(@max(ntuples, 0));
+    if (affected > max_affected) {
+        return send_json_error(r, http.NGX_HTTP_BAD_REQUEST, "{\"message\":\"Query exceeds Prefer: max-affected\"}");
+    }
+    return null;
+}
+
 fn finalize_response_send(
     r: [*c]ngx_http_request_t,
     response_data: []const u8,
     content_type: [*:0]const u8,
     ntuples: i32,
     opts: RequestOptions,
+    status: ngx_uint_t,
+    send_body: bool,
 ) ngx_int_t {
-    r.*.headers_out.status = http.NGX_HTTP_OK;
+    r.*.headers_out.status = status;
     const len = std.mem.len(content_type);
     r.*.headers_out.content_type = ngx_str_t{ .data = @constCast(content_type), .len = len };
     r.*.headers_out.content_type_len = len;
-    r.*.headers_out.content_length_n = @intCast(response_data.len);
+    r.*.headers_out.content_length_n = if (send_body and !opts.is_head) @intCast(response_data.len) else 0;
 
     append_preference_applied_header(r, opts);
     append_range_headers(r, ntuples, opts);
@@ -663,7 +779,7 @@ fn finalize_response_send(
         return header_rc;
     }
 
-    if (opts.is_head) {
+    if (opts.is_head or !send_body) {
         return http.ngx_http_send_special(r, http.NGX_HTTP_LAST);
     }
 
@@ -1501,6 +1617,7 @@ fn build_sql_query(
     select_cols: []const []const u8,
     order_specs: []const OrderSpec,
     pagination: Pagination,
+    include_returning: bool,
 ) usize {
     var pos: usize = 0;
 
@@ -1588,11 +1705,13 @@ fn build_sql_query(
                 query_buf[pos] = ')';
                 pos += 1;
 
-                const returning = " RETURNING *";
-                @memcpy(query_buf[pos..][0..returning.len], returning);
-                pos += returning.len;
+                if (include_returning) {
+                    const returning = " RETURNING *";
+                    @memcpy(query_buf[pos..][0..returning.len], returning);
+                    pos += returning.len;
+                }
             } else {
-                const values = " DEFAULT VALUES RETURNING *";
+                const values = if (include_returning) " DEFAULT VALUES RETURNING *" else " DEFAULT VALUES";
                 @memcpy(query_buf[pos..][0..values.len], values);
                 pos += values.len;
             }
@@ -1681,7 +1800,7 @@ fn build_sql_query(
     }
 
     // Add RETURNING for UPDATE/DELETE
-    if (sql_op == .update or sql_op == .delete) {
+    if ((sql_op == .update or sql_op == .delete) and include_returning) {
         const returning = " RETURNING *";
         @memcpy(query_buf[pos..][0..returning.len], returning);
         pos += returning.len;
@@ -3541,7 +3660,15 @@ fn handle_rpc_call(
         error.ResponseTooLarge => return http.NGX_HTTP_INTERNAL_SERVER_ERROR,
     };
 
-    return finalize_response_send(r, response_buf[0..response_len], content_type, pg_result.ntuples, opts);
+    return finalize_response_send(
+        r,
+        response_buf[0..response_len],
+        content_type,
+        pg_result.ntuples,
+        opts,
+        http.NGX_HTTP_OK,
+        true,
+    );
 }
 
 /// Content handler for pgrest_pass locations
@@ -3577,6 +3704,12 @@ fn ngx_http_pgrest_handler(r: [*c]ngx_http_request_t) callconv(.c) ngx_int_t {
     const opts = parse_request_options(r);
     if (opts.response_format == .unsupported) {
         return send_not_acceptable(r, "{\"message\":\"None of these media types are available\"}");
+    }
+    if (should_reject_invalid_prefer(opts)) {
+        return reject_invalid_prefer(r);
+    }
+    if (should_reject_invalid_prefer(opts)) {
+        return reject_invalid_prefer(r);
     }
 
     const body_format = parse_content_type_from_request(r);
@@ -3618,6 +3751,8 @@ fn ngx_http_pgrest_handler(r: [*c]ngx_http_request_t) callconv(.c) ngx_int_t {
         _ = http.ngx_http_send_header(r);
         return http.ngx_http_send_special(r, http.NGX_HTTP_LAST);
     };
+    const is_write_request = sql_op == .insert or sql_op == .update or sql_op == .delete;
+    const write_contract = write_response_contract(sql_op, opts.prefer);
 
     // Parse query string filters
     var filters: [MAX_FILTERS]Filter = undefined;
@@ -3655,6 +3790,7 @@ fn ngx_http_pgrest_handler(r: [*c]ngx_http_request_t) callconv(.c) ngx_int_t {
         select_cols[0..select_count],
         order_specs[0..order_count],
         pagination,
+        if (is_write_request) write_contract.include_returning else true,
     );
     const query = query_buf[0..query_len];
 
@@ -3712,6 +3848,12 @@ fn ngx_http_pgrest_handler(r: [*c]ngx_http_request_t) callconv(.c) ngx_int_t {
         return send_not_acceptable(r, "{\"message\":\"JSON object requested, multiple (or no) rows returned\"}");
     }
 
+    if (is_write_request) {
+        if (enforce_max_affected(r, opts, pg_result.ntuples)) |rc| {
+            return rc;
+        }
+    }
+
     // Format query results according to requested format
     var response_buf: [MAX_JSON_SIZE]u8 = undefined;
     var response_len: usize = 0;
@@ -3729,7 +3871,15 @@ fn ngx_http_pgrest_handler(r: [*c]ngx_http_request_t) callconv(.c) ngx_int_t {
         error.ResponseTooLarge => return http.NGX_HTTP_INTERNAL_SERVER_ERROR,
     };
 
-    return finalize_response_send(r, response_buf[0..response_len], content_type, pg_result.ntuples, opts);
+    return finalize_response_send(
+        r,
+        response_buf[0..response_len],
+        content_type,
+        pg_result.ntuples,
+        opts,
+        if (is_write_request) write_contract.status else http.NGX_HTTP_OK,
+        if (is_write_request) write_contract.send_body else true,
+    );
 }
 
 /// Handle RPC (stored procedure) call in non-blocking mode with connection pooling
@@ -3782,7 +3932,15 @@ fn handle_rpc_call_upstream(
     ctx.*.strip_nulls = opts.strip_nulls;
     ctx.*.is_head = opts.is_head;
     ctx.*.prefer_params_single_object = opts.prefer.params_single_object;
+    ctx.*.prefer_return_mode = opts.prefer.return_mode;
+    ctx.*.prefer_handling = opts.prefer.handling;
+    ctx.*.prefer_max_affected = opts.prefer.max_affected orelse 0;
+    ctx.*.prefer_has_max_affected = opts.prefer.max_affected != null;
+    ctx.*.prefer_invalid = opts.prefer.invalid;
     ctx.*.emit_range_headers = opts.emit_range_headers;
+    ctx.*.write_status = http.NGX_HTTP_OK;
+    ctx.*.write_send_body = true;
+    ctx.*.is_write_request = false;
     return start_pooled_request(ctx, loc_conf);
 }
 
@@ -3853,6 +4011,8 @@ fn ngx_http_pgrest_upstream_handler(r: [*c]ngx_http_request_t) callconv(.c) ngx_
     const sql_op = SqlOp.fromMethod(r.*.method) orelse {
         return http.NGX_HTTP_NOT_ALLOWED;
     };
+    const is_write_request = sql_op == .insert or sql_op == .update or sql_op == .delete;
+    const write_contract = write_response_contract(sql_op, opts.prefer);
 
     // Parse query string filters
     var filters: [MAX_FILTERS]Filter = undefined;
@@ -3894,6 +4054,7 @@ fn ngx_http_pgrest_upstream_handler(r: [*c]ngx_http_request_t) callconv(.c) ngx_
         select_cols[0..select_count],
         order_specs[0..order_count],
         pagination,
+        if (is_write_request) write_contract.include_returning else true,
     );
     ctx[0].query[ctx.*.query_len] = 0; // null terminate
 
@@ -3906,7 +4067,15 @@ fn ngx_http_pgrest_upstream_handler(r: [*c]ngx_http_request_t) callconv(.c) ngx_
     ctx.*.strip_nulls = opts.strip_nulls;
     ctx.*.is_head = opts.is_head;
     ctx.*.prefer_params_single_object = opts.prefer.params_single_object;
+    ctx.*.prefer_return_mode = opts.prefer.return_mode;
+    ctx.*.prefer_handling = opts.prefer.handling;
+    ctx.*.prefer_max_affected = opts.prefer.max_affected orelse 0;
+    ctx.*.prefer_has_max_affected = opts.prefer.max_affected != null;
+    ctx.*.prefer_invalid = opts.prefer.invalid;
     ctx.*.emit_range_headers = opts.emit_range_headers;
+    ctx.*.write_status = if (is_write_request) write_contract.status else http.NGX_HTTP_OK;
+    ctx.*.write_send_body = if (is_write_request) write_contract.send_body else true;
+    ctx.*.is_write_request = is_write_request;
 
     return start_pooled_request(ctx, loc_conf);
 }
@@ -4024,7 +4193,13 @@ fn finalize_pg_response(ctx: *PgRequestCtx) void {
         .singular_object = ctx.*.singular_object,
         .strip_nulls = ctx.*.strip_nulls,
         .is_head = ctx.*.is_head,
-        .prefer = .{ .params_single_object = ctx.*.prefer_params_single_object },
+        .prefer = .{
+            .params_single_object = ctx.*.prefer_params_single_object,
+            .return_mode = ctx.*.prefer_return_mode,
+            .handling = ctx.*.prefer_handling,
+            .max_affected = if (ctx.*.prefer_has_max_affected) ctx.*.prefer_max_affected else null,
+            .invalid = ctx.*.prefer_invalid,
+        },
         .emit_range_headers = ctx.*.emit_range_headers,
     };
 
@@ -4061,6 +4236,15 @@ fn finalize_pg_response(ctx: *PgRequestCtx) void {
         return;
     }
 
+    if (ctx.*.is_write_request) {
+        if (enforce_max_affected(r, opts, ntuples)) |rc| {
+            ctx.*.request = null;
+            release_pooled_ctx(ctx, false);
+            http.ngx_http_finalize_request(r, rc);
+            return;
+        }
+    }
+
     var response_buf: [MAX_JSON_SIZE]u8 = undefined;
     var response_len: usize = 0;
     var content_type: [*:0]const u8 = "application/json";
@@ -4088,7 +4272,15 @@ fn finalize_pg_response(ctx: *PgRequestCtx) void {
         },
     };
 
-    const rc = finalize_response_send(r, response_buf[0..response_len], content_type, ntuples, opts);
+    const rc = finalize_response_send(
+        r,
+        response_buf[0..response_len],
+        content_type,
+        ntuples,
+        opts,
+        ctx.*.write_status,
+        ctx.*.write_send_body,
+    );
     ctx.*.request = null;
     release_pooled_ctx(ctx, false);
     http.ngx_http_finalize_request(r, rc);

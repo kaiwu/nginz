@@ -660,9 +660,9 @@ curl "http://localhost/api/users" \
   -H "Accept: application/json"
 ```
 
-### Prefer Header for RPC Parameters
+### Prefer Header
 
-The `Prefer` header controls how RPC function parameters are handled.
+The `Prefer` header controls both RPC parameter wrapping and the write-response contract for current table write paths.
 
 #### Prefer: params=single-object
 
@@ -689,6 +689,23 @@ This is useful for:
 - Functions expecting JSON or JSONB parameters
 - Simplifying RPC calls with complex nested objects
 - Avoiding double-encoding of JSON data
+
+### Prefer Header for Table Writes
+
+Batch 3 adds write-side Prefer handling for the existing table write paths:
+
+- `Prefer: return=representation` - default behavior, returns the written rows in the response body
+- `Prefer: return=minimal` - executes the write and returns headers only, with no response body
+- `Prefer: return=headers-only` - same no-body contract as the current implementation’s header-only write response mode
+- `Prefer: handling=strict|lenient` - strict rejects unsupported/malformed Prefer values before SQL execution; lenient ignores unknown values
+- `Prefer: max-affected=<n>` - rejects responses that affect more than `n` rows
+
+When a write-side preference is honored, pgrest emits a `Preference-Applied` header for the applied values.
+
+Current Batch 3 boundary:
+
+- `max-affected` is enforced at response-contract level for the current write paths
+- `tx=commit|rollback`, bulk-write preferences, upsert preferences, and other broader write semantics are still out of scope
 
 ## Content Negotiation & Response Formats
 
@@ -973,6 +990,7 @@ Error responses:
 
 - ✅ **Request body media types** - JSON, form-urlencoded, CSV, plain text, XML, and octet-stream with explicit narrow mappings
 - ✅ **Accept header support** - JSON, CSV, XML, plain text, and deterministic octet-stream output
+- ✅ **Prefer write contract** - `return=representation|minimal|headers-only`, `handling=strict|lenient`, `max-affected`, and consistent `Preference-Applied` on current table writes
 - ✅ **RPC POST requests** - Call functions with structured JSON data
 - ✅ **Accept-Profile header** - Schema selection for GET/HEAD/DELETE requests
 - ✅ **Content-Profile header** - Schema selection for POST/PATCH/PUT requests
@@ -985,6 +1003,7 @@ Error responses:
 ## Planned Features
 
 - **Broader binary response format** - widen application/octet-stream beyond the current single-row/single-column response contract
+- **Broader write semantics** - bulk-write, upsert/conflict-resolution, transaction preferences, and richer RPC-specific Prefer behavior
 - **Variadic functions** - Multiple parameter values for variadic functions
 
 ## Limitations

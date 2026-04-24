@@ -145,6 +145,11 @@ describe("pgrest module", () => {
     }));
 
     // Handler for INSERT
+    pgMock.setQueryHandler(/^INSERT INTO users \(name,email,status\) VALUES \('New User','new@example.com','active'\)$/, () => ({
+      columns: ["id", "name", "email", "status"],
+      rows: [["4", "New User", "new@example.com", "active"]],
+    }));
+
     pgMock.setQueryHandler(/^INSERT INTO users/, (query) => ({
       columns: ["id", "name", "email", "status"],
       rows: [["4", "New User", "new@example.com", "active"]],
@@ -163,6 +168,14 @@ describe("pgrest module", () => {
     pgMock.setQueryHandler(/^DELETE FROM admin\.users WHERE id = '5' RETURNING \*/, () => ({
       columns: ["id", "name"],
       rows: [["5", "Delete Me"]],
+    }));
+
+    pgMock.setQueryHandler(/^UPDATE users SET status='inactive' WHERE status = 'active' RETURNING \*/, () => ({
+      columns: ["id", "status"],
+      rows: [
+        ["1", "inactive"],
+        ["2", "inactive"],
+      ],
     }));
 
     pgMock.setQueryHandler(/^UPDATE users SET/, (query) => ({
@@ -383,7 +396,7 @@ describe("pgrest module", () => {
       }),
     });
 
-    expect(res.status).toBe(200);
+    expect(res.status).toBe(201);
 
     const body = await res.json();
     // Response should be an array with the inserted row
@@ -404,7 +417,7 @@ describe("pgrest module", () => {
       body: "name=Form+User&email=form%40example.com&status=active",
     });
 
-    expect(res.status).toBe(200);
+    expect(res.status).toBe(201);
     const body = await res.json();
     expect(body[0].name).toBe("New User");
     expect(lastSql()).toBe(
@@ -423,7 +436,7 @@ describe("pgrest module", () => {
       body: "name,email,status\nCsv User,csv@example.com,active\n",
     });
 
-    expect(res.status).toBe(200);
+    expect(res.status).toBe(201);
     expect(lastSql()).toBe(
       "INSERT INTO users (name,email,status) VALUES ('Csv User','csv@example.com','active') RETURNING *"
     );
@@ -440,7 +453,7 @@ describe("pgrest module", () => {
       body: "raw text payload",
     });
 
-    expect(res.status).toBe(200);
+    expect(res.status).toBe(201);
     expect(lastSql()).toBe(
       "INSERT INTO users (data) VALUES ('raw text payload') RETURNING *"
     );
@@ -457,7 +470,7 @@ describe("pgrest module", () => {
       body: "<user>xml payload</user>",
     });
 
-    expect(res.status).toBe(200);
+    expect(res.status).toBe(201);
     expect(lastSql()).toBe(
       "INSERT INTO users (data) VALUES ('<user>xml payload</user>') RETURNING *"
     );
@@ -474,7 +487,7 @@ describe("pgrest module", () => {
       body: "BLOBDATA",
     });
 
-    expect(res.status).toBe(200);
+    expect(res.status).toBe(201);
     expect(lastSql()).toBe("INSERT INTO users (data) VALUES ('BLOBDATA') RETURNING *");
   });
 
@@ -493,7 +506,7 @@ describe("pgrest module", () => {
       }),
     });
 
-    expect(res.status).toBe(200);
+    expect(res.status).toBe(201);
     const body = await res.json();
     expect(body[0].name).toBe("Tenant User");
     expect(lastSql()).toBe(
@@ -553,6 +566,114 @@ describe("pgrest module", () => {
     expect(body[0].email).toBeNull();
     expect(lastSql()).toBe(
       "UPDATE users SET status='inactive',email=NULL,name='Updated User' WHERE id = '5' RETURNING *"
+    );
+  });
+
+  test("POST /api/users with Prefer: return=minimal omits body and RETURNING", async () => {
+    pgMock.clearTracking();
+
+    const res = await fetch(`${TEST_URL}/api/users`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Prefer: "return=minimal",
+      },
+      body: JSON.stringify({ name: "New User", email: "new@example.com", status: "active" }),
+    });
+
+    expect(res.status).toBe(201);
+    expect(res.headers.get("preference-applied")).toContain("return=minimal");
+    expect(await res.text()).toBe("");
+    expect(lastSql()).toBe(
+      "INSERT INTO users (name,email,status) VALUES ('New User','new@example.com','active')"
+    );
+  });
+
+  test("PATCH /api/users with Prefer: return=headers-only omits body and RETURNING", async () => {
+    pgMock.clearTracking();
+
+    const res = await fetch(`${TEST_URL}/api/users?id=eq.5`, {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+        Prefer: "return=headers-only",
+      },
+      body: JSON.stringify({ status: "inactive" }),
+    });
+
+    expect(res.status).toBe(200);
+    expect(res.headers.get("preference-applied")).toContain("return=headers-only");
+    expect(await res.text()).toBe("");
+    expect(lastSql()).toBe("UPDATE users SET status='inactive' WHERE id = '5'");
+  });
+
+  test("POST /api/users with Prefer: handling=strict rejects invalid preferences before SQL", async () => {
+    pgMock.clearTracking();
+
+    const res = await fetch(`${TEST_URL}/api/users`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Prefer: "handling=strict, unknown-preference",
+      },
+      body: JSON.stringify({ name: "New User" }),
+    });
+
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ message: "Invalid Prefer header" });
+    expect(lastSql()).toBe(null);
+  });
+
+  test("POST /api/users with Prefer: handling=lenient ignores invalid preferences", async () => {
+    pgMock.clearTracking();
+
+    const res = await fetch(`${TEST_URL}/api/users`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Prefer: "handling=lenient, unknown-preference",
+      },
+      body: JSON.stringify({ name: "New User", email: "new@example.com", status: "active" }),
+    });
+
+    expect(res.status).toBe(201);
+    expect(lastSql()).toBe(
+      "INSERT INTO users (name,email,status) VALUES ('New User','new@example.com','active') RETURNING *"
+    );
+  });
+
+  test("PATCH /api/users with Prefer: max-affected accepts row counts within limit", async () => {
+    pgMock.clearTracking();
+
+    const res = await fetch(`${TEST_URL}/api/users?id=eq.5`, {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+        Prefer: "max-affected=1",
+      },
+      body: JSON.stringify({ status: "inactive" }),
+    });
+
+    expect(res.status).toBe(200);
+    expect(res.headers.get("preference-applied")).toContain("max-affected=1");
+  });
+
+  test("PATCH /api/users with Prefer: max-affected rejects overflow", async () => {
+    pgMock.clearTracking();
+
+    const res = await fetch(`${TEST_URL}/api/users?status=eq.active`, {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+        Prefer: "max-affected=1",
+      },
+      body: JSON.stringify({ status: "inactive" }),
+    });
+
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ message: "Query exceeds Prefer: max-affected" });
+    expect(lastSql()).toBe(
+      "UPDATE users SET status='inactive' WHERE status = 'active' RETURNING *"
     );
   });
 
@@ -986,9 +1107,48 @@ describe("pgrest module", () => {
       body: "name,email,status\nCsv User,csv@example.com,active\n",
     });
 
-    expect(res.status).toBe(200);
+    expect(res.status).toBe(201);
     expect(lastSql()).toBe(
       "INSERT INTO users (name,email,status) VALUES ('Csv User','csv@example.com','active') RETURNING *"
+    );
+  });
+
+  test("POST pooled /api/users with Prefer: return=minimal omits body and RETURNING", async () => {
+    pgMock.clearTracking();
+
+    const res = await fetch(`${POOLED_TEST_URL}/api/users`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Prefer: "return=minimal",
+      },
+      body: JSON.stringify({ name: "New User", email: "new@example.com", status: "active" }),
+    });
+
+    expect(res.status).toBe(201);
+    expect(res.headers.get("preference-applied")).toContain("return=minimal");
+    expect(await res.text()).toBe("");
+    expect(lastSql()).toBe(
+      "INSERT INTO users (name,email,status) VALUES ('New User','new@example.com','active')"
+    );
+  });
+
+  test("PATCH pooled /api/users with Prefer: max-affected rejects overflow", async () => {
+    pgMock.clearTracking();
+
+    const res = await fetch(`${POOLED_TEST_URL}/api/users?status=eq.active`, {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+        Prefer: "max-affected=1",
+      },
+      body: JSON.stringify({ status: "inactive" }),
+    });
+
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ message: "Query exceeds Prefer: max-affected" });
+    expect(lastSql()).toBe(
+      "UPDATE users SET status='inactive' WHERE status = 'active' RETURNING *"
     );
   });
 
