@@ -175,6 +175,24 @@ describe("pgrest module", () => {
       rows: [["1", "John Doe", "1988-04-25", "90000.00"]],
     }));
 
+    pgMock.setQueryHandler(/^SELECT sum\(amount\) AS sum,avg\(amount\)::int AS average,order_date FROM orders GROUP BY order_date$/, () => ({
+      columns: ["sum", "average", "order_date"],
+      rows: [
+        ["1234.56", "123", "2023-01-01"],
+        ["2345.67", "235", "2023-01-02"],
+      ],
+    }));
+
+    pgMock.setQueryHandler(/^SELECT full_name,job FROM people ORDER BY full_name DESC$/, () => ({
+      columns: ["full_name", "job"],
+      rows: [["Samuel Beckett", "novelist"]],
+    }));
+
+    pgMock.setQueryHandler(/^SELECT \* FROM people WHERE full_name @@ to_tsquery\('Beckett'\)$/, () => ({
+      columns: ["first_name", "last_name", "job"],
+      rows: [["Samuel", "Beckett", "novelist"]],
+    }));
+
     pgMock.setQueryHandler(/^SELECT id,to_jsonb\(json_data\)->>'blood_type' AS blood_type,to_jsonb\(json_data\)->'phones' AS phones,to_jsonb\(languages\)->0 AS primary_language FROM people$/, () => ({
       columns: ["id", "blood_type", "phones", "primary_language"],
       rows: [["1", "A-", '[{"number":"917-929-5745"}]', "en"]],
@@ -229,6 +247,16 @@ describe("pgrest module", () => {
         ["1", "John Doe", "john@example.com", "active"],
         ["2", "Jane Smith", "jane@example.com", "active"],
       ],
+    }));
+
+    pgMock.setQueryHandler(/^SELECT count\(\*\) FROM users$/, () => ({
+      columns: ["count"],
+      rows: [["3"]],
+    }));
+
+    pgMock.setQueryHandler(/^SELECT \* FROM users LIMIT 1 OFFSET 1$/, () => ({
+      columns: ["id", "name", "email", "status"],
+      rows: [["2", "Jane Smith", "jane@example.com", "active"]],
     }));
 
     pgMock.setQueryHandler(/^INSERT INTO tenant_001\.users/, () => ({
@@ -430,6 +458,11 @@ describe("pgrest module", () => {
         ["The Worst Person in the World", "8.1"],
         ["Portrait of a Lady on Fire", "8.2"],
       ],
+    }));
+
+    pgMock.setQueryHandler(/^SELECT count\(\*\) FROM "best_films_2017"\(\) WHERE rating > '8'$/, () => ({
+      columns: ["count"],
+      rows: [["3"]],
     }));
 
     // Handler for RPC: add_them
@@ -675,6 +708,36 @@ describe("pgrest module", () => {
       salary: "90000.00",
     });
     expect(lastSql()).toBe("SELECT id,full_name AS fullName,birth_date AS birthDate,salary::text FROM users");
+  });
+
+  test("GET /api/orders supports grouped aggregates with alias and output cast", async () => {
+    pgMock.clearTracking();
+
+    const res = await fetch(`${TEST_URL}/api/orders?select=amount.sum(),average:amount.avg()::int,order_date`);
+    expect(res.status).toBe(200);
+    expect(lastSql()).toBe("SELECT sum(amount) AS sum,avg(amount)::int AS average,order_date FROM orders GROUP BY order_date");
+    expect(await res.json()).toEqual([
+      { sum: "1234.56", average: "123", order_date: "2023-01-01" },
+      { sum: "2345.67", average: "235", order_date: "2023-01-02" },
+    ]);
+  });
+
+  test("GET /api/people supports computed fields in select and ordering", async () => {
+    pgMock.clearTracking();
+
+    const res = await fetch(`${TEST_URL}/api/people?select=full_name,job&order=full_name.desc`);
+    expect(res.status).toBe(200);
+    expect(lastSql()).toBe("SELECT full_name,job FROM people ORDER BY full_name DESC");
+    expect(await res.json()).toEqual([{ full_name: "Samuel Beckett", job: "novelist" }]);
+  });
+
+  test("GET /api/people supports computed fields in filters", async () => {
+    pgMock.clearTracking();
+
+    const res = await fetch(`${TEST_URL}/api/people?full_name=fts.Beckett`);
+    expect(res.status).toBe(200);
+    expect(lastSql()).toBe("SELECT * FROM people WHERE full_name @@ to_tsquery('Beckett')");
+    expect(await res.json()).toEqual([{ first_name: "Samuel", last_name: "Beckett", job: "novelist" }]);
   });
 
   test("GET /api/people with select json and array paths emits projected SQL", async () => {
@@ -1485,6 +1548,56 @@ describe("pgrest module", () => {
     ]);
   });
 
+  test("GET /users honors Range headers in blocking mode", async () => {
+    pgMock.clearTracking();
+
+    const res = await fetch(`${TEST_URL}/api/users`, {
+      headers: {
+        "Range-Unit": "items",
+        Range: "1-1",
+      },
+    });
+
+    expect(res.status).toBe(200);
+    expect(res.headers.get("range-unit")).toBe("items");
+    expect(res.headers.get("content-range")).toBe("1-1/*");
+    expect(lastSql()).toBe("SELECT * FROM users LIMIT 1 OFFSET 1");
+    expect(await res.json()).toEqual([
+      { id: "2", name: "Jane Smith", email: "jane@example.com", status: "active" },
+    ]);
+  });
+
+  test("GET /users with Prefer: count=exact returns partial-content metadata in blocking mode", async () => {
+    pgMock.clearTracking();
+
+    const res = await fetch(`${TEST_URL}/api/users?limit=2`, {
+      headers: {
+        Prefer: "count=exact",
+      },
+    });
+
+    expect(res.status).toBe(206);
+    expect(res.headers.get("range-unit")).toBe("items");
+    expect(res.headers.get("content-range")).toBe("0-1/3");
+    expect(res.headers.get("preference-applied")).toContain("count=exact");
+    expect(lastSql()).toBe("SELECT * FROM users LIMIT 2");
+  });
+
+  test("GET /rpc/best_films_2017 with Prefer: count=exact returns TVF count metadata in blocking mode", async () => {
+    pgMock.clearTracking();
+
+    const res = await fetch(`${TEST_URL}/rpc/best_films_2017?select=title,rating&rating=gt.8&order=title.desc&limit=2`, {
+      headers: {
+        Prefer: "count=exact",
+      },
+    });
+
+    expect(res.status).toBe(206);
+    expect(res.headers.get("content-range")).toBe("0-1/3");
+    expect(res.headers.get("preference-applied")).toContain("count=exact");
+    expect(lastSql()).toBe(`SELECT title,rating FROM "best_films_2017"() WHERE rating > '8' ORDER BY title DESC LIMIT 2`);
+  });
+
   test("POST /rpc/plus_one with form body collapses repeated params into a variadic ARRAY argument", async () => {
     pgMock.clearTracking();
 
@@ -1905,6 +2018,30 @@ describe("pgrest module", () => {
     expect(lastSql()).toBe("SELECT id,full_name AS fullName,birth_date AS birthDate,salary::text FROM users");
   });
 
+  test("GET pooled /api/orders supports grouped aggregates with alias and output cast", async () => {
+    pgMock.clearTracking();
+
+    const res = await fetch(`${POOLED_TEST_URL}/api/orders?select=amount.sum(),average:amount.avg()::int,order_date`);
+    expect(res.status).toBe(200);
+    expect(lastSql()).toBe("SELECT sum(amount) AS sum,avg(amount)::int AS average,order_date FROM orders GROUP BY order_date");
+  });
+
+  test("GET pooled /api/people supports computed fields in select and ordering", async () => {
+    pgMock.clearTracking();
+
+    const res = await fetch(`${POOLED_TEST_URL}/api/people?select=full_name,job&order=full_name.desc`);
+    expect(res.status).toBe(200);
+    expect(lastSql()).toBe("SELECT full_name,job FROM people ORDER BY full_name DESC");
+  });
+
+  test("GET pooled /api/people supports computed fields in filters", async () => {
+    pgMock.clearTracking();
+
+    const res = await fetch(`${POOLED_TEST_URL}/api/people?full_name=fts.Beckett`);
+    expect(res.status).toBe(200);
+    expect(lastSql()).toBe("SELECT * FROM people WHERE full_name @@ to_tsquery('Beckett')");
+  });
+
   test("POST pooled /rpc/create_user returns Preference-Applied for params=single-object", async () => {
     const res = await fetch(`${POOLED_TEST_URL}/rpc/create_user`, {
       method: "POST",
@@ -2202,6 +2339,53 @@ describe("pgrest module", () => {
       { title: "The Worst Person in the World", rating: "8.1" },
       { title: "Portrait of a Lady on Fire", rating: "8.2" },
     ]);
+  });
+
+  test("GET pooled /users honors Range headers", async () => {
+    pgMock.clearTracking();
+
+    const res = await fetch(`${POOLED_TEST_URL}/api/users`, {
+      headers: {
+        "Range-Unit": "items",
+        Range: "1-1",
+      },
+    });
+
+    expect(res.status).toBe(200);
+    expect(res.headers.get("range-unit")).toBe("items");
+    expect(res.headers.get("content-range")).toBe("1-1/*");
+    expect(lastSql()).toBe("SELECT * FROM users LIMIT 1 OFFSET 1");
+  });
+
+  test("GET pooled /users with Prefer: count=exact returns partial-content metadata", async () => {
+    pgMock.clearTracking();
+
+    const res = await fetch(`${POOLED_TEST_URL}/api/users?limit=2`, {
+      headers: {
+        Prefer: "count=exact",
+      },
+    });
+
+    expect(res.status).toBe(206);
+    expect(res.headers.get("range-unit")).toBe("items");
+    expect(res.headers.get("content-range")).toBe("0-1/3");
+    expect(res.headers.get("preference-applied")).toContain("count=exact");
+    expect(lastSql()).toBe("SELECT * FROM users LIMIT 2");
+  });
+
+  test("GET pooled /rpc/best_films_2017 with Prefer: count=exact returns TVF count metadata", async () => {
+    pgMock.clearTracking();
+
+    const res = await fetch(`${POOLED_TEST_URL}/rpc/best_films_2017?select=title,rating&rating=gt.8&order=title.desc&limit=2`, {
+      headers: {
+        Prefer: "count=exact",
+      },
+    });
+
+    expect(res.status).toBe(206);
+    expect(res.headers.get("content-range")).toBe("0-1/3");
+    expect(res.headers.get("preference-applied")).toContain("count=exact");
+    expect(lastSql()).toBe(`SELECT title,rating FROM "best_films_2017"() WHERE rating > '8' ORDER BY title DESC LIMIT 2`);
   });
 
   test("POST pooled /rpc/plus_one with form body collapses repeated params into a variadic ARRAY argument", async () => {

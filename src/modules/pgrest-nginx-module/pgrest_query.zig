@@ -194,6 +194,30 @@ pub const WhereClauseResult = struct {
     invalid: bool,
 };
 
+const SelectItemRenderResult = struct {
+    select_len: usize,
+    group_len: usize,
+    aggregate: bool,
+};
+
+const AggregateFn = enum {
+    sum,
+    avg,
+    min,
+    max,
+    count,
+
+    fn sqlName(self: AggregateFn) []const u8 {
+        return switch (self) {
+            .sum => "sum",
+            .avg => "avg",
+            .min => "min",
+            .max => "max",
+            .count => "count",
+        };
+    }
+};
+
 pub fn trim_ascii_spaces(value: []const u8) []const u8 {
     var start: usize = 0;
     var end: usize = value.len;
@@ -325,6 +349,67 @@ fn append_sql_identifier(buf_out: []u8, pos_in: usize, raw_value: []const u8) us
     buf_out[pos] = '"';
     pos += 1;
     return pos;
+}
+
+fn append_castable_expression(buf_out: []u8, pos_in: usize, raw_expr: []const u8) ?usize {
+    var expr = trim_ascii_spaces(raw_expr);
+    if (expr.len == 0) return null;
+
+    var cast: ?[]const u8 = null;
+    if (std.mem.lastIndexOf(u8, expr, "::")) |cast_idx| {
+        cast = trim_ascii_spaces(expr[cast_idx + 2 ..]);
+        expr = trim_ascii_spaces(expr[0..cast_idx]);
+        if (cast.?.len == 0 or expr.len == 0) return null;
+    }
+
+    var pos = append_column_expression(buf_out, pos_in, expr) orelse return null;
+    if (cast) |cast_name| {
+        const cast_sep = "::";
+        @memcpy(buf_out[pos..][0..cast_sep.len], cast_sep);
+        pos += cast_sep.len;
+        pos = append_sql_identifier(buf_out, pos, cast_name);
+    }
+    return pos;
+}
+
+fn parse_aggregate_expression(expr_in: []const u8) ?struct {
+    base_expr: []const u8,
+    aggregate_fn: AggregateFn,
+    output_cast: ?[]const u8,
+} {
+    const expr = trim_ascii_spaces(expr_in);
+    if (std.mem.eql(u8, expr, "count()")) {
+        return .{ .base_expr = "", .aggregate_fn = .count, .output_cast = null };
+    }
+
+    const candidates = [_]struct { suffix: []const u8, func: AggregateFn }{
+        .{ .suffix = ".sum()", .func = .sum },
+        .{ .suffix = ".avg()", .func = .avg },
+        .{ .suffix = ".min()", .func = .min },
+        .{ .suffix = ".max()", .func = .max },
+        .{ .suffix = ".count()", .func = .count },
+    };
+
+    for (candidates) |candidate| {
+        if (std.mem.lastIndexOf(u8, expr, candidate.suffix)) |idx| {
+            const tail = expr[idx + candidate.suffix.len ..];
+            var output_cast: ?[]const u8 = null;
+            if (tail.len == 0) {
+                // ok
+            } else if (std.mem.startsWith(u8, tail, "::")) {
+                const cast_name = trim_ascii_spaces(tail[2..]);
+                if (cast_name.len == 0) return null;
+                output_cast = cast_name;
+            } else {
+                continue;
+            }
+
+            const base_expr = trim_ascii_spaces(expr[0..idx]);
+            if (base_expr.len == 0 and candidate.func != .count) return null;
+            return .{ .base_expr = base_expr, .aggregate_fn = candidate.func, .output_cast = output_cast };
+        }
+    }
+    return null;
 }
 
 pub fn append_column_expression(buf_out: []u8, pos_in: usize, raw_value: []const u8) ?usize {
@@ -846,14 +931,14 @@ fn parse_select_items(args: ngx_str_t, columns: *[MAX_SELECT_COLUMNS][]const u8)
     return 0;
 }
 
-fn append_select_item_sql(buf_out: []u8, pos_in: usize, raw_item: []const u8) ?usize {
+fn render_select_item(select_out: []u8, raw_item: []const u8, group_out: []u8) ?SelectItemRenderResult {
     const trimmed_item = trim_ascii_spaces(raw_item);
     var decoded_buf: [512]u8 = undefined;
     const item = decode_query_component_into(&decoded_buf, trimmed_item) orelse return null;
     if (item.len == 0) return null;
     if (std.mem.eql(u8, item, "*")) {
-        buf_out[pos_in] = '*';
-        return pos_in + 1;
+        select_out[0] = '*';
+        return .{ .select_len = 1, .group_len = 0, .aggregate = false };
     }
 
     var alias: ?[]const u8 = null;
@@ -864,27 +949,52 @@ fn append_select_item_sql(buf_out: []u8, pos_in: usize, raw_item: []const u8) ?u
         if (alias.?.len == 0 or expr.len == 0) return null;
     }
 
-    var cast: ?[]const u8 = null;
-    if (std.mem.lastIndexOf(u8, expr, "::")) |cast_idx| {
-        cast = trim_ascii_spaces(expr[cast_idx + 2 ..]);
-        expr = trim_ascii_spaces(expr[0..cast_idx]);
-        if (cast.?.len == 0 or expr.len == 0) return null;
+    if (parse_aggregate_expression(expr)) |aggregate| {
+        var pos: usize = 0;
+        const fn_name = aggregate.aggregate_fn.sqlName();
+        @memcpy(select_out[pos..][0..fn_name.len], fn_name);
+        pos += fn_name.len;
+        select_out[pos] = '(';
+        pos += 1;
+        if (aggregate.aggregate_fn == .count and aggregate.base_expr.len == 0) {
+            select_out[pos] = '*';
+            pos += 1;
+        } else {
+            pos = append_castable_expression(select_out, pos, aggregate.base_expr) orelse return null;
+        }
+        select_out[pos] = ')';
+        pos += 1;
+        if (aggregate.output_cast) |cast_name| {
+            const cast_sep = "::";
+            @memcpy(select_out[pos..][0..cast_sep.len], cast_sep);
+            pos += cast_sep.len;
+            pos = append_sql_identifier(select_out, pos, cast_name);
+        }
+
+        if (alias) |alias_name| {
+            const as_sep = " AS ";
+            @memcpy(select_out[pos..][0..as_sep.len], as_sep);
+            pos += as_sep.len;
+            pos = append_sql_identifier(select_out, pos, alias_name);
+        } else {
+            const as_sep = " AS ";
+            @memcpy(select_out[pos..][0..as_sep.len], as_sep);
+            pos += as_sep.len;
+            pos = append_sql_identifier(select_out, pos, fn_name);
+        }
+
+        return .{ .select_len = pos, .group_len = 0, .aggregate = true };
     }
 
-    var pos = pos_in;
-    pos = append_column_expression(buf_out, pos, expr) orelse return null;
-    if (cast) |cast_name| {
-        const cast_sep = "::";
-        @memcpy(buf_out[pos..][0..cast_sep.len], cast_sep);
-        pos += cast_sep.len;
-        pos = append_sql_identifier(buf_out, pos, cast_name);
-    }
+    var pos: usize = 0;
+    const group_len = append_castable_expression(group_out, 0, expr) orelse return null;
+    pos = append_castable_expression(select_out, 0, expr) orelse return null;
 
     if (alias) |alias_name| {
         const as_sep = " AS ";
-        @memcpy(buf_out[pos..][0..as_sep.len], as_sep);
+        @memcpy(select_out[pos..][0..as_sep.len], as_sep);
         pos += as_sep.len;
-        pos = append_sql_identifier(buf_out, pos, alias_name);
+        pos = append_sql_identifier(select_out, pos, alias_name);
     } else if (std.mem.indexOf(u8, expr, "->") != null) {
         var tail = expr;
         var last_segment = expr;
@@ -898,11 +1008,11 @@ fn append_select_item_sql(buf_out: []u8, pos_in: usize, raw_item: []const u8) ?u
         const alias_name = unescape_wrapped_quotes_into(&scratch, last_segment) orelse return null;
         if (alias_name.len == 0) return null;
         const as_sep = " AS ";
-        @memcpy(buf_out[pos..][0..as_sep.len], as_sep);
+        @memcpy(select_out[pos..][0..as_sep.len], as_sep);
         pos += as_sep.len;
-        pos = append_sql_identifier(buf_out, pos, alias_name);
+        pos = append_sql_identifier(select_out, pos, alias_name);
     }
-    return pos;
+    return .{ .select_len = pos, .group_len = group_len, .aggregate = false };
 }
 
 pub fn build_select_clause_from_args(buf_out: []u8, args: ngx_str_t) WhereClauseResult {
@@ -910,14 +1020,44 @@ pub fn build_select_clause_from_args(buf_out: []u8, args: ngx_str_t) WhereClause
     const count = parse_select_items(args, &items);
     if (count == 0) return .{ .len = 0, .invalid = false };
     var pos: usize = 0;
+    var scratch: [1024]u8 = undefined;
     for (items[0..count], 0..) |item, i| {
         if (i > 0) {
             buf_out[pos] = ',';
             pos += 1;
         }
-        pos = append_select_item_sql(buf_out, pos, item) orelse return .{ .len = 0, .invalid = true };
+        const rendered = render_select_item(buf_out[pos..], item, &scratch) orelse return .{ .len = 0, .invalid = true };
+        pos += rendered.select_len;
     }
     return .{ .len = pos, .invalid = false };
+}
+
+pub fn build_group_by_clause_from_args(buf_out: []u8, args: ngx_str_t) WhereClauseResult {
+    var items: [MAX_SELECT_COLUMNS][]const u8 = undefined;
+    const count = parse_select_items(args, &items);
+    if (count == 0) return .{ .len = 0, .invalid = false };
+    var pos: usize = 0;
+    var saw_aggregate = false;
+    var group_count: usize = 0;
+    var select_scratch: [1024]u8 = undefined;
+    var group_scratch: [1024]u8 = undefined;
+
+    for (items[0..count]) |item| {
+        const rendered = render_select_item(&select_scratch, item, &group_scratch) orelse return .{ .len = 0, .invalid = true };
+        if (rendered.aggregate) {
+            saw_aggregate = true;
+            continue;
+        }
+        if (group_count > 0) {
+            buf_out[pos] = ',';
+            pos += 1;
+        }
+        @memcpy(buf_out[pos..][0..rendered.group_len], group_scratch[0..rendered.group_len]);
+        pos += rendered.group_len;
+        group_count += 1;
+    }
+
+    return .{ .len = if (saw_aggregate) pos else 0, .invalid = false };
 }
 
 fn append_list_items_sql(buf_out: []u8, pos_in: usize, raw_value: []const u8, array_mode: bool, wildcard_mode: bool) ?usize {
@@ -1285,7 +1425,7 @@ pub fn build_where_clause_from_args(buf_out: []u8, args: ngx_str_t) WhereClauseR
     return .{ .len = out_pos, .invalid = false };
 }
 
-pub fn build_sql_query(query_buf: []u8, sql_op: SqlOp, table: []const u8, where_clause: []const u8, json_fields: []const JsonField, select_clause: []const u8, order_specs: []const OrderSpec, pagination: Pagination, include_returning: bool) usize {
+pub fn build_sql_query(query_buf: []u8, sql_op: SqlOp, table: []const u8, where_clause: []const u8, json_fields: []const JsonField, select_clause: []const u8, group_by_clause: []const u8, order_specs: []const OrderSpec, pagination: Pagination, include_returning: bool) usize {
     var pos: usize = 0;
     switch (sql_op) {
         .select => {
@@ -1415,6 +1555,14 @@ pub fn build_sql_query(query_buf: []u8, sql_op: SqlOp, table: []const u8, where_
         const returning = " RETURNING *";
         @memcpy(query_buf[pos..][0..returning.len], returning);
         pos += returning.len;
+    }
+
+    if (sql_op == .select and group_by_clause.len > 0) {
+        const group_by = " GROUP BY ";
+        @memcpy(query_buf[pos..][0..group_by.len], group_by);
+        pos += group_by.len;
+        @memcpy(query_buf[pos..][0..group_by_clause.len], group_by_clause);
+        pos += group_by_clause.len;
     }
 
     if (sql_op == .select and order_specs.len > 0) {
@@ -1805,8 +1953,28 @@ test "build_select_clause_from_args decodes encoded path operators" {
 test "build_sql_query renders json path ordering" {
     var query_buf: [1024]u8 = undefined;
     const spec = parse_order_spec("location->>lat.desc.nullslast") orelse return error.TestUnexpectedResult;
-    const len = build_sql_query(&query_buf, .select, "countries", "", &.{}, "*", &.{spec}, .{ .limit = null, .offset = null }, false);
+    const len = build_sql_query(&query_buf, .select, "countries", "", &.{}, "*", "", &.{spec}, .{ .limit = null, .offset = null }, false);
     try std.testing.expectEqualStrings("SELECT * FROM countries ORDER BY to_jsonb(location)->>'lat' DESC NULLS LAST", query_buf[0..len]);
+}
+
+test "build_select_clause_from_args supports aggregate functions and casts" {
+    var buf_out: [512]u8 = undefined;
+    const result = build_select_clause_from_args(&buf_out, ngx_string("select=amount.sum(),avg_amount:amount.avg()::int,order_details->tax_amount::numeric.sum(),count()"));
+    try std.testing.expect(!result.invalid);
+    try std.testing.expectEqualStrings("sum(amount) AS sum,avg(amount)::int AS avg_amount,sum(to_jsonb(order_details)->'tax_amount'::numeric) AS sum,count(*) AS count", buf_out[0..result.len]);
+}
+
+test "build_group_by_clause_from_args groups by non aggregate select items" {
+    var buf_out: [512]u8 = undefined;
+    const result = build_group_by_clause_from_args(&buf_out, ngx_string("select=amount.sum(),amount.avg(),order_date"));
+    try std.testing.expect(!result.invalid);
+    try std.testing.expectEqualStrings("order_date", buf_out[0..result.len]);
+}
+
+test "build_sql_query renders grouped aggregate query" {
+    var query_buf: [1024]u8 = undefined;
+    const len = build_sql_query(&query_buf, .select, "orders", "status = 'paid'", &.{}, "sum(amount) AS sum,order_date", "order_date", &.{}, .{ .limit = null, .offset = null }, false);
+    try std.testing.expectEqualStrings("SELECT sum(amount) AS sum,order_date FROM orders WHERE status = 'paid' GROUP BY order_date", query_buf[0..len]);
 }
 
 test "parse_on_conflict_param parses unique column list" {

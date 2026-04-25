@@ -354,6 +354,7 @@ pub fn build_rpc_table_query(
     rpc_params: *const RpcCall,
     where_clause: []const u8,
     select_clause: []const u8,
+    group_by_clause: []const u8,
     order_specs: []const pgrest_query.OrderSpec,
     pagination: pgrest_query.Pagination,
 ) usize {
@@ -430,6 +431,14 @@ pub fn build_rpc_table_query(
         pos += where_prefix.len;
         @memcpy(query_buf[pos..][0..where_clause.len], where_clause);
         pos += where_clause.len;
+    }
+
+    if (group_by_clause.len > 0) {
+        const group_by = " GROUP BY ";
+        @memcpy(query_buf[pos..][0..group_by.len], group_by);
+        pos += group_by.len;
+        @memcpy(query_buf[pos..][0..group_by_clause.len], group_by_clause);
+        pos += group_by_clause.len;
     }
 
     if (order_specs.len > 0) {
@@ -529,6 +538,7 @@ test "build_rpc_table_query reuses table-style query shaping" {
         &rpc_call,
         "id > 10",
         "title,rating",
+        "",
         &.{spec},
         .{ .limit = 5, .offset = 10 },
     );

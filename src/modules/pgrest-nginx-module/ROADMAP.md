@@ -552,6 +552,15 @@ This module is not a standalone PostgREST server. It is an nginx upstream module
 **Unlocks**
 - Stable count-aware clients and correct response metadata for later advanced features
 
+### Batch 8 progress update
+
+- ✅ Completed: top-level table reads and table-valued RPC reads now emit `Range-Unit: items` plus offset-aware `Content-Range` headers in both blocking and pooled paths.
+- ✅ Completed: `Range: start-end` and open-ended `Range: start-` requests now drive top-level read pagination instead of only query-string `limit`/`offset`.
+- ✅ Completed: `Prefer: count=exact|planned|estimated` is now parsed and applied on table reads and table-valued RPC reads, with `Preference-Applied` and count-bearing `Content-Range` metadata.
+- ✅ Completed: counted partial reads now return `206 Partial Content` when the selected window is smaller than the known total.
+- ✅ Completed: Batch 8 integration coverage now exercises blocking and pooled table reads plus table-valued RPC reads for range/count behavior, and the batch verifies green with `zig build test && KEEP_LOGS=1 bun test tests/pgrest/ && zig build`.
+- ℹ️ Remaining Batch 8 boundary: `count=planned` and `count=estimated` currently reuse the exact count query path instead of PostgreSQL planner/statistics estimates, so the HTTP contract is in place but the estimate source is intentionally still narrow.
+
 ### Batch 9: Aggregate Functions and Computed Fields
 
 **Theme:** Add computed query features without mixing in relationships yet.
@@ -571,6 +580,16 @@ This module is not a standalone PostgREST server. It is an nginx upstream module
 
 **Unlocks**
 - Analytics/reporting use cases and computed-field parity before embedding complexity arrives
+
+### Batch 9 progress update
+
+- ✅ Completed: top-level table reads now support aggregate select items for `sum()`, `avg()`, `min()`, `max()`, column `count()`, and bare `count()`.
+- ✅ Completed: aggregate selects now support grouped reads by deriving `GROUP BY` from the non-aggregate selected columns.
+- ✅ Completed: aggregate outputs now support aliasing and output casts, and aggregate inputs reuse the existing path/cast grammar.
+- ✅ Completed: table-valued RPC reads now reuse the same aggregate-aware select/grouping grammar as top-level table reads.
+- ✅ Completed: computed fields are now covered as first-class top-level select/filter/order expressions in blocking and pooled integration coverage.
+- ✅ Completed: Batch 9 verification is green with `zig build test && KEEP_LOGS=1 bun test tests/pgrest/ && zig build`.
+- ℹ️ Remaining Batch 9 boundary: aggregate ordering, `HAVING`-style filtering, and embedding-aware aggregate behavior remain intentionally deferred to later batches.
 
 ### Batch 10: Resource Embedding and Relationships — Phase 1
 

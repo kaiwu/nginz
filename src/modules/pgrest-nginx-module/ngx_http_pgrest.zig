@@ -54,6 +54,7 @@ const NGX_DECLINED = core.NGX_DECLINED;
 const NGX_HTTP_METHOD_NOT_ALLOWED: ngx_uint_t = 405;
 const NGX_HTTP_NOT_ACCEPTABLE: ngx_uint_t = 406;
 const NGX_HTTP_UNSUPPORTED_MEDIA_TYPE: ngx_uint_t = 415;
+const NGX_HTTP_PARTIAL_CONTENT: ngx_uint_t = 206;
 
 const NGX_CONF_OK = conf.NGX_CONF_OK;
 const NGX_CONF_ERROR = conf.NGX_CONF_ERROR;
@@ -134,6 +135,7 @@ const PgQueryState = enum(c_int) {
 const RpcExecutionPhase = enum(c_int) {
     none,
     metadata,
+    count,
     call,
 };
 
@@ -213,6 +215,8 @@ const PgRequestCtx = extern struct {
     rpc_phase: RpcExecutionPhase,
     query: [MAX_QUERY_SIZE]u8, // Query buffer
     query_len: usize, // Query length
+    next_query: [MAX_QUERY_SIZE]u8,
+    next_query_len: usize,
     result: ?*PGresult, // Query result
     request: ?*ngx_http_request_t, // Back-reference to HTTP request
     response_format: ResponseFormat,
@@ -226,9 +230,14 @@ const PgRequestCtx = extern struct {
     prefer_resolution_applied: bool,
     prefer_max_affected: usize,
     prefer_has_max_affected: bool,
+    prefer_count_mode: PreferCountMode,
+    prefer_count_applied: bool,
     prefer_missing_default: bool,
     prefer_invalid: bool,
     emit_range_headers: bool,
+    response_range_start: usize,
+    total_count: i64,
+    has_total_count: bool,
     write_status: ngx_uint_t,
     write_send_body: bool,
     is_write_request: bool,
@@ -539,10 +548,19 @@ const PreferOptions = struct {
     return_mode: PreferReturnMode = .representation,
     handling: PreferHandling = .lenient,
     max_affected: ?usize = null,
+    count_mode: PreferCountMode = .none,
+    count_applied: bool = false,
     missing_default: bool = false,
     resolution: PreferResolution = .none,
     resolution_applied: bool = false,
     invalid: bool = false,
+};
+
+const PreferCountMode = enum(u8) {
+    none,
+    exact,
+    planned,
+    estimated,
 };
 
 const PreferResolution = enum(u8) {
@@ -580,6 +598,9 @@ const RequestOptions = struct {
     is_head: bool = false,
     prefer: PreferOptions = .{},
     emit_range_headers: bool = false,
+    range_requested: bool = false,
+    range_start: usize = 0,
+    range_end: ?usize = null,
 };
 
 const WriteResponseContract = struct {
@@ -641,6 +662,12 @@ fn parse_prefer_header(r: [*c]ngx_http_request_t) PreferOptions {
                 prefer.invalid = true;
                 continue;
             };
+        } else if (std.mem.eql(u8, token, "count=exact")) {
+            prefer.count_mode = .exact;
+        } else if (std.mem.eql(u8, token, "count=planned")) {
+            prefer.count_mode = .planned;
+        } else if (std.mem.eql(u8, token, "count=estimated")) {
+            prefer.count_mode = .estimated;
         } else if (token.len != 0) {
             prefer.invalid = true;
         }
@@ -661,7 +688,67 @@ fn parse_request_options(r: [*c]ngx_http_request_t) RequestOptions {
     }
 
     opts.response_format = parse_accept_header_from_request(r);
+
+    if (extract_header_value(r, "range")) |range_val| {
+        const trimmed = trim_ascii_spaces(range_val);
+        if (trimmed.len > 0) {
+            const dash = std.mem.indexOfScalar(u8, trimmed, '-') orelse trimmed.len;
+            if (dash > 0 and dash < trimmed.len) {
+                const start = std.fmt.parseInt(usize, trimmed[0..dash], 10) catch opts.range_start;
+                const end_slice = trimmed[dash + 1 ..];
+                opts.range_requested = true;
+                opts.range_start = start;
+                opts.range_end = if (end_slice.len == 0)
+                    null
+                else blk: {
+                    const parsed_end = std.fmt.parseInt(usize, end_slice, 10) catch start;
+                    break :blk if (parsed_end >= start) parsed_end else start;
+                };
+            }
+        }
+    }
+
     return opts;
+}
+
+fn effective_read_pagination(args: ngx_str_t, opts: RequestOptions) struct { pagination: Pagination, range_start: usize } {
+    var pagination = parse_pagination(args);
+    if (opts.range_requested) {
+        pagination.offset = opts.range_start;
+        pagination.limit = if (opts.range_end) |range_end|
+            range_end - opts.range_start + 1
+        else
+            null;
+    }
+    return .{
+        .pagination = pagination,
+        .range_start = pagination.offset orelse 0,
+    };
+}
+
+fn read_count_requested(opts: RequestOptions) bool {
+    return opts.prefer.count_mode != .none;
+}
+
+fn build_table_count_query(query_buf: []u8, table: []const u8, where_clause: []const u8) usize {
+    return build_sql_query(
+        query_buf,
+        .select,
+        table,
+        where_clause,
+        &.{},
+        "count(*)",
+        "",
+        &.{},
+        .{ .limit = null, .offset = null },
+        false,
+    );
+}
+
+fn parse_count_query_result(result: ?*PGresult) ?i64 {
+    if (result == null or pgNtuples(result) == 0 or pgGetisnull(result, 0, 0) != 0) return 0;
+    const value = pgGetvalue(result, 0, 0) orelse return null;
+    return std.fmt.parseInt(i64, std.mem.span(value), 10) catch null;
 }
 
 fn is_valid_schema_identifier(value: []const u8) bool {
@@ -798,6 +885,23 @@ fn append_preference_applied_header(r: [*c]ngx_http_request_t, opts: RequestOpti
         }
     }
 
+    if (opts.prefer.count_applied and opts.prefer.count_mode != .none) {
+        if (pos > 0) {
+            buf_out[pos] = ',';
+            pos += 1;
+        }
+        const token = switch (opts.prefer.count_mode) {
+            .none => "",
+            .exact => "count=exact",
+            .planned => "count=planned",
+            .estimated => "count=estimated",
+        };
+        if (token.len > 0) {
+            @memcpy(buf_out[pos..][0..token.len], token);
+            pos += token.len;
+        }
+    }
+
     if (opts.prefer.missing_default) {
         if (pos > 0) {
             buf_out[pos] = ',';
@@ -813,18 +917,37 @@ fn append_preference_applied_header(r: [*c]ngx_http_request_t, opts: RequestOpti
     }
 }
 
-fn append_range_headers(r: [*c]ngx_http_request_t, ntuples: i32, opts: RequestOptions) void {
+fn append_range_headers(r: [*c]ngx_http_request_t, range_start: usize, ntuples: i32, total_count: ?i64, opts: RequestOptions) void {
     if (!opts.emit_range_headers) return;
 
     _ = append_response_header(r, "Range-Unit", "range-unit", "items");
 
     var content_range_buf: [64]u8 = undefined;
-    const content_range = if (ntuples > 0)
-        std.fmt.bufPrint(content_range_buf[0..], "0-{d}/*", .{ntuples - 1}) catch return
+    const content_range = if (ntuples > 0) blk: {
+        const range_end = range_start + @as(usize, @intCast(ntuples - 1));
+        break :blk if (total_count) |count|
+            std.fmt.bufPrint(content_range_buf[0..], "{d}-{d}/{d}", .{ range_start, range_end, count }) catch return
+        else
+            std.fmt.bufPrint(content_range_buf[0..], "{d}-{d}/*", .{ range_start, range_end }) catch return;
+    } else if (total_count) |count|
+        std.fmt.bufPrint(content_range_buf[0..], "*/{d}", .{count}) catch return
     else
         std.fmt.bufPrint(content_range_buf[0..], "*/0", .{}) catch return;
 
     _ = append_response_header(r, "Content-Range", "content-range", content_range);
+}
+
+fn read_response_status(status: ngx_uint_t, range_start: usize, ntuples: i32, total_count: ?i64, opts: RequestOptions) ngx_uint_t {
+    if (status != http.NGX_HTTP_OK or !opts.emit_range_headers) return status;
+    const total = total_count orelse return status;
+    if (ntuples <= 0) {
+        return if (total > 0 and range_start > 0) NGX_HTTP_PARTIAL_CONTENT else status;
+    }
+    const range_end = range_start + @as(usize, @intCast(ntuples - 1));
+    return if (range_start > 0 or @as(i64, @intCast(range_end + 1)) < total)
+        NGX_HTTP_PARTIAL_CONTENT
+    else
+        status;
 }
 
 fn send_json_error(r: [*c]ngx_http_request_t, status: ngx_uint_t, body: []const u8) ngx_int_t {
@@ -906,18 +1029,20 @@ fn finalize_response_send(
     response_data: []const u8,
     content_type: [*:0]const u8,
     ntuples: i32,
+    range_start: usize,
+    total_count: ?i64,
     opts: RequestOptions,
     status: ngx_uint_t,
     send_body: bool,
 ) ngx_int_t {
-    r.*.headers_out.status = status;
+    r.*.headers_out.status = read_response_status(status, range_start, ntuples, total_count, opts);
     const len = std.mem.len(content_type);
     r.*.headers_out.content_type = ngx_str_t{ .data = @constCast(content_type), .len = len };
     r.*.headers_out.content_type_len = len;
     r.*.headers_out.content_length_n = if (send_body and !opts.is_head) @intCast(response_data.len) else 0;
 
     append_preference_applied_header(r, opts);
-    append_range_headers(r, ntuples, opts);
+    append_range_headers(r, range_start, ntuples, total_count, opts);
 
     const header_rc = http.ngx_http_send_header(r);
     if (header_rc == NGX_ERROR or header_rc > http.NGX_HTTP_SPECIAL_RESPONSE) {
@@ -1686,6 +1811,7 @@ fn build_sql_query(
     where_clause: []const u8,
     json_fields: []const JsonField,
     select_clause: []const u8,
+    group_by_clause: []const u8,
     order_specs: []const OrderSpec,
     pagination: Pagination,
     include_returning: bool,
@@ -1848,6 +1974,14 @@ fn build_sql_query(
         const returning = " RETURNING *";
         @memcpy(query_buf[pos..][0..returning.len], returning);
         pos += returning.len;
+    }
+
+    if (sql_op == .select and group_by_clause.len > 0) {
+        const group_by = " GROUP BY ";
+        @memcpy(query_buf[pos..][0..group_by.len], group_by);
+        pos += group_by.len;
+        @memcpy(query_buf[pos..][0..group_by_clause.len], group_by_clause);
+        pos += group_by_clause.len;
     }
 
     // Add ORDER BY for SELECT
@@ -2539,6 +2673,30 @@ const WhereClauseResult = struct {
     invalid: bool,
 };
 
+const SelectItemRenderResult = struct {
+    select_len: usize,
+    group_len: usize,
+    aggregate: bool,
+};
+
+const AggregateFn = enum {
+    sum,
+    avg,
+    min,
+    max,
+    count,
+
+    fn sqlName(self: AggregateFn) []const u8 {
+        return switch (self) {
+            .sum => "sum",
+            .avg => "avg",
+            .min => "min",
+            .max => "max",
+            .count => "count",
+        };
+    }
+};
+
 fn decode_query_component_into(dest: []u8, src: []const u8) ?[]const u8 {
     var pos: usize = 0;
     var i: usize = 0;
@@ -2613,6 +2771,67 @@ fn append_sql_identifier(buf_out: []u8, pos_in: usize, raw_value: []const u8) us
     buf_out[pos] = '"';
     pos += 1;
     return pos;
+}
+
+fn append_castable_expression(buf_out: []u8, pos_in: usize, raw_expr: []const u8) ?usize {
+    var expr = trim_ascii_spaces(raw_expr);
+    if (expr.len == 0) return null;
+
+    var cast: ?[]const u8 = null;
+    if (std.mem.lastIndexOf(u8, expr, "::")) |cast_idx| {
+        cast = trim_ascii_spaces(expr[cast_idx + 2 ..]);
+        expr = trim_ascii_spaces(expr[0..cast_idx]);
+        if (cast.?.len == 0 or expr.len == 0) return null;
+    }
+
+    var pos = append_column_expression(buf_out, pos_in, expr) orelse return null;
+    if (cast) |cast_name| {
+        const cast_sep = "::";
+        @memcpy(buf_out[pos..][0..cast_sep.len], cast_sep);
+        pos += cast_sep.len;
+        pos = append_sql_identifier(buf_out, pos, cast_name);
+    }
+    return pos;
+}
+
+fn parse_aggregate_expression(expr_in: []const u8) ?struct {
+    base_expr: []const u8,
+    aggregate_fn: AggregateFn,
+    output_cast: ?[]const u8,
+} {
+    const expr = trim_ascii_spaces(expr_in);
+    if (std.mem.eql(u8, expr, "count()")) {
+        return .{ .base_expr = "", .aggregate_fn = .count, .output_cast = null };
+    }
+
+    const candidates = [_]struct { suffix: []const u8, func: AggregateFn }{
+        .{ .suffix = ".sum()", .func = .sum },
+        .{ .suffix = ".avg()", .func = .avg },
+        .{ .suffix = ".min()", .func = .min },
+        .{ .suffix = ".max()", .func = .max },
+        .{ .suffix = ".count()", .func = .count },
+    };
+
+    for (candidates) |candidate| {
+        if (std.mem.lastIndexOf(u8, expr, candidate.suffix)) |idx| {
+            const tail = expr[idx + candidate.suffix.len ..];
+            var output_cast: ?[]const u8 = null;
+            if (tail.len == 0) {
+                // ok
+            } else if (std.mem.startsWith(u8, tail, "::")) {
+                const cast_name = trim_ascii_spaces(tail[2..]);
+                if (cast_name.len == 0) return null;
+                output_cast = cast_name;
+            } else {
+                continue;
+            }
+
+            const base_expr = trim_ascii_spaces(expr[0..idx]);
+            if (base_expr.len == 0 and candidate.func != .count) return null;
+            return .{ .base_expr = base_expr, .aggregate_fn = candidate.func, .output_cast = output_cast };
+        }
+    }
+    return null;
 }
 
 fn append_column_expression(buf_out: []u8, pos_in: usize, raw_value: []const u8) ?usize {
@@ -2847,14 +3066,14 @@ fn parse_select_items(args: ngx_str_t, columns: *[MAX_SELECT_COLUMNS][]const u8)
     return 0;
 }
 
-fn append_select_item_sql(buf_out: []u8, pos_in: usize, raw_item: []const u8) ?usize {
+fn render_select_item(select_out: []u8, raw_item: []const u8, group_out: []u8) ?SelectItemRenderResult {
     const trimmed_item = trim_ascii_spaces(raw_item);
     var decoded_buf: [512]u8 = undefined;
     const item = decode_query_component_into(&decoded_buf, trimmed_item) orelse return null;
     if (item.len == 0) return null;
     if (std.mem.eql(u8, item, "*")) {
-        buf_out[pos_in] = '*';
-        return pos_in + 1;
+        select_out[0] = '*';
+        return .{ .select_len = 1, .group_len = 0, .aggregate = false };
     }
 
     var alias: ?[]const u8 = null;
@@ -2865,27 +3084,45 @@ fn append_select_item_sql(buf_out: []u8, pos_in: usize, raw_item: []const u8) ?u
         if (alias.?.len == 0 or expr.len == 0) return null;
     }
 
-    var cast: ?[]const u8 = null;
-    if (std.mem.lastIndexOf(u8, expr, "::")) |cast_idx| {
-        cast = trim_ascii_spaces(expr[cast_idx + 2 ..]);
-        expr = trim_ascii_spaces(expr[0..cast_idx]);
-        if (cast.?.len == 0 or expr.len == 0) return null;
+    if (parse_aggregate_expression(expr)) |aggregate| {
+        var pos: usize = 0;
+        const fn_name = aggregate.aggregate_fn.sqlName();
+        @memcpy(select_out[pos..][0..fn_name.len], fn_name);
+        pos += fn_name.len;
+        select_out[pos] = '(';
+        pos += 1;
+        if (aggregate.aggregate_fn == .count and aggregate.base_expr.len == 0) {
+            select_out[pos] = '*';
+            pos += 1;
+        } else {
+            pos = append_castable_expression(select_out, pos, aggregate.base_expr) orelse return null;
+        }
+        select_out[pos] = ')';
+        pos += 1;
+        if (aggregate.output_cast) |cast_name| {
+            const cast_sep = "::";
+            @memcpy(select_out[pos..][0..cast_sep.len], cast_sep);
+            pos += cast_sep.len;
+            pos = append_sql_identifier(select_out, pos, cast_name);
+        }
+
+        const alias_name = alias orelse fn_name;
+        const as_sep = " AS ";
+        @memcpy(select_out[pos..][0..as_sep.len], as_sep);
+        pos += as_sep.len;
+        pos = append_sql_identifier(select_out, pos, alias_name);
+        return .{ .select_len = pos, .group_len = 0, .aggregate = true };
     }
 
-    var pos = pos_in;
-    pos = append_column_expression(buf_out, pos, expr) orelse return null;
-    if (cast) |cast_name| {
-        const cast_sep = "::";
-        @memcpy(buf_out[pos..][0..cast_sep.len], cast_sep);
-        pos += cast_sep.len;
-        pos = append_sql_identifier(buf_out, pos, cast_name);
-    }
+    var pos: usize = 0;
+    const group_len = append_castable_expression(group_out, 0, expr) orelse return null;
+    pos = append_castable_expression(select_out, 0, expr) orelse return null;
 
     if (alias) |alias_name| {
         const as_sep = " AS ";
-        @memcpy(buf_out[pos..][0..as_sep.len], as_sep);
+        @memcpy(select_out[pos..][0..as_sep.len], as_sep);
         pos += as_sep.len;
-        pos = append_sql_identifier(buf_out, pos, alias_name);
+        pos = append_sql_identifier(select_out, pos, alias_name);
     } else if (std.mem.indexOf(u8, expr, "->") != null) {
         var tail = expr;
         var last_segment = expr;
@@ -2899,12 +3136,12 @@ fn append_select_item_sql(buf_out: []u8, pos_in: usize, raw_item: []const u8) ?u
         const alias_name = unescape_wrapped_quotes_into(&scratch, last_segment) orelse return null;
         if (alias_name.len == 0) return null;
         const as_sep = " AS ";
-        @memcpy(buf_out[pos..][0..as_sep.len], as_sep);
+        @memcpy(select_out[pos..][0..as_sep.len], as_sep);
         pos += as_sep.len;
-        pos = append_sql_identifier(buf_out, pos, alias_name);
+        pos = append_sql_identifier(select_out, pos, alias_name);
     }
 
-    return pos;
+    return .{ .select_len = pos, .group_len = group_len, .aggregate = false };
 }
 
 fn build_select_clause_from_args(buf_out: []u8, args: ngx_str_t) WhereClauseResult {
@@ -2913,15 +3150,46 @@ fn build_select_clause_from_args(buf_out: []u8, args: ngx_str_t) WhereClauseResu
     if (count == 0) return .{ .len = 0, .invalid = false };
 
     var pos: usize = 0;
+    var scratch: [1024]u8 = undefined;
     for (items[0..count], 0..) |item, i| {
         if (i > 0) {
             buf_out[pos] = ',';
             pos += 1;
         }
-        pos = append_select_item_sql(buf_out, pos, item) orelse return .{ .len = 0, .invalid = true };
+        const rendered = render_select_item(buf_out[pos..], item, &scratch) orelse return .{ .len = 0, .invalid = true };
+        pos += rendered.select_len;
     }
 
     return .{ .len = pos, .invalid = false };
+}
+
+fn build_group_by_clause_from_args(buf_out: []u8, args: ngx_str_t) WhereClauseResult {
+    var items: [MAX_SELECT_COLUMNS][]const u8 = undefined;
+    const count = parse_select_items(args, &items);
+    if (count == 0) return .{ .len = 0, .invalid = false };
+
+    var pos: usize = 0;
+    var saw_aggregate = false;
+    var group_count: usize = 0;
+    var select_scratch: [1024]u8 = undefined;
+    var group_scratch: [1024]u8 = undefined;
+
+    for (items[0..count]) |item| {
+        const rendered = render_select_item(&select_scratch, item, &group_scratch) orelse return .{ .len = 0, .invalid = true };
+        if (rendered.aggregate) {
+            saw_aggregate = true;
+            continue;
+        }
+        if (group_count > 0) {
+            buf_out[pos] = ',';
+            pos += 1;
+        }
+        @memcpy(buf_out[pos..][0..rendered.group_len], group_scratch[0..rendered.group_len]);
+        pos += rendered.group_len;
+        group_count += 1;
+    }
+
+    return .{ .len = if (saw_aggregate) pos else 0, .invalid = false };
 }
 
 fn append_list_items_sql(
@@ -4316,6 +4584,7 @@ fn build_rpc_table_query(
     rpc_params: *const RpcCall,
     where_clause: []const u8,
     select_clause: []const u8,
+    group_by_clause: []const u8,
     order_specs: []const OrderSpec,
     pagination: Pagination,
 ) usize {
@@ -4392,6 +4661,14 @@ fn build_rpc_table_query(
         pos += where_prefix.len;
         @memcpy(query_buf[pos..][0..where_clause.len], where_clause);
         pos += where_clause.len;
+    }
+
+    if (group_by_clause.len > 0) {
+        const group_by = " GROUP BY ";
+        @memcpy(query_buf[pos..][0..group_by.len], group_by);
+        pos += group_by.len;
+        @memcpy(query_buf[pos..][0..group_by_clause.len], group_by_clause);
+        pos += group_by_clause.len;
     }
 
     if (order_specs.len > 0) {
@@ -5598,6 +5875,7 @@ fn build_table_query(
     opts: RequestOptions,
     where_clause: []const u8,
     select_clause: []const u8,
+    group_by_clause: []const u8,
     order_specs: []const OrderSpec,
     pagination: Pagination,
     include_returning: bool,
@@ -5874,6 +6152,7 @@ fn build_table_query(
             where_clause,
             result_fields[0..result_field_count],
             select_clause,
+            group_by_clause,
             order_specs,
             pagination,
             include_returning,
@@ -5981,6 +6260,7 @@ fn handle_rpc_call(
     loc_conf: *ngx_pgrest_loc_conf_t,
     opts: RequestOptions,
 ) ngx_int_t {
+    var response_opts = opts;
     const body_format = parse_content_type_from_request(r);
     if (request_needs_body(r) and body_format == .unsupported) {
         return send_unsupported_media_type(r, "{\"message\":\"Unsupported request media type\"}");
@@ -6040,6 +6320,9 @@ fn handle_rpc_call(
 
     // Build RPC query
     var query_buf: [MAX_QUERY_SIZE]u8 = undefined;
+    var count_query_buf: [MAX_QUERY_SIZE]u8 = undefined;
+    var response_range_start: usize = 0;
+    var total_count: ?i64 = null;
     const query_len = if (rpc_returns_table_like(metadata)) blk: {
         var where_buf: [MAX_QUERY_SIZE]u8 = undefined;
         var read_args_buf: [MAX_QUERY_SIZE]u8 = undefined;
@@ -6051,11 +6334,41 @@ fn handle_rpc_call(
         const select_result = build_select_clause_from_args(&select_buf, read_args);
         if (select_result.invalid) return send_json_error(r, http.NGX_HTTP_BAD_REQUEST, "{\"message\":\"Invalid select parameter\"}");
 
+        var group_by_buf: [MAX_QUERY_SIZE]u8 = undefined;
+        const group_by_result = build_group_by_clause_from_args(&group_by_buf, read_args);
+        if (group_by_result.invalid) return send_json_error(r, http.NGX_HTTP_BAD_REQUEST, "{\"message\":\"Invalid select parameter\"}");
+
         var order_specs: [MAX_ORDER_COLUMNS]OrderSpec = undefined;
         const order_parse = parse_order(read_args, &order_specs);
         if (order_parse.invalid) return reject_invalid_order(r);
 
-        const pagination = parse_pagination(read_args);
+        const pagination_info = effective_read_pagination(read_args, response_opts);
+        response_range_start = pagination_info.range_start;
+
+        if (read_count_requested(response_opts)) {
+            response_opts.prefer.count_applied = true;
+            const count_query_len = build_rpc_table_query(
+                &count_query_buf,
+                resolved_schema.name,
+                function_name,
+                &rpc_call,
+                where_buf[0..where_result.len],
+                "count(*)",
+                "",
+                &.{},
+                .{ .limit = null, .offset = null },
+            );
+            const count_result = execute_pg_query_with_jwt(conninfo, count_query_buf[0..count_query_len], extract_jwt_token(r), if (loc_conf.*.jwt_secret.len > 0) JwtConfig{
+                .secret = core.slicify(u8, loc_conf.*.jwt_secret.data, loc_conf.*.jwt_secret.len),
+                .anon_role = core.slicify(u8, loc_conf.*.anon_role.data, loc_conf.*.anon_role.len),
+                .role_claim = core.slicify(u8, loc_conf.*.jwt_role_claim.data, loc_conf.*.jwt_role_claim.len),
+                .pool = r.*.pool,
+            } else null);
+            defer if (count_result.result != null) pgClear(count_result.result);
+            if (!count_result.success) return http.NGX_HTTP_INTERNAL_SERVER_ERROR;
+            total_count = parse_count_query_result(count_result.result);
+        }
+
         break :blk build_rpc_table_query(
             &query_buf,
             resolved_schema.name,
@@ -6063,8 +6376,9 @@ fn handle_rpc_call(
             &rpc_call,
             where_buf[0..where_result.len],
             select_buf[0..select_result.len],
+            group_by_buf[0..group_by_result.len],
             order_specs[0..order_parse.count],
-            pagination,
+            pagination_info.pagination,
         );
     } else build_rpc_call_query(&query_buf, resolved_schema.name, function_name, &rpc_call);
     const query = query_buf[0..query_len];
@@ -6149,7 +6463,9 @@ fn handle_rpc_call(
         response_buf[0..response_len],
         content_type,
         pg_result.ntuples,
-        opts,
+        response_range_start,
+        total_count,
+        response_opts,
         http.NGX_HTTP_OK,
         true,
     );
@@ -6186,6 +6502,7 @@ fn ngx_http_pgrest_handler(r: [*c]ngx_http_request_t) callconv(.c) ngx_int_t {
     }
 
     const opts = parse_request_options(r);
+    var response_opts = opts;
     if (opts.response_format == .unsupported) {
         return send_not_acceptable(r, "{\"message\":\"None of these media types are available\"}");
     }
@@ -6253,6 +6570,12 @@ fn ngx_http_pgrest_handler(r: [*c]ngx_http_request_t) callconv(.c) ngx_int_t {
         return send_json_error(r, http.NGX_HTTP_BAD_REQUEST, "{\"message\":\"Invalid select parameter\"}");
     }
 
+    var group_by_buf: [MAX_QUERY_SIZE]u8 = undefined;
+    const group_by_result = build_group_by_clause_from_args(&group_by_buf, r.*.args);
+    if (group_by_result.invalid) {
+        return send_json_error(r, http.NGX_HTTP_BAD_REQUEST, "{\"message\":\"Invalid select parameter\"}");
+    }
+
     // Parse ordering (?order=col.desc.nullslast)
     var order_specs: [MAX_ORDER_COLUMNS]OrderSpec = undefined;
     const order_parse = parse_order(r.*.args, &order_specs);
@@ -6262,7 +6585,9 @@ fn ngx_http_pgrest_handler(r: [*c]ngx_http_request_t) callconv(.c) ngx_int_t {
     const order_count = order_parse.count;
 
     // Parse pagination (?limit=N&offset=M)
-    const pagination = parse_pagination(r.*.args);
+    const pagination_info = effective_read_pagination(r.*.args, response_opts);
+    const pagination = pagination_info.pagination;
+    const response_range_start = pagination_info.range_start;
 
     var query_buf: [MAX_QUERY_SIZE]u8 = undefined;
     const table_query = build_table_query(
@@ -6275,6 +6600,7 @@ fn ngx_http_pgrest_handler(r: [*c]ngx_http_request_t) callconv(.c) ngx_int_t {
         opts,
         where_buf[0..where_len],
         select_buf[0..select_result.len],
+        group_by_buf[0..group_by_result.len],
         order_specs[0..order_count],
         pagination,
         if (is_write_request) write_contract.include_returning else true,
@@ -6292,6 +6618,23 @@ fn ngx_http_pgrest_handler(r: [*c]ngx_http_request_t) callconv(.c) ngx_int_t {
         .role_claim = core.slicify(u8, loc_conf.*.jwt_role_claim.data, loc_conf.*.jwt_role_claim.len),
         .pool = r.*.pool,
     } else null;
+
+    var total_count: ?i64 = null;
+    if (!is_write_request and read_count_requested(response_opts)) {
+        response_opts.prefer.count_applied = true;
+        var count_query_buf: [MAX_QUERY_SIZE]u8 = undefined;
+        const count_query_len = build_table_count_query(
+            &count_query_buf,
+            qualified_table,
+            where_buf[0..where_len],
+        );
+        const count_result = execute_pg_query_with_jwt(conninfo, count_query_buf[0..count_query_len], jwt_token, jwt_config);
+        defer if (count_result.result != null) pgClear(count_result.result);
+        if (!count_result.success) {
+            return http.NGX_HTTP_INTERNAL_SERVER_ERROR;
+        }
+        total_count = parse_count_query_result(count_result.result);
+    }
 
     // Execute query against PostgreSQL (with JWT if provided)
     const pg_result = execute_pg_query_with_jwt(conninfo, query, jwt_token, jwt_config);
@@ -6364,7 +6707,9 @@ fn ngx_http_pgrest_handler(r: [*c]ngx_http_request_t) callconv(.c) ngx_int_t {
         response_buf[0..response_len],
         content_type,
         pg_result.ntuples,
-        opts,
+        response_range_start,
+        total_count,
+        response_opts,
         if (is_write_request) write_contract.status else http.NGX_HTTP_OK,
         if (is_write_request) write_contract.send_body else true,
     );
@@ -6442,9 +6787,15 @@ fn handle_rpc_call_upstream(
     ctx.*.prefer_resolution_applied = opts.prefer.resolution_applied;
     ctx.*.prefer_max_affected = opts.prefer.max_affected orelse 0;
     ctx.*.prefer_has_max_affected = opts.prefer.max_affected != null;
+    ctx.*.prefer_count_mode = opts.prefer.count_mode;
+    ctx.*.prefer_count_applied = false;
     ctx.*.prefer_missing_default = opts.prefer.missing_default;
     ctx.*.prefer_invalid = opts.prefer.invalid;
     ctx.*.emit_range_headers = opts.emit_range_headers;
+    ctx.*.response_range_start = 0;
+    ctx.*.total_count = 0;
+    ctx.*.has_total_count = false;
+    ctx.*.next_query_len = 0;
     ctx.*.write_status = http.NGX_HTTP_OK;
     ctx.*.write_send_body = true;
     ctx.*.is_write_request = false;
@@ -6541,6 +6892,12 @@ fn ngx_http_pgrest_upstream_handler(r: [*c]ngx_http_request_t) callconv(.c) ngx_
         return send_json_error(r, http.NGX_HTTP_BAD_REQUEST, "{\"message\":\"Invalid select parameter\"}");
     }
 
+    var group_by_buf: [MAX_QUERY_SIZE]u8 = undefined;
+    const group_by_result = build_group_by_clause_from_args(&group_by_buf, r.*.args);
+    if (group_by_result.invalid) {
+        return send_json_error(r, http.NGX_HTTP_BAD_REQUEST, "{\"message\":\"Invalid select parameter\"}");
+    }
+
     // Parse ordering
     var order_specs: [MAX_ORDER_COLUMNS]OrderSpec = undefined;
     const order_parse = parse_order(r.*.args, &order_specs);
@@ -6550,7 +6907,8 @@ fn ngx_http_pgrest_upstream_handler(r: [*c]ngx_http_request_t) callconv(.c) ngx_
     const order_count = order_parse.count;
 
     // Parse pagination
-    const pagination = parse_pagination(r.*.args);
+    const pagination_info = effective_read_pagination(r.*.args, opts);
+    const pagination = pagination_info.pagination;
 
     // Allocate request context
     const ctx = core.ngz_pcalloc_c(PgRequestCtx, r.*.pool) orelse {
@@ -6568,6 +6926,7 @@ fn ngx_http_pgrest_upstream_handler(r: [*c]ngx_http_request_t) callconv(.c) ngx_
         opts,
         where_buf[0..where_len],
         select_buf[0..select_result.len],
+        group_by_buf[0..group_by_result.len],
         order_specs[0..order_count],
         pagination,
         if (is_write_request) write_contract.include_returning else true,
@@ -6590,12 +6949,28 @@ fn ngx_http_pgrest_upstream_handler(r: [*c]ngx_http_request_t) callconv(.c) ngx_
     ctx.*.prefer_resolution_applied = opts.prefer.resolution_applied;
     ctx.*.prefer_max_affected = opts.prefer.max_affected orelse 0;
     ctx.*.prefer_has_max_affected = opts.prefer.max_affected != null;
+    ctx.*.prefer_count_mode = opts.prefer.count_mode;
+    ctx.*.prefer_count_applied = false;
     ctx.*.prefer_missing_default = opts.prefer.missing_default;
     ctx.*.prefer_invalid = opts.prefer.invalid;
     ctx.*.emit_range_headers = opts.emit_range_headers;
+    ctx.*.response_range_start = pagination_info.range_start;
+    ctx.*.total_count = 0;
+    ctx.*.has_total_count = false;
     ctx.*.write_status = if (is_write_request) write_contract.status else http.NGX_HTTP_OK;
     ctx.*.write_send_body = if (is_write_request) write_contract.send_body else true;
     ctx.*.is_write_request = is_write_request;
+
+    if (!is_write_request and read_count_requested(opts)) {
+        @memcpy(ctx.*.next_query[0..ctx.*.query_len], ctx.*.query[0..ctx.*.query_len]);
+        ctx.*.next_query_len = ctx.*.query_len;
+        ctx.*.query_len = build_table_count_query(ctx.*.query[0..], qualified_table, where_buf[0..where_len]);
+        ctx[0].query[ctx.*.query_len] = 0;
+        ctx.*.rpc_phase = .count;
+    } else {
+        ctx.*.next_query_len = 0;
+        ctx.*.rpc_phase = .call;
+    }
 
     return start_pooled_request(ctx, loc_conf);
 }
@@ -6717,6 +7092,8 @@ fn finalize_pg_response(ctx: *PgRequestCtx) void {
             .params_single_object = ctx.*.prefer_params_single_object,
             .return_mode = ctx.*.prefer_return_mode,
             .handling = ctx.*.prefer_handling,
+            .count_mode = ctx.*.prefer_count_mode,
+            .count_applied = ctx.*.prefer_count_applied,
             .resolution = ctx.*.prefer_resolution,
             .resolution_applied = ctx.*.prefer_resolution_applied,
             .max_affected = if (ctx.*.prefer_has_max_affected) ctx.*.prefer_max_affected else null,
@@ -6737,6 +7114,33 @@ fn finalize_pg_response(ctx: *PgRequestCtx) void {
     if (status != PGRES_TUPLES_OK and status != PGRES_COMMAND_OK) {
         finalize_pooled_failure(ctx);
         return;
+    }
+
+    if (ctx.*.rpc_phase == .count) {
+        const parsed_total = parse_count_query_result(result) orelse {
+            finalize_pooled_failure(ctx);
+            return;
+        };
+        ctx.*.total_count = parsed_total;
+        ctx.*.has_total_count = true;
+        ctx.*.prefer_count_applied = true;
+        if (ctx.*.next_query_len == 0) {
+            finalize_pooled_failure(ctx);
+            return;
+        }
+
+        @memcpy(ctx.*.query[0..ctx.*.next_query_len], ctx.*.next_query[0..ctx.*.next_query_len]);
+        ctx.*.query_len = ctx.*.next_query_len;
+        ctx.*.query[ctx.*.query_len] = 0;
+        ctx.*.next_query_len = 0;
+        ctx.*.rpc_phase = .call;
+
+        if (ctx.*.pool_conn) |pool_conn| {
+            if (!start_pooled_query(ctx, pool_conn)) {
+                finalize_pooled_failure(ctx);
+            }
+            return;
+        }
     }
 
     // Format result as JSON
@@ -6821,6 +7225,16 @@ fn finalize_pg_response(ctx: *PgRequestCtx) void {
                 return;
             }
 
+            var group_by_buf: [MAX_QUERY_SIZE]u8 = undefined;
+            const group_by_result = build_group_by_clause_from_args(&group_by_buf, read_args);
+            if (group_by_result.invalid) {
+                const rc = send_json_error(r, http.NGX_HTTP_BAD_REQUEST, "{\"message\":\"Invalid select parameter\"}");
+                ctx.*.request = null;
+                release_pooled_ctx(ctx, false);
+                http.ngx_http_finalize_request(r, rc);
+                return;
+            }
+
             var order_specs: [MAX_ORDER_COLUMNS]OrderSpec = undefined;
             const order_parse = parse_order(read_args, &order_specs);
             if (order_parse.invalid) {
@@ -6831,20 +7245,38 @@ fn finalize_pg_response(ctx: *PgRequestCtx) void {
                 return;
             }
 
-            const pagination = parse_pagination(read_args);
-            break :blk build_rpc_table_query(
-                &ctx.query,
+            const pagination_info = effective_read_pagination(read_args, opts);
+            ctx.*.response_range_start = pagination_info.range_start;
+
+            const data_query_len = build_rpc_table_query(
+                if (read_count_requested(opts)) &ctx.*.next_query else &ctx.*.query,
                 resolved_schema.name,
                 function_name,
                 &rpc_call,
                 where_buf[0..where_result.len],
                 select_buf[0..select_result.len],
+                group_by_buf[0..group_by_result.len],
                 order_specs[0..order_parse.count],
-                pagination,
+                pagination_info.pagination,
             );
+            if (read_count_requested(opts)) {
+                ctx.*.next_query_len = data_query_len;
+                break :blk build_rpc_table_query(
+                    &ctx.*.query,
+                    resolved_schema.name,
+                    function_name,
+                    &rpc_call,
+                    where_buf[0..where_result.len],
+                    "count(*)",
+                    "",
+                    &.{},
+                    .{ .limit = null, .offset = null },
+                );
+            }
+            break :blk data_query_len;
         } else build_rpc_call_query(&ctx.query, resolved_schema.name, function_name, &rpc_call);
         ctx.query[ctx.*.query_len] = 0;
-        ctx.*.rpc_phase = .call;
+        ctx.*.rpc_phase = if (read_count_requested(opts) and rpc_returns_table_like(metadata)) .count else .call;
 
         if (ctx.*.pool_conn) |pool_conn| {
             if (!start_pooled_query(ctx, pool_conn)) {
@@ -6911,6 +7343,8 @@ fn finalize_pg_response(ctx: *PgRequestCtx) void {
         response_buf[0..response_len],
         content_type,
         ntuples,
+        ctx.*.response_range_start,
+        if (ctx.*.has_total_count) ctx.*.total_count else null,
         opts,
         ctx.*.write_status,
         ctx.*.write_send_body,
@@ -7489,9 +7923,32 @@ test "build_select_clause_from_args decodes encoded path operators" {
 test "build_sql_query renders json path ordering" {
     var query_buf: [1024]u8 = undefined;
     const spec = parse_order_spec("location->>lat.desc.nullslast") orelse return error.TestUnexpectedResult;
-    const len = build_sql_query(&query_buf, .select, "countries", "", &.{}, "*", &.{spec}, .{ .limit = null, .offset = null }, false);
+    const len = build_sql_query(&query_buf, .select, "countries", "", &.{}, "*", "", &.{spec}, .{ .limit = null, .offset = null }, false);
 
     try expectEqualStrings("SELECT * FROM countries ORDER BY to_jsonb(location)->>'lat' DESC NULLS LAST", query_buf[0..len]);
+}
+
+test "build_select_clause_from_args supports aggregate functions and casts" {
+    var buf_out: [512]u8 = undefined;
+    const result = build_select_clause_from_args(&buf_out, ngx_string("select=amount.sum(),average:amount.avg()::int,order_details->tax_amount::numeric.sum(),count()"));
+
+    try expect(!result.invalid);
+    try expectEqualStrings("sum(amount) AS sum,avg(amount)::int AS average,sum(to_jsonb(order_details)->'tax_amount'::numeric) AS sum,count(*) AS count", buf_out[0..result.len]);
+}
+
+test "build_group_by_clause_from_args groups by non aggregate select items" {
+    var buf_out: [512]u8 = undefined;
+    const result = build_group_by_clause_from_args(&buf_out, ngx_string("select=amount.sum(),amount.avg(),order_date"));
+
+    try expect(!result.invalid);
+    try expectEqualStrings("order_date", buf_out[0..result.len]);
+}
+
+test "build_sql_query renders grouped aggregate query" {
+    var query_buf: [1024]u8 = undefined;
+    const len = build_sql_query(&query_buf, .select, "orders", "status = 'paid'", &.{}, "sum(amount) AS sum,order_date", "order_date", &.{}, .{ .limit = null, .offset = null }, false);
+
+    try expectEqualStrings("SELECT sum(amount) AS sum,order_date FROM orders WHERE status = 'paid' GROUP BY order_date", query_buf[0..len]);
 }
 
 test "parse_on_conflict_param parses unique column list" {
@@ -7568,4 +8025,22 @@ test "auth base64url decode handles jwt alphabet via submodule" {
     var out: [8]u8 = undefined;
     const len = base64url_decode("SGVsbG8", &out) orelse return error.TestUnexpectedResult;
     try expectEqualStrings("Hello", out[0..len]);
+}
+
+test "effective_read_pagination prefers HTTP range over query params" {
+    const opts = RequestOptions{
+        .range_requested = true,
+        .range_start = 5,
+        .range_end = 9,
+    };
+    const effective = effective_read_pagination(ngx_string("limit=2&offset=1"), opts);
+    try expectEqual(@as(?usize, 5), effective.pagination.offset);
+    try expectEqual(@as(?usize, 5), effective.pagination.limit);
+    try expectEqual(@as(usize, 5), effective.range_start);
+}
+
+test "read_response_status returns partial content for partial counted reads" {
+    const opts = RequestOptions{ .emit_range_headers = true };
+    try expectEqual(@as(ngx_uint_t, NGX_HTTP_PARTIAL_CONTENT), read_response_status(http.NGX_HTTP_OK, 0, 2, 3, opts));
+    try expectEqual(@as(ngx_uint_t, http.NGX_HTTP_OK), read_response_status(http.NGX_HTTP_OK, 0, 3, 3, opts));
 }

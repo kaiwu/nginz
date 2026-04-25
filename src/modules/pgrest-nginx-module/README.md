@@ -588,9 +588,38 @@ curl "http://localhost/api/users?order=name.desc.nullslast"
 # Pagination
 curl "http://localhost/api/users?limit=10&offset=20"
 
+# HTTP range-based pagination
+curl "http://localhost/api/users" \
+  -H "Range-Unit: items" \
+  -H "Range: 10-19"
+
+# Count-aware pagination metadata
+curl "http://localhost/api/users?limit=10" \
+  -H "Prefer: count=exact"
+
 # Combined
 curl "http://localhost/api/users?select=id,name&status=eq.active&order=name.asc&limit=10"
 ```
+
+### Pagination and Count Headers
+
+For `GET` and `HEAD` reads, pgrest now emits HTTP item-range metadata on table reads and table-valued RPC reads:
+
+- `Range-Unit: items`
+- `Content-Range: start-end/*` when no total count is requested
+- `Content-Range: start-end/total` when `Prefer: count=*` is requested and a total count is available
+
+Current Batch 8 behavior:
+
+- query-parameter pagination (`limit`/`offset`) still works and now drives the emitted `Content-Range`
+- `Range: start-end` and open-ended `Range: start-` requests override read pagination for top-level reads
+- `Prefer: count=exact|planned|estimated` is accepted on table reads and table-valued RPC reads in both blocking and pooled modes
+- partial counted responses return `206 Partial Content` when the selected window is smaller than the known total
+
+Current Batch 8 boundary:
+
+- `count=planned` and `count=estimated` currently reuse the same exact count query path instead of PostgreSQL estimate/planner statistics
+- range/count handling is currently implemented for top-level table reads and table-valued RPC reads, not for embedding (which remains future work)
 
 ### INSERT (POST)
 
@@ -1046,6 +1075,61 @@ Examples:
 curl "http://localhost/api/users?select=id,fullName:full_name,birthDate:birth_date,salary::text"
 curl "http://localhost/api/people?select=id,json_data->>blood_type,json_data->phones,primary_language:languages->0"
 ```
+
+## Aggregate Functions and Computed Fields
+
+Batch 9 adds the current top-level aggregate/computed-field subset for table reads in both blocking and pooled modes.
+
+Supported aggregate select forms:
+
+- `amount.sum()`
+- `amount.avg()`
+- `amount.min()`
+- `amount.max()`
+- `amount.count()`
+- `count()`
+
+Current aggregate notes:
+
+- aggregate items can be mixed with plain selected columns, and non-aggregate selected columns become the generated `GROUP BY` list
+- aggregate outputs support aliasing, e.g. `average:amount.avg()`
+- aggregate outputs support output casts, e.g. `average:amount.avg()::int`
+- aggregate inputs support the existing path/cast grammar, e.g. `order_details->tax_amount::numeric.sum()`
+- the same aggregate select grammar is reused for table-valued RPC reads
+
+Examples:
+
+```bash
+# Aggregate over all rows
+curl "http://localhost/api/orders?select=amount.sum()"
+
+# Grouped aggregate query
+curl "http://localhost/api/orders?select=amount.sum(),average:amount.avg()::int,order_date"
+
+# Aggregate over a JSON path with input cast
+curl "http://localhost/api/orders?select=order_details->tax_amount::numeric.sum()"
+```
+
+Computed fields currently ride on the regular top-level grammar and can be used as selectable, filterable, and orderable columns when PostgreSQL exposes them in the active schema/search path.
+
+Examples:
+
+```bash
+# Select a computed field
+curl "http://localhost/api/people?select=full_name,job"
+
+# Filter on a computed field
+curl "http://localhost/api/people?full_name=fts.Beckett"
+
+# Order by a computed field
+curl "http://localhost/api/people?select=full_name,job&order=full_name.desc"
+```
+
+Current Batch 9 boundary:
+
+- ordering by aggregate outputs is still out of scope
+- `HAVING`-style aggregate filtering is not implemented
+- embedding-aware aggregate behavior remains deferred to later embedding batches
 
 ## RPC Response Formats
 
