@@ -40,6 +40,13 @@ function ensureContainerRunning(name) {
   }
 }
 
+function ensureHostPortOpen(host, port) {
+  const result = runResult(["nc", "-z", host, String(port)]);
+  if (result.exitCode !== 0) {
+    throw new Error(`Port ${port} on ${host} is not reachable. Ensure the PostgreSQL container exposes host port ${port} (e.g., -p ${port}:${port}).`);
+  }
+}
+
 // Run SQL as the postgres superuser (trust from inside the container).
 function psqlAdmin(sql) {
   const result = Bun.spawnSync(
@@ -121,6 +128,7 @@ $func$;
 describe("pgrest module - real PostgreSQL 18 integration", () => {
   beforeAll(async () => {
     ensureContainerRunning(PG_CONTAINER);
+    ensureHostPortOpen("127.0.0.1", 5432);
 
     // Create test user and database
     psqlAdmin(`CREATE USER ${PG_USER} WITH PASSWORD '${PG_PASSWORD}';`);
