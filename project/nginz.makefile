@@ -10,7 +10,7 @@ copy: ./submodules/nginx/src/core/nginx.c ./submodules/nginx/objs/ngx_modules.c
 	cp ./submodules/nginx/src/core/nginx.c ./submodules/nginx/objs/nginz.c
 
 ./submodules/nginx/objs/nginz.c: copy
-	patch ./submodules/nginx/objs/nginz.c < project/nginz.patch
+	patch --batch -N ./submodules/nginx/objs/nginz.c < project/nginz.patch || grep -Fq 'main_nginx(int argc, char *const *argv)' ./submodules/nginx/objs/nginz.c
 
 clean:
 	rm -f ./submodules/nginx/objs/ngx_modules.c ./submodules/nginx/objs/nginz.c

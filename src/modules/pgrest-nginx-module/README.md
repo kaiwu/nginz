@@ -2,6 +2,17 @@
 
 A PostgREST-like nginx module written in Zig that provides a RESTful API for PostgreSQL databases.
 
+## Module Layout
+
+The pgrest implementation is no longer a single growing file. The current split keeps nginx-facing module glue in `ngx_http_pgrest.zig` and moves reusable logic into focused submodules:
+
+- `ngx_http_pgrest.zig` - nginx module entrypoint, directives, request orchestration, pooled/blocking execution glue
+- `pgrest_auth.zig` - JWT extraction/validation and blocking query helpers with Zig tests
+- `pgrest_query.zig` - SQL grammar, table query builders, and write-query helpers with Zig tests
+- `pgrest_rpc.zig` - RPC metadata/query-shaping helpers with Zig tests
+
+This split is intentionally mechanical so future batches can grow one concern without dragging the whole module into context.
+
 ## Features
 
 ### Core Features
@@ -22,7 +33,7 @@ A PostgREST-like nginx module written in Zig that provides a RESTful API for Pos
 ### Response Format Control
 - **Accept header negotiation** - `Accept: application/json`, `text/csv`, `text/plain`, `text/xml`, `application/octet-stream`
 - **Multiple format support** - JSON, CSV, plain text, XML, and deterministic octet-stream output formats
-- **Schema selection** - `Accept-Profile` (GET/HEAD/DELETE) and `Content-Profile` (POST/PATCH/PUT) headers for schema-qualified table access
+- **Schema selection** - `Accept-Profile` for GET/HEAD, `Content-Profile` for POST/PATCH/PUT/DELETE, with `pgrest_schemas` allowlist enforcement and first-schema default selection
 - **RPC parameter wrapping** - `Prefer: params=single-object` header for single JSON object parameters
 
 ## Configuration
@@ -350,6 +361,14 @@ $$ LANGUAGE SQL;
 
 ### Parameter Passing Methods
 
+Current metadata-backed RPC notes:
+
+- `GET` and `HEAD` are currently allowed only when the function metadata resolves to non-`VOLATILE`; `VOLATILE` functions return `405` with `Allow: OPTIONS,POST`.
+- Single unnamed `json/jsonb`, `text`, `xml`, and `bytea` parameters now use positional RPC calls from matching request-body media types.
+- Variadic RPC parameters now collapse repeated GET query parameters and repeated `application/x-www-form-urlencoded` body parameters into one PostgreSQL `ARRAY[...]` argument when the function metadata marks that parameter as variadic.
+- Table-valued/composite-return RPC functions now reuse the table read grammar for `select`, filters, ordering, and pagination, while separating true function arguments from read-shaping query parameters.
+- Named JSON/form RPC calls continue to use named PostgreSQL arguments, and `Prefer: params=single-object` still uses the existing named wrapper behavior.
+
 #### Method 1: Query String Parameters (GET)
 
 For simple function calls with a few parameters, use query string parameters:
@@ -563,6 +582,8 @@ curl "http://localhost/api/users?age=gt.18&status=eq.active"
 # Order results
 curl "http://localhost/api/users?order=created_at.desc"
 curl "http://localhost/api/users?order=name.asc,id.desc"
+curl "http://localhost/api/users?order=name.nullsfirst"
+curl "http://localhost/api/users?order=name.desc.nullslast"
 
 # Pagination
 curl "http://localhost/api/users?limit=10&offset=20"
@@ -602,9 +623,9 @@ curl -X DELETE "http://localhost/api/users?id=eq.5"
 
 pgrest supports schema-qualified table access via Profile headers. This allows you to work with tables in different PostgreSQL schemas without modifying the table name in the URI.
 
-#### Accept-Profile (GET/HEAD/DELETE)
+#### Accept-Profile (GET/HEAD)
 
-Use the `Accept-Profile` header to select a schema for read and delete operations:
+Use the `Accept-Profile` header to select a schema for GET and HEAD requests:
 
 ```bash
 # Query from the public schema (default if no header)
@@ -617,9 +638,9 @@ curl "http://localhost/api/users" \
 # This will query: SELECT * FROM admin_schema.users
 ```
 
-#### Content-Profile (POST/PATCH/PUT)
+#### Content-Profile (POST/PATCH/PUT/DELETE)
 
-Use the `Content-Profile` header to select a schema for write operations:
+Use the `Content-Profile` header to select a schema for POST, PATCH, PUT, and DELETE requests:
 
 ```bash
 # Insert into the public schema (default)
@@ -634,7 +655,26 @@ curl -X POST "http://localhost/api/users" \
   -d '{"name": "John", "email": "john@example.com"}'
 
 # This will execute: INSERT INTO tenant_schema.users (name, email) VALUES (...)
+
+# Delete from a specific schema
+curl -X DELETE "http://localhost/api/users?id=eq.5" \
+  -H "Content-Profile: tenant_schema"
+
+# This will execute: DELETE FROM tenant_schema.users WHERE id = '5' RETURNING *
 ```
+
+#### Allowlisted Schemas and Default Schema
+
+Configure the exposed schema set with `pgrest_schemas`:
+
+```nginx
+location /api/ {
+    pgrest_pass "host=localhost dbname=mydb user=postgres password=secret";
+    pgrest_schemas "public, admin, tenant_001";
+}
+```
+
+The first configured schema becomes the default schema when no profile header is provided. In that default case, pgrest keeps the generated SQL unqualified and relies on the selected schema as the request's effective search path. Requests that specify a different allowed schema are schema-qualified explicitly. Requests that specify a schema outside `pgrest_schemas` are rejected with the PostgREST-style `PGRST106` error.
 
 #### Schema Profile Examples
 
@@ -692,20 +732,95 @@ This is useful for:
 
 ### Prefer Header for Table Writes
 
-Batch 3 adds write-side Prefer handling for the existing table write paths:
+Batch 3 and Batch 6 add write-side Prefer handling for the current table write paths:
 
 - `Prefer: return=representation` - default behavior, returns the written rows in the response body
 - `Prefer: return=minimal` - executes the write and returns headers only, with no response body
 - `Prefer: return=headers-only` - same no-body contract as the current implementation’s header-only write response mode
 - `Prefer: handling=strict|lenient` - strict rejects unsupported/malformed Prefer values before SQL execution; lenient ignores unknown values
 - `Prefer: max-affected=<n>` - rejects responses that affect more than `n` rows
+- `Prefer: missing=default` - on supported bulk insert flows, missing keys listed by the write column set are emitted as SQL `DEFAULT` instead of `NULL`
+- `Prefer: resolution=merge-duplicates|ignore-duplicates` - on supported insert upsert flows, generates `ON CONFLICT ... DO UPDATE` or `DO NOTHING`
 
 When a write-side preference is honored, pgrest emits a `Preference-Applied` header for the applied values.
 
 Current Batch 3 boundary:
 
 - `max-affected` is enforced at response-contract level for the current write paths
-- `tx=commit|rollback`, bulk-write preferences, upsert preferences, and other broader write semantics are still out of scope
+- `tx=commit|rollback` remains out of scope
+
+### Bulk Insert and Upsert Semantics
+
+Batch 6 adds the current advanced table-write subset in both blocking and pooled modes:
+
+- JSON array bodies are emitted as a single multi-row `INSERT ... VALUES (...), (...)`
+- `text/csv` table writes support multi-row inserts using the header row as the write column list
+- `columns=col1,col2,...` constrains the effective insert column set and ignores extra JSON keys outside that set
+- `Prefer: missing=default` applies to supported bulk JSON insert flows so omitted columns render as SQL `DEFAULT`
+- `Prefer: resolution=merge-duplicates|ignore-duplicates` plus `on_conflict=...` adds explicit conflict-target upserts for object and bulk insert flows
+- `PUT` with `eq` filters on the target row and a complete body performs a single-row upsert using those filtered columns as the conflict target
+- `PATCH` and `DELETE` support PostgREST-style limited writes when `limit` is paired with an explicit `order`
+
+Examples:
+
+```bash
+# Bulk JSON insert
+curl -X POST "http://localhost/api/users" \
+  -H "Content-Type: application/json" \
+  -d '[
+    {"name":"Bulk A","email":"a@example.com","status":"active"},
+    {"name":"Bulk B","email":"b@example.com","status":"inactive"}
+  ]'
+
+# Bulk CSV insert
+curl -X POST "http://localhost/api/users" \
+  -H "Content-Type: text/csv" \
+  --data-binary $'name,email,status\nCsv A,csv-a@example.com,active\nCsv B,csv-b@example.com,inactive\n'
+
+# Restrict insert columns and ignore extra keys
+curl -X POST "http://localhost/api/users?columns=name,email" \
+  -H "Content-Type: application/json" \
+  -d '{"name":"Trimmed User","email":"trimmed@example.com","status":"active","ignored":"value"}'
+
+# Use DEFAULT for omitted values in a bulk JSON insert
+curl -X POST "http://localhost/api/foo?columns=id,bar,baz" \
+  -H "Content-Type: application/json" \
+  -H "Prefer: missing=default, return=representation" \
+  -d '[
+    {"bar":"val1"},
+    {"bar":"val2","baz":15}
+  ]'
+
+# Explicit upsert on a unique column set
+curl -X POST "http://localhost/api/employees?on_conflict=name" \
+  -H "Content-Type: application/json" \
+  -H "Prefer: resolution=merge-duplicates, return=representation" \
+  -d '[
+    {"name":"Old employee 1","salary":40000},
+    {"name":"Old employee 2","salary":52000},
+    {"name":"New employee 3","salary":60000}
+  ]'
+
+# Single-row PUT upsert
+curl -X PUT "http://localhost/api/users?id=eq.4" \
+  -H "Content-Type: application/json" \
+  -d '{"id":4,"name":"Sara B.","email":"sara@example.com","status":"active"}'
+
+# Limited PATCH with explicit ordering
+curl -X PATCH "http://localhost/api/users?limit=10&order=id&last_login=lt.2020-01-01" \
+  -H "Content-Type: application/json" \
+  -d '{"status":"inactive"}'
+
+# Limited DELETE with explicit ordering
+curl -X DELETE "http://localhost/api/users?limit=10&order=id&status=eq.inactive"
+```
+
+Current Batch 6 boundary:
+
+- bulk support currently covers insert-only JSON-array and CSV flows, not bulk update/delete
+- default-primary-key upsert inference without an explicit conflict target is intentionally not implemented because this upstream module does not maintain PostgREST-style schema-cache metadata
+- CSV support is intentionally narrow and does not attempt full PostgREST CSV grammar parity
+- limited update/delete support follows the documented `limit` + explicit `order` contract and does not attempt broader hidden uniqueness inference
 
 ## Content Negotiation & Response Formats
 
@@ -796,9 +911,9 @@ Returns the raw field payload when the query result shape is exactly one row and
 
 pgrest accepts the following request body media types with explicit mappings that stay within the current upstream module contract:
 
-- `application/json` - object payloads for table writes and named RPC parameters
+- `application/json` - object payloads plus supported JSON-array bulk inserts for table writes, and named RPC parameters
 - `application/x-www-form-urlencoded` - key/value payloads for table writes and named RPC parameters
-- `text/csv` - single-row CSV payloads for table writes; raw `data` payload for RPC
+- `text/csv` - header-driven table inserts, including supported multi-row bulk inserts; raw `data` payload for RPC
 - `text/plain`, `text/xml`, `application/octet-stream` - raw body mapped to a single `data` field/parameter
 
 These mappings are intentionally narrow so content-type support does not silently introduce broader write-contract or RPC semantics.
@@ -878,8 +993,59 @@ Benefits of stripped nulls:
 | `lte` | `<=` | `?price=lte.50` |
 | `like` | `LIKE` | `?name=like.John%` |
 | `ilike` | `ILIKE` | `?name=ilike.john%` |
+| `match` | `~` | `?name=match.^J.*n$` |
+| `imatch` | `~*` | `?name=imatch.^j.*n$` |
 | `is` | `IS` | `?deleted_at=is.null` |
+| `isdistinct` | `IS DISTINCT FROM` | `?deleted_at=isdistinct.null` |
 | `in` | `IN` | `?status=in.(active,pending)` |
+| `fts` / `plfts` / `phfts` / `wfts` | `@@` | `?my_tsv=fts(french).amusant` |
+| `cs` / `cd` / `ov` | `@>` / `<@` / `&&` | `?tags=cs.{example,new}` |
+| `sl` / `sr` / `nxr` / `nxl` / `adj` | range operators | `?range=adj.(1,10)` |
+
+Logical operators and modifiers supported by the current Batch 4 implementation:
+
+- `or=(...)`, `and=(...)`, `not.and(...)`, `not.or(...)`
+- `not.<operator>` on simple filters
+- `any` / `all` modifiers on `eq`, `like`, `ilike`, `gt`, `gte`, `lt`, `lte`, `match`, and `imatch`
+- reserved-character escaping for quoted identifiers and quoted `in(...)` values
+- JSON/composite/array path filters using `->` and `->>` with `to_jsonb(...)` SQL rendering
+
+## Ordering
+
+pgrest currently supports plain-column and JSON/composite/array-path ordering with optional direction and null ordering modifiers:
+
+- `?order=name` → `ORDER BY name ASC`
+- `?order=name.asc` → `ORDER BY name ASC`
+- `?order=name.desc` → `ORDER BY name DESC`
+- `?order=name.nullsfirst` → `ORDER BY name ASC NULLS FIRST`
+- `?order=name.nullslast` → `ORDER BY name ASC NULLS LAST`
+- `?order=name.desc.nullslast` → `ORDER BY name DESC NULLS LAST`
+- `?order=location->>lat` → `ORDER BY to_jsonb(location)->>'lat' ASC`
+
+Multiple order items are comma-separated:
+
+```bash
+curl "http://localhost/api/users?order=name.nullslast,id.desc.nullsfirst"
+```
+
+Malformed `order=` values are rejected with `400` before SQL execution.
+
+## Select Grammar
+
+Batch 4 also expands `select=` beyond plain column lists:
+
+- aliasing with `alias:column`
+- casts with `column::type`
+- JSON/composite/array path expressions with `->` and `->>`
+- auto-aliasing of path tail segments
+- percent-decoded path operators from real HTTP requests
+
+Examples:
+
+```bash
+curl "http://localhost/api/users?select=id,fullName:full_name,birthDate:birth_date,salary::text"
+curl "http://localhost/api/people?select=id,json_data->>blood_type,json_data->phones,primary_language:languages->0"
+```
 
 ## RPC Response Formats
 
@@ -991,20 +1157,28 @@ Error responses:
 - ✅ **Request body media types** - JSON, form-urlencoded, CSV, plain text, XML, and octet-stream with explicit narrow mappings
 - ✅ **Accept header support** - JSON, CSV, XML, plain text, and deterministic octet-stream output
 - ✅ **Prefer write contract** - `return=representation|minimal|headers-only`, `handling=strict|lenient`, `max-affected`, and consistent `Preference-Applied` on current table writes
+- ✅ **Advanced table writes** - bulk JSON-array inserts, CSV bulk inserts, `columns=...`, `Prefer: missing=default`, explicit `on_conflict` upserts, `PUT` single-row upserts, and limited `PATCH`/`DELETE` with `limit` + explicit `order`
+- ✅ **Batch 4 URL grammar subset** - logical operators, `any`/`all`, advanced filter operators, reserved-character escapes, alias/cast `select`, JSON/composite/array path filters and selects, and path-aware ordering with explicit malformed-order rejection
 - ✅ **RPC POST requests** - Call functions with structured JSON data
-- ✅ **Accept-Profile header** - Schema selection for GET/HEAD/DELETE requests
-- ✅ **Content-Profile header** - Schema selection for POST/PATCH/PUT requests
+- ✅ **Schema allowlist and default schema selection** - `pgrest_schemas` enforces allowed profiles, uses the first schema as the default selection, and rejects disallowed schemas with `PGRST106`
+- ✅ **Accept-Profile header** - Schema selection for GET/HEAD requests
+- ✅ **Content-Profile header** - Schema selection for POST/PATCH/PUT/DELETE requests
 - ✅ **Prefer: params=single-object** - Single JSON object parameter wrapping for RPC functions
 - ✅ **Singular object responses** - Accept: application/vnd.pgrst.object+json for single-row object format
 - ✅ **Stripped nulls** - Accept: application/vnd.pgrst.array+json;nulls=stripped to omit null fields
 - ✅ **Array parameters** - JSON arrays automatically converted to PostgreSQL ARRAY[] syntax in RPC calls
+- ✅ **RPC volatility gating** - RPC GET/HEAD now respects metadata-backed volatility checks and rejects `VOLATILE` functions with `405`
+- ✅ **Single unnamed RPC parameters** - matching `json/jsonb`, `text`, `xml`, and `bytea` single-unnamed-parameter functions now use positional body binding
+- ✅ **Variadic repeated parameters** - repeated GET and form-urlencoded RPC parameters now collapse into one variadic `ARRAY[...]` argument when metadata marks the target parameter as variadic
+- ✅ **Table-valued RPC read grammar** - composite/table-returning RPC functions now support `select`, filters, ordering, and pagination in both blocking and pooled paths
 - ✅ **JWT Authentication** - Authorization header support with JWT passed to PostgreSQL via request.jwt claim
 
 ## Planned Features
 
 - **Broader binary response format** - widen application/octet-stream beyond the current single-row/single-column response contract
-- **Broader write semantics** - bulk-write, upsert/conflict-resolution, transaction preferences, and richer RPC-specific Prefer behavior
+- **Broader write semantics** - transaction preferences, default conflict-target inference without explicit schema metadata, and richer RPC-specific Prefer behavior
 - **Variadic functions** - Multiple parameter values for variadic functions
+- **Embedding and aggregate grammar** - relationship embedding, spread syntax, and aggregate/computed-field `select` semantics remain future work outside the current Batch 4 subset
 
 ## Limitations
 

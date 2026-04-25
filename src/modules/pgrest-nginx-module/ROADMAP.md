@@ -415,6 +415,14 @@ This module is not a standalone PostgREST server. It is an nginx upstream module
 **Unlocks**
 - Richer filtering for later RPC/table-valued function parity and embedding
 
+### Batch 4 progress update
+
+- ✅ Completed 4A: logical operators (`or`, `and`, `not`), `any` / `all` modifiers, advanced operators (`match`, `imatch`, `fts`, `plfts`, `phfts`, `wfts`, `cs`, `cd`, `ov`, `sl`, `sr`, `nxr`, `nxl`, `adj`, `isdistinct`), reserved-character escaping for quoted identifiers/values, and malformed-filter rejection now work in both blocking and pooled paths.
+- ✅ Completed 4A: ordering now supports `nullsfirst`, `nullslast`, and JSON/composite/array path expressions such as `order=location->>lat`, with malformed `order=` rejected explicitly with `400` before SQL execution.
+- ✅ Completed 4B: `select=` now supports aliasing, casting, JSON/composite/array path expressions, path-tail auto-aliasing, and percent-decoded path operators from real HTTP requests.
+- ✅ Completed: Batch 4 coverage now includes Zig parser tests plus Bun integration tests for the accepted URL-grammar subset in both blocking and pooled execution paths.
+- ℹ️ Intentional Batch 4 boundary: embedding grammar and aggregate/computed-field grammar remain later-batch work even though the core filter/select/order grammar subset is now complete.
+
 ### Batch 5: Schema Governance, Profiles, and View Semantics
 
 **Theme:** Stabilize schema selection rules before relationship-aware work begins.
@@ -435,6 +443,15 @@ This module is not a standalone PostgREST server. It is an nginx upstream module
 
 **Unlocks**
 - Safer foundation for embedding and cross-schema behavior
+
+### Batch 5 progress update
+
+- ✅ Completed: `pgrest_schemas` now provides an explicit schema allowlist modeled on PostgREST `db-schemas` semantics.
+- ✅ Completed: GET/HEAD use `Accept-Profile`, while POST/PATCH/PUT/DELETE use `Content-Profile`, in both blocking and pooled execution paths.
+- ✅ Completed: Requests with disallowed schemas now fail with the PostgREST-style `PGRST106` error body instead of silently accepting arbitrary profile values.
+- ✅ Completed: The first configured schema is treated as the default schema selection, while default requests keep the generated SQL unqualified to preserve the module's upstream contract.
+- ✅ Completed: Batch 5 integration coverage now verifies allowed/disallowed profile handling, default-schema behavior, RPC schema selection, and pooled/blocking parity.
+- ℹ️ Remaining Batch 5 boundary: view-specific semantic review/expansion is still open if we decide PostgREST view behavior needs a dedicated follow-up inside this batch theme.
 
 ### Batch 6: Bulk Writes and Upsert Semantics
 
@@ -458,6 +475,18 @@ This module is not a standalone PostgREST server. It is an nginx upstream module
 **Unlocks**
 - Complete write-side table contract before advanced RPC/embedding layers build on it
 
+### Batch 6 progress update
+
+- ✅ Completed slice: bulk JSON-array inserts now emit a single multi-row `INSERT` in both blocking and pooled execution paths.
+- ✅ Completed slice: `text/csv` table inserts now support the current narrow bulk contract using the CSV header row as the insert column list.
+- ✅ Completed slice: `columns=...` is now treated as a reserved write-control parameter for inserts, allowing the module to ignore extra JSON keys outside the selected column set.
+- ✅ Completed slice: `Prefer: missing=default` now works for the supported bulk JSON insert flow, preserving omitted fields as SQL `DEFAULT` instead of coercing them to `NULL`, with `Preference-Applied` parity across blocking and pooled paths.
+- ✅ Completed: explicit upsert semantics now work through `Prefer: resolution=merge-duplicates|ignore-duplicates` with `on_conflict=...` in both blocking and pooled execution paths.
+- ✅ Completed: `PUT` now performs the documented single-row upsert shape when the request uses `eq` filters and supplies a complete body, reusing those filtered columns as the conflict target.
+- ✅ Completed: `PATCH` and `DELETE` now support the documented limited-write contract using `limit` plus explicit `order`, rendered through a CTE-based PostgreSQL query shape in both execution paths.
+- ✅ Completed: Batch 6 coverage now includes blocking and pooled integration tests for bulk JSON inserts, bulk CSV inserts, `columns=...`, `missing=default`, explicit upserts, `PUT` upserts, and limited update/delete, and the batch verifies green with `zig build test && KEEP_LOGS=1 bun test tests/pgrest/ && zig build`.
+- ℹ️ Remaining Batch 6 boundary: PostgREST's default-primary-key upsert inference without an explicit conflict target remains intentionally out of scope for this upstream module because it would require schema-cache metadata the module does not maintain.
+
 ### Batch 7: RPC Parity Expansion
 
 **Theme:** Bring RPC behavior closer to table-endpoint parity without relationship introspection yet.
@@ -479,6 +508,28 @@ This module is not a standalone PostgREST server. It is an nginx upstream module
 
 **Unlocks**
 - A credible PostgREST-like RPC layer before the relationship model arrives
+
+### Batch 7 progress update
+
+- ✅ Completed slice: RPC execution now performs a metadata lookup against PostgreSQL function catalogs before executing the function call in both blocking and pooled paths.
+- ✅ Completed slice: GET/HEAD RPC requests now honor metadata-backed volatility rules, returning `405` plus the corresponding `Allow` header for `VOLATILE` functions.
+- ✅ Completed slice: single unnamed `json/jsonb`, `text`, `xml`, and `bytea` parameter functions now bind matching request bodies positionally instead of forcing a named `data => ...` argument.
+- ✅ Completed slice: repeated GET parameters and repeated `application/x-www-form-urlencoded` RPC parameters now collapse into one `ARRAY[...]` argument when the function metadata marks that parameter as variadic.
+- ✅ Completed slice: blocking and pooled integration coverage now asserts the metadata lookup path, volatility gating, and unnamed JSON/bytea RPC binding.
+- ✅ Completed slice: Batch 7 coverage now includes variadic GET and variadic form-urlencoded RPC flows in both blocking and pooled paths.
+- ✅ Completed slice: table-valued/composite-return RPC functions now reuse the table read grammar for `select`, filters, ordering, and pagination in both blocking and pooled paths, while separating function arguments from read-shaping query parameters.
+- ✅ Batch 7 is now complete for the current roadmap scope.
+
+### Pre-Batch 8 refactor update
+
+- ✅ Completed: the pgrest module was mechanically split before Batch 8 so future work does not keep expanding one monolithic Zig file.
+- ✅ `ngx_http_pgrest.zig` remains the stable nginx module entrypoint and request-flow glue.
+- ✅ Shared auth/query/RPC logic now lives in focused submodules with local Zig tests:
+  - `pgrest_auth.zig`
+  - `pgrest_query.zig`
+  - `pgrest_rpc.zig`
+- ✅ Verification after the split stayed green with `zig build test && KEEP_LOGS=1 bun test tests/pgrest/ && zig build`.
+- ℹ️ Intentional boundary: this was a mechanical organization pass, not a semantic redesign, so Batch 8 can proceed on the new structure without reopening already-green Batch 7 behavior.
 
 ### Batch 8: Pagination and Count Completeness
 
@@ -605,7 +656,7 @@ This table is meant to make the batches implementation-ready. The file list is i
 | 5 | Stabilize schema/profile rules and views | `ngx_http_pgrest.zig`, `tests/pgrest/pgrest.test.js`, `tests/pgrest/nginx.conf`, `README.md` | allowlist/default-schema behavior, invalid profile errors, pooled schema parity, view coverage | schema policy design and pooled-path parity | profile behavior is explicit, bounded, and stable before introspection-heavy work |
 | 6 | Finish advanced table writes | `ngx_http_pgrest.zig`, `tests/pgrest/pgrest.test.js`, `README.md` | bulk JSON/CSV writes, `columns`, `missing=default`, upsert cases, limited update/delete cases | write-path SQL complexity and correctness | bulk/upsert/write semantics are complete for the chosen scope and do not regress existing CRUD |
 | 7 | Raise RPC to table-endpoint parity | `ngx_http_pgrest.zig`, `tests/pgrest/pgrest.test.js`, `tests/pgrest/nginx.conf`, `README.md` | volatility-based methods, unnamed params, variadics, arrays, TVF filtering/order/pagination | keeping RPC semantics aligned with table semantics | RPC surface is coherent, documented, and tested without requiring embedding |
-| 8 | Finish pagination/count contract | `ngx_http_pgrest.zig`, `tests/pgrest/pgrest.test.js`, `README.md` | `Range`/`Content-Range`, partial content, `Prefer: count=*`, TVF count cases | header/status correctness across both paths | count/pagination metadata is stable and reusable by later features |
+| 8 | Finish pagination/count contract | `ngx_http_pgrest.zig`, `pgrest_query.zig`, `pgrest_rpc.zig`, `tests/pgrest/pgrest.test.js`, `README.md` | `Range`/`Content-Range`, partial content, `Prefer: count=*`, TVF count cases | header/status correctness across both paths | count/pagination metadata is stable and reusable by later features |
 | 9 | Add aggregates and computed fields | `ngx_http_pgrest.zig`, `tests/pgrest/pgrest.test.js`, `README.md` | aggregate select cases, grouped output, computed field select/filter/order, cast/path interactions | select grammar and result-shaping complexity | aggregate/computed-field support works on the stabilized grammar layer without relationship coupling |
 | 10 | Embedding phase 1 | `ngx_http_pgrest.zig`, `tests/pgrest/pgrest.test.js`, `README.md` | one-level to-one/to-many embedding, basic `!fk`, embedded filters/order/limit | relationship model choice and bounded introspection | a narrow relationship model works reliably and stays within upstream/performance guardrails |
 | 11 | Embedding phase 2 + interface surface | `ngx_http_pgrest.zig`, `tests/pgrest/pgrest.test.js`, `tests/pgrest/nginx.conf`, `README.md` | many-to-many, nested embed, advanced embed filters, spread, OPTIONS, CORS, OpenAPI/root metadata | highest feature coupling and public-surface breadth | advanced relationship/API-surface work lands without reopening earlier contract decisions |

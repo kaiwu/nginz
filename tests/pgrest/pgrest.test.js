@@ -72,6 +72,11 @@ describe("pgrest module", () => {
       rows: [["101", "Admin Jane", "admin@example.com", "active"]],
     }));
 
+    pgMock.setQueryHandler(/SELECT \* FROM public\.users$/, () => ({
+      columns: ["id", "name", "email", "status"],
+      rows: [["201", "Public Jane", "public@example.com", "active"]],
+    }));
+
     // Handler for singular object / null stripping tests
     pgMock.setQueryHandler(/SELECT \* FROM profiles WHERE id = '1'/, () => ({
       columns: ["id", "name", "bio", "avatar"],
@@ -120,9 +125,91 @@ describe("pgrest module", () => {
       ],
     }));
 
+    pgMock.setQueryHandler(/^SELECT \* FROM users WHERE \(age < '18' OR NOT \(age >= '11' AND age <= '17'\)\)$/, () => ({
+      columns: ["id", "name", "age"],
+      rows: [["7", "Young User", "10"]],
+    }));
+
+    pgMock.setQueryHandler(/^SELECT \* FROM users WHERE last_name LIKE ANY \(ARRAY\['O%','P%'\]\)$/, () => ({
+      columns: ["id", "last_name"],
+      rows: [["1", "Olsen"], ["2", "Parker"]],
+    }));
+
+    pgMock.setQueryHandler(/^SELECT \* FROM users WHERE last_name LIKE ALL \(ARRAY\['O%','%n'\]\)$/, () => ({
+      columns: ["id", "last_name"],
+      rows: [["1", "Olsen"]],
+    }));
+
+    pgMock.setQueryHandler(/^SELECT \* FROM users WHERE name ~ '\^J\.\*n\$'$/, () => ({
+      columns: ["id", "name"],
+      rows: [["1", "John"]],
+    }));
+
+    pgMock.setQueryHandler(/^SELECT \* FROM tsearch WHERE my_tsv @@ to_tsquery\('french', 'amusant'\)$/, () => ({
+      columns: ["id", "my_tsv"],
+      rows: [["1", "amusant"]],
+    }));
+
+    pgMock.setQueryHandler(/^SELECT \* FROM countries WHERE to_jsonb\(location\)->'lat' >= 19 ORDER BY to_jsonb\(location\)->>'lat' ASC$/, () => ({
+      columns: ["id", "lat", "long", "primary_language"],
+      rows: [["5", "19.741755", "-155.844437", "en"]],
+    }));
+
+    pgMock.setQueryHandler(/^SELECT \* FROM vulnerabilities WHERE "information\.cpe" LIKE '%MS%'$/, () => ({
+      columns: ["id", "information.cpe"],
+      rows: [["1", "MS-123"]],
+    }));
+
+    pgMock.setQueryHandler(/^SELECT \* FROM employees WHERE name IN \('Hebdon,John','Williams,Mary'\)$/, () => ({
+      columns: ["id", "name"],
+      rows: [["1", "Hebdon,John"], ["2", "Williams,Mary"]],
+    }));
+
+    pgMock.setQueryHandler(/^SELECT \* FROM people WHERE to_jsonb\(json_data\)->>'blood_type' = 'A-'$/, () => ({
+      columns: ["id", "blood_type"],
+      rows: [["1", "A-"]],
+    }));
+
+    pgMock.setQueryHandler(/^SELECT id,full_name AS fullName,birth_date AS birthDate,salary::text FROM users$/, () => ({
+      columns: ["id", "fullName", "birthDate", "salary"],
+      rows: [["1", "John Doe", "1988-04-25", "90000.00"]],
+    }));
+
+    pgMock.setQueryHandler(/^SELECT id,to_jsonb\(json_data\)->>'blood_type' AS blood_type,to_jsonb\(json_data\)->'phones' AS phones,to_jsonb\(languages\)->0 AS primary_language FROM people$/, () => ({
+      columns: ["id", "blood_type", "phones", "primary_language"],
+      rows: [["1", "A-", '[{"number":"917-929-5745"}]', "en"]],
+    }));
+
     pgMock.setQueryHandler(/SELECT id,name FROM users WHERE status = 'active' ORDER BY id DESC LIMIT 1 OFFSET 1/, () => ({
       columns: ["id", "name"],
       rows: [["1", "John Doe"]],
+    }));
+
+    pgMock.setQueryHandler(/^SELECT \* FROM users ORDER BY name ASC NULLS FIRST$/, () => ({
+      columns: ["id", "name", "email", "status"],
+      rows: [
+        ["3", "Bob Wilson", "bob@example.com", "inactive"],
+        ["2", "Jane Smith", "jane@example.com", "active"],
+        ["1", "John Doe", "john@example.com", "active"],
+      ],
+    }));
+
+    pgMock.setQueryHandler(/^SELECT \* FROM users ORDER BY name DESC NULLS LAST$/, () => ({
+      columns: ["id", "name", "email", "status"],
+      rows: [
+        ["1", "John Doe", "john@example.com", "active"],
+        ["2", "Jane Smith", "jane@example.com", "active"],
+        ["3", "Bob Wilson", "bob@example.com", "inactive"],
+      ],
+    }));
+
+    pgMock.setQueryHandler(/^SELECT \* FROM users ORDER BY name ASC NULLS LAST,id DESC NULLS FIRST$/, () => ({
+      columns: ["id", "name", "email", "status"],
+      rows: [
+        ["1", "John Doe", "john@example.com", "active"],
+        ["2", "Jane Smith", "jane@example.com", "active"],
+        ["3", "Bob Wilson", "bob@example.com", "inactive"],
+      ],
     }));
 
     // Handler for SELECT with ORDER BY
@@ -144,20 +231,83 @@ describe("pgrest module", () => {
       ],
     }));
 
-    // Handler for INSERT
+    pgMock.setQueryHandler(/^INSERT INTO tenant_001\.users/, () => ({
+      columns: ["id", "name", "email"],
+      rows: [["55", "Tenant User", "tenant@example.com"]],
+    }));
+
+    pgMock.setQueryHandler(/^INSERT INTO users \(name,email\) VALUES \('Tenant User','tenant@example.com'\) RETURNING \*$/, () => ({
+      columns: ["id", "name", "email"],
+      rows: [["56", "Tenant User", "tenant@example.com"]],
+    }));
+
+    pgMock.setQueryHandler(/^INSERT INTO users \(name,email\) VALUES \('Tenant User','tenant@example.com'\)$/, () => ({
+      columns: ["id", "name", "email"],
+      rows: [["56", "Tenant User", "tenant@example.com"]],
+    }));
+
+    pgMock.setQueryHandler(/^INSERT INTO users \(name,email,status\) VALUES \('Bulk A','a@example.com','active'\),\('Bulk B','b@example.com','inactive'\) RETURNING \*$/, () => ({
+      columns: ["id", "name", "email", "status"],
+      rows: [
+        ["10", "Bulk A", "a@example.com", "active"],
+        ["11", "Bulk B", "b@example.com", "inactive"],
+      ],
+    }));
+
+    pgMock.setQueryHandler(/^INSERT INTO users \(name,email,status\) VALUES \('Csv A','csv-a@example.com','active'\),\('Csv B','csv-b@example.com','inactive'\) RETURNING \*$/, () => ({
+      columns: ["id", "name", "email", "status"],
+      rows: [
+        ["20", "Csv A", "csv-a@example.com", "active"],
+        ["21", "Csv B", "csv-b@example.com", "inactive"],
+      ],
+    }));
+
+    pgMock.setQueryHandler(/^INSERT INTO users \(name,email\) VALUES \('Trimmed User','trimmed@example.com'\) RETURNING \*$/, () => ({
+      columns: ["id", "name", "email"],
+      rows: [["30", "Trimmed User", "trimmed@example.com"]],
+    }));
+
+    pgMock.setQueryHandler(/^INSERT INTO foo \(id,bar,baz\) VALUES \(DEFAULT,'val1',DEFAULT\),\(DEFAULT,'val2',15\) RETURNING \*$/, () => ({
+      columns: ["id", "bar", "baz"],
+      rows: [["1", "val1", "100"], ["2", "val2", "15"]],
+    }));
+
+    pgMock.setQueryHandler(/^INSERT INTO users \(id,name,email,status\) VALUES \(1,'Old employee 1','old1@example.com','active'\),\(2,'Old employee 2','old2@example.com','inactive'\) ON CONFLICT \(id\) DO UPDATE SET id=EXCLUDED.id,name=EXCLUDED.name,email=EXCLUDED.email,status=EXCLUDED.status RETURNING \*$/, () => ({
+      columns: ["id", "name", "email", "status"],
+      rows: [
+        ["1", "Old employee 1", "old1@example.com", "active"],
+        ["2", "Old employee 2", "old2@example.com", "inactive"],
+      ],
+    }));
+
+    pgMock.setQueryHandler(/^INSERT INTO employees \(name,salary\) VALUES \('Old employee 1',40000\),\('Old employee 2',52000\),\('New employee 3',60000\) ON CONFLICT \(name\) DO UPDATE SET name=EXCLUDED.name,salary=EXCLUDED.salary RETURNING \*$/, () => ({
+      columns: ["name", "salary"],
+      rows: [
+        ["Old employee 1", "40000"],
+        ["Old employee 2", "52000"],
+        ["New employee 3", "60000"],
+      ],
+    }));
+
+    pgMock.setQueryHandler(/^INSERT INTO employees \(name,salary\) VALUES \('Old employee 1',40000\),\('Old employee 2',52000\),\('New employee 3',60000\) ON CONFLICT \(name\) DO NOTHING RETURNING \*$/, () => ({
+      columns: ["name", "salary"],
+      rows: [["New employee 3", "60000"]],
+    }));
+
+    pgMock.setQueryHandler(/^INSERT INTO users \(id,name,email,status\) VALUES \(4,'Sara B.','sara@example.com','active'\) ON CONFLICT \(id\) DO UPDATE SET id=EXCLUDED.id,name=EXCLUDED.name,email=EXCLUDED.email,status=EXCLUDED.status RETURNING \*$/, () => ({
+      columns: ["id", "name", "email", "status"],
+      rows: [["4", "Sara B.", "sara@example.com", "active"]],
+    }));
+
+    // Generic INSERT fallback must come after the more specific INSERT handlers above.
     pgMock.setQueryHandler(/^INSERT INTO users \(name,email,status\) VALUES \('New User','new@example.com','active'\)$/, () => ({
       columns: ["id", "name", "email", "status"],
       rows: [["4", "New User", "new@example.com", "active"]],
     }));
 
-    pgMock.setQueryHandler(/^INSERT INTO users/, (query) => ({
+    pgMock.setQueryHandler(/^INSERT INTO users/, () => ({
       columns: ["id", "name", "email", "status"],
       rows: [["4", "New User", "new@example.com", "active"]],
-    }));
-
-    pgMock.setQueryHandler(/^INSERT INTO tenant_001\.users/, () => ({
-      columns: ["id", "name", "email"],
-      rows: [["55", "Tenant User", "tenant@example.com"]],
     }));
 
     pgMock.setQueryHandler(/^UPDATE tenant_001\.users SET/, () => ({
@@ -188,10 +338,98 @@ describe("pgrest module", () => {
       rows: [["5", "Delete Me"]],
     }));
 
+    pgMock.setQueryHandler(/^WITH pgrest_limited AS \(SELECT ctid FROM users WHERE last_login < '2020-01-01' ORDER BY id ASC LIMIT 10\) UPDATE users SET status='inactive' WHERE ctid IN \(SELECT ctid FROM pgrest_limited\) RETURNING \*$/, () => ({
+      columns: ["id", "status"],
+      rows: [["8", "inactive"], ["9", "inactive"]],
+    }));
+
+    pgMock.setQueryHandler(/^WITH pgrest_limited AS \(SELECT ctid FROM users WHERE status = 'inactive' ORDER BY id ASC LIMIT 10\) DELETE FROM users WHERE ctid IN \(SELECT ctid FROM pgrest_limited\) RETURNING \*$/, () => ({
+      columns: ["id", "name"],
+      rows: [["10", "Inactive A"], ["11", "Inactive B"]],
+    }));
+
     // Handler for RPC: get_user_count
     pgMock.setQueryHandler(/SELECT get_user_count\(\)/, (query) => ({
       columns: ["get_user_count"],
       rows: [["3"]],
+    }));
+
+    pgMock.setQueryHandler(/SELECT tenant_001\.get_user_count\(\)/, () => ({
+      columns: ["get_user_count"],
+      rows: [["9"]],
+    }));
+
+    pgMock.setQueryHandler(/SELECT p\.provolatile, p\.proretset.*pn\.nspname = 'public' AND p\.proname = 'get_user_count'.*LIMIT 1/, () => ({
+      columns: ["provolatile", "proretset", "rettype_is_composite", "has_variadic", "unnamed_count", "single_unnamed_kind", "variadic_param_name", "input_param_names", "match_rank"],
+      rows: [["i", "f", "f", "f", "0", "", "", "", "0"]],
+    }));
+
+    pgMock.setQueryHandler(/SELECT p\.provolatile, p\.proretset.*pn\.nspname = 'tenant_001' AND p\.proname = 'get_user_count'.*LIMIT 1/, () => ({
+      columns: ["provolatile", "proretset", "rettype_is_composite", "has_variadic", "unnamed_count", "single_unnamed_kind", "variadic_param_name", "input_param_names", "match_rank"],
+      rows: [["i", "f", "f", "f", "0", "", "", "", "0"]],
+    }));
+
+    pgMock.setQueryHandler(/SELECT p\.provolatile, p\.proretset.*pn\.nspname = 'public' AND p\.proname = 'add_them'.*LIMIT 1/, () => ({
+      columns: ["provolatile", "proretset", "rettype_is_composite", "has_variadic", "unnamed_count", "single_unnamed_kind", "variadic_param_name", "input_param_names", "match_rank"],
+      rows: [["i", "f", "f", "f", "0", "", "", "a,b", "0"]],
+    }));
+
+    pgMock.setQueryHandler(/SELECT p\.provolatile, p\.proretset.*pn\.nspname = 'public' AND p\.proname = 'process_numbers'.*LIMIT 1/, () => ({
+      columns: ["provolatile", "proretset", "rettype_is_composite", "has_variadic", "unnamed_count", "single_unnamed_kind", "variadic_param_name", "input_param_names", "match_rank"],
+      rows: [["i", "t", "t", "f", "0", "", "", "ids", "0"]],
+    }));
+
+    pgMock.setQueryHandler(/SELECT p\.provolatile, p\.proretset.*pn\.nspname = 'public' AND p\.proname = 'create_user'.*LIMIT 1/, () => ({
+      columns: ["provolatile", "proretset", "rettype_is_composite", "has_variadic", "unnamed_count", "single_unnamed_kind", "variadic_param_name", "input_param_names", "match_rank"],
+      rows: [["v", "t", "t", "f", "0", "", "", "data", "0"]],
+    }));
+
+    pgMock.setQueryHandler(/SELECT p\.provolatile, p\.proretset.*pn\.nspname = 'public' AND p\.proname = 'get_profile'.*LIMIT 1/, () => ({
+      columns: ["provolatile", "proretset", "rettype_is_composite", "has_variadic", "unnamed_count", "single_unnamed_kind", "variadic_param_name", "input_param_names", "match_rank"],
+      rows: [["i", "t", "t", "f", "0", "", "", "id", "0"]],
+    }));
+
+    pgMock.setQueryHandler(/SELECT p\.provolatile, p\.proretset.*pn\.nspname = 'public' AND p\.proname = 'import_csv'.*LIMIT 1/, () => ({
+      columns: ["provolatile", "proretset", "rettype_is_composite", "has_variadic", "unnamed_count", "single_unnamed_kind", "variadic_param_name", "input_param_names", "match_rank"],
+      rows: [["v", "f", "f", "f", "1", "text", "", "", "1"]],
+    }));
+
+    pgMock.setQueryHandler(/SELECT p\.provolatile, p\.proretset.*pn\.nspname = 'public' AND p\.proname = 'upload_blob'.*LIMIT 1/, () => ({
+      columns: ["provolatile", "proretset", "rettype_is_composite", "has_variadic", "unnamed_count", "single_unnamed_kind", "variadic_param_name", "input_param_names", "match_rank"],
+      rows: [["v", "f", "f", "f", "1", "bytea", "", "", "1"]],
+    }));
+
+    pgMock.setQueryHandler(/SELECT p\.provolatile, p\.proretset.*pn\.nspname = 'public' AND p\.proname = 'mult_them'.*LIMIT 1/, () => ({
+      columns: ["provolatile", "proretset", "rettype_is_composite", "has_variadic", "unnamed_count", "single_unnamed_kind", "variadic_param_name", "input_param_names", "match_rank"],
+      rows: [["i", "f", "f", "f", "1", "json", "", "", "1"]],
+    }));
+
+    pgMock.setQueryHandler(/SELECT p\.provolatile, p\.proretset.*pn\.nspname = 'public' AND p\.proname = 'plus_one'.*LIMIT 1/, () => ({
+      columns: ["provolatile", "proretset", "rettype_is_composite", "has_variadic", "unnamed_count", "single_unnamed_kind", "variadic_param_name", "input_param_names", "match_rank"],
+      rows: [["i", "f", "f", "t", "0", "", "v", "v", "0"]],
+    }));
+
+    pgMock.setQueryHandler(/SELECT p\.provolatile, p\.proretset.*pn\.nspname = 'public' AND p\.proname = 'best_films_2017'.*LIMIT 1/, () => ({
+      columns: ["provolatile", "proretset", "rettype_is_composite", "has_variadic", "unnamed_count", "single_unnamed_kind", "variadic_param_name", "input_param_names", "match_rank"],
+      rows: [["s", "t", "t", "f", "0", "", "", "", "2"]],
+    }));
+
+    pgMock.setQueryHandler(/SELECT mult_them\('\{"x":4,"y":2\}'\)/, () => ({
+      columns: ["mult_them"],
+      rows: [["8"]],
+    }));
+
+    pgMock.setQueryHandler(/SELECT plus_one\(v => ARRAY\[1,2,3,4\]\)/, () => ({
+      columns: ["plus_one"],
+      rows: [["{2,3,4,5}"]],
+    }));
+
+    pgMock.setQueryHandler(/^SELECT title,rating FROM "best_films_2017"\(\) WHERE rating > '8' ORDER BY title DESC LIMIT 2$/, () => ({
+      columns: ["title", "rating"],
+      rows: [
+        ["The Worst Person in the World", "8.1"],
+        ["Portrait of a Lady on Fire", "8.2"],
+      ],
     }));
 
     // Handler for RPC: add_them
@@ -200,12 +438,12 @@ describe("pgrest module", () => {
       rows: [["3"]],
     }));
 
-    pgMock.setQueryHandler(/SELECT get_profile\(id => 1\)/, () => ({
+    pgMock.setQueryHandler(/^SELECT \* FROM "get_profile"\(id => 1\)$/, () => ({
       columns: ["id", "name", "bio"],
       rows: [["1", "John Doe", null]],
     }));
 
-    pgMock.setQueryHandler(/SELECT process_numbers\(ids => ARRAY\[1,2,3\]\)/, () => ({
+    pgMock.setQueryHandler(/^SELECT \* FROM "process_numbers"\(ids => ARRAY\[1,2,3\]\)$/, () => ({
       columns: ["id", "squared"],
       rows: [
         ["1", "1"],
@@ -214,7 +452,7 @@ describe("pgrest module", () => {
       ],
     }));
 
-    pgMock.setQueryHandler(/SELECT create_user\(/, () => ({
+    pgMock.setQueryHandler(/^SELECT \* FROM "create_user"\(data => '\{"name":"Wrapped User","email":"wrapped@example.com"\}'\)$/, () => ({
       columns: ["id", "name"],
       rows: [["9", "Wrapped User"]],
     }));
@@ -335,6 +573,126 @@ describe("pgrest module", () => {
     expect(lastSql()).toBe("SELECT * FROM users WHERE status IN ('active','pending')");
   });
 
+  test("GET /api/users with or and not.and emits grouped logical SQL", async () => {
+    pgMock.clearTracking();
+
+    const res = await fetch(`${TEST_URL}/api/users?or=(age.lt.18,not.and(age.gte.11,age.lte.17))`);
+    expect(res.status).toBe(200);
+
+    const body = await res.json();
+    expect(body).toEqual([{ id: "7", name: "Young User", age: "10" }]);
+    expect(lastSql()).toBe("SELECT * FROM users WHERE (age < '18' OR NOT (age >= '11' AND age <= '17'))");
+  });
+
+  test("GET /api/users with like(any) emits ANY array SQL", async () => {
+    pgMock.clearTracking();
+
+    const res = await fetch(`${TEST_URL}/api/users?last_name=like(any).{O*,P*}`);
+    expect(res.status).toBe(200);
+
+    const body = await res.json();
+    expect(body).toHaveLength(2);
+    expect(lastSql()).toBe("SELECT * FROM users WHERE last_name LIKE ANY (ARRAY['O%','P%'])");
+  });
+
+  test("GET /api/users with like(all) emits ALL array SQL", async () => {
+    pgMock.clearTracking();
+
+    const res = await fetch(`${TEST_URL}/api/users?last_name=like(all).{O*,*n}`);
+    expect(res.status).toBe(200);
+
+    const body = await res.json();
+    expect(body).toEqual([{ id: "1", last_name: "Olsen" }]);
+    expect(lastSql()).toBe("SELECT * FROM users WHERE last_name LIKE ALL (ARRAY['O%','%n'])");
+  });
+
+  test("GET /api/users with match emits regex SQL", async () => {
+    pgMock.clearTracking();
+
+    const res = await fetch(`${TEST_URL}/api/users?name=match.^J.*n$`);
+    expect(res.status).toBe(200);
+
+    const body = await res.json();
+    expect(body).toEqual([{ id: "1", name: "John" }]);
+    expect(lastSql()).toBe("SELECT * FROM users WHERE name ~ '^J.*n$'");
+  });
+
+  test("GET /api/tsearch with fts language emits to_tsquery SQL", async () => {
+    pgMock.clearTracking();
+
+    const res = await fetch(`${TEST_URL}/api/tsearch?my_tsv=fts(french).amusant`);
+    expect(res.status).toBe(200);
+
+    const body = await res.json();
+    expect(body).toEqual([{ id: "1", my_tsv: "amusant" }]);
+    expect(lastSql()).toBe("SELECT * FROM tsearch WHERE my_tsv @@ to_tsquery('french', 'amusant')");
+  });
+
+  test("GET /api/vulnerabilities with quoted identifier decodes into SQL identifier", async () => {
+    pgMock.clearTracking();
+
+    const res = await fetch(`${TEST_URL}/api/vulnerabilities?%22information.cpe%22=like.*MS*`);
+    expect(res.status).toBe(200);
+
+    const body = await res.json();
+    expect(body).toEqual([{ id: "1", "information.cpe": "MS-123" }]);
+    expect(lastSql()).toBe('SELECT * FROM vulnerabilities WHERE "information.cpe" LIKE \'%MS%\'');
+  });
+
+  test("GET /api/employees with quoted in values preserves commas", async () => {
+    pgMock.clearTracking();
+
+    const res = await fetch(`${TEST_URL}/api/employees?name=in.(%22Hebdon,John%22,%22Williams,Mary%22)`);
+    expect(res.status).toBe(200);
+
+    const body = await res.json();
+    expect(body).toHaveLength(2);
+    expect(lastSql()).toBe("SELECT * FROM employees WHERE name IN ('Hebdon,John','Williams,Mary')");
+  });
+
+  test("GET /api/people with json path filter emits to_jsonb SQL", async () => {
+    pgMock.clearTracking();
+
+    const res = await fetch(`${TEST_URL}/api/people?json_data->>blood_type=eq.A-`);
+    expect(res.status).toBe(200);
+
+    const body = await res.json();
+    expect(body).toEqual([{ id: "1", blood_type: "A-" }]);
+    expect(lastSql()).toBe("SELECT * FROM people WHERE to_jsonb(json_data)->>'blood_type' = 'A-'");
+  });
+
+  test("GET /api/users with select alias and cast emits projected SQL", async () => {
+    pgMock.clearTracking();
+
+    const res = await fetch(`${TEST_URL}/api/users?select=id,fullName:full_name,birthDate:birth_date,salary::text`);
+    expect(res.status).toBe(200);
+
+    const body = await res.json();
+    expect(body[0]).toEqual({
+      id: "1",
+      fullName: "John Doe",
+      birthDate: "1988-04-25",
+      salary: "90000.00",
+    });
+    expect(lastSql()).toBe("SELECT id,full_name AS fullName,birth_date AS birthDate,salary::text FROM users");
+  });
+
+  test("GET /api/people with select json and array paths emits projected SQL", async () => {
+    pgMock.clearTracking();
+
+    const res = await fetch(`${TEST_URL}/api/people?select=id,json_data->>blood_type,json_data->phones,primary_language:languages->0`);
+    expect(res.status).toBe(200);
+
+    const body = await res.json();
+    expect(body[0]).toEqual({
+      id: "1",
+      blood_type: "A-",
+      phones: '[{"number":"917-929-5745"}]',
+      primary_language: "en",
+    });
+    expect(lastSql()).toBe("SELECT id,to_jsonb(json_data)->>'blood_type' AS blood_type,to_jsonb(json_data)->'phones' AS phones,to_jsonb(languages)->0 AS primary_language FROM people");
+  });
+
   // ============================================================================
   // Ordering Tests
   // ============================================================================
@@ -349,6 +707,59 @@ describe("pgrest module", () => {
 
     // First user should be Bob (alphabetically first)
     expect(body[0].name).toBe("Bob Wilson");
+  });
+
+  test("GET /api/users with order nullsfirst emits NULLS FIRST SQL", async () => {
+    pgMock.clearTracking();
+
+    const res = await fetch(`${TEST_URL}/api/users?order=name.nullsfirst`);
+    expect(res.status).toBe(200);
+
+    const body = await res.json();
+    expect(body[0].name).toBe("Bob Wilson");
+    expect(lastSql()).toBe("SELECT * FROM users ORDER BY name ASC NULLS FIRST");
+  });
+
+  test("GET /api/users with order desc nullslast emits NULLS LAST SQL", async () => {
+    pgMock.clearTracking();
+
+    const res = await fetch(`${TEST_URL}/api/users?order=name.desc.nullslast`);
+    expect(res.status).toBe(200);
+
+    const body = await res.json();
+    expect(body[0].name).toBe("John Doe");
+    expect(lastSql()).toBe("SELECT * FROM users ORDER BY name DESC NULLS LAST");
+  });
+
+  test("GET /api/users with multi-column null ordering emits exact SQL", async () => {
+    pgMock.clearTracking();
+
+    const res = await fetch(`${TEST_URL}/api/users?order=name.nullslast,id.desc.nullsfirst`);
+    expect(res.status).toBe(200);
+
+    const body = await res.json();
+    expect(body).toHaveLength(3);
+    expect(lastSql()).toBe("SELECT * FROM users ORDER BY name ASC NULLS LAST,id DESC NULLS FIRST");
+  });
+
+  test("GET /api/users with malformed order returns 400 before SQL", async () => {
+    pgMock.clearTracking();
+
+    const res = await fetch(`${TEST_URL}/api/users?order=name.foo`);
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ message: "Invalid order parameter" });
+    expect(lastSql()).toBe(null);
+  });
+
+  test("GET /api/countries with json path order emits to_jsonb ORDER BY SQL", async () => {
+    pgMock.clearTracking();
+
+    const res = await fetch(`${TEST_URL}/api/countries?location->lat=gte.19&order=location->>lat`);
+    expect(res.status).toBe(200);
+
+    const body = await res.json();
+    expect(body).toEqual([{ id: "5", lat: "19.741755", long: "-155.844437", primary_language: "en" }]);
+    expect(lastSql()).toBe("SELECT * FROM countries WHERE to_jsonb(location)->'lat' >= 19 ORDER BY to_jsonb(location)->>'lat' ASC");
   });
 
   // ============================================================================
@@ -514,6 +925,43 @@ describe("pgrest module", () => {
     );
   });
 
+  test("POST /api/users without profile uses unqualified default table path", async () => {
+    pgMock.clearTracking();
+
+    const res = await fetch(`${TEST_URL}/api/users`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        name: "Tenant User",
+        email: "tenant@example.com",
+      }),
+    });
+
+    expect(res.status).toBe(201);
+    expect(lastSql()).toBe("INSERT INTO users (name,email) VALUES ('Tenant User','tenant@example.com') RETURNING *");
+  });
+
+  test("POST /api/users ignores Accept-Profile and uses Content-Profile semantics", async () => {
+    pgMock.clearTracking();
+
+    const res = await fetch(`${TEST_URL}/api/users`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Accept-Profile": "admin",
+      },
+      body: JSON.stringify({
+        name: "Tenant User",
+        email: "tenant@example.com",
+      }),
+    });
+
+    expect(res.status).toBe(201);
+    expect(lastSql()).toBe("INSERT INTO users (name,email) VALUES ('Tenant User','tenant@example.com') RETURNING *");
+  });
+
   test("PATCH /api/users with Content-Profile updates schema-qualified table", async () => {
     pgMock.clearTracking();
 
@@ -534,7 +982,23 @@ describe("pgrest module", () => {
     );
   });
 
-  test("DELETE /api/users with Accept-Profile deletes from schema-qualified table", async () => {
+  test("DELETE /api/users with Content-Profile deletes from schema-qualified table", async () => {
+    pgMock.clearTracking();
+
+    const res = await fetch(`${TEST_URL}/api/users?id=eq.5`, {
+      method: "DELETE",
+      headers: {
+        "Content-Profile": "admin",
+      },
+    });
+
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body[0].id).toBe("5");
+    expect(lastSql()).toBe("DELETE FROM admin.users WHERE id = '5' RETURNING *");
+  });
+
+  test("DELETE /api/users ignores Accept-Profile and uses unqualified default table path", async () => {
     pgMock.clearTracking();
 
     const res = await fetch(`${TEST_URL}/api/users?id=eq.5`, {
@@ -545,9 +1009,7 @@ describe("pgrest module", () => {
     });
 
     expect(res.status).toBe(200);
-    const body = await res.json();
-    expect(body[0].id).toBe("5");
-    expect(lastSql()).toBe("DELETE FROM admin.users WHERE id = '5' RETURNING *");
+    expect(lastSql()).toBe("DELETE FROM users WHERE id = '5' RETURNING *");
   });
 
   test("PATCH /api/users preserves null values in JSON body SQL", async () => {
@@ -586,6 +1048,185 @@ describe("pgrest module", () => {
     expect(await res.text()).toBe("");
     expect(lastSql()).toBe(
       "INSERT INTO users (name,email,status) VALUES ('New User','new@example.com','active')"
+    );
+  });
+
+  test("POST /api/users bulk JSON array uses one INSERT statement", async () => {
+    pgMock.clearTracking();
+
+    const res = await fetch(`${TEST_URL}/api/users`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify([
+        { name: "Bulk A", email: "a@example.com", status: "active" },
+        { name: "Bulk B", email: "b@example.com", status: "inactive" },
+      ]),
+    });
+
+    expect(res.status).toBe(201);
+    const body = await res.json();
+    expect(body).toHaveLength(2);
+    expect(lastSql()).toBe(
+      "INSERT INTO users (name,email,status) VALUES ('Bulk A','a@example.com','active'),('Bulk B','b@example.com','inactive') RETURNING *"
+    );
+  });
+
+  test("POST /api/users bulk CSV uses one INSERT statement", async () => {
+    pgMock.clearTracking();
+
+    const res = await fetch(`${TEST_URL}/api/users`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "text/csv",
+      },
+      body: "name,email,status\nCsv A,csv-a@example.com,active\nCsv B,csv-b@example.com,inactive\n",
+    });
+
+    expect(res.status).toBe(201);
+    const body = await res.json();
+    expect(body).toHaveLength(2);
+    expect(lastSql()).toBe(
+      "INSERT INTO users (name,email,status) VALUES ('Csv A','csv-a@example.com','active'),('Csv B','csv-b@example.com','inactive') RETURNING *"
+    );
+  });
+
+  test("POST /api/users with columns parameter ignores extra JSON keys", async () => {
+    pgMock.clearTracking();
+
+    const res = await fetch(`${TEST_URL}/api/users?columns=name,email`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        name: "Trimmed User",
+        email: "trimmed@example.com",
+        status: "active",
+        ignored: "value",
+      }),
+    });
+
+    expect(res.status).toBe(201);
+    expect(lastSql()).toBe("INSERT INTO users (name,email) VALUES ('Trimmed User','trimmed@example.com') RETURNING *");
+  });
+
+  test("POST /api/foo bulk JSON with missing=default emits DEFAULT for missing fields", async () => {
+    pgMock.clearTracking();
+
+    const res = await fetch(`${TEST_URL}/api/foo?columns=id,bar,baz`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Prefer: "missing=default, return=representation",
+      },
+      body: JSON.stringify([
+        { bar: "val1" },
+        { bar: "val2", baz: 15 },
+      ]),
+    });
+
+    expect(res.status).toBe(201);
+    expect(res.headers.get("preference-applied")).toContain("missing=default");
+    expect(lastSql()).toBe(
+      "INSERT INTO foo (id,bar,baz) VALUES (DEFAULT,'val1',DEFAULT),(DEFAULT,'val2',15) RETURNING *"
+    );
+    expect(await res.json()).toEqual([
+      { id: "1", bar: "val1", baz: "100" },
+      { id: "2", bar: "val2", baz: "15" },
+    ]);
+  });
+
+  test("POST /api/users with resolution=merge-duplicates and on_conflict=id builds upsert SQL", async () => {
+    pgMock.clearTracking();
+
+    const res = await fetch(`${TEST_URL}/api/users?on_conflict=id`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Prefer: "resolution=merge-duplicates, return=representation",
+      },
+      body: JSON.stringify([
+        { id: 1, name: "Old employee 1", email: "old1@example.com", status: "active" },
+        { id: 2, name: "Old employee 2", email: "old2@example.com", status: "inactive" },
+      ]),
+    });
+
+    expect(res.status).toBe(201);
+    expect(res.headers.get("preference-applied")).toContain("resolution=merge-duplicates");
+    expect(lastSql()).toBe(
+      "INSERT INTO users (id,name,email,status) VALUES (1,'Old employee 1','old1@example.com','active'),(2,'Old employee 2','old2@example.com','inactive') ON CONFLICT (id) DO UPDATE SET id=EXCLUDED.id,name=EXCLUDED.name,email=EXCLUDED.email,status=EXCLUDED.status RETURNING *"
+    );
+  });
+
+  test("POST /api/employees with resolution=ignore-duplicates and on_conflict=name builds do-nothing upsert SQL", async () => {
+    pgMock.clearTracking();
+
+    const res = await fetch(`${TEST_URL}/api/employees?on_conflict=name`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Prefer: "resolution=ignore-duplicates, return=representation",
+      },
+      body: JSON.stringify([
+        { name: "Old employee 1", salary: 40000 },
+        { name: "Old employee 2", salary: 52000 },
+        { name: "New employee 3", salary: 60000 },
+      ]),
+    });
+
+    expect(res.status).toBe(201);
+    expect(res.headers.get("preference-applied")).toContain("resolution=ignore-duplicates");
+    expect(lastSql()).toBe(
+      "INSERT INTO employees (name,salary) VALUES ('Old employee 1',40000),('Old employee 2',52000),('New employee 3',60000) ON CONFLICT (name) DO NOTHING RETURNING *"
+    );
+  });
+
+  test("PUT /api/users with eq filter performs single-row upsert", async () => {
+    pgMock.clearTracking();
+
+    const res = await fetch(`${TEST_URL}/api/users?id=eq.4`, {
+      method: "PUT",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ id: 4, name: "Sara B.", email: "sara@example.com", status: "active" }),
+    });
+
+    expect(res.status).toBe(200);
+    expect(lastSql()).toBe(
+      "INSERT INTO users (id,name,email,status) VALUES (4,'Sara B.','sara@example.com','active') ON CONFLICT (id) DO UPDATE SET id=EXCLUDED.id,name=EXCLUDED.name,email=EXCLUDED.email,status=EXCLUDED.status RETURNING *"
+    );
+  });
+
+  test("PATCH /api/users with limit and order emits limited update SQL", async () => {
+    pgMock.clearTracking();
+
+    const res = await fetch(`${TEST_URL}/api/users?limit=10&order=id&last_login=lt.2020-01-01`, {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ status: "inactive" }),
+    });
+
+    expect(res.status).toBe(200);
+    expect(lastSql()).toBe(
+      "WITH pgrest_limited AS (SELECT ctid FROM users WHERE last_login < '2020-01-01' ORDER BY id ASC LIMIT 10) UPDATE users SET status='inactive' WHERE ctid IN (SELECT ctid FROM pgrest_limited) RETURNING *"
+    );
+  });
+
+  test("DELETE /api/users with limit and order emits limited delete SQL", async () => {
+    pgMock.clearTracking();
+
+    const res = await fetch(`${TEST_URL}/api/users?limit=10&order=id&status=eq.inactive`, {
+      method: "DELETE",
+    });
+
+    expect(res.status).toBe(200);
+    expect(lastSql()).toBe(
+      "WITH pgrest_limited AS (SELECT ctid FROM users WHERE status = 'inactive' ORDER BY id ASC LIMIT 10) DELETE FROM users WHERE ctid IN (SELECT ctid FROM pgrest_limited) RETURNING *"
     );
   });
 
@@ -720,7 +1361,7 @@ describe("pgrest module", () => {
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body).toHaveLength(3);
-    expect(lastSql()).toBe("SELECT process_numbers(ids => ARRAY[1,2,3])");
+    expect(lastSql()).toBe(`SELECT * FROM "process_numbers"(ids => ARRAY[1,2,3])`);
   });
 
   test("POST /rpc/create_user with Prefer: params=single-object wraps the body into a data parameter", async () => {
@@ -739,7 +1380,7 @@ describe("pgrest module", () => {
     const body = await res.json();
     expect(body[0].name).toBe("Wrapped User");
     expect(lastSql()).toBe(
-      `SELECT create_user(data => '{"name":"Wrapped User","email":"wrapped@example.com"}')`
+      `SELECT * FROM "create_user"(data => '{"name":"Wrapped User","email":"wrapped@example.com"}')`
     );
   });
 
@@ -804,7 +1445,72 @@ describe("pgrest module", () => {
     });
 
     expect(res.status).toBe(200);
-    expect(lastSql()).toBe("SELECT upload_blob(data => 'BLOBDATA')");
+    expect(lastSql()).toBe("SELECT upload_blob('BLOBDATA')");
+  });
+
+  test("POST /rpc/mult_them with unnamed json parameter uses positional JSON body", async () => {
+    pgMock.clearTracking();
+
+    const res = await fetch(`${TEST_URL}/rpc/mult_them`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ x: 4, y: 2 }),
+    });
+
+    expect(res.status).toBe(200);
+    expect(await res.text()).toContain("8");
+    expect(lastSql()).toBe(`SELECT mult_them('{"x":4,"y":2}')`);
+  });
+
+  test("GET /rpc/plus_one collapses repeated query params into a variadic ARRAY argument", async () => {
+    pgMock.clearTracking();
+
+    const res = await fetch(`${TEST_URL}/rpc/plus_one?v=1&v=2&v=3&v=4`);
+    expect(res.status).toBe(200);
+    expect(lastSql()).toBe("SELECT plus_one(v => ARRAY[1,2,3,4])");
+    expect(await res.text()).toContain("{2,3,4,5}");
+  });
+
+  test("GET /rpc/best_films_2017 applies table-style select, filter, order, and limit to a TVF", async () => {
+    pgMock.clearTracking();
+
+    const res = await fetch(`${TEST_URL}/rpc/best_films_2017?select=title,rating&rating=gt.8&order=title.desc&limit=2`);
+    expect(res.status).toBe(200);
+    expect(lastSql()).toBe(`SELECT title,rating FROM "best_films_2017"() WHERE rating > '8' ORDER BY title DESC LIMIT 2`);
+    expect(await res.json()).toEqual([
+      { title: "The Worst Person in the World", rating: "8.1" },
+      { title: "Portrait of a Lady on Fire", rating: "8.2" },
+    ]);
+  });
+
+  test("POST /rpc/plus_one with form body collapses repeated params into a variadic ARRAY argument", async () => {
+    pgMock.clearTracking();
+
+    const res = await fetch(`${TEST_URL}/rpc/plus_one`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+      },
+      body: "v=1&v=2&v=3&v=4",
+    });
+
+    expect(res.status).toBe(200);
+    expect(lastSql()).toBe("SELECT plus_one(v => ARRAY[1,2,3,4])");
+    expect(await res.text()).toContain("{2,3,4,5}");
+  });
+
+  test("GET /rpc/create_user rejects GET when function metadata is volatile", async () => {
+    pgMock.clearTracking();
+
+    const res = await fetch(`${TEST_URL}/rpc/create_user`);
+    expect(res.status).toBe(405);
+    expect(res.headers.get("allow")).toBe("OPTIONS,POST");
+    expect(await res.json()).toEqual({
+      message: "The HTTP method is not allowed for this RPC function",
+    });
+    expect(lastSql()).not.toContain("SELECT create_user(");
   });
 
   // ============================================================================
@@ -890,6 +1596,33 @@ describe("pgrest module", () => {
       },
     ]);
     expect(lastSql()).toBe("SELECT * FROM admin.users");
+  });
+
+  test("GET /api/users without profile uses unqualified default table path", async () => {
+    pgMock.clearTracking();
+
+    const res = await fetch(`${TEST_URL}/api/users`);
+    expect(res.status).toBe(200);
+
+    const body = await res.json();
+    expect(body).toHaveLength(3);
+    expect(lastSql()).toBe("SELECT * FROM users");
+  });
+
+  test("GET /api/users rejects disallowed Accept-Profile schema", async () => {
+    pgMock.clearTracking();
+
+    const res = await fetch(`${TEST_URL}/api/users`, {
+      headers: { "Accept-Profile": "tenant_999" },
+    });
+    expect(res.status).toBe(406);
+    expect(await res.json()).toEqual({
+      code: "PGRST106",
+      details: null,
+      hint: null,
+      message: "The schema must be one of the following: public, admin, tenant_001",
+    });
+    expect(lastSql()).toBe(null);
   });
 
   test("GET /api/profiles with pgrst object accept returns a single object", async () => {
@@ -988,6 +1721,21 @@ describe("pgrest module", () => {
     expect(body).toEqual({ id: "1", name: "John Doe" });
   });
 
+  test("POST /rpc/get_user_count with Content-Profile calls schema-qualified function", async () => {
+    pgMock.clearTracking();
+
+    const res = await fetch(`${TEST_URL}/rpc/get_user_count`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Content-Profile": "tenant_001",
+      },
+      body: JSON.stringify({}),
+    });
+    expect(res.status).toBe(200);
+    expect(lastSql()).toBe("SELECT tenant_001.get_user_count()");
+  });
+
   test("POST /rpc/create_user returns Preference-Applied for params=single-object", async () => {
     const res = await fetch(`${TEST_URL}/rpc/create_user`, {
       method: "POST",
@@ -1068,6 +1816,95 @@ describe("pgrest module", () => {
     expect(lastSql()).toBe("SELECT * FROM admin.users");
   });
 
+  test("GET pooled /api/users without profile uses unqualified default table path", async () => {
+    pgMock.clearTracking();
+
+    const res = await fetch(`${POOLED_TEST_URL}/api/users`);
+    expect(res.status).toBe(200);
+    expect(lastSql()).toBe("SELECT * FROM users");
+  });
+
+  test("GET pooled /api/users rejects disallowed Accept-Profile schema", async () => {
+    pgMock.clearTracking();
+
+    const res = await fetch(`${POOLED_TEST_URL}/api/users`, {
+      headers: { "Accept-Profile": "tenant_999" },
+    });
+    expect(res.status).toBe(406);
+    expect(await res.json()).toEqual({
+      code: "PGRST106",
+      details: null,
+      hint: null,
+      message: "The schema must be one of the following: public, admin, tenant_001",
+    });
+    expect(lastSql()).toBe(null);
+  });
+
+  test("GET pooled /api/users with order nullsfirst emits NULLS FIRST SQL", async () => {
+    pgMock.clearTracking();
+
+    const res = await fetch(`${POOLED_TEST_URL}/api/users?order=name.nullsfirst`);
+    expect(res.status).toBe(200);
+    expect(lastSql()).toBe("SELECT * FROM users ORDER BY name ASC NULLS FIRST");
+  });
+
+  test("GET pooled /api/users with order desc nullslast emits NULLS LAST SQL", async () => {
+    pgMock.clearTracking();
+
+    const res = await fetch(`${POOLED_TEST_URL}/api/users?order=name.desc.nullslast`);
+    expect(res.status).toBe(200);
+    expect(lastSql()).toBe("SELECT * FROM users ORDER BY name DESC NULLS LAST");
+  });
+
+  test("GET pooled /api/users with malformed order returns 400 before SQL", async () => {
+    pgMock.clearTracking();
+
+    const res = await fetch(`${POOLED_TEST_URL}/api/users?order=name.foo`);
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ message: "Invalid order parameter" });
+    expect(lastSql()).toBe(null);
+  });
+
+  test("GET pooled /api/users with like(any) emits ANY array SQL", async () => {
+    pgMock.clearTracking();
+
+    const res = await fetch(`${POOLED_TEST_URL}/api/users?last_name=like(any).{O*,P*}`);
+    expect(res.status).toBe(200);
+    expect(lastSql()).toBe("SELECT * FROM users WHERE last_name LIKE ANY (ARRAY['O%','P%'])");
+  });
+
+  test("GET pooled /api/users with like(all) emits ALL array SQL", async () => {
+    pgMock.clearTracking();
+
+    const res = await fetch(`${POOLED_TEST_URL}/api/users?last_name=like(all).{O*,*n}`);
+    expect(res.status).toBe(200);
+    expect(lastSql()).toBe("SELECT * FROM users WHERE last_name LIKE ALL (ARRAY['O%','%n'])");
+  });
+
+  test("GET pooled /api/tsearch with fts language emits to_tsquery SQL", async () => {
+    pgMock.clearTracking();
+
+    const res = await fetch(`${POOLED_TEST_URL}/api/tsearch?my_tsv=fts(french).amusant`);
+    expect(res.status).toBe(200);
+    expect(lastSql()).toBe("SELECT * FROM tsearch WHERE my_tsv @@ to_tsquery('french', 'amusant')");
+  });
+
+  test("GET pooled /api/countries with json path order emits to_jsonb ORDER BY SQL", async () => {
+    pgMock.clearTracking();
+
+    const res = await fetch(`${POOLED_TEST_URL}/api/countries?location->lat=gte.19&order=location->>lat`);
+    expect(res.status).toBe(200);
+    expect(lastSql()).toBe("SELECT * FROM countries WHERE to_jsonb(location)->'lat' >= 19 ORDER BY to_jsonb(location)->>'lat' ASC");
+  });
+
+  test("GET pooled /api/users with select alias and cast emits projected SQL", async () => {
+    pgMock.clearTracking();
+
+    const res = await fetch(`${POOLED_TEST_URL}/api/users?select=id,fullName:full_name,birthDate:birth_date,salary::text`);
+    expect(res.status).toBe(200);
+    expect(lastSql()).toBe("SELECT id,full_name AS fullName,birth_date AS birthDate,salary::text FROM users");
+  });
+
   test("POST pooled /rpc/create_user returns Preference-Applied for params=single-object", async () => {
     const res = await fetch(`${POOLED_TEST_URL}/rpc/create_user`, {
       method: "POST",
@@ -1079,6 +1916,21 @@ describe("pgrest module", () => {
     });
     expect(res.status).toBe(200);
     expect(res.headers.get("preference-applied")).toContain("params=single-object");
+  });
+
+  test("POST pooled /rpc/get_user_count with Content-Profile calls schema-qualified function", async () => {
+    pgMock.clearTracking();
+
+    const res = await fetch(`${POOLED_TEST_URL}/rpc/get_user_count`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Content-Profile": "tenant_001",
+      },
+      body: JSON.stringify({}),
+    });
+    expect(res.status).toBe(200);
+    expect(lastSql()).toBe("SELECT tenant_001.get_user_count()");
   });
 
   test("POST pooled /rpc/add_them with form-urlencoded body parses named RPC params", async () => {
@@ -1133,6 +1985,154 @@ describe("pgrest module", () => {
     );
   });
 
+  test("POST pooled /api/users bulk JSON array uses one INSERT statement", async () => {
+    pgMock.clearTracking();
+
+    const res = await fetch(`${POOLED_TEST_URL}/api/users`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify([
+        { name: "Bulk A", email: "a@example.com", status: "active" },
+        { name: "Bulk B", email: "b@example.com", status: "inactive" },
+      ]),
+    });
+
+    expect(res.status).toBe(201);
+    expect(lastSql()).toBe(
+      "INSERT INTO users (name,email,status) VALUES ('Bulk A','a@example.com','active'),('Bulk B','b@example.com','inactive') RETURNING *"
+    );
+  });
+
+  test("POST pooled /api/users bulk CSV uses one INSERT statement", async () => {
+    pgMock.clearTracking();
+
+    const res = await fetch(`${POOLED_TEST_URL}/api/users`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "text/csv",
+      },
+      body: "name,email,status\nCsv A,csv-a@example.com,active\nCsv B,csv-b@example.com,inactive\n",
+    });
+
+    expect(res.status).toBe(201);
+    expect(lastSql()).toBe(
+      "INSERT INTO users (name,email,status) VALUES ('Csv A','csv-a@example.com','active'),('Csv B','csv-b@example.com','inactive') RETURNING *"
+    );
+  });
+
+  test("POST pooled /api/users with columns parameter ignores extra JSON keys", async () => {
+    pgMock.clearTracking();
+
+    const res = await fetch(`${POOLED_TEST_URL}/api/users?columns=name,email`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        name: "Trimmed User",
+        email: "trimmed@example.com",
+        status: "active",
+        ignored: "value",
+      }),
+    });
+
+    expect(res.status).toBe(201);
+    expect(lastSql()).toBe("INSERT INTO users (name,email) VALUES ('Trimmed User','trimmed@example.com') RETURNING *");
+  });
+
+  test("POST pooled /api/foo bulk JSON with missing=default emits DEFAULT for missing fields", async () => {
+    pgMock.clearTracking();
+
+    const res = await fetch(`${POOLED_TEST_URL}/api/foo?columns=id,bar,baz`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Prefer: "missing=default, return=representation",
+      },
+      body: JSON.stringify([
+        { bar: "val1" },
+        { bar: "val2", baz: 15 },
+      ]),
+    });
+
+    expect(res.status).toBe(201);
+    expect(res.headers.get("preference-applied")).toContain("missing=default");
+    expect(lastSql()).toBe(
+      "INSERT INTO foo (id,bar,baz) VALUES (DEFAULT,'val1',DEFAULT),(DEFAULT,'val2',15) RETURNING *"
+    );
+  });
+
+  test("POST pooled /api/users with resolution=merge-duplicates and on_conflict=id builds upsert SQL", async () => {
+    pgMock.clearTracking();
+
+    const res = await fetch(`${POOLED_TEST_URL}/api/users?on_conflict=id`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Prefer: "resolution=merge-duplicates, return=representation",
+      },
+      body: JSON.stringify([
+        { id: 1, name: "Old employee 1", email: "old1@example.com", status: "active" },
+        { id: 2, name: "Old employee 2", email: "old2@example.com", status: "inactive" },
+      ]),
+    });
+
+    expect(res.status).toBe(201);
+    expect(res.headers.get("preference-applied")).toContain("resolution=merge-duplicates");
+    expect(lastSql()).toBe(
+      "INSERT INTO users (id,name,email,status) VALUES (1,'Old employee 1','old1@example.com','active'),(2,'Old employee 2','old2@example.com','inactive') ON CONFLICT (id) DO UPDATE SET id=EXCLUDED.id,name=EXCLUDED.name,email=EXCLUDED.email,status=EXCLUDED.status RETURNING *"
+    );
+  });
+
+  test("PUT pooled /api/users with eq filter performs single-row upsert", async () => {
+    pgMock.clearTracking();
+
+    const res = await fetch(`${POOLED_TEST_URL}/api/users?id=eq.4`, {
+      method: "PUT",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ id: 4, name: "Sara B.", email: "sara@example.com", status: "active" }),
+    });
+
+    expect(res.status).toBe(200);
+    expect(lastSql()).toBe(
+      "INSERT INTO users (id,name,email,status) VALUES (4,'Sara B.','sara@example.com','active') ON CONFLICT (id) DO UPDATE SET id=EXCLUDED.id,name=EXCLUDED.name,email=EXCLUDED.email,status=EXCLUDED.status RETURNING *"
+    );
+  });
+
+  test("PATCH pooled /api/users with limit and order emits limited update SQL", async () => {
+    pgMock.clearTracking();
+
+    const res = await fetch(`${POOLED_TEST_URL}/api/users?limit=10&order=id&last_login=lt.2020-01-01`, {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ status: "inactive" }),
+    });
+
+    expect(res.status).toBe(200);
+    expect(lastSql()).toBe(
+      "WITH pgrest_limited AS (SELECT ctid FROM users WHERE last_login < '2020-01-01' ORDER BY id ASC LIMIT 10) UPDATE users SET status='inactive' WHERE ctid IN (SELECT ctid FROM pgrest_limited) RETURNING *"
+    );
+  });
+
+  test("DELETE pooled /api/users with limit and order emits limited delete SQL", async () => {
+    pgMock.clearTracking();
+
+    const res = await fetch(`${POOLED_TEST_URL}/api/users?limit=10&order=id&status=eq.inactive`, {
+      method: "DELETE",
+    });
+
+    expect(res.status).toBe(200);
+    expect(lastSql()).toBe(
+      "WITH pgrest_limited AS (SELECT ctid FROM users WHERE status = 'inactive' ORDER BY id ASC LIMIT 10) DELETE FROM users WHERE ctid IN (SELECT ctid FROM pgrest_limited) RETURNING *"
+    );
+  });
+
   test("PATCH pooled /api/users with Prefer: max-affected rejects overflow", async () => {
     pgMock.clearTracking();
 
@@ -1164,7 +2164,72 @@ describe("pgrest module", () => {
     });
 
     expect(res.status).toBe(200);
-    expect(lastSql()).toBe("SELECT upload_blob(data => 'BLOBDATA')");
+    expect(lastSql()).toBe("SELECT upload_blob('BLOBDATA')");
+  });
+
+  test("POST pooled /rpc/mult_them with unnamed json parameter uses positional JSON body", async () => {
+    pgMock.clearTracking();
+
+    const res = await fetch(`${POOLED_TEST_URL}/rpc/mult_them`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ x: 4, y: 2 }),
+    });
+
+    expect(res.status).toBe(200);
+    expect(await res.text()).toContain("8");
+    expect(lastSql()).toBe(`SELECT mult_them('{"x":4,"y":2}')`);
+  });
+
+  test("GET pooled /rpc/plus_one collapses repeated query params into a variadic ARRAY argument", async () => {
+    pgMock.clearTracking();
+
+    const res = await fetch(`${POOLED_TEST_URL}/rpc/plus_one?v=1&v=2&v=3&v=4`);
+    expect(res.status).toBe(200);
+    expect(lastSql()).toBe("SELECT plus_one(v => ARRAY[1,2,3,4])");
+    expect(await res.text()).toContain("{2,3,4,5}");
+  });
+
+  test("GET pooled /rpc/best_films_2017 applies table-style select, filter, order, and limit to a TVF", async () => {
+    pgMock.clearTracking();
+
+    const res = await fetch(`${POOLED_TEST_URL}/rpc/best_films_2017?select=title,rating&rating=gt.8&order=title.desc&limit=2`);
+    expect(res.status).toBe(200);
+    expect(lastSql()).toBe(`SELECT title,rating FROM "best_films_2017"() WHERE rating > '8' ORDER BY title DESC LIMIT 2`);
+    expect(await res.json()).toEqual([
+      { title: "The Worst Person in the World", rating: "8.1" },
+      { title: "Portrait of a Lady on Fire", rating: "8.2" },
+    ]);
+  });
+
+  test("POST pooled /rpc/plus_one with form body collapses repeated params into a variadic ARRAY argument", async () => {
+    pgMock.clearTracking();
+
+    const res = await fetch(`${POOLED_TEST_URL}/rpc/plus_one`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+      },
+      body: "v=1&v=2&v=3&v=4",
+    });
+
+    expect(res.status).toBe(200);
+    expect(lastSql()).toBe("SELECT plus_one(v => ARRAY[1,2,3,4])");
+    expect(await res.text()).toContain("{2,3,4,5}");
+  });
+
+  test("GET pooled /rpc/create_user rejects GET when function metadata is volatile", async () => {
+    pgMock.clearTracking();
+
+    const res = await fetch(`${POOLED_TEST_URL}/rpc/create_user`);
+    expect(res.status).toBe(405);
+    expect(res.headers.get("allow")).toBe("OPTIONS,POST");
+    expect(await res.json()).toEqual({
+      message: "The HTTP method is not allowed for this RPC function",
+    });
+    expect(lastSql()).not.toContain("SELECT create_user(");
   });
 
   test("HEAD pooled /api/users returns headers without a body", async () => {

@@ -1,5 +1,6 @@
 const std = @import("std");
 const ngx = @import("ngx");
+const pgrest_auth = @import("pgrest_auth.zig");
 
 const pq = ngx.pq;
 const buf = ngx.buf;
@@ -50,6 +51,7 @@ const NGX_OK = core.NGX_OK;
 const NGX_ERROR = core.NGX_ERROR;
 const NGX_AGAIN = core.NGX_AGAIN;
 const NGX_DECLINED = core.NGX_DECLINED;
+const NGX_HTTP_METHOD_NOT_ALLOWED: ngx_uint_t = 405;
 const NGX_HTTP_NOT_ACCEPTABLE: ngx_uint_t = 406;
 const NGX_HTTP_UNSUPPORTED_MEDIA_TYPE: ngx_uint_t = 415;
 
@@ -95,6 +97,7 @@ const ngx_pgrest_loc_conf_t = extern struct {
     conninfo: ngx_str_t, // PostgreSQL connection string
     pooling: ngx_flag_t, // Enable connection pooling (non-blocking mode)
     ups: http.ngx_http_upstream_conf_t,
+    schemas_raw: ngx_str_t,
 
     // JWT role-based access control
     jwt_secret: ngx_str_t, // HS256 secret for JWT validation
@@ -126,6 +129,12 @@ const PgQueryState = enum(c_int) {
     reading, // Reading result
     done, // Query complete
     failed, // Query failed
+};
+
+const RpcExecutionPhase = enum(c_int) {
+    none,
+    metadata,
+    call,
 };
 
 /// A single connection in the pool
@@ -201,6 +210,7 @@ const PgConnPool = struct {
 const PgRequestCtx = extern struct {
     pool_conn: ?*PgPoolConn, // Assigned connection from pool
     query_state: PgQueryState, // Current query execution state
+    rpc_phase: RpcExecutionPhase,
     query: [MAX_QUERY_SIZE]u8, // Query buffer
     query_len: usize, // Query length
     result: ?*PGresult, // Query result
@@ -212,8 +222,11 @@ const PgRequestCtx = extern struct {
     prefer_params_single_object: bool,
     prefer_return_mode: PreferReturnMode,
     prefer_handling: PreferHandling,
+    prefer_resolution: PreferResolution,
+    prefer_resolution_applied: bool,
     prefer_max_affected: usize,
     prefer_has_max_affected: bool,
+    prefer_missing_default: bool,
     prefer_invalid: bool,
     emit_range_headers: bool,
     write_status: ngx_uint_t,
@@ -256,13 +269,7 @@ var g_conn_pool: PgConnPool = undefined;
 var g_pool_initialized: bool = false;
 
 /// Result of executing a PostgreSQL query
-const PgQueryResult = struct {
-    success: bool,
-    ntuples: i32,
-    nfields: i32,
-    result: ?*PGresult,
-    error_msg: ?[*:0]u8,
-};
+const PgQueryResult = pgrest_auth.PgQueryResult;
 
 /// Maximum size for JSON result buffer
 const MAX_JSON_SIZE = 65536;
@@ -276,8 +283,20 @@ const JsonField = struct {
     value: []const u8,
     is_null: bool,
     is_number: bool,
+    is_boolean: bool,
+    is_missing: bool,
     name_buf: [256]u8,
     value_buf: [1024]u8,
+};
+
+const MAX_WRITE_ROWS = 16;
+
+const WriteScalar = struct {
+    value: []const u8 = "",
+    is_null: bool = false,
+    is_number: bool = false,
+    is_boolean: bool = false,
+    use_default: bool = false,
 };
 
 fn format_json_number(value: f64, buffer: []u8) []const u8 {
@@ -348,10 +367,14 @@ fn parse_json_body(
             if (cjson.cJSON_IsNull(item) == 1) {
                 fields[count].is_null = true;
                 fields[count].is_number = false;
+                fields[count].is_boolean = false;
+                fields[count].is_missing = false;
                 fields[count].value = "";
             } else if (cjson.cJSON_IsNumber(item) == 1) {
                 fields[count].is_null = false;
                 fields[count].is_number = true;
+                fields[count].is_boolean = false;
+                fields[count].is_missing = false;
                 fields[count].value = format_json_number(
                     cjson.cJSON_GetNumberValue(item),
                     &fields[count].value_buf,
@@ -359,6 +382,8 @@ fn parse_json_body(
             } else if (cjson.cJSON_IsString(item) == 1) {
                 fields[count].is_null = false;
                 fields[count].is_number = false;
+                fields[count].is_boolean = false;
+                fields[count].is_missing = false;
                 if (cjson.cJSON_GetStringValue(item)) |str| {
                     var str_len: usize = 0;
                     while (str[str_len] != 0 and str_len < 1024) : (str_len += 1) {}
@@ -369,6 +394,8 @@ fn parse_json_body(
             } else if (cjson.cJSON_IsBool(item) == 1) {
                 fields[count].is_null = false;
                 fields[count].is_number = false;
+                fields[count].is_boolean = true;
+                fields[count].is_missing = false;
                 fields[count].value = if (cjson.cJSON_IsTrue(item) == 1) "true" else "false";
             } else {
                 continue; // Skip unsupported types
@@ -437,6 +464,8 @@ fn parse_form_urlencoded_body(
             fields[count].value = fields[count].value_buf[0..value_len];
             fields[count].is_null = false;
             fields[count].is_number = is_numeric(fields[count].value);
+            fields[count].is_boolean = std.mem.eql(u8, fields[count].value, "true") or std.mem.eql(u8, fields[count].value, "false");
+            fields[count].is_missing = false;
             count += 1;
         }
 
@@ -478,6 +507,8 @@ fn parse_csv_row_into_fields(body: []const u8, fields: *[MAX_COLUMNS]JsonField) 
         fields[count].value = fields[count].value_buf[0..value.len];
         fields[count].is_null = std.mem.eql(u8, value, "null") or std.mem.eql(u8, value, "NULL");
         fields[count].is_number = !fields[count].is_null and is_numeric(fields[count].value);
+        fields[count].is_boolean = !fields[count].is_null and (std.mem.eql(u8, fields[count].value, "true") or std.mem.eql(u8, fields[count].value, "false"));
+        fields[count].is_missing = false;
         count += 1;
     }
 
@@ -498,6 +529,8 @@ fn parse_single_value_body(
     fields[0].value = fields[0].value_buf[0..body.len];
     fields[0].is_null = false;
     fields[0].is_number = false;
+    fields[0].is_boolean = false;
+    fields[0].is_missing = false;
     return 1;
 }
 
@@ -506,7 +539,16 @@ const PreferOptions = struct {
     return_mode: PreferReturnMode = .representation,
     handling: PreferHandling = .lenient,
     max_affected: ?usize = null,
+    missing_default: bool = false,
+    resolution: PreferResolution = .none,
+    resolution_applied: bool = false,
     invalid: bool = false,
+};
+
+const PreferResolution = enum(u8) {
+    none,
+    merge_duplicates,
+    ignore_duplicates,
 };
 
 const PreferReturnMode = enum(u8) {
@@ -546,6 +588,12 @@ const WriteResponseContract = struct {
     include_returning: bool,
 };
 
+const ResolvedSchema = struct {
+    name: ?[]const u8,
+    disallowed: bool,
+    allowed_raw: []const u8,
+};
+
 fn trim_ascii_spaces(value: []const u8) []const u8 {
     var start: usize = 0;
     var end: usize = value.len;
@@ -579,6 +627,14 @@ fn parse_prefer_header(r: [*c]ngx_http_request_t) PreferOptions {
             prefer.handling = .strict;
         } else if (std.mem.eql(u8, token, "handling=lenient")) {
             prefer.handling = .lenient;
+        } else if (std.mem.eql(u8, token, "resolution=merge-duplicates")) {
+            prefer.resolution = .merge_duplicates;
+            prefer.resolution_applied = true;
+        } else if (std.mem.eql(u8, token, "resolution=ignore-duplicates")) {
+            prefer.resolution = .ignore_duplicates;
+            prefer.resolution_applied = true;
+        } else if (std.mem.eql(u8, token, "missing=default")) {
+            prefer.missing_default = true;
         } else if (std.mem.startsWith(u8, token, "max-affected=")) {
             const value = token["max-affected=".len..];
             prefer.max_affected = std.fmt.parseInt(usize, value, 10) catch {
@@ -606,6 +662,69 @@ fn parse_request_options(r: [*c]ngx_http_request_t) RequestOptions {
 
     opts.response_format = parse_accept_header_from_request(r);
     return opts;
+}
+
+fn is_valid_schema_identifier(value: []const u8) bool {
+    if (value.len == 0) return false;
+    for (value, 0..) |c, i| {
+        if (!(std.ascii.isAlphanumeric(c) or c == '_')) return false;
+        if (i == 0 and std.ascii.isDigit(c)) return false;
+    }
+    return true;
+}
+
+fn schema_header_name_for_method(method: ngx_uint_t) []const u8 {
+    return if (method == http.NGX_HTTP_GET or method == http.NGX_HTTP_HEAD)
+        "accept-profile"
+    else
+        "content-profile";
+}
+
+fn format_schema_error(buf_out: []u8, allowed_raw: []const u8) []const u8 {
+    const prefix = "{\"code\":\"PGRST106\",\"details\":null,\"hint\":null,\"message\":\"The schema must be one of the following: ";
+    const suffix = "\"}";
+    var pos: usize = 0;
+    @memcpy(buf_out[pos..][0..prefix.len], prefix);
+    pos += prefix.len;
+    @memcpy(buf_out[pos..][0..allowed_raw.len], allowed_raw);
+    pos += allowed_raw.len;
+    @memcpy(buf_out[pos..][0..suffix.len], suffix);
+    pos += suffix.len;
+    return buf_out[0..pos];
+}
+
+fn resolve_request_schema(
+    r: [*c]ngx_http_request_t,
+    loc_conf: *ngx_pgrest_loc_conf_t,
+) ResolvedSchema {
+    const allowed_raw = trim_ascii_spaces(core.slicify(u8, loc_conf.*.schemas_raw.data, loc_conf.*.schemas_raw.len));
+    if (allowed_raw.len == 0) return .{ .name = null, .disallowed = false, .allowed_raw = "" };
+
+    const header_name = schema_header_name_for_method(r.*.method);
+    const requested = if (extract_header_value(r, header_name)) |raw|
+        trim_ascii_spaces(raw)
+    else
+        "";
+
+    var first_allowed: ?[]const u8 = null;
+    var it = std.mem.splitScalar(u8, allowed_raw, ',');
+    while (it.next()) |part| {
+        const schema = trim_ascii_spaces(part);
+        if (schema.len == 0 or !is_valid_schema_identifier(schema)) continue;
+        if (first_allowed == null) first_allowed = schema;
+        if (requested.len > 0 and std.mem.eql(u8, requested, schema)) {
+            if (first_allowed != null and std.mem.eql(u8, schema, first_allowed.?)) {
+                return .{ .name = null, .disallowed = false, .allowed_raw = allowed_raw };
+            }
+            return .{ .name = schema, .disallowed = false, .allowed_raw = allowed_raw };
+        }
+    }
+
+    if (requested.len == 0) {
+        return .{ .name = null, .disallowed = false, .allowed_raw = allowed_raw };
+    }
+
+    return .{ .name = null, .disallowed = true, .allowed_raw = allowed_raw };
 }
 
 fn dup_to_ngx_str(pool: [*c]ngx_pool_t, value: []const u8) ?ngx_str_t {
@@ -660,6 +779,32 @@ fn append_preference_applied_header(r: [*c]ngx_http_request_t, opts: RequestOpti
             pos += 1;
         }
         const token = std.fmt.bufPrint(buf_out[pos..], "max-affected={d}", .{max_affected}) catch return;
+        pos += token.len;
+    }
+
+    if (opts.prefer.resolution_applied) {
+        if (pos > 0) {
+            buf_out[pos] = ',';
+            pos += 1;
+        }
+        const token = switch (opts.prefer.resolution) {
+            .merge_duplicates => "resolution=merge-duplicates",
+            .ignore_duplicates => "resolution=ignore-duplicates",
+            .none => "",
+        };
+        if (token.len > 0) {
+            @memcpy(buf_out[pos..][0..token.len], token);
+            pos += token.len;
+        }
+    }
+
+    if (opts.prefer.missing_default) {
+        if (pos > 0) {
+            buf_out[pos] = ',';
+            pos += 1;
+        }
+        const token = "missing=default";
+        @memcpy(buf_out[pos..][0..token.len], token);
         pos += token.len;
     }
 
@@ -895,6 +1040,11 @@ fn finalize_pooled_failure(ctx: *PgRequestCtx) void {
 
 fn start_pooled_query(ctx: *PgRequestCtx, pool_conn: *PgPoolConn) bool {
     const conn = pool_conn.conn orelse return false;
+
+    if (ctx.*.result != null) {
+        pgClear(ctx.*.result);
+        ctx.*.result = null;
+    }
 
     if (pgSendQuery(conn, &ctx.*.query) == 0) {
         ctx.*.query_state = .failed;
@@ -1296,12 +1446,7 @@ fn format_result_as_json_smart(
 }
 
 /// JWT config for role-based access
-const JwtConfig = struct {
-    secret: []const u8,
-    anon_role: []const u8,
-    role_claim: []const u8,
-    pool: [*c]ngx_pool_t,
-};
+const JwtConfig = pgrest_auth.JwtConfig;
 
 /// Execute a SQL query against PostgreSQL (blocking)
 /// Optional JWT token for setting request.jwt claim and role in PostgreSQL
@@ -1311,116 +1456,12 @@ fn execute_pg_query_with_jwt(
     jwt_token: ?[]const u8,
     jwt_config: ?JwtConfig,
 ) PgQueryResult {
-    // Need null-terminated strings for libpq
-    var conn_buf: [512]u8 = undefined;
-    var query_buf: [MAX_QUERY_SIZE + 1]u8 = undefined;
-
-    if (conninfo.len >= conn_buf.len or query.len >= query_buf.len) {
-        return PgQueryResult{
-            .success = false,
-            .ntuples = 0,
-            .nfields = 0,
-            .result = null,
-            .error_msg = null,
-        };
-    }
-
-    @memcpy(conn_buf[0..conninfo.len], conninfo);
-    conn_buf[conninfo.len] = 0;
-
-    @memcpy(query_buf[0..query.len], query);
-    query_buf[query.len] = 0;
-
-    // Connect to PostgreSQL
-    const conn = pgConnectdb(&conn_buf);
-    if (conn == null) {
-        return PgQueryResult{
-            .success = false,
-            .ntuples = 0,
-            .nfields = 0,
-            .result = null,
-            .error_msg = null,
-        };
-    }
-
-    // Check connection status
-    if (pgStatus(conn) != CONNECTION_OK) {
-        const err = pgErrorMessage(conn);
-        pgFinish(conn);
-        return PgQueryResult{
-            .success = false,
-            .ntuples = 0,
-            .nfields = 0,
-            .result = null,
-            .error_msg = err,
-        };
-    }
-
-    // Set JWT claim in PostgreSQL if provided
-    if (jwt_token) |token| {
-        _ = set_postgresql_jwt_claim(conn, token);
-
-        // Handle role-based access if JWT config is provided
-        if (jwt_config) |cfg| {
-            if (cfg.secret.len > 0) {
-                // Validate JWT and extract role
-                if (validate_jwt_hs256(token, cfg.secret)) {
-                    // JWT is valid, extract role claim
-                    if (extract_jwt_role(cfg.pool, token, cfg.role_claim)) |role| {
-                        _ = set_postgresql_role(conn, role);
-                    } else if (cfg.anon_role.len > 0) {
-                        // No role claim in JWT, use anon_role
-                        _ = set_postgresql_role(conn, cfg.anon_role);
-                    }
-                } else if (cfg.anon_role.len > 0) {
-                    // Invalid JWT signature, use anon_role
-                    _ = set_postgresql_role(conn, cfg.anon_role);
-                }
-            }
-        }
-    } else if (jwt_config) |cfg| {
-        // No JWT provided, use anon_role if configured
-        if (cfg.anon_role.len > 0) {
-            _ = set_postgresql_role(conn, cfg.anon_role);
-        }
-    }
-
-    // Execute query
-    const result = pgExec(conn, &query_buf);
-    const status = pgResultStatus(result);
-
-    if (status != PGRES_TUPLES_OK and status != PGRES_COMMAND_OK) {
-        const err = pgErrorMessage(conn);
-        if (result != null) pgClear(result);
-        pgFinish(conn);
-        return PgQueryResult{
-            .success = false,
-            .ntuples = 0,
-            .nfields = 0,
-            .result = null,
-            .error_msg = err,
-        };
-    }
-
-    const ntuples = pgNtuples(result);
-    const nfields = pgNfields(result);
-
-    // Note: We're not closing the connection here - caller must handle cleanup
-    // In production, this should use connection pooling
-    pgFinish(conn);
-
-    return PgQueryResult{
-        .success = true,
-        .ntuples = ntuples,
-        .nfields = nfields,
-        .result = result,
-        .error_msg = null,
-    };
+    return pgrest_auth.execute_pg_query_with_jwt(conninfo, query, jwt_token, jwt_config);
 }
 
 /// Execute a SQL query against PostgreSQL (blocking)
 fn execute_pg_query(conninfo: []const u8, query: []const u8) PgQueryResult {
-    return execute_pg_query_with_jwt(conninfo, query, null, null);
+    return pgrest_auth.execute_pg_query(conninfo, query);
 }
 
 fn pgrest_create_srv_conf(cf: [*c]ngx_conf_t) callconv(.c) ?*anyopaque {
@@ -1574,6 +1615,36 @@ fn ngx_conf_set_pgrest_jwt_role_claim(
     return NGX_CONF_ERROR;
 }
 
+fn ngx_conf_set_pgrest_schemas(
+    cf: [*c]ngx_conf_t,
+    cmd: [*c]ngx_command_t,
+    data: ?*anyopaque,
+) callconv(.c) [*c]u8 {
+    _ = cmd;
+    if (core.castPtr(ngx_pgrest_loc_conf_t, data)) |loc| {
+        var i: ngx_uint_t = 1;
+        if (ngx.array.ngx_array_next(ngx_str_t, cf.*.args, &i)) |arg| {
+            const raw = trim_ascii_spaces(core.slicify(u8, arg.*.data, arg.*.len));
+            if (raw.len == 0) return NGX_CONF_ERROR;
+
+            var it = std.mem.splitScalar(u8, raw, ',');
+            var count: usize = 0;
+            while (it.next()) |part| {
+                const schema = trim_ascii_spaces(part);
+                if (schema.len == 0 or !is_valid_schema_identifier(schema)) {
+                    return NGX_CONF_ERROR;
+                }
+                count += 1;
+            }
+            if (count == 0) return NGX_CONF_ERROR;
+
+            loc.*.schemas_raw = arg.*;
+            return NGX_CONF_OK;
+        }
+    }
+    return NGX_CONF_ERROR;
+}
+
 /// SQL operation types based on HTTP method
 const SqlOp = enum {
     select,
@@ -1612,9 +1683,9 @@ fn build_sql_query(
     query_buf: []u8,
     sql_op: SqlOp,
     table: []const u8,
-    filters: []const Filter,
+    where_clause: []const u8,
     json_fields: []const JsonField,
-    select_cols: []const []const u8,
+    select_clause: []const u8,
     order_specs: []const OrderSpec,
     pagination: Pagination,
     include_returning: bool,
@@ -1628,16 +1699,9 @@ fn build_sql_query(
             @memcpy(query_buf[pos..][0..select_str.len], select_str);
             pos += select_str.len;
 
-            if (select_cols.len > 0) {
-                // Use specified columns
-                for (select_cols, 0..) |col, i| {
-                    if (i > 0) {
-                        query_buf[pos] = ',';
-                        pos += 1;
-                    }
-                    @memcpy(query_buf[pos..][0..col.len], col);
-                    pos += col.len;
-                }
+            if (select_clause.len > 0) {
+                @memcpy(query_buf[pos..][0..select_clause.len], select_clause);
+                pos += select_clause.len;
             } else {
                 // Select all columns
                 query_buf[pos] = '*';
@@ -1770,33 +1834,13 @@ fn build_sql_query(
     }
 
     // Add WHERE clause if filters exist
-    if (filters.len > 0) {
+    if (where_clause.len > 0) {
         const where = " WHERE ";
         @memcpy(query_buf[pos..][0..where.len], where);
         pos += where.len;
 
-        for (filters, 0..) |filter, i| {
-            if (i > 0) {
-                const and_str = " AND ";
-                @memcpy(query_buf[pos..][0..and_str.len], and_str);
-                pos += and_str.len;
-            }
-
-            // column
-            @memcpy(query_buf[pos..][0..filter.column.len], filter.column);
-            pos += filter.column.len;
-
-            // operator
-            query_buf[pos] = ' ';
-            pos += 1;
-            const op_sql = filter.op.toSql();
-            @memcpy(query_buf[pos..][0..op_sql.len], op_sql);
-            pos += op_sql.len;
-            query_buf[pos] = ' ';
-            pos += 1;
-
-            pos = append_filter_value(query_buf, pos, filter);
-        }
+        @memcpy(query_buf[pos..][0..where_clause.len], where_clause);
+        pos += where_clause.len;
     }
 
     // Add RETURNING for UPDATE/DELETE
@@ -1817,8 +1861,8 @@ fn build_sql_query(
                 query_buf[pos] = ',';
                 pos += 1;
             }
-            @memcpy(query_buf[pos..][0..spec.column.len], spec.column);
-            pos += spec.column.len;
+            const expr = spec.expr();
+            pos = append_column_expression(query_buf, pos, expr) orelse return pos;
 
             if (spec.dir == .desc) {
                 const desc_str = " DESC";
@@ -1828,6 +1872,20 @@ fn build_sql_query(
                 const asc_str = " ASC";
                 @memcpy(query_buf[pos..][0..asc_str.len], asc_str);
                 pos += asc_str.len;
+            }
+
+            switch (spec.nulls) {
+                .none => {},
+                .first => {
+                    const nulls_first = " NULLS FIRST";
+                    @memcpy(query_buf[pos..][0..nulls_first.len], nulls_first);
+                    pos += nulls_first.len;
+                },
+                .last => {
+                    const nulls_last = " NULLS LAST";
+                    @memcpy(query_buf[pos..][0..nulls_last.len], nulls_last);
+                    pos += nulls_last.len;
+                },
             }
         }
     }
@@ -1911,18 +1969,139 @@ const OrderDir = enum {
     desc,
 };
 
+const OrderNulls = enum {
+    none,
+    first,
+    last,
+};
+
 /// Order specification
 const OrderSpec = struct {
-    column: []const u8,
+    expr_buf: [512]u8,
+    expr_len: usize,
     dir: OrderDir,
+    nulls: OrderNulls,
+
+    fn expr(self: *const OrderSpec) []const u8 {
+        return self.expr_buf[0..self.expr_len];
+    }
+};
+
+const OrderParseResult = struct {
+    count: usize,
+    invalid: bool,
 };
 
 const MAX_ORDER_COLUMNS = 8;
 
-/// Parse ?order=col1.desc,col2.asc parameter
-fn parse_order(args: ngx_str_t, orders: *[MAX_ORDER_COLUMNS]OrderSpec) usize {
+fn find_last_top_level_separator(value: []const u8, needle: u8) ?usize {
+    var depth: usize = 0;
+    var in_quotes = false;
+    var escaped = false;
+    var last: ?usize = null;
+
+    for (value, 0..) |c, i| {
+        if (in_quotes) {
+            if (escaped) {
+                escaped = false;
+                continue;
+            }
+            if (c == '\\') {
+                escaped = true;
+                continue;
+            }
+            if (c == '"') {
+                in_quotes = false;
+            }
+            continue;
+        }
+
+        switch (c) {
+            '"' => in_quotes = true,
+            '(' => depth += 1,
+            ')' => {
+                if (depth > 0) depth -= 1;
+            },
+            else => {},
+        }
+
+        if (depth == 0 and c == needle) last = i;
+    }
+
+    return last;
+}
+
+fn parse_order_spec(raw_spec: []const u8) ?OrderSpec {
+    if (raw_spec.len == 0) return null;
+
+    var decoded_buf: [512]u8 = undefined;
+    const spec = decode_query_component_into(&decoded_buf, trim_ascii_spaces(raw_spec)) orelse return null;
+    if (spec.len == 0) return null;
+
+    var expr_end = spec.len;
+    var order = OrderSpec{
+        .expr_buf = undefined,
+        .expr_len = 0,
+        .dir = .asc,
+        .nulls = .none,
+    };
+    var saw_dir = false;
+
+    while (find_last_top_level_separator(spec[0..expr_end], '.')) |dot| {
+        const part = trim_ascii_spaces(spec[dot + 1 .. expr_end]);
+        if (part.len == 0) return null;
+
+        if (std.mem.eql(u8, part, "asc")) {
+            if (saw_dir) return null;
+            saw_dir = true;
+            expr_end = dot;
+            continue;
+        }
+
+        if (std.mem.eql(u8, part, "desc")) {
+            if (saw_dir) return null;
+            saw_dir = true;
+            order.dir = .desc;
+            expr_end = dot;
+            continue;
+        }
+
+        if (std.mem.eql(u8, part, "nullsfirst")) {
+            if (order.nulls != .none) return null;
+            order.nulls = .first;
+            expr_end = dot;
+            continue;
+        }
+
+        if (std.mem.eql(u8, part, "nullslast")) {
+            if (order.nulls != .none) return null;
+            order.nulls = .last;
+            expr_end = dot;
+            continue;
+        }
+
+        return null;
+    }
+
+    const expr = trim_ascii_spaces(spec[0..expr_end]);
+    if (expr.len == 0 or expr.len > order.expr_buf.len) return null;
+    @memcpy(order.expr_buf[0..expr.len], expr);
+    order.expr_len = expr.len;
+
+    var expr_sql_buf: [1024]u8 = undefined;
+    _ = append_column_expression(&expr_sql_buf, 0, order.expr()) orelse return null;
+
+    return order;
+}
+
+fn reject_invalid_order(r: [*c]ngx_http_request_t) ngx_int_t {
+    return send_json_error(r, http.NGX_HTTP_BAD_REQUEST, "{\"message\":\"Invalid order parameter\"}");
+}
+
+/// Parse ?order=col1.desc,col2.asc.nullsfirst parameter
+fn parse_order(args: ngx_str_t, orders: *[MAX_ORDER_COLUMNS]OrderSpec) OrderParseResult {
     if (args.len == 0 or args.data == core.nullptr(u8)) {
-        return 0;
+        return .{ .count = 0, .invalid = false };
     }
 
     const query = core.slicify(u8, args.data, args.len);
@@ -1940,33 +2119,24 @@ fn parse_order(args: ngx_str_t, orders: *[MAX_ORDER_COLUMNS]OrderSpec) usize {
                 if (pos == query.len or query[pos] == '&' or query[pos] == ',') {
                     if (pos > col_start) {
                         const spec = query[col_start..pos];
-                        // Parse col.dir format
-                        var dot_pos: usize = 0;
-                        while (dot_pos < spec.len and spec[dot_pos] != '.') : (dot_pos += 1) {}
-
-                        if (dot_pos < spec.len) {
-                            orders[count].column = spec[0..dot_pos];
-                            const dir_str = spec[dot_pos + 1 ..];
-                            orders[count].dir = if (std.mem.eql(u8, dir_str, "desc")) .desc else .asc;
-                        } else {
-                            orders[count].column = spec;
-                            orders[count].dir = .asc;
-                        }
+                        orders[count] = parse_order_spec(spec) orelse return .{ .count = 0, .invalid = true };
                         count += 1;
+                    } else {
+                        return .{ .count = 0, .invalid = true };
                     }
                     if (pos == query.len or query[pos] == '&') {
-                        return count;
+                        return .{ .count = count, .invalid = false };
                     }
                     col_start = pos + 1;
                 }
                 pos += 1;
             }
-            return count;
+            return .{ .count = count, .invalid = false };
         }
         while (pos < query.len and query[pos] != '&') : (pos += 1) {}
         pos += 1;
     }
-    return 0;
+    return .{ .count = 0, .invalid = false };
 }
 
 /// Pagination parameters
@@ -2016,6 +2186,96 @@ fn parse_pagination(args: ngx_str_t) Pagination {
     return result;
 }
 
+fn parse_columns_param(args: ngx_str_t, columns: *[MAX_COLUMNS][]const u8) ?usize {
+    if (args.len == 0 or args.data == core.nullptr(u8)) {
+        return 0;
+    }
+
+    const query = core.slicify(u8, args.data, args.len);
+    var pos: usize = 0;
+
+    while (pos < query.len) {
+        if (pos + 8 <= query.len and std.mem.eql(u8, query[pos .. pos + 8], "columns=")) {
+            pos += 8;
+
+            var count: usize = 0;
+            var col_start = pos;
+            while (pos <= query.len and count < MAX_COLUMNS) {
+                if (pos == query.len or query[pos] == '&' or query[pos] == ',') {
+                    if (pos <= col_start) return null;
+
+                    var decoded_buf: [256]u8 = undefined;
+                    const decoded = decode_query_component_into(&decoded_buf, query[col_start..pos]) orelse return null;
+                    const name = trim_ascii_spaces(decoded);
+                    if (name.len == 0 or !is_valid_schema_identifier(name)) return null;
+
+                    columns[count] = query[col_start..pos];
+                    count += 1;
+
+                    if (pos == query.len or query[pos] == '&') {
+                        return count;
+                    }
+                    col_start = pos + 1;
+                }
+                pos += 1;
+            }
+
+            if (count == MAX_COLUMNS and pos < query.len and query[pos] != '&') return null;
+            return count;
+        }
+
+        while (pos < query.len and query[pos] != '&') : (pos += 1) {}
+        pos += 1;
+    }
+
+    return 0;
+}
+
+fn parse_on_conflict_param(args: ngx_str_t, columns: *[MAX_COLUMNS][]const u8) ?usize {
+    if (args.len == 0 or args.data == core.nullptr(u8)) {
+        return 0;
+    }
+
+    const query = core.slicify(u8, args.data, args.len);
+    var pos: usize = 0;
+
+    while (pos < query.len) {
+        if (pos + 12 <= query.len and std.mem.eql(u8, query[pos .. pos + 12], "on_conflict=")) {
+            pos += 12;
+
+            var count: usize = 0;
+            var col_start = pos;
+            while (pos <= query.len and count < MAX_COLUMNS) {
+                if (pos == query.len or query[pos] == '&' or query[pos] == ',') {
+                    if (pos <= col_start) return null;
+
+                    var decoded_buf: [256]u8 = undefined;
+                    const decoded = decode_query_component_into(&decoded_buf, query[col_start..pos]) orelse return null;
+                    const name = trim_ascii_spaces(decoded);
+                    if (name.len == 0 or !is_valid_schema_identifier(name)) return null;
+
+                    columns[count] = query[col_start..pos];
+                    count += 1;
+
+                    if (pos == query.len or query[pos] == '&') {
+                        return count;
+                    }
+                    col_start = pos + 1;
+                }
+                pos += 1;
+            }
+
+            if (count == MAX_COLUMNS and pos < query.len and query[pos] != '&') return null;
+            return count;
+        }
+
+        while (pos < query.len and query[pos] != '&') : (pos += 1) {}
+        pos += 1;
+    }
+
+    return 0;
+}
+
 /// PostgREST filter operators
 const FilterOp = enum {
     eq, // equals
@@ -2026,8 +2286,23 @@ const FilterOp = enum {
     lte, // less than or equal
     like, // LIKE pattern match
     ilike, // case-insensitive LIKE
+    match, // regex match
+    imatch, // case-insensitive regex match
     is_, // IS (for null checks)
+    isdistinct, // IS DISTINCT FROM
+    fts, // full text search
+    plfts, // plain full text search
+    phfts, // phrase full text search
+    wfts, // web full text search
     in_, // IN (list of values)
+    cs, // contains
+    cd, // contained in
+    ov, // overlap
+    sl, // strictly left of
+    sr, // strictly right of
+    nxr, // does not extend right of
+    nxl, // does not extend left of
+    adj, // adjacent
 
     pub fn toSql(self: FilterOp) []const u8 {
         return switch (self) {
@@ -2039,8 +2314,20 @@ const FilterOp = enum {
             .lte => "<=",
             .like => "LIKE",
             .ilike => "ILIKE",
+            .match => "~",
+            .imatch => "~*",
             .is_ => "IS",
+            .isdistinct => "IS DISTINCT FROM",
+            .fts, .plfts, .phfts, .wfts => "@@",
             .in_ => "IN",
+            .cs => "@>",
+            .cd => "<@",
+            .ov => "&&",
+            .sl => "<<",
+            .sr => ">>",
+            .nxr => "&<",
+            .nxl => "&>",
+            .adj => "-|-",
         };
     }
 
@@ -2053,8 +2340,23 @@ const FilterOp = enum {
         if (std.mem.eql(u8, s, "lte")) return .lte;
         if (std.mem.eql(u8, s, "like")) return .like;
         if (std.mem.eql(u8, s, "ilike")) return .ilike;
+        if (std.mem.eql(u8, s, "match")) return .match;
+        if (std.mem.eql(u8, s, "imatch")) return .imatch;
         if (std.mem.eql(u8, s, "is")) return .is_;
+        if (std.mem.eql(u8, s, "isdistinct")) return .isdistinct;
+        if (std.mem.eql(u8, s, "fts")) return .fts;
+        if (std.mem.eql(u8, s, "plfts")) return .plfts;
+        if (std.mem.eql(u8, s, "phfts")) return .phfts;
+        if (std.mem.eql(u8, s, "wfts")) return .wfts;
         if (std.mem.eql(u8, s, "in")) return .in_;
+        if (std.mem.eql(u8, s, "cs")) return .cs;
+        if (std.mem.eql(u8, s, "cd")) return .cd;
+        if (std.mem.eql(u8, s, "ov")) return .ov;
+        if (std.mem.eql(u8, s, "sl")) return .sl;
+        if (std.mem.eql(u8, s, "sr")) return .sr;
+        if (std.mem.eql(u8, s, "nxr")) return .nxr;
+        if (std.mem.eql(u8, s, "nxl")) return .nxl;
+        if (std.mem.eql(u8, s, "adj")) return .adj;
         return null;
     }
 };
@@ -2205,6 +2507,830 @@ fn append_filter_value(buf_out: []u8, pos_in: usize, filter: Filter) usize {
     }
 }
 
+fn build_where_clause_from_filters(buf_out: []u8, filters: []const Filter) usize {
+    var pos: usize = 0;
+
+    for (filters, 0..) |filter, i| {
+        if (i > 0) {
+            const and_str = " AND ";
+            @memcpy(buf_out[pos..][0..and_str.len], and_str);
+            pos += and_str.len;
+        }
+
+        @memcpy(buf_out[pos..][0..filter.column.len], filter.column);
+        pos += filter.column.len;
+
+        buf_out[pos] = ' ';
+        pos += 1;
+        const op_sql = filter.op.toSql();
+        @memcpy(buf_out[pos..][0..op_sql.len], op_sql);
+        pos += op_sql.len;
+        buf_out[pos] = ' ';
+        pos += 1;
+
+        pos = append_filter_value(buf_out, pos, filter);
+    }
+
+    return pos;
+}
+
+const WhereClauseResult = struct {
+    len: usize,
+    invalid: bool,
+};
+
+fn decode_query_component_into(dest: []u8, src: []const u8) ?[]const u8 {
+    var pos: usize = 0;
+    var i: usize = 0;
+
+    while (i < src.len) : (i += 1) {
+        if (pos >= dest.len) return null;
+
+        if (src[i] == '%') {
+            if (i + 2 >= src.len) return null;
+            const hi = std.fmt.charToDigit(src[i + 1], 16) catch return null;
+            const lo = std.fmt.charToDigit(src[i + 2], 16) catch return null;
+            dest[pos] = @as(u8, @intCast(hi * 16 + lo));
+            pos += 1;
+            i += 2;
+        } else {
+            dest[pos] = src[i];
+            pos += 1;
+        }
+    }
+
+    return dest[0..pos];
+}
+
+fn unescape_wrapped_quotes_into(dest: []u8, value: []const u8) ?[]const u8 {
+    const inner = if (value.len >= 2 and value[0] == '"' and value[value.len - 1] == '"')
+        value[1 .. value.len - 1]
+    else
+        value;
+
+    var pos: usize = 0;
+    var i: usize = 0;
+    while (i < inner.len) : (i += 1) {
+        if (pos >= dest.len) return null;
+        if (inner[i] == '\\' and i + 1 < inner.len) {
+            i += 1;
+        }
+        dest[pos] = inner[i];
+        pos += 1;
+    }
+
+    return dest[0..pos];
+}
+
+fn is_simple_identifier(value: []const u8) bool {
+    if (value.len == 0) return false;
+    for (value) |c| {
+        if (!(std.ascii.isAlphanumeric(c) or c == '_')) return false;
+    }
+    return true;
+}
+
+fn append_sql_identifier(buf_out: []u8, pos_in: usize, raw_value: []const u8) usize {
+    var scratch: [512]u8 = undefined;
+    const value = unescape_wrapped_quotes_into(&scratch, raw_value) orelse raw_value;
+
+    if (is_simple_identifier(value)) {
+        @memcpy(buf_out[pos_in..][0..value.len], value);
+        return pos_in + value.len;
+    }
+
+    var pos = pos_in;
+    buf_out[pos] = '"';
+    pos += 1;
+    for (value) |c| {
+        if (c == '"') {
+            buf_out[pos] = '"';
+            pos += 1;
+        }
+        buf_out[pos] = c;
+        pos += 1;
+    }
+    buf_out[pos] = '"';
+    pos += 1;
+    return pos;
+}
+
+fn append_column_expression(buf_out: []u8, pos_in: usize, raw_value: []const u8) ?usize {
+    const arrow_idx = std.mem.indexOf(u8, raw_value, "->") orelse {
+        return append_sql_identifier(buf_out, pos_in, raw_value);
+    };
+
+    var pos = pos_in;
+    const base = raw_value[0..arrow_idx];
+    const prefix = "to_jsonb(";
+    @memcpy(buf_out[pos..][0..prefix.len], prefix);
+    pos += prefix.len;
+    pos = append_sql_identifier(buf_out, pos, base);
+    buf_out[pos] = ')';
+    pos += 1;
+
+    var rest = raw_value[arrow_idx..];
+    var scratch: [256]u8 = undefined;
+    while (rest.len > 0) {
+        const is_text = std.mem.startsWith(u8, rest, "->>");
+        const op = if (is_text) "->>" else if (std.mem.startsWith(u8, rest, "->")) "->" else return null;
+        @memcpy(buf_out[pos..][0..op.len], op);
+        pos += op.len;
+        rest = rest[op.len..];
+
+        const next_idx = std.mem.indexOf(u8, rest, "->") orelse rest.len;
+        const segment_raw = rest[0..next_idx];
+        if (segment_raw.len == 0) return null;
+        const segment = unescape_wrapped_quotes_into(&scratch, segment_raw) orelse return null;
+        if (is_numeric(segment)) {
+            @memcpy(buf_out[pos..][0..segment.len], segment);
+            pos += segment.len;
+        } else {
+            pos = append_sql_quoted(buf_out, pos, segment);
+        }
+        rest = rest[next_idx..];
+    }
+
+    return pos;
+}
+
+fn find_top_level_dot(value: []const u8) ?usize {
+    var depth: usize = 0;
+    var in_quotes = false;
+    var escaped = false;
+
+    for (value, 0..) |c, i| {
+        if (in_quotes) {
+            if (escaped) {
+                escaped = false;
+                continue;
+            }
+            if (c == '\\') {
+                escaped = true;
+                continue;
+            }
+            if (c == '"') {
+                in_quotes = false;
+            }
+            continue;
+        }
+
+        switch (c) {
+            '"' => in_quotes = true,
+            '(' => depth += 1,
+            ')' => {
+                if (depth > 0) depth -= 1;
+            },
+            '.' => if (depth == 0) return i,
+            else => {},
+        }
+    }
+
+    return null;
+}
+
+fn is_reserved_query_param(name: []const u8) bool {
+    return std.mem.eql(u8, name, "select") or
+        std.mem.eql(u8, name, "order") or
+        std.mem.eql(u8, name, "columns") or
+        std.mem.eql(u8, name, "on_conflict") or
+        std.mem.eql(u8, name, "limit") or
+        std.mem.eql(u8, name, "offset");
+}
+
+fn find_top_level_select_separator(value: []const u8, needle: u8) ?usize {
+    var depth: usize = 0;
+    var in_quotes = false;
+    var escaped = false;
+
+    for (value, 0..) |c, i| {
+        if (in_quotes) {
+            if (escaped) {
+                escaped = false;
+                continue;
+            }
+            if (c == '\\') {
+                escaped = true;
+                continue;
+            }
+            if (c == '"') {
+                in_quotes = false;
+            }
+            continue;
+        }
+
+        switch (c) {
+            '"' => in_quotes = true,
+            '(' => depth += 1,
+            ')' => {
+                if (depth > 0) depth -= 1;
+            },
+            else => {},
+        }
+        if (depth == 0 and c == needle) return i;
+    }
+
+    return null;
+}
+
+fn find_top_level_alias_separator(value: []const u8) ?usize {
+    var depth: usize = 0;
+    var in_quotes = false;
+    var escaped = false;
+
+    for (value, 0..) |c, i| {
+        if (in_quotes) {
+            if (escaped) {
+                escaped = false;
+                continue;
+            }
+            if (c == '\\') {
+                escaped = true;
+                continue;
+            }
+            if (c == '"') {
+                in_quotes = false;
+            }
+            continue;
+        }
+
+        switch (c) {
+            '"' => in_quotes = true,
+            '(' => depth += 1,
+            ')' => {
+                if (depth > 0) depth -= 1;
+            },
+            ':' => {
+                const prev_is_colon = i > 0 and value[i - 1] == ':';
+                const next_is_colon = i + 1 < value.len and value[i + 1] == ':';
+                if (depth == 0 and !prev_is_colon and !next_is_colon) return i;
+            },
+            else => {},
+        }
+    }
+
+    return null;
+}
+
+fn parse_select_items(args: ngx_str_t, columns: *[MAX_SELECT_COLUMNS][]const u8) usize {
+    if (args.len == 0 or args.data == core.nullptr(u8)) {
+        return 0;
+    }
+
+    const query = core.slicify(u8, args.data, args.len);
+    var pos: usize = 0;
+
+    while (pos < query.len) {
+        if (pos + 7 <= query.len and std.mem.eql(u8, query[pos .. pos + 7], "select=")) {
+            pos += 7;
+
+            var count: usize = 0;
+            var item_start = pos;
+            var depth: usize = 0;
+            var in_quotes = false;
+            var escaped = false;
+
+            while (pos <= query.len and count < MAX_SELECT_COLUMNS) {
+                const at_end = pos == query.len;
+                if (!at_end) {
+                    const c = query[pos];
+                    if (in_quotes) {
+                        if (escaped) {
+                            escaped = false;
+                        } else if (c == '\\') {
+                            escaped = true;
+                        } else if (c == '"') {
+                            in_quotes = false;
+                        }
+                        pos += 1;
+                        continue;
+                    }
+
+                    switch (c) {
+                        '"' => {
+                            in_quotes = true;
+                            pos += 1;
+                            continue;
+                        },
+                        '(' => depth += 1,
+                        ')' => {
+                            if (depth > 0) depth -= 1;
+                        },
+                        ',' => if (depth == 0) {},
+                        '&' => if (depth == 0) {},
+                        else => {
+                            pos += 1;
+                            continue;
+                        },
+                    }
+                    if (c != ',' and c != '&') {
+                        pos += 1;
+                        continue;
+                    }
+                }
+
+                if (pos > item_start) {
+                    columns[count] = query[item_start..pos];
+                    count += 1;
+                }
+                if (at_end or query[pos] == '&') return count;
+                item_start = pos + 1;
+                pos += 1;
+            }
+            return count;
+        }
+
+        while (pos < query.len and query[pos] != '&') : (pos += 1) {}
+        pos += 1;
+    }
+
+    return 0;
+}
+
+fn append_select_item_sql(buf_out: []u8, pos_in: usize, raw_item: []const u8) ?usize {
+    const trimmed_item = trim_ascii_spaces(raw_item);
+    var decoded_buf: [512]u8 = undefined;
+    const item = decode_query_component_into(&decoded_buf, trimmed_item) orelse return null;
+    if (item.len == 0) return null;
+    if (std.mem.eql(u8, item, "*")) {
+        buf_out[pos_in] = '*';
+        return pos_in + 1;
+    }
+
+    var alias: ?[]const u8 = null;
+    var expr = item;
+    if (find_top_level_alias_separator(item)) |colon| {
+        alias = trim_ascii_spaces(item[0..colon]);
+        expr = trim_ascii_spaces(item[colon + 1 ..]);
+        if (alias.?.len == 0 or expr.len == 0) return null;
+    }
+
+    var cast: ?[]const u8 = null;
+    if (std.mem.lastIndexOf(u8, expr, "::")) |cast_idx| {
+        cast = trim_ascii_spaces(expr[cast_idx + 2 ..]);
+        expr = trim_ascii_spaces(expr[0..cast_idx]);
+        if (cast.?.len == 0 or expr.len == 0) return null;
+    }
+
+    var pos = pos_in;
+    pos = append_column_expression(buf_out, pos, expr) orelse return null;
+    if (cast) |cast_name| {
+        const cast_sep = "::";
+        @memcpy(buf_out[pos..][0..cast_sep.len], cast_sep);
+        pos += cast_sep.len;
+        pos = append_sql_identifier(buf_out, pos, cast_name);
+    }
+
+    if (alias) |alias_name| {
+        const as_sep = " AS ";
+        @memcpy(buf_out[pos..][0..as_sep.len], as_sep);
+        pos += as_sep.len;
+        pos = append_sql_identifier(buf_out, pos, alias_name);
+    } else if (std.mem.indexOf(u8, expr, "->") != null) {
+        var tail = expr;
+        var last_segment = expr;
+        while (std.mem.indexOf(u8, tail, "->")) |idx| {
+            tail = tail[idx + 2 ..];
+            if (tail.len > 0 and tail[0] == '>') tail = tail[1..];
+            last_segment = tail;
+        }
+        if (find_top_level_select_separator(last_segment, ':')) |_| return null;
+        var scratch: [256]u8 = undefined;
+        const alias_name = unescape_wrapped_quotes_into(&scratch, last_segment) orelse return null;
+        if (alias_name.len == 0) return null;
+        const as_sep = " AS ";
+        @memcpy(buf_out[pos..][0..as_sep.len], as_sep);
+        pos += as_sep.len;
+        pos = append_sql_identifier(buf_out, pos, alias_name);
+    }
+
+    return pos;
+}
+
+fn build_select_clause_from_args(buf_out: []u8, args: ngx_str_t) WhereClauseResult {
+    var items: [MAX_SELECT_COLUMNS][]const u8 = undefined;
+    const count = parse_select_items(args, &items);
+    if (count == 0) return .{ .len = 0, .invalid = false };
+
+    var pos: usize = 0;
+    for (items[0..count], 0..) |item, i| {
+        if (i > 0) {
+            buf_out[pos] = ',';
+            pos += 1;
+        }
+        pos = append_select_item_sql(buf_out, pos, item) orelse return .{ .len = 0, .invalid = true };
+    }
+
+    return .{ .len = pos, .invalid = false };
+}
+
+fn append_list_items_sql(
+    buf_out: []u8,
+    pos_in: usize,
+    raw_value: []const u8,
+    array_mode: bool,
+    wildcard_mode: bool,
+) ?usize {
+    if (raw_value.len < 2) return null;
+    const open = raw_value[0];
+    const close = raw_value[raw_value.len - 1];
+    if (!((open == '{' and close == '}') or (open == '(' and close == ')'))) return null;
+
+    var pos = pos_in;
+    if (array_mode) {
+        const array_prefix = "ARRAY[";
+        @memcpy(buf_out[pos..][0..array_prefix.len], array_prefix);
+        pos += array_prefix.len;
+    } else {
+        buf_out[pos] = '(';
+        pos += 1;
+    }
+
+    const inner = raw_value[1 .. raw_value.len - 1];
+    var item_start: usize = 0;
+    var first = true;
+    var depth: usize = 0;
+    var in_quotes = false;
+    var escaped = false;
+    var scratch: [512]u8 = undefined;
+    var i: usize = 0;
+    while (i <= inner.len) : (i += 1) {
+        const at_end = i == inner.len;
+        if (!at_end) {
+            const c = inner[i];
+            if (in_quotes) {
+                if (escaped) {
+                    escaped = false;
+                } else if (c == '\\') {
+                    escaped = true;
+                } else if (c == '"') {
+                    in_quotes = false;
+                }
+                continue;
+            }
+            switch (c) {
+                '"' => {
+                    in_quotes = true;
+                    continue;
+                },
+                '(' => depth += 1,
+                ')' => {
+                    if (depth > 0) depth -= 1;
+                },
+                ',' => {
+                    if (depth != 0) continue;
+                },
+                else => continue,
+            }
+            if (c != ',' or depth != 0) continue;
+        }
+
+        const raw_item = trim_ascii_spaces(inner[item_start..i]);
+        if (raw_item.len == 0) return null;
+        if (!first) {
+            buf_out[pos] = ',';
+            pos += 1;
+        }
+        first = false;
+
+        const item = unescape_wrapped_quotes_into(&scratch, raw_item) orelse return null;
+        if (std.ascii.eqlIgnoreCase(item, "null")) {
+            const null_str = "NULL";
+            @memcpy(buf_out[pos..][0..null_str.len], null_str);
+            pos += null_str.len;
+        } else if (!wildcard_mode and (std.ascii.eqlIgnoreCase(item, "true") or std.ascii.eqlIgnoreCase(item, "false") or is_numeric(item))) {
+            @memcpy(buf_out[pos..][0..item.len], item);
+            pos += item.len;
+        } else {
+            var item_buf: [512]u8 = undefined;
+            var item_view = item;
+            if (wildcard_mode) {
+                if (item.len > item_buf.len) return null;
+                for (item, 0..) |c, j| item_buf[j] = if (c == '*') '%' else c;
+                item_view = item_buf[0..item.len];
+            }
+            pos = append_sql_quoted(buf_out, pos, item_view);
+        }
+
+        item_start = i + 1;
+    }
+
+    if (array_mode) {
+        buf_out[pos] = ']';
+    } else {
+        buf_out[pos] = ')';
+    }
+    pos += 1;
+    return pos;
+}
+
+fn append_simple_filter_sql(buf_out: []u8, pos_in: usize, expr: []const u8) ?usize {
+    const first_dot = find_top_level_dot(expr) orelse return null;
+    const column_raw = trim_ascii_spaces(expr[0..first_dot]);
+    if (column_raw.len == 0) return null;
+
+    var rest = expr[first_dot + 1 ..];
+    var negated = false;
+    if (std.mem.startsWith(u8, rest, "not.")) {
+        negated = true;
+        rest = rest[4..];
+    }
+
+    const second_dot = find_top_level_dot(rest) orelse return null;
+    const op_token = trim_ascii_spaces(rest[0..second_dot]);
+    const value_raw = rest[second_dot + 1 ..];
+    if (op_token.len == 0 or value_raw.len == 0) return null;
+
+    var modifier: ?[]const u8 = null;
+    var fts_language: ?[]const u8 = null;
+    var op_name = op_token;
+    if (std.mem.indexOfScalar(u8, op_token, '(')) |paren| {
+        if (op_token[op_token.len - 1] != ')') return null;
+        op_name = op_token[0..paren];
+        const inner = op_token[paren + 1 .. op_token.len - 1];
+        if (std.mem.eql(u8, inner, "any") or std.mem.eql(u8, inner, "all")) {
+            modifier = inner;
+        } else {
+            fts_language = inner;
+        }
+    }
+
+    const op = FilterOp.fromString(op_name) orelse return null;
+    const wildcard_mode = op == .like or op == .ilike;
+
+    var pos = pos_in;
+    if (negated) {
+        const not_prefix = "NOT (";
+        @memcpy(buf_out[pos..][0..not_prefix.len], not_prefix);
+        pos += not_prefix.len;
+    }
+
+    pos = append_column_expression(buf_out, pos, column_raw) orelse return null;
+
+    switch (op) {
+        .fts, .plfts, .phfts, .wfts => {
+            const op_sql = " @@ ";
+            @memcpy(buf_out[pos..][0..op_sql.len], op_sql);
+            pos += op_sql.len;
+            const fn_name = switch (op) {
+                .fts => "to_tsquery",
+                .plfts => "plainto_tsquery",
+                .phfts => "phraseto_tsquery",
+                .wfts => "websearch_to_tsquery",
+                else => unreachable,
+            };
+            @memcpy(buf_out[pos..][0..fn_name.len], fn_name);
+            pos += fn_name.len;
+            buf_out[pos] = '(';
+            pos += 1;
+            if (fts_language) |lang| {
+                pos = append_sql_quoted(buf_out, pos, lang);
+                const sep = ", ";
+                @memcpy(buf_out[pos..][0..sep.len], sep);
+                pos += sep.len;
+            }
+            var scratch: [512]u8 = undefined;
+            const value = unescape_wrapped_quotes_into(&scratch, value_raw) orelse return null;
+            pos = append_sql_quoted(buf_out, pos, value);
+            buf_out[pos] = ')';
+            pos += 1;
+        },
+        else => {
+            const op_sql = op.toSql();
+            buf_out[pos] = ' ';
+            pos += 1;
+            @memcpy(buf_out[pos..][0..op_sql.len], op_sql);
+            pos += op_sql.len;
+            buf_out[pos] = ' ';
+            pos += 1;
+
+            if (modifier) |mod| {
+                if (!(op == .eq or op == .like or op == .ilike or op == .gt or op == .gte or op == .lt or op == .lte or op == .match or op == .imatch)) return null;
+                const any_all = if (std.mem.eql(u8, mod, "any")) "ANY (" else if (std.mem.eql(u8, mod, "all")) "ALL (" else return null;
+                @memcpy(buf_out[pos..][0..any_all.len], any_all);
+                pos += any_all.len;
+                pos = append_list_items_sql(buf_out, pos, value_raw, true, wildcard_mode) orelse return null;
+                buf_out[pos] = ')';
+                pos += 1;
+            } else switch (op) {
+                .is_ => {
+                    var scratch: [256]u8 = undefined;
+                    const value = unescape_wrapped_quotes_into(&scratch, value_raw) orelse return null;
+                    if (std.ascii.eqlIgnoreCase(value, "null")) {
+                        const null_str = "NULL";
+                        @memcpy(buf_out[pos..][0..null_str.len], null_str);
+                        pos += null_str.len;
+                    } else if (std.ascii.eqlIgnoreCase(value, "true")) {
+                        const true_str = "TRUE";
+                        @memcpy(buf_out[pos..][0..true_str.len], true_str);
+                        pos += true_str.len;
+                    } else if (std.ascii.eqlIgnoreCase(value, "false")) {
+                        const false_str = "FALSE";
+                        @memcpy(buf_out[pos..][0..false_str.len], false_str);
+                        pos += false_str.len;
+                    } else if (std.ascii.eqlIgnoreCase(value, "unknown")) {
+                        const unknown_str = "UNKNOWN";
+                        @memcpy(buf_out[pos..][0..unknown_str.len], unknown_str);
+                        pos += unknown_str.len;
+                    } else {
+                        pos = append_sql_quoted(buf_out, pos, value);
+                    }
+                },
+                .isdistinct => {
+                    var scratch: [256]u8 = undefined;
+                    const value = unescape_wrapped_quotes_into(&scratch, value_raw) orelse return null;
+                    if (std.ascii.eqlIgnoreCase(value, "null")) {
+                        const null_str = "NULL";
+                        @memcpy(buf_out[pos..][0..null_str.len], null_str);
+                        pos += null_str.len;
+                    } else if (std.ascii.eqlIgnoreCase(value, "true") or std.ascii.eqlIgnoreCase(value, "false") or std.ascii.eqlIgnoreCase(value, "unknown") or is_numeric(value)) {
+                        @memcpy(buf_out[pos..][0..value.len], value);
+                        pos += value.len;
+                    } else {
+                        pos = append_sql_quoted(buf_out, pos, value);
+                    }
+                },
+                .in_ => pos = append_list_items_sql(buf_out, pos, value_raw, false, false) orelse return null,
+                .cs, .cd, .ov, .sl, .sr, .nxr, .nxl, .adj => {
+                    var scratch: [512]u8 = undefined;
+                    const value = unescape_wrapped_quotes_into(&scratch, value_raw) orelse return null;
+                    pos = append_sql_quoted(buf_out, pos, value);
+                },
+                .match, .imatch => {
+                    var scratch: [512]u8 = undefined;
+                    const value = unescape_wrapped_quotes_into(&scratch, value_raw) orelse return null;
+                    pos = append_sql_quoted(buf_out, pos, value);
+                },
+                .like, .ilike => {
+                    var scratch: [512]u8 = undefined;
+                    const value = unescape_wrapped_quotes_into(&scratch, value_raw) orelse return null;
+                    var pattern_buf: [512]u8 = undefined;
+                    if (value.len > pattern_buf.len) return null;
+                    for (value, 0..) |c, i| pattern_buf[i] = if (c == '*') '%' else c;
+                    pos = append_sql_quoted(buf_out, pos, pattern_buf[0..value.len]);
+                },
+                else => {
+                    var scratch: [512]u8 = undefined;
+                    const value = unescape_wrapped_quotes_into(&scratch, value_raw) orelse return null;
+                    const path_is_numeric = std.mem.indexOf(u8, column_raw, "->") != null and !std.mem.containsAtLeast(u8, column_raw, 1, "->>") and is_numeric(value);
+                    if (path_is_numeric) {
+                        @memcpy(buf_out[pos..][0..value.len], value);
+                        pos += value.len;
+                    } else {
+                        pos = append_sql_quoted(buf_out, pos, value);
+                    }
+                },
+            }
+        },
+    }
+
+    if (negated) {
+        buf_out[pos] = ')';
+        pos += 1;
+    }
+
+    return pos;
+}
+
+fn append_filter_expression_sql(buf_out: []u8, pos_in: usize, raw_expr: []const u8) ?usize {
+    const expr = trim_ascii_spaces(raw_expr);
+    if (expr.len == 0) return null;
+
+    if (std.mem.startsWith(u8, expr, "or(") or std.mem.startsWith(u8, expr, "and(") or std.mem.startsWith(u8, expr, "not.or(") or std.mem.startsWith(u8, expr, "not.and(")) {
+        var negated = false;
+        var rest = expr;
+        if (std.mem.startsWith(u8, rest, "not.")) {
+            negated = true;
+            rest = rest[4..];
+        }
+
+        const joiner = if (std.mem.startsWith(u8, rest, "or(")) " OR " else if (std.mem.startsWith(u8, rest, "and(")) " AND " else return null;
+        const group_open = std.mem.indexOfScalar(u8, rest, '(') orelse return null;
+        if (rest[rest.len - 1] != ')') return null;
+        const inner = rest[group_open + 1 .. rest.len - 1];
+
+        var pos = pos_in;
+        if (negated) {
+            const not_prefix = "NOT (";
+            @memcpy(buf_out[pos..][0..not_prefix.len], not_prefix);
+            pos += not_prefix.len;
+        } else {
+            buf_out[pos] = '(';
+            pos += 1;
+        }
+
+        var start: usize = 0;
+        var depth: usize = 0;
+        var in_quotes = false;
+        var escaped = false;
+        var first = true;
+        var i: usize = 0;
+        while (i <= inner.len) : (i += 1) {
+            const at_end = i == inner.len;
+            if (!at_end) {
+                const c = inner[i];
+                if (in_quotes) {
+                    if (escaped) {
+                        escaped = false;
+                    } else if (c == '\\') {
+                        escaped = true;
+                    } else if (c == '"') {
+                        in_quotes = false;
+                    }
+                    continue;
+                }
+                switch (c) {
+                    '"' => {
+                        in_quotes = true;
+                        continue;
+                    },
+                    '(' => depth += 1,
+                    ')' => {
+                        if (depth > 0) depth -= 1;
+                    },
+                    ',' => {
+                        if (depth != 0) continue;
+                    },
+                    else => continue,
+                }
+                if (c != ',' or depth != 0) continue;
+            }
+
+            const item = trim_ascii_spaces(inner[start..i]);
+            if (item.len == 0) return null;
+            if (!first) {
+                @memcpy(buf_out[pos..][0..joiner.len], joiner);
+                pos += joiner.len;
+            }
+            first = false;
+            pos = append_filter_expression_sql(buf_out, pos, item) orelse return null;
+            start = i + 1;
+        }
+
+        buf_out[pos] = ')';
+        pos += 1;
+        return pos;
+    }
+
+    return append_simple_filter_sql(buf_out, pos_in, expr);
+}
+
+fn build_where_clause_from_args(buf_out: []u8, args: ngx_str_t) WhereClauseResult {
+    if (args.len == 0 or args.data == core.nullptr(u8)) {
+        return .{ .len = 0, .invalid = false };
+    }
+
+    const query = core.slicify(u8, args.data, args.len);
+    var pos: usize = 0;
+    var out_pos: usize = 0;
+    var first = true;
+
+    while (pos < query.len) {
+        var param_end = pos;
+        while (param_end < query.len and query[param_end] != '&') : (param_end += 1) {}
+        const param = query[pos..param_end];
+
+        if (param.len > 0) {
+            const eq = std.mem.indexOfScalar(u8, param, '=') orelse return .{ .len = 0, .invalid = true };
+            if (eq == 0 or eq >= param.len - 1) return .{ .len = 0, .invalid = true };
+
+            var key_buf: [512]u8 = undefined;
+            var value_buf: [2048]u8 = undefined;
+            const key = decode_query_component_into(&key_buf, param[0..eq]) orelse return .{ .len = 0, .invalid = true };
+            const value = decode_query_component_into(&value_buf, param[eq + 1 ..]) orelse return .{ .len = 0, .invalid = true };
+
+            if (!is_reserved_query_param(key)) {
+                var expr_buf: [3072]u8 = undefined;
+                var expr_len: usize = 0;
+                if (std.mem.eql(u8, key, "or") or std.mem.eql(u8, key, "and") or std.mem.eql(u8, key, "not.or") or std.mem.eql(u8, key, "not.and")) {
+                    if (key.len + value.len > expr_buf.len) return .{ .len = 0, .invalid = true };
+                    @memcpy(expr_buf[0..key.len], key);
+                    @memcpy(expr_buf[key.len..][0..value.len], value);
+                    expr_len = key.len + value.len;
+                } else {
+                    if (key.len + 1 + value.len > expr_buf.len) return .{ .len = 0, .invalid = true };
+                    @memcpy(expr_buf[0..key.len], key);
+                    expr_buf[key.len] = '.';
+                    @memcpy(expr_buf[key.len + 1 ..][0..value.len], value);
+                    expr_len = key.len + 1 + value.len;
+                }
+
+                if (!first) {
+                    const and_str = " AND ";
+                    @memcpy(buf_out[out_pos..][0..and_str.len], and_str);
+                    out_pos += and_str.len;
+                }
+                out_pos = append_filter_expression_sql(buf_out, out_pos, expr_buf[0..expr_len]) orelse return .{ .len = 0, .invalid = true };
+                first = false;
+            }
+        }
+
+        pos = param_end + 1;
+    }
+
+    return .{ .len = out_pos, .invalid = false };
+}
+
 /// ============================================================================
 /// HTTP Header Parsing
 /// ============================================================================
@@ -2317,24 +3443,6 @@ fn extract_header_value(r: [*c]ngx_http_request_t, header_name: []const u8) ?[]c
     return null;
 }
 
-/// Extract schema name from Accept-Profile or Content-Profile header
-/// Returns the schema name if found, otherwise returns null
-fn extract_schema_name(r: [*c]ngx_http_request_t, method: ngx_uint_t) ?[]const u8 {
-    // For GET/HEAD/DELETE requests, use Accept-Profile
-    if (method == http.NGX_HTTP_GET or method == http.NGX_HTTP_HEAD or method == http.NGX_HTTP_DELETE) {
-        if (extract_header_value(r, "accept-profile")) |schema| {
-            return schema;
-        }
-    }
-    // For POST/PATCH/PUT requests, use Content-Profile
-    else if (method == http.NGX_HTTP_POST or method == http.NGX_HTTP_PATCH or method == http.NGX_HTTP_PUT) {
-        if (extract_header_value(r, "content-profile")) |schema| {
-            return schema;
-        }
-    }
-    return null;
-}
-
 /// Build a schema-qualified table name
 /// If schema is provided, returns "schema.table", otherwise just "table"
 fn build_qualified_table_name(
@@ -2362,62 +3470,13 @@ fn build_qualified_table_name(
 /// Extract JWT token from Authorization header
 /// Expects: "Authorization: Bearer <token>"
 fn extract_jwt_token(r: [*c]ngx_http_request_t) ?[]const u8 {
-    if (extract_header_value(r, "authorization")) |auth_header| {
-        // Check if it starts with "Bearer "
-        const bearer_prefix = "Bearer ";
-        if (auth_header.len > bearer_prefix.len and std.mem.eql(u8, auth_header[0..bearer_prefix.len], bearer_prefix)) {
-            return auth_header[bearer_prefix.len..];
-        }
-    }
-    return null;
+    return pgrest_auth.extract_jwt_token(r);
 }
 
 /// Set PostgreSQL session claims by executing SET request.jwt TO <token>
 /// This allows PostgreSQL functions to access JWT data via current_setting('request.jwt')
 fn set_postgresql_jwt_claim(conn: ?*PGconn, jwt_token: []const u8) bool {
-    if (conn == null or jwt_token.len == 0) return true; // Skip if no JWT
-
-    // Build SQL: SET request.jwt TO '<token>'
-    // Escape single quotes in token (though JWT should be safe)
-    var query_buf: [8192]u8 = undefined;
-    var pos: usize = 0;
-
-    const set_prefix = "SET request.jwt TO '";
-    @memcpy(query_buf[pos..][0..set_prefix.len], set_prefix);
-    pos += set_prefix.len;
-
-    // Copy token, escaping single quotes
-    var i: usize = 0;
-    while (i < jwt_token.len and pos < query_buf.len - 10) : (i += 1) {
-        const c = jwt_token[i];
-        if (c == '\'') {
-            // Escape single quote
-            query_buf[pos] = '\'';
-            pos += 1;
-            query_buf[pos] = '\'';
-            pos += 1;
-        } else {
-            query_buf[pos] = c;
-            pos += 1;
-        }
-    }
-
-    const set_suffix = "'";
-    if (pos + set_suffix.len >= query_buf.len) return false;
-    @memcpy(query_buf[pos..][0..set_suffix.len], set_suffix);
-    pos += set_suffix.len;
-
-    query_buf[pos] = 0; // null terminate
-
-    // Execute the SET command
-    const result = pgExec(conn, &query_buf);
-    if (result == null) return false;
-
-    const status = pgResultStatus(result);
-    pgClear(result);
-
-    // PGRES_COMMAND_OK = 1 for successful SET
-    return status == PGRES_COMMAND_OK;
+    return pgrest_auth.set_postgresql_jwt_claim(conn, jwt_token);
 }
 
 // ============================================================================
@@ -2426,153 +3485,30 @@ fn set_postgresql_jwt_claim(conn: ?*PGconn, jwt_token: []const u8) bool {
 
 /// Base64url decode (JWT uses URL-safe base64 without padding)
 fn base64url_decode(input: []const u8, output: []u8) ?usize {
-    const b64_chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
-    var out_idx: usize = 0;
-    var bits: u32 = 0;
-    var bit_count: u32 = 0;
-
-    for (input) |c| {
-        const val: u32 = for (b64_chars, 0..) |bc, i| {
-            if (bc == c) break @intCast(i);
-        } else return null;
-
-        bits = (bits << 6) | val;
-        bit_count += 6;
-
-        if (bit_count >= 8) {
-            bit_count -= 8;
-            if (out_idx >= output.len) return null;
-            output[out_idx] = @truncate(bits >> @intCast(bit_count));
-            out_idx += 1;
-        }
-    }
-
-    return out_idx;
+    return pgrest_auth.base64url_decode(input, output);
 }
 
 /// Compute HMAC-SHA256 for JWT signature verification
 fn hmac_sha256(key: []const u8, data: []const u8, output: *[32]u8) bool {
-    const ctx = ssl.HMAC_CTX_new() orelse return false;
-    defer ssl.HMAC_CTX_free(ctx);
-
-    if (ssl.HMAC_Init_ex(ctx, key.ptr, @intCast(key.len), ssl.EVP_sha256(), null) != 1) {
-        return false;
-    }
-
-    if (ssl.HMAC_Update(ctx, data.ptr, data.len) != 1) {
-        return false;
-    }
-
-    var len: c_uint = 32;
-    if (ssl.HMAC_Final(ctx, output, &len) != 1) {
-        return false;
-    }
-
-    return len == 32;
+    return pgrest_auth.hmac_sha256(key, data, output);
 }
 
 /// Validate JWT signature (HS256)
 fn validate_jwt_hs256(token: []const u8, secret: []const u8) bool {
-    // Find the two dots separating header.payload.signature
-    const first_dot = std.mem.indexOfScalar(u8, token, '.') orelse return false;
-    const rest = token[first_dot + 1 ..];
-    const second_dot = std.mem.indexOfScalar(u8, rest, '.') orelse return false;
-
-    const header_payload = token[0 .. first_dot + 1 + second_dot];
-    const signature_b64 = rest[second_dot + 1 ..];
-
-    // Decode signature
-    var signature: [256]u8 = undefined;
-    const sig_len = base64url_decode(signature_b64, &signature) orelse return false;
-
-    if (sig_len != 32) return false; // HS256 produces 32 bytes
-
-    // Compute expected signature
-    var expected: [32]u8 = undefined;
-    if (!hmac_sha256(secret, header_payload, &expected)) {
-        return false;
-    }
-
-    // Constant-time comparison
-    var diff: u8 = 0;
-    for (0..32) |i| {
-        diff |= signature[i] ^ expected[i];
-    }
-
-    return diff == 0;
+    return pgrest_auth.validate_jwt_hs256(token, secret);
 }
 
 /// Extract role claim from JWT payload
 /// Returns the role string or null if not found/invalid
 fn extract_jwt_role(pool: [*c]ngx_pool_t, jwt_token: []const u8, role_claim: []const u8) ?[]const u8 {
-    // Find the two dots
-    const first_dot = std.mem.indexOfScalar(u8, jwt_token, '.') orelse return null;
-    const rest = jwt_token[first_dot + 1 ..];
-    const second_dot = std.mem.indexOfScalar(u8, rest, '.') orelse return null;
-
-    const payload_b64 = rest[0..second_dot];
-
-    // Decode payload
-    var payload_buf: [4096]u8 = undefined;
-    const payload_len = base64url_decode(payload_b64, &payload_buf) orelse return null;
-    const payload = payload_buf[0..payload_len];
-
-    // Parse JSON
-    var cj = CJSON.init(pool);
-    const json = cj.decode(ngx_str_t{ .data = @constCast(payload.ptr), .len = payload.len }) catch return null;
-    defer cj.free(json);
-
-    // Build JSONPath query for the role claim
-    var query_buf: [128]u8 = undefined;
-    const query = std.fmt.bufPrint(&query_buf, "$.{s}", .{role_claim}) catch return null;
-
-    // Extract role claim
-    const role_node = CJSON.query(json, query) orelse return null;
-    const role_str = CJSON.stringValue(role_node) orelse return null;
-
-    return core.slicify(u8, role_str.data, role_str.len);
+    return pgrest_auth.extract_jwt_role(pool, jwt_token, role_claim);
 }
 
 /// Set PostgreSQL session role from JWT 'role' claim
 /// This allows PostgreSQL to enforce row-level security based on JWT role
 /// Executes: SET ROLE '<role>'
 fn set_postgresql_role(conn: ?*PGconn, role: []const u8) bool {
-    if (conn == null or role.len == 0) return true;
-
-    // Build SQL: SET ROLE '<role>'
-    var query_buf: [512]u8 = undefined;
-    var pos: usize = 0;
-
-    const set_prefix = "SET ROLE '";
-    @memcpy(query_buf[pos..][0..set_prefix.len], set_prefix);
-    pos += set_prefix.len;
-
-    // Copy role, escaping single quotes
-    for (role) |c| {
-        if (pos >= query_buf.len - 10) break;
-        if (c == '\'') {
-            query_buf[pos] = '\'';
-            pos += 1;
-            query_buf[pos] = '\'';
-            pos += 1;
-        } else {
-            query_buf[pos] = c;
-            pos += 1;
-        }
-    }
-
-    query_buf[pos] = '\'';
-    pos += 1;
-    query_buf[pos] = 0;
-
-    // Execute the SET ROLE command
-    const result = pgExec(conn, &query_buf);
-    if (result == null) return false;
-
-    const status = pgResultStatus(result);
-    pgClear(result);
-
-    return status == PGRES_COMMAND_OK;
+    return pgrest_auth.set_postgresql_role(conn, role);
 }
 
 /// ============================================================================
@@ -3033,6 +3969,518 @@ const RpcCall = struct {
     raw_body_len: usize = 0,
 };
 
+const RpcVolatility = enum(u8) {
+    volatile_fn,
+    stable,
+    immutable,
+};
+
+const RpcReturnKind = enum(u8) {
+    scalar,
+    composite_single,
+    composite_setof,
+};
+
+const RpcSingleUnnamedKind = enum(u8) {
+    none,
+    json,
+    text,
+    xml,
+    bytea,
+};
+
+const RpcMetadata = struct {
+    volatility: RpcVolatility = .volatile_fn,
+    return_kind: RpcReturnKind = .scalar,
+    single_unnamed_kind: RpcSingleUnnamedKind = .none,
+    has_variadic: bool = false,
+    variadic_param_name_len: usize = 0,
+    variadic_param_name_buf: [128]u8 = std.mem.zeroes([128]u8),
+    input_param_names_len: usize = 0,
+    input_param_names_buf: [256]u8 = std.mem.zeroes([256]u8),
+    found: bool = false,
+};
+
+fn rpc_variadic_param_name(metadata: *const RpcMetadata) []const u8 {
+    return metadata.variadic_param_name_buf[0..metadata.variadic_param_name_len];
+}
+
+fn rpc_input_param_names(metadata: *const RpcMetadata) []const u8 {
+    return metadata.input_param_names_buf[0..metadata.input_param_names_len];
+}
+
+fn rpc_metadata_has_named_param(metadata: *const RpcMetadata, name: []const u8) bool {
+    if (name.len == 0) return false;
+    var it = std.mem.splitScalar(u8, rpc_input_param_names(metadata), ',');
+    while (it.next()) |part| {
+        if (std.mem.eql(u8, part, name)) return true;
+    }
+    return false;
+}
+
+fn rpc_single_unnamed_kind_type_name(kind: RpcSingleUnnamedKind) []const u8 {
+    return switch (kind) {
+        .none => "",
+        .json => "json",
+        .text => "text",
+        .xml => "xml",
+        .bytea => "bytea",
+    };
+}
+
+fn rpc_single_unnamed_kind_media_matches(kind: RpcSingleUnnamedKind, body_format: RequestBodyFormat) bool {
+    return switch (kind) {
+        .json => body_format == .json,
+        .text => body_format == .plain_text,
+        .xml => body_format == .xml,
+        .bytea => body_format == .binary,
+        .none => false,
+    };
+}
+
+fn rpc_allow_single_unnamed_fallback(body_format: RequestBodyFormat, prefer_single_object: bool) bool {
+    if (prefer_single_object) return false;
+    return switch (body_format) {
+        .json, .plain_text, .xml, .binary => true,
+        else => false,
+    };
+}
+
+fn rpc_method_allowed(method: ngx_uint_t, metadata: RpcMetadata) bool {
+    return switch (method) {
+        http.NGX_HTTP_GET, http.NGX_HTTP_HEAD => metadata.volatility != .volatile_fn,
+        http.NGX_HTTP_POST => true,
+        else => false,
+    };
+}
+
+fn rpc_allow_header(metadata: RpcMetadata) []const u8 {
+    return if (metadata.volatility == .volatile_fn)
+        "OPTIONS,POST"
+    else
+        "OPTIONS,GET,HEAD,POST";
+}
+
+fn rpc_returns_table_like(metadata: RpcMetadata) bool {
+    return metadata.return_kind == .composite_single or metadata.return_kind == .composite_setof;
+}
+
+fn build_rpc_metadata_query(
+    query_buf: []u8,
+    schema_name: ?[]const u8,
+    function_name: []const u8,
+    requested_param_count: usize,
+    allow_single_unnamed_fallback: bool,
+) usize {
+    var pos: usize = 0;
+    const prefix =
+        "SELECT p.provolatile, p.proretset, (t.typtype = 'c' OR COALESCE(p.proargmodes::text[] && '{t,b,o}', false)) AS rettype_is_composite, p.provariadic > 0 AS has_variadic, COALESCE(meta.unnamed_count, 0), COALESCE(meta.single_unnamed_kind, ''), COALESCE(meta.variadic_param_name, ''), COALESCE(meta.input_param_names, ''), CASE WHEN ";
+    @memcpy(query_buf[pos..][0..prefix.len], prefix);
+    pos += prefix.len;
+
+    const requested_fit = std.fmt.bufPrint(query_buf[pos..], "{d} BETWEEN GREATEST(p.pronargs - p.pronargdefaults, 0) AND p.pronargs THEN 0 WHEN ", .{requested_param_count}) catch return pos;
+    pos += requested_fit.len;
+
+    const fallback_flag = if (allow_single_unnamed_fallback) "TRUE" else "FALSE";
+    @memcpy(query_buf[pos..][0..fallback_flag.len], fallback_flag);
+    pos += fallback_flag.len;
+
+    const middle_prefix =
+        " AND COALESCE(meta.unnamed_count, 0) = 1 AND COALESCE(meta.single_unnamed_kind, '') <> '' THEN 1 WHEN p.pronargs = 0 THEN 2 ELSE 3 END AS match_rank FROM pg_proc p JOIN pg_namespace pn ON pn.oid = p.pronamespace JOIN pg_type t ON t.oid = p.prorettype LEFT JOIN (SELECT p2.oid, COUNT(*) FILTER (WHERE COALESCE(a.name, '') = '') AS unnamed_count, MAX(CASE WHEN COALESCE(a.name, '') = '' THEN CASE format_type(a.type_oid, NULL) WHEN 'json' THEN 'json' WHEN 'jsonb' THEN 'json' WHEN 'text' THEN 'text' WHEN 'xml' THEN 'xml' WHEN 'bytea' THEN 'bytea' ELSE '' END ELSE '' END) AS single_unnamed_kind, MAX(CASE WHEN a.mode = 'v' THEN COALESCE(a.name, '') ELSE '' END) AS variadic_param_name, STRING_AGG(CASE WHEN COALESCE(a.name, '') <> '' THEN COALESCE(a.name, '') ELSE NULL END, ',' ORDER BY a.ord) AS input_param_names FROM pg_proc p2 LEFT JOIN LATERAL (SELECT ord, COALESCE(p2.proargnames[ord], '') AS name, COALESCE(p2.proallargtypes[ord], p2.proargtypes[ord - 1]) AS type_oid, COALESCE(p2.proargmodes[ord], 'i') AS mode FROM generate_series(1, COALESCE(array_length(p2.proallargtypes, 1), array_length(p2.proargnames, 1), p2.pronargs)) ord) a ON TRUE WHERE a.type_oid IS NOT NULL AND a.mode IN ('i','v') GROUP BY p2.oid) meta ON meta.oid = p.oid WHERE p.prokind = 'f' AND pn.nspname = ";
+    @memcpy(query_buf[pos..][0..middle_prefix.len], middle_prefix);
+    pos += middle_prefix.len;
+    pos = append_sql_quoted(query_buf, pos, schema_name orelse "public");
+
+    const middle = " AND p.proname = ";
+    @memcpy(query_buf[pos..][0..middle.len], middle);
+    pos += middle.len;
+    pos = append_sql_quoted(query_buf, pos, function_name);
+
+    const suffix = " ORDER BY match_rank ASC, p.pronargs ASC LIMIT 1";
+    @memcpy(query_buf[pos..][0..suffix.len], suffix);
+    pos += suffix.len;
+    return pos;
+}
+
+fn parse_rpc_metadata_result(result: ?*PGresult) RpcMetadata {
+    if (result == null or pgNtuples(result) <= 0 or pgNfields(result) < 9) return .{};
+
+    if (pgGetisnull(result, 0, 8) == 0) {
+        const rank_ptr = pgGetvalue(result, 0, 8);
+        const raw_rank = if (rank_ptr != null) std.mem.span(rank_ptr) else "2";
+        const rank = std.fmt.parseInt(usize, raw_rank, 10) catch 2;
+        if (rank >= 3) return .{};
+    }
+
+    var metadata: RpcMetadata = .{ .found = true };
+
+    if (pgGetisnull(result, 0, 0) == 0) {
+        const volatility_ptr = pgGetvalue(result, 0, 0);
+        const volatility_tag: u8 = if (volatility_ptr != null) volatility_ptr[0] else 'v';
+        metadata.volatility = switch (volatility_tag) {
+            'i' => .immutable,
+            's' => .stable,
+            else => .volatile_fn,
+        };
+    }
+
+    const proretset_ptr = pgGetvalue(result, 0, 1);
+    const proretset = pgGetisnull(result, 0, 1) == 0 and proretset_ptr != null and proretset_ptr[0] == 't';
+    const composite_ptr = pgGetvalue(result, 0, 2);
+    const rettype_is_composite = pgGetisnull(result, 0, 2) == 0 and composite_ptr != null and composite_ptr[0] == 't';
+    metadata.return_kind = if (rettype_is_composite)
+        (if (proretset) .composite_setof else .composite_single)
+    else
+        .scalar;
+
+    const variadic_ptr = pgGetvalue(result, 0, 3);
+    metadata.has_variadic = pgGetisnull(result, 0, 3) == 0 and variadic_ptr != null and variadic_ptr[0] == 't';
+
+    var unnamed_count: usize = 0;
+    if (pgGetisnull(result, 0, 4) == 0) {
+        const raw_ptr = pgGetvalue(result, 0, 4);
+        const raw = if (raw_ptr != null) std.mem.span(raw_ptr) else "0";
+        unnamed_count = std.fmt.parseInt(usize, raw, 10) catch 0;
+    }
+
+    if (unnamed_count == 1 and pgGetisnull(result, 0, 5) == 0) {
+        const raw_kind_ptr = pgGetvalue(result, 0, 5);
+        const raw_kind = if (raw_kind_ptr != null) std.mem.span(raw_kind_ptr) else "";
+        metadata.single_unnamed_kind = if (std.mem.eql(u8, raw_kind, "json"))
+            .json
+        else if (std.mem.eql(u8, raw_kind, "text"))
+            .text
+        else if (std.mem.eql(u8, raw_kind, "xml"))
+            .xml
+        else if (std.mem.eql(u8, raw_kind, "bytea"))
+            .bytea
+        else
+            .none;
+    }
+
+    if (metadata.has_variadic and pgGetisnull(result, 0, 6) == 0) {
+        const raw_name_ptr = pgGetvalue(result, 0, 6);
+        const raw_name = if (raw_name_ptr != null) std.mem.span(raw_name_ptr) else "";
+        if (raw_name.len > 0 and raw_name.len <= metadata.variadic_param_name_buf.len) {
+            @memcpy(metadata.variadic_param_name_buf[0..raw_name.len], raw_name);
+            metadata.variadic_param_name_len = raw_name.len;
+        }
+    }
+
+    if (pgGetisnull(result, 0, 7) == 0) {
+        const raw_params_ptr = pgGetvalue(result, 0, 7);
+        const raw_params = if (raw_params_ptr != null) std.mem.span(raw_params_ptr) else "";
+        if (raw_params.len > 0 and raw_params.len <= metadata.input_param_names_buf.len) {
+            @memcpy(metadata.input_param_names_buf[0..raw_params.len], raw_params);
+            metadata.input_param_names_len = raw_params.len;
+        }
+    }
+
+    return metadata;
+}
+
+fn filter_rpc_query_args_by_metadata(
+    args: ngx_str_t,
+    metadata: *const RpcMetadata,
+    include_rpc_args: bool,
+    out: []u8,
+) ngx_str_t {
+    if (args.len == 0 or args.data == core.nullptr(u8)) {
+        return ngx_str_t{ .data = core.nullptr(u8), .len = 0 };
+    }
+
+    const query = core.slicify(u8, args.data, args.len);
+    var pos: usize = 0;
+    var start: usize = 0;
+
+    while (start <= query.len) {
+        var end = start;
+        while (end < query.len and query[end] != '&') : (end += 1) {}
+
+        const pair = query[start..end];
+        if (pair.len > 0) {
+            const eq = std.mem.indexOfScalar(u8, pair, '=') orelse pair.len;
+            const raw_name = pair[0..eq];
+            const matches_rpc = rpc_metadata_has_named_param(metadata, raw_name);
+            if (matches_rpc == include_rpc_args) {
+                if (pos > 0) {
+                    out[pos] = '&';
+                    pos += 1;
+                }
+                @memcpy(out[pos..][0..pair.len], pair);
+                pos += pair.len;
+            }
+        }
+
+        if (end == query.len) break;
+        start = end + 1;
+    }
+
+    return if (pos == 0)
+        ngx_str_t{ .data = core.nullptr(u8), .len = 0 }
+    else
+        ngx_str_t{ .data = out.ptr, .len = pos };
+}
+
+fn append_variadic_scalar(buf_out: []u8, pos_in: usize, param: RpcParam) usize {
+    if (param.is_null) {
+        const null_str = "NULL";
+        @memcpy(buf_out[pos_in..][0..null_str.len], null_str);
+        return pos_in + null_str.len;
+    }
+    if (param.is_boolean or param.is_numeric or param.is_raw) {
+        @memcpy(buf_out[pos_in..][0..param.value.len], param.value);
+        return pos_in + param.value.len;
+    }
+    return append_sql_quoted(buf_out, pos_in, param.value);
+}
+
+fn collapse_rpc_variadic_param(rpc_call: *RpcCall, metadata: *const RpcMetadata) void {
+    const variadic_name = rpc_variadic_param_name(metadata);
+    if (!metadata.has_variadic or variadic_name.len == 0) return;
+
+    var match_indexes: [MAX_RPC_PARAMS]usize = undefined;
+    var match_count: usize = 0;
+    for (0..rpc_call.param_count) |i| {
+        if (std.mem.eql(u8, rpc_call.params[i].name, variadic_name)) {
+            match_indexes[match_count] = i;
+            match_count += 1;
+        }
+    }
+    if (match_count <= 1) return;
+
+    const first_index = match_indexes[0];
+    var pos: usize = 0;
+    const prefix = "ARRAY[";
+    @memcpy(rpc_call.params[first_index].value_buf[pos..][0..prefix.len], prefix);
+    pos += prefix.len;
+
+    for (match_indexes[0..match_count], 0..) |param_index, arr_i| {
+        if (arr_i > 0) {
+            rpc_call.params[first_index].value_buf[pos] = ',';
+            pos += 1;
+        }
+        pos = append_variadic_scalar(rpc_call.params[first_index].value_buf[0..], pos, rpc_call.params[param_index]);
+    }
+
+    rpc_call.params[first_index].value_buf[pos] = ']';
+    pos += 1;
+    rpc_call.params[first_index].value = rpc_call.params[first_index].value_buf[0..pos];
+    rpc_call.params[first_index].is_null = false;
+    rpc_call.params[first_index].is_numeric = false;
+    rpc_call.params[first_index].is_boolean = false;
+    rpc_call.params[first_index].is_raw = true;
+    rpc_call.params[first_index].name = variadic_name;
+
+    var new_count: usize = 0;
+    for (0..rpc_call.param_count) |i| {
+        var skip = false;
+        if (i != first_index) {
+            for (match_indexes[1..match_count]) |matched_index| {
+                if (i == matched_index) {
+                    skip = true;
+                    break;
+                }
+            }
+        }
+        if (skip) continue;
+        if (new_count != i) {
+            rpc_call.params[new_count] = rpc_call.params[i];
+        }
+        new_count += 1;
+    }
+    rpc_call.param_count = new_count;
+}
+
+fn write_ident_quoted(buf_out: []u8, pos_in: usize, ident: []const u8) usize {
+    var pos = pos_in;
+    buf_out[pos] = '"';
+    pos += 1;
+    for (ident) |c| {
+        if (c == '"') {
+            buf_out[pos] = '"';
+            pos += 1;
+        }
+        buf_out[pos] = c;
+        pos += 1;
+    }
+    buf_out[pos] = '"';
+    pos += 1;
+    return pos;
+}
+
+fn build_rpc_table_query(
+    query_buf: []u8,
+    schema_name: ?[]const u8,
+    function_name: []const u8,
+    rpc_params: *const RpcCall,
+    where_clause: []const u8,
+    select_clause: []const u8,
+    order_specs: []const OrderSpec,
+    pagination: Pagination,
+) usize {
+    var pos: usize = 0;
+    const select_prefix = "SELECT ";
+    @memcpy(query_buf[pos..][0..select_prefix.len], select_prefix);
+    pos += select_prefix.len;
+
+    if (select_clause.len > 0) {
+        @memcpy(query_buf[pos..][0..select_clause.len], select_clause);
+        pos += select_clause.len;
+    } else {
+        query_buf[pos] = '*';
+        pos += 1;
+    }
+
+    const from_prefix = " FROM ";
+    @memcpy(query_buf[pos..][0..from_prefix.len], from_prefix);
+    pos += from_prefix.len;
+
+    if (schema_name) |schema| {
+        pos = write_ident_quoted(query_buf, pos, schema);
+        query_buf[pos] = '.';
+        pos += 1;
+    }
+    pos = write_ident_quoted(query_buf, pos, function_name);
+    query_buf[pos] = '(';
+    pos += 1;
+
+    var i: usize = 0;
+    while (i < rpc_params.param_count) : (i += 1) {
+        if (i > 0) {
+            query_buf[pos] = ',';
+            pos += 1;
+            query_buf[pos] = ' ';
+            pos += 1;
+        }
+
+        const param = rpc_params.params[i];
+        if (param.name.len > 0) {
+            @memcpy(query_buf[pos..][0..param.name.len], param.name);
+            pos += param.name.len;
+            query_buf[pos] = ' ';
+            pos += 1;
+            query_buf[pos] = '=';
+            pos += 1;
+            query_buf[pos] = '>';
+            pos += 1;
+            query_buf[pos] = ' ';
+            pos += 1;
+        }
+
+        if (param.is_raw) {
+            @memcpy(query_buf[pos..][0..param.value.len], param.value);
+            pos += param.value.len;
+        } else if (param.is_null) {
+            const null_str = "NULL";
+            @memcpy(query_buf[pos..][0..null_str.len], null_str);
+            pos += null_str.len;
+        } else if (param.is_boolean or param.is_numeric) {
+            @memcpy(query_buf[pos..][0..param.value.len], param.value);
+            pos += param.value.len;
+        } else {
+            pos = append_sql_quoted(query_buf, pos, param.value);
+        }
+    }
+
+    query_buf[pos] = ')';
+    pos += 1;
+
+    if (where_clause.len > 0) {
+        const where_prefix = " WHERE ";
+        @memcpy(query_buf[pos..][0..where_prefix.len], where_prefix);
+        pos += where_prefix.len;
+        @memcpy(query_buf[pos..][0..where_clause.len], where_clause);
+        pos += where_clause.len;
+    }
+
+    if (order_specs.len > 0) {
+        const order_prefix = " ORDER BY ";
+        @memcpy(query_buf[pos..][0..order_prefix.len], order_prefix);
+        pos += order_prefix.len;
+        for (order_specs, 0..) |spec, order_i| {
+            if (order_i > 0) {
+                query_buf[pos] = ',';
+                pos += 1;
+            }
+            const expr = spec.expr();
+            pos = append_column_expression(query_buf, pos, expr) orelse return pos;
+
+            if (spec.dir == .desc) {
+                const desc_str = " DESC";
+                @memcpy(query_buf[pos..][0..desc_str.len], desc_str);
+                pos += desc_str.len;
+            } else {
+                const asc_str = " ASC";
+                @memcpy(query_buf[pos..][0..asc_str.len], asc_str);
+                pos += asc_str.len;
+            }
+
+            switch (spec.nulls) {
+                .none => {},
+                .first => {
+                    const nulls_first = " NULLS FIRST";
+                    @memcpy(query_buf[pos..][0..nulls_first.len], nulls_first);
+                    pos += nulls_first.len;
+                },
+                .last => {
+                    const nulls_last = " NULLS LAST";
+                    @memcpy(query_buf[pos..][0..nulls_last.len], nulls_last);
+                    pos += nulls_last.len;
+                },
+            }
+        }
+    }
+
+    if (pagination.limit) |limit| {
+        const limit_str = std.fmt.bufPrint(query_buf[pos..], " LIMIT {d}", .{limit}) catch return pos;
+        pos += limit_str.len;
+    }
+    if (pagination.offset) |offset| {
+        const offset_str = std.fmt.bufPrint(query_buf[pos..], " OFFSET {d}", .{offset}) catch return pos;
+        pos += offset_str.len;
+    }
+
+    return pos;
+}
+
+fn rpc_method_not_allowed_response(r: [*c]ngx_http_request_t, metadata: RpcMetadata) ngx_int_t {
+    _ = append_response_header(r, "Allow", "allow", rpc_allow_header(metadata));
+    return send_json_error(r, NGX_HTTP_METHOD_NOT_ALLOWED, "{\"message\":\"The HTTP method is not allowed for this RPC function\"}");
+}
+
+fn rpc_metadata_not_found_response(r: [*c]ngx_http_request_t) ngx_int_t {
+    return send_json_error(r, http.NGX_HTTP_NOT_FOUND, "{\"message\":\"RPC function metadata not found\"}");
+}
+
+fn apply_rpc_single_unnamed_param(
+    metadata: RpcMetadata,
+    body_format: RequestBodyFormat,
+    body_data: []const u8,
+    rpc_call: *RpcCall,
+) bool {
+    if (metadata.single_unnamed_kind == .none) return false;
+    if (!rpc_single_unnamed_kind_media_matches(metadata.single_unnamed_kind, body_format)) return false;
+
+    _ = rpc_single_unnamed_kind_type_name(metadata.single_unnamed_kind);
+    set_rpc_single_raw_param(rpc_call, "", body_data);
+    rpc_call.params[0].is_raw = false;
+    return true;
+}
+
+fn resolved_default_schema_name(resolved_schema: ResolvedSchema) ?[]const u8 {
+    if (resolved_schema.name) |name| return name;
+    if (resolved_schema.allowed_raw.len == 0) return null;
+
+    var it = std.mem.splitScalar(u8, resolved_schema.allowed_raw, ',');
+    while (it.next()) |part| {
+        const schema = trim_ascii_spaces(part);
+        if (schema.len == 0) continue;
+        if (is_valid_schema_identifier(schema)) return schema;
+    }
+    return null;
+}
+
 /// Detect if URI path points to RPC endpoint (/rpc/function_name)
 /// Returns true if path starts with /rpc/
 fn is_rpc_endpoint(uri: ngx_str_t) bool {
@@ -3271,8 +4719,8 @@ fn parse_rpc_params(args: ngx_str_t, rpc_call: *RpcCall) void {
             rpc_call.params[count].name = param[0..eq_pos];
             rpc_call.params[count].value = param[eq_pos + 1 ..];
             rpc_call.params[count].is_null = false;
-            rpc_call.params[count].is_numeric = false;
-            rpc_call.params[count].is_boolean = false;
+            rpc_call.params[count].is_numeric = is_numeric(rpc_call.params[count].value);
+            rpc_call.params[count].is_boolean = std.mem.eql(u8, rpc_call.params[count].value, "true") or std.mem.eql(u8, rpc_call.params[count].value, "false");
             rpc_call.params[count].is_raw = false;
             count += 1;
         }
@@ -3345,6 +4793,7 @@ fn set_rpc_single_raw_param(rpc_call: *RpcCall, name: []const u8, body: []const 
 /// Handles JSON arrays without quotes, regular strings with quotes
 fn build_rpc_call_query(
     query_buf: []u8,
+    schema_name: ?[]const u8,
     function_name: []const u8,
     rpc_params: *const RpcCall,
 ) usize {
@@ -3353,6 +4802,13 @@ fn build_rpc_call_query(
     const select_str = "SELECT ";
     @memcpy(query_buf[pos..][0..select_str.len], select_str);
     pos += select_str.len;
+
+    if (schema_name) |schema| {
+        @memcpy(query_buf[pos..][0..schema.len], schema);
+        pos += schema.len;
+        query_buf[pos] = '.';
+        pos += 1;
+    }
 
     // Function name
     @memcpy(query_buf[pos..][0..function_name.len], function_name);
@@ -3374,19 +4830,19 @@ fn build_rpc_call_query(
 
         const param = rpc_params.params[i];
 
-        // Parameter name
-        @memcpy(query_buf[pos..][0..param.name.len], param.name);
-        pos += param.name.len;
+        if (param.name.len > 0) {
+            @memcpy(query_buf[pos..][0..param.name.len], param.name);
+            pos += param.name.len;
 
-        // =>
-        query_buf[pos] = ' ';
-        pos += 1;
-        query_buf[pos] = '=';
-        pos += 1;
-        query_buf[pos] = '>';
-        pos += 1;
-        query_buf[pos] = ' ';
-        pos += 1;
+            query_buf[pos] = ' ';
+            pos += 1;
+            query_buf[pos] = '=';
+            pos += 1;
+            query_buf[pos] = '>';
+            pos += 1;
+            query_buf[pos] = ' ';
+            pos += 1;
+        }
 
         // Parameter value handling
         // JSON arrays/objects are passed without quotes
@@ -3477,6 +4933,956 @@ fn parse_write_body_fields(
     };
 }
 
+fn parse_json_scalar_into_field(item: ?*cjson.cJSON, field: *JsonField) bool {
+    if (item == null) return false;
+
+    if (cjson.cJSON_IsNull(item) == 1) {
+        field.*.value = "";
+        field.*.is_null = true;
+        field.*.is_number = false;
+        field.*.is_boolean = false;
+        field.*.is_missing = false;
+        return true;
+    }
+
+    if (cjson.cJSON_IsNumber(item) == 1) {
+        field.*.value = format_json_number(cjson.cJSON_GetNumberValue(item), &field.value_buf);
+        field.*.is_null = false;
+        field.*.is_number = true;
+        field.*.is_boolean = false;
+        field.*.is_missing = false;
+        return true;
+    }
+
+    if (cjson.cJSON_IsString(item) == 1) {
+        if (cjson.cJSON_GetStringValue(item)) |str| {
+            var str_len: usize = 0;
+            while (str[str_len] != 0 and str_len < field.value_buf.len) : (str_len += 1) {}
+            field.*.value = str[0..str_len];
+        } else {
+            field.*.value = "";
+        }
+        field.*.is_null = false;
+        field.*.is_number = false;
+        field.*.is_boolean = false;
+        field.*.is_missing = false;
+        return true;
+    }
+
+    if (cjson.cJSON_IsBool(item) == 1) {
+        field.*.value = if (cjson.cJSON_IsTrue(item) == 1) "true" else "false";
+        field.*.is_null = false;
+        field.*.is_number = false;
+        field.*.is_boolean = true;
+        field.*.is_missing = false;
+        return true;
+    }
+
+    return false;
+}
+
+fn find_json_object_field(row_obj: ?*cjson.cJSON, field_name: []const u8) ?*cjson.cJSON {
+    if (row_obj == null or cjson.cJSON_IsObject(row_obj) != 1) return null;
+
+    var it = cjson.CJSON.Iterator.init(row_obj);
+    while (it.next()) |item| {
+        if (item.*.string == core.nullptr(u8)) continue;
+        var name_len: usize = 0;
+        while (item.*.string[name_len] != 0 and name_len < 256) : (name_len += 1) {}
+        if (std.mem.eql(u8, item.*.string[0..name_len], field_name)) return item;
+    }
+
+    return null;
+}
+
+fn parse_json_array_row(
+    row_obj: ?*cjson.cJSON,
+    fields: *[MAX_COLUMNS]JsonField,
+    allowed_columns: []const []const u8,
+    prefer_missing_default: bool,
+) ?usize {
+    if (row_obj == null or cjson.cJSON_IsObject(row_obj) != 1) return null;
+
+    var count: usize = 0;
+
+    if (allowed_columns.len > 0) {
+        for (allowed_columns) |allowed_raw| {
+            if (count >= MAX_COLUMNS) return null;
+
+            var decoded_name_buf: [256]u8 = undefined;
+            const decoded_name = decode_query_component_into(&decoded_name_buf, allowed_raw) orelse return null;
+            const name = trim_ascii_spaces(decoded_name);
+            if (name.len == 0 or name.len > fields[count].name_buf.len) return null;
+
+            @memcpy(fields[count].name_buf[0..name.len], name);
+            fields[count].name = fields[count].name_buf[0..name.len];
+
+            const item = find_json_object_field(row_obj, fields[count].name);
+            if (item == null) {
+                fields[count].value = "";
+                fields[count].is_number = false;
+                fields[count].is_boolean = false;
+                fields[count].is_null = !prefer_missing_default;
+                fields[count].is_missing = true;
+                count += 1;
+                continue;
+            }
+
+            if (!parse_json_scalar_into_field(item, &fields[count])) return null;
+            count += 1;
+        }
+
+        return count;
+    }
+
+    var it = cjson.CJSON.Iterator.init(row_obj);
+    while (it.next()) |item| {
+        if (count >= MAX_COLUMNS) break;
+        if (item.*.string == core.nullptr(u8)) continue;
+
+        var name_len: usize = 0;
+        while (item.*.string[name_len] != 0 and name_len < fields[count].name_buf.len) : (name_len += 1) {}
+        if (name_len == 0 or name_len >= fields[count].name_buf.len) return null;
+
+        @memcpy(fields[count].name_buf[0..name_len], item.*.string[0..name_len]);
+        fields[count].name = fields[count].name_buf[0..name_len];
+        if (!parse_json_scalar_into_field(item, &fields[count])) return null;
+        count += 1;
+    }
+
+    return count;
+}
+
+fn parse_json_array_body_rows(
+    pool: [*c]core.ngx_pool_t,
+    body: []const u8,
+    rows: *[MAX_WRITE_ROWS][MAX_COLUMNS]JsonField,
+    row_field_counts: *[MAX_WRITE_ROWS]usize,
+    allowed_columns: []const []const u8,
+    prefer_missing_default: bool,
+) ?usize {
+    if (body.len == 0) return 0;
+
+    var json_parser = cjson.CJSON.init(pool);
+
+    var body_buf: [8192]u8 = undefined;
+    if (body.len >= body_buf.len) return null;
+    @memcpy(body_buf[0..body.len], body);
+    body_buf[body.len] = 0;
+
+    const body_str = ngx_str_t{ .data = &body_buf, .len = body.len };
+    const json = json_parser.decode(body_str) catch return null;
+    if (json == core.nullptr(cjson.cJSON) or cjson.cJSON_IsArray(json) != 1) return 0;
+
+    var row_ptr = json.*.child;
+    var row_count: usize = 0;
+    var inferred_columns: [MAX_COLUMNS][]const u8 = undefined;
+    var inferred_count: usize = 0;
+    while (row_ptr != null) {
+        if (row_count >= MAX_WRITE_ROWS) return null;
+        const columns_for_row = if (allowed_columns.len > 0) allowed_columns else inferred_columns[0..inferred_count];
+        const field_count = parse_json_array_row(row_ptr, &rows[row_count], columns_for_row, prefer_missing_default) orelse return null;
+        row_field_counts[row_count] = field_count;
+
+        if (row_count == 0 and allowed_columns.len == 0) {
+            inferred_count = field_count;
+            for (rows[0][0..field_count], 0..) |field, idx| {
+                inferred_columns[idx] = field.name;
+            }
+        }
+
+        row_count += 1;
+        row_ptr = row_ptr.*.next;
+    }
+
+    return row_count;
+}
+
+fn project_fields_to_columns(
+    source: []const JsonField,
+    dest: *[MAX_COLUMNS]JsonField,
+    raw_columns: []const []const u8,
+    prefer_missing_default: bool,
+) ?usize {
+    if (raw_columns.len == 0) return source.len;
+
+    for (raw_columns, 0..) |raw_name, idx| {
+        if (idx >= MAX_COLUMNS) return null;
+        var decoded_name_buf: [256]u8 = undefined;
+        const decoded_name = decode_query_component_into(&decoded_name_buf, raw_name) orelse return null;
+        const name = trim_ascii_spaces(decoded_name);
+        if (name.len == 0 or name.len > dest[idx].name_buf.len) return null;
+        @memcpy(dest[idx].name_buf[0..name.len], name);
+        dest[idx].name = dest[idx].name_buf[0..name.len];
+
+        var matched = false;
+        for (source) |field| {
+            if (std.mem.eql(u8, field.name, name)) {
+                dest[idx].value = field.value;
+                dest[idx].is_null = field.is_null;
+                dest[idx].is_number = field.is_number;
+                dest[idx].is_boolean = field.is_boolean;
+                matched = true;
+                break;
+            }
+        }
+
+        if (!matched) {
+            dest[idx].value = "";
+            dest[idx].is_number = false;
+            dest[idx].is_boolean = false;
+            dest[idx].is_null = !prefer_missing_default;
+            dest[idx].is_missing = true;
+        } else {
+            dest[idx].is_missing = false;
+        }
+    }
+
+    return raw_columns.len;
+}
+
+fn parse_csv_bulk_rows(
+    body: []const u8,
+    rows: *[MAX_WRITE_ROWS][MAX_COLUMNS]JsonField,
+    row_field_counts: *[MAX_WRITE_ROWS]usize,
+) ?usize {
+    if (body.len == 0) return 0;
+
+    const newline = std.mem.indexOfScalar(u8, body, '\n') orelse return 0;
+    const header_line = trim_ascii_spaces(body[0..newline]);
+    if (header_line.len == 0) return 0;
+
+    var header_names: [MAX_COLUMNS][]const u8 = undefined;
+    var header_count: usize = 0;
+    var header_it = std.mem.splitScalar(u8, header_line, ',');
+    while (header_it.next()) |raw_name| {
+        if (header_count >= MAX_COLUMNS) return null;
+        const name = trim_ascii_spaces(raw_name);
+        if (name.len == 0 or !is_valid_schema_identifier(name)) return null;
+        header_names[header_count] = name;
+        header_count += 1;
+    }
+    if (header_count == 0) return 0;
+
+    var row_count: usize = 0;
+    var line_start: usize = newline + 1;
+    while (line_start < body.len) {
+        var line_end = line_start;
+        while (line_end < body.len and body[line_end] != '\n') : (line_end += 1) {}
+        const line = trim_ascii_spaces(body[line_start..line_end]);
+        if (line.len > 0) {
+            if (row_count >= MAX_WRITE_ROWS) return null;
+            var value_it = std.mem.splitScalar(u8, line, ',');
+
+            for (header_names[0..header_count], 0..) |name, idx| {
+                const raw_value = value_it.next() orelse return null;
+                if (name.len > rows[row_count][idx].name_buf.len) return null;
+                @memcpy(rows[row_count][idx].name_buf[0..name.len], name);
+                rows[row_count][idx].name = rows[row_count][idx].name_buf[0..name.len];
+
+                const value = trim_ascii_spaces(raw_value);
+                if (value.len > rows[row_count][idx].value_buf.len) return null;
+                @memcpy(rows[row_count][idx].value_buf[0..value.len], value);
+                rows[row_count][idx].value = rows[row_count][idx].value_buf[0..value.len];
+                rows[row_count][idx].is_null = std.mem.eql(u8, value, "NULL");
+                rows[row_count][idx].is_number = !rows[row_count][idx].is_null and is_numeric(value);
+                rows[row_count][idx].is_boolean = !rows[row_count][idx].is_null and (std.mem.eql(u8, value, "true") or std.mem.eql(u8, value, "false"));
+                rows[row_count][idx].is_missing = false;
+            }
+
+            if (value_it.next() != null) return null;
+            row_field_counts[row_count] = header_count;
+            row_count += 1;
+        }
+
+        if (line_end == body.len) break;
+        line_start = line_end + 1;
+    }
+
+    return row_count;
+}
+
+fn append_write_scalar(buf_out: []u8, pos_in: usize, scalar: WriteScalar) usize {
+    if (scalar.use_default) {
+        const token = "DEFAULT";
+        @memcpy(buf_out[pos_in..][0..token.len], token);
+        return pos_in + token.len;
+    }
+    if (scalar.is_null) {
+        const token = "NULL";
+        @memcpy(buf_out[pos_in..][0..token.len], token);
+        return pos_in + token.len;
+    }
+    if (scalar.is_number or scalar.is_boolean) {
+        @memcpy(buf_out[pos_in..][0..scalar.value.len], scalar.value);
+        return pos_in + scalar.value.len;
+    }
+    return append_sql_quoted(buf_out, pos_in, scalar.value);
+}
+
+fn json_field_to_scalar(field: JsonField) WriteScalar {
+    return .{
+        .value = field.value,
+        .is_null = field.is_null,
+        .is_number = field.is_number,
+        .is_boolean = field.is_boolean,
+        .use_default = field.is_missing,
+    };
+}
+
+fn parse_filter_eq_column_values(
+    args: ngx_str_t,
+    name_storage: *[MAX_COLUMNS][256]u8,
+    column_names: *[MAX_COLUMNS][]const u8,
+    values: *[MAX_COLUMNS]WriteScalar,
+) ?usize {
+    var filters: [MAX_FILTERS]Filter = undefined;
+    const filter_count = parse_filters(args, &filters);
+    if (filter_count == 0) return 0;
+    if (filter_count > MAX_COLUMNS) return null;
+
+    for (filters[0..filter_count], 0..) |filter, idx| {
+        if (filter.op != .eq) return null;
+
+        var decoded_name_buf: [256]u8 = undefined;
+        const decoded_name = decode_query_component_into(&decoded_name_buf, filter.column) orelse return null;
+        const name = trim_ascii_spaces(decoded_name);
+        if (name.len == 0 or !is_valid_schema_identifier(name) or name.len > name_storage[idx].len) return null;
+        @memcpy(name_storage[idx][0..name.len], name);
+        column_names[idx] = name_storage[idx][0..name.len];
+
+        values[idx] = .{
+            .value = filter.value,
+            .is_null = false,
+            .is_number = is_numeric(filter.value),
+            .is_boolean = std.mem.eql(u8, filter.value, "true") or std.mem.eql(u8, filter.value, "false"),
+            .use_default = false,
+        };
+    }
+
+    return filter_count;
+}
+
+fn row_contains_column(row: []const JsonField, name: []const u8) bool {
+    for (row) |field| {
+        if (std.mem.eql(u8, field.name, name)) return true;
+    }
+    return false;
+}
+
+fn scalar_equals_field(scalar: WriteScalar, field: JsonField) bool {
+    return scalar.is_null == field.is_null and
+        scalar.is_number == field.is_number and
+        scalar.is_boolean == field.is_boolean and
+        scalar.use_default == field.is_missing and
+        std.mem.eql(u8, scalar.value, field.value);
+}
+
+fn append_insert_row_from_json_fields(
+    dest_columns: *[MAX_COLUMNS][]const u8,
+    dest_scalars: *[MAX_COLUMNS]WriteScalar,
+    existing_count: usize,
+    source_fields: []const JsonField,
+) ?usize {
+    var count = existing_count;
+    if (count > MAX_COLUMNS) return null;
+
+    for (source_fields) |field| {
+        if (field.name.len == 0) continue;
+        var exists = false;
+        for (dest_columns[0..count]) |existing| {
+            if (std.mem.eql(u8, existing, field.name)) {
+                exists = true;
+                break;
+            }
+        }
+        if (exists) continue;
+        if (count >= MAX_COLUMNS) return null;
+        dest_columns[count] = field.name;
+        dest_scalars[count] = json_field_to_scalar(field);
+        count += 1;
+    }
+
+    return count;
+}
+
+fn project_put_row(
+    dest: *[MAX_COLUMNS]WriteScalar,
+    column_names: []const []const u8,
+    filter_columns: []const []const u8,
+    filter_values: []const WriteScalar,
+    body_fields: []const JsonField,
+) ?void {
+    if (column_names.len > MAX_COLUMNS) return null;
+
+    for (column_names, 0..) |name, idx| {
+        var matched_filter = false;
+        for (filter_columns, 0..) |filter_name, filter_idx| {
+            if (std.mem.eql(u8, filter_name, name)) {
+                dest[idx] = filter_values[filter_idx];
+                matched_filter = true;
+                break;
+            }
+        }
+        if (matched_filter) continue;
+
+        var matched_body = false;
+        for (body_fields) |field| {
+            if (std.mem.eql(u8, field.name, name)) {
+                dest[idx] = json_field_to_scalar(field);
+                matched_body = true;
+                break;
+            }
+        }
+        if (!matched_body) return null;
+    }
+}
+
+fn build_limited_write_query(
+    query_buf: []u8,
+    sql_op: SqlOp,
+    table: []const u8,
+    where_clause: []const u8,
+    order_specs: []const OrderSpec,
+    pagination: Pagination,
+    json_fields: []const JsonField,
+    include_returning: bool,
+) ?usize {
+    if (!(sql_op == .update or sql_op == .delete)) return null;
+    const limit = pagination.limit orelse return null;
+    if (order_specs.len == 0) return null;
+
+    var pos: usize = 0;
+    const with_prefix = "WITH pgrest_limited AS (SELECT ctid FROM ";
+    @memcpy(query_buf[pos..][0..with_prefix.len], with_prefix);
+    pos += with_prefix.len;
+    @memcpy(query_buf[pos..][0..table.len], table);
+    pos += table.len;
+
+    if (where_clause.len > 0) {
+        const where = " WHERE ";
+        @memcpy(query_buf[pos..][0..where.len], where);
+        pos += where.len;
+        @memcpy(query_buf[pos..][0..where_clause.len], where_clause);
+        pos += where_clause.len;
+    }
+
+    const order = " ORDER BY ";
+    @memcpy(query_buf[pos..][0..order.len], order);
+    pos += order.len;
+    for (order_specs, 0..) |spec, i| {
+        if (i > 0) {
+            query_buf[pos] = ',';
+            pos += 1;
+        }
+        const expr = spec.expr();
+        pos = append_column_expression(query_buf, pos, expr) orelse return null;
+        if (spec.dir == .desc) {
+            const desc_str = " DESC";
+            @memcpy(query_buf[pos..][0..desc_str.len], desc_str);
+            pos += desc_str.len;
+        } else {
+            const asc_str = " ASC";
+            @memcpy(query_buf[pos..][0..asc_str.len], asc_str);
+            pos += asc_str.len;
+        }
+        switch (spec.nulls) {
+            .none => {},
+            .first => {
+                const nulls_first = " NULLS FIRST";
+                @memcpy(query_buf[pos..][0..nulls_first.len], nulls_first);
+                pos += nulls_first.len;
+            },
+            .last => {
+                const nulls_last = " NULLS LAST";
+                @memcpy(query_buf[pos..][0..nulls_last.len], nulls_last);
+                pos += nulls_last.len;
+            },
+        }
+    }
+
+    const limit_str = " LIMIT ";
+    @memcpy(query_buf[pos..][0..limit_str.len], limit_str);
+    pos += limit_str.len;
+    var num_buf: [32]u8 = undefined;
+    const limit_num = std.fmt.bufPrint(&num_buf, "{d}", .{limit}) catch return null;
+    @memcpy(query_buf[pos..][0..limit_num.len], limit_num);
+    pos += limit_num.len;
+
+    if (pagination.offset) |offset| {
+        const offset_str = " OFFSET ";
+        @memcpy(query_buf[pos..][0..offset_str.len], offset_str);
+        pos += offset_str.len;
+        const offset_num = std.fmt.bufPrint(&num_buf, "{d}", .{offset}) catch return null;
+        @memcpy(query_buf[pos..][0..offset_num.len], offset_num);
+        pos += offset_num.len;
+    }
+
+    const close_cte = ") ";
+    @memcpy(query_buf[pos..][0..close_cte.len], close_cte);
+    pos += close_cte.len;
+
+    switch (sql_op) {
+        .update => {
+            const update_prefix = "UPDATE ";
+            @memcpy(query_buf[pos..][0..update_prefix.len], update_prefix);
+            pos += update_prefix.len;
+            @memcpy(query_buf[pos..][0..table.len], table);
+            pos += table.len;
+
+            const set_str = " SET ";
+            @memcpy(query_buf[pos..][0..set_str.len], set_str);
+            pos += set_str.len;
+            if (json_fields.len == 0) return null;
+            for (json_fields, 0..) |field, i| {
+                if (i > 0) {
+                    query_buf[pos] = ',';
+                    pos += 1;
+                }
+                @memcpy(query_buf[pos..][0..field.name.len], field.name);
+                pos += field.name.len;
+                query_buf[pos] = '=';
+                pos += 1;
+                if (field.is_null) {
+                    const null_str = "NULL";
+                    @memcpy(query_buf[pos..][0..null_str.len], null_str);
+                    pos += null_str.len;
+                } else if (field.is_number or field.is_boolean) {
+                    @memcpy(query_buf[pos..][0..field.value.len], field.value);
+                    pos += field.value.len;
+                } else {
+                    pos = append_sql_quoted(query_buf, pos, field.value);
+                }
+            }
+        },
+        .delete => {
+            const delete_prefix = "DELETE FROM ";
+            @memcpy(query_buf[pos..][0..delete_prefix.len], delete_prefix);
+            pos += delete_prefix.len;
+            @memcpy(query_buf[pos..][0..table.len], table);
+            pos += table.len;
+        },
+        else => return null,
+    }
+
+    const where_ctid = " WHERE ctid IN (SELECT ctid FROM pgrest_limited)";
+    @memcpy(query_buf[pos..][0..where_ctid.len], where_ctid);
+    pos += where_ctid.len;
+
+    if (include_returning) {
+        const returning = " RETURNING *";
+        @memcpy(query_buf[pos..][0..returning.len], returning);
+        pos += returning.len;
+    }
+
+    return pos;
+}
+
+fn build_insert_rows_query(
+    query_buf: []u8,
+    table: []const u8,
+    column_names: []const []const u8,
+    row_values: []const []const WriteScalar,
+    on_conflict_columns: []const []const u8,
+    prefer_resolution: PreferResolution,
+    include_returning: bool,
+) usize {
+    var pos: usize = 0;
+
+    const insert_prefix = "INSERT INTO ";
+    @memcpy(query_buf[pos..][0..insert_prefix.len], insert_prefix);
+    pos += insert_prefix.len;
+    @memcpy(query_buf[pos..][0..table.len], table);
+    pos += table.len;
+
+    query_buf[pos] = ' ';
+    pos += 1;
+    query_buf[pos] = '(';
+    pos += 1;
+    for (column_names, 0..) |name, idx| {
+        if (idx > 0) {
+            query_buf[pos] = ',';
+            pos += 1;
+        }
+        @memcpy(query_buf[pos..][0..name.len], name);
+        pos += name.len;
+    }
+    query_buf[pos] = ')';
+    pos += 1;
+
+    const values_token = " VALUES ";
+    @memcpy(query_buf[pos..][0..values_token.len], values_token);
+    pos += values_token.len;
+
+    for (row_values, 0..) |row, row_idx| {
+        if (row_idx > 0) {
+            query_buf[pos] = ',';
+            pos += 1;
+        }
+        query_buf[pos] = '(';
+        pos += 1;
+        for (row, 0..) |scalar, col_idx| {
+            if (col_idx > 0) {
+                query_buf[pos] = ',';
+                pos += 1;
+            }
+            pos = append_write_scalar(query_buf, pos, scalar);
+        }
+        query_buf[pos] = ')';
+        pos += 1;
+    }
+
+    if (on_conflict_columns.len > 0 and prefer_resolution != .none) {
+        const on_conflict = " ON CONFLICT (";
+        @memcpy(query_buf[pos..][0..on_conflict.len], on_conflict);
+        pos += on_conflict.len;
+
+        for (on_conflict_columns, 0..) |name, idx| {
+            if (idx > 0) {
+                query_buf[pos] = ',';
+                pos += 1;
+            }
+            @memcpy(query_buf[pos..][0..name.len], name);
+            pos += name.len;
+        }
+        query_buf[pos] = ')';
+        pos += 1;
+
+        switch (prefer_resolution) {
+            .merge_duplicates => {
+                const do_update = " DO UPDATE SET ";
+                @memcpy(query_buf[pos..][0..do_update.len], do_update);
+                pos += do_update.len;
+
+                for (column_names, 0..) |name, idx| {
+                    if (idx > 0) {
+                        query_buf[pos] = ',';
+                        pos += 1;
+                    }
+                    @memcpy(query_buf[pos..][0..name.len], name);
+                    pos += name.len;
+                    query_buf[pos] = '=';
+                    pos += 1;
+                    const excluded = "EXCLUDED.";
+                    @memcpy(query_buf[pos..][0..excluded.len], excluded);
+                    pos += excluded.len;
+                    @memcpy(query_buf[pos..][0..name.len], name);
+                    pos += name.len;
+                }
+            },
+            .ignore_duplicates => {
+                const do_nothing = " DO NOTHING";
+                @memcpy(query_buf[pos..][0..do_nothing.len], do_nothing);
+                pos += do_nothing.len;
+            },
+            .none => {},
+        }
+    }
+
+    if (include_returning) {
+        const returning = " RETURNING *";
+        @memcpy(query_buf[pos..][0..returning.len], returning);
+        pos += returning.len;
+    }
+
+    return pos;
+}
+
+fn build_table_query(
+    query_buf: []u8,
+    r: [*c]ngx_http_request_t,
+    pool: [*c]ngx_pool_t,
+    sql_op: SqlOp,
+    table: []const u8,
+    body_format: RequestBodyFormat,
+    opts: RequestOptions,
+    where_clause: []const u8,
+    select_clause: []const u8,
+    order_specs: []const OrderSpec,
+    pagination: Pagination,
+    include_returning: bool,
+) ?struct { len: usize, json_fields: [MAX_COLUMNS]JsonField, json_field_count: usize } {
+    var result_fields: [MAX_COLUMNS]JsonField = undefined;
+    var result_field_count: usize = 0;
+    var write_column_storage: [MAX_COLUMNS][256]u8 = undefined;
+    var on_conflict_storage: [MAX_COLUMNS][256]u8 = undefined;
+
+    var column_filter_buf: [MAX_COLUMNS][]const u8 = undefined;
+    const column_filter_count = parse_columns_param(r.*.args, &column_filter_buf) orelse return null;
+    var on_conflict_buf: [MAX_COLUMNS][]const u8 = undefined;
+    const on_conflict_count = parse_on_conflict_param(r.*.args, &on_conflict_buf) orelse return null;
+
+    if (sql_op == .insert or sql_op == .update) {
+        if (get_request_body_slice(r)) |body_data| {
+            result_field_count = parse_write_body_fields(body_format, body_data, pool, &result_fields);
+
+            const is_put = r.*.method == http.NGX_HTTP_PUT;
+            if (is_put) {
+                var filter_name_storage: [MAX_COLUMNS][256]u8 = undefined;
+                var filter_columns: [MAX_COLUMNS][]const u8 = undefined;
+                var filter_values: [MAX_COLUMNS]WriteScalar = undefined;
+                const filter_count = parse_filter_eq_column_values(r.*.args, &filter_name_storage, &filter_columns, &filter_values) orelse return null;
+                if (filter_count == 0) return null;
+                for (filter_columns[0..filter_count]) |name| {
+                    if (!row_contains_column(result_fields[0..result_field_count], name)) return null;
+                }
+                for (filter_columns[0..filter_count], 0..) |name, idx| {
+                    for (result_fields[0..result_field_count]) |field| {
+                        if (std.mem.eql(u8, field.name, name) and !scalar_equals_field(filter_values[idx], field)) return null;
+                    }
+                }
+
+                var put_columns: [MAX_COLUMNS][]const u8 = undefined;
+                var put_scalars: [MAX_COLUMNS]WriteScalar = undefined;
+                const put_column_count = if (column_filter_count > 0) blk: {
+                    for (column_filter_buf[0..column_filter_count], 0..) |raw_name, idx| {
+                        var decoded_name_buf: [256]u8 = undefined;
+                        const decoded_name = decode_query_component_into(&decoded_name_buf, raw_name) orelse return null;
+                        const trimmed_name = trim_ascii_spaces(decoded_name);
+                        if (trimmed_name.len == 0 or trimmed_name.len > write_column_storage[idx].len) return null;
+                        @memcpy(write_column_storage[idx][0..trimmed_name.len], trimmed_name);
+                        put_columns[idx] = write_column_storage[idx][0..trimmed_name.len];
+                    }
+                    break :blk column_filter_count;
+                } else blk: {
+                    var count: usize = 0;
+                    for (filter_columns[0..filter_count]) |name| {
+                        if (count >= MAX_COLUMNS) return null;
+                        put_columns[count] = name;
+                        count += 1;
+                    }
+                    count = append_insert_row_from_json_fields(&put_columns, &put_scalars, count, result_fields[0..result_field_count]) orelse return null;
+                    break :blk count;
+                };
+
+                if (put_column_count == 0) return null;
+                project_put_row(&put_scalars, put_columns[0..put_column_count], filter_columns[0..filter_count], filter_values[0..filter_count], result_fields[0..result_field_count]) orelse return null;
+
+                var conflict_columns: [MAX_COLUMNS][]const u8 = undefined;
+                for (filter_columns[0..filter_count], 0..) |name, idx| {
+                    conflict_columns[idx] = name;
+                }
+
+                var row_slices: [1][]const WriteScalar = .{put_scalars[0..put_column_count]};
+                return .{
+                    .len = build_insert_rows_query(
+                        query_buf,
+                        table,
+                        put_columns[0..put_column_count],
+                        row_slices[0..1],
+                        conflict_columns[0..filter_count],
+                        .merge_duplicates,
+                        include_returning,
+                    ),
+                    .json_fields = result_fields,
+                    .json_field_count = result_field_count,
+                };
+            }
+
+            const trimmed_body = trim_ascii_spaces(body_data);
+            if (sql_op == .insert and opts.prefer.resolution != .none and on_conflict_count == 0) {
+                return null;
+            }
+            if (sql_op == .insert and body_format == .json and trimmed_body.len > 0 and trimmed_body[0] == '[') {
+                var bulk_rows: [MAX_WRITE_ROWS][MAX_COLUMNS]JsonField = undefined;
+                var bulk_row_counts: [MAX_WRITE_ROWS]usize = std.mem.zeroes([MAX_WRITE_ROWS]usize);
+                const bulk_count = parse_json_array_body_rows(
+                    pool,
+                    body_data,
+                    &bulk_rows,
+                    &bulk_row_counts,
+                    column_filter_buf[0..column_filter_count],
+                    opts.prefer.missing_default,
+                ) orelse return null;
+
+                if (bulk_count > 0) {
+                    var write_columns: [MAX_COLUMNS][]const u8 = undefined;
+                    const write_column_count = if (column_filter_count > 0) blk: {
+                        for (column_filter_buf[0..column_filter_count], 0..) |raw_name, idx| {
+                            var decoded_name_buf: [256]u8 = undefined;
+                            const decoded_name = decode_query_component_into(&decoded_name_buf, raw_name) orelse return null;
+                            const trimmed_name = trim_ascii_spaces(decoded_name);
+                            if (trimmed_name.len == 0 or trimmed_name.len > write_column_storage[idx].len) return null;
+                            @memcpy(write_column_storage[idx][0..trimmed_name.len], trimmed_name);
+                            write_columns[idx] = write_column_storage[idx][0..trimmed_name.len];
+                        }
+                        break :blk column_filter_count;
+                    } else blk: {
+                        const inferred_count = bulk_row_counts[0];
+                        for (bulk_rows[0][0..inferred_count], 0..) |field, idx| {
+                            if (field.name.len == 0 or field.name.len > write_column_storage[idx].len) return null;
+                            @memcpy(write_column_storage[idx][0..field.name.len], field.name);
+                            write_columns[idx] = write_column_storage[idx][0..field.name.len];
+                        }
+                        break :blk inferred_count;
+                    };
+
+                    var row_scalars: [MAX_WRITE_ROWS][MAX_COLUMNS]WriteScalar = undefined;
+                    var row_slices: [MAX_WRITE_ROWS][]const WriteScalar = undefined;
+                    var row_idx: usize = 0;
+                    while (row_idx < bulk_count) : (row_idx += 1) {
+                        if (bulk_row_counts[row_idx] != write_column_count) return null;
+                        for (bulk_rows[row_idx][0..write_column_count], 0..) |field, col_idx| {
+                            row_scalars[row_idx][col_idx] = json_field_to_scalar(field);
+                        }
+                        row_slices[row_idx] = row_scalars[row_idx][0..write_column_count];
+                    }
+
+                    var on_conflict_columns: [MAX_COLUMNS][]const u8 = undefined;
+                    for (on_conflict_buf[0..on_conflict_count], 0..) |raw_name, idx| {
+                        var decoded_name_buf: [256]u8 = undefined;
+                        const decoded_name = decode_query_component_into(&decoded_name_buf, raw_name) orelse return null;
+                        const trimmed_name = trim_ascii_spaces(decoded_name);
+                        if (trimmed_name.len == 0 or trimmed_name.len > on_conflict_storage[idx].len) return null;
+                        @memcpy(on_conflict_storage[idx][0..trimmed_name.len], trimmed_name);
+                        on_conflict_columns[idx] = on_conflict_storage[idx][0..trimmed_name.len];
+                    }
+
+                    return .{
+                        .len = build_insert_rows_query(
+                            query_buf,
+                            table,
+                            write_columns[0..write_column_count],
+                            row_slices[0..bulk_count],
+                            on_conflict_columns[0..on_conflict_count],
+                            if (on_conflict_count > 0) opts.prefer.resolution else .none,
+                            include_returning,
+                        ),
+                        .json_fields = result_fields,
+                        .json_field_count = result_field_count,
+                    };
+                }
+            } else if (sql_op == .insert and body_format == .csv) {
+                var bulk_rows: [MAX_WRITE_ROWS][MAX_COLUMNS]JsonField = undefined;
+                var bulk_row_counts: [MAX_WRITE_ROWS]usize = std.mem.zeroes([MAX_WRITE_ROWS]usize);
+                const bulk_count = parse_csv_bulk_rows(body_data, &bulk_rows, &bulk_row_counts) orelse return null;
+
+                if (bulk_count > 0) {
+                    var write_columns: [MAX_COLUMNS][]const u8 = undefined;
+                    const write_column_count = bulk_row_counts[0];
+                    for (bulk_rows[0][0..write_column_count], 0..) |field, idx| {
+                        write_columns[idx] = field.name;
+                    }
+
+                    var row_scalars: [MAX_WRITE_ROWS][MAX_COLUMNS]WriteScalar = undefined;
+                    var row_slices: [MAX_WRITE_ROWS][]const WriteScalar = undefined;
+                    var row_idx: usize = 0;
+                    while (row_idx < bulk_count) : (row_idx += 1) {
+                        if (bulk_row_counts[row_idx] != write_column_count) return null;
+                        for (bulk_rows[row_idx][0..write_column_count], 0..) |field, col_idx| {
+                            row_scalars[row_idx][col_idx] = json_field_to_scalar(field);
+                        }
+                        row_slices[row_idx] = row_scalars[row_idx][0..write_column_count];
+                    }
+
+                    var on_conflict_columns: [MAX_COLUMNS][]const u8 = undefined;
+                    for (on_conflict_buf[0..on_conflict_count], 0..) |raw_name, idx| {
+                        var decoded_name_buf: [256]u8 = undefined;
+                        const decoded_name = decode_query_component_into(&decoded_name_buf, raw_name) orelse return null;
+                        const trimmed_name = trim_ascii_spaces(decoded_name);
+                        if (trimmed_name.len == 0 or trimmed_name.len > on_conflict_storage[idx].len) return null;
+                        @memcpy(on_conflict_storage[idx][0..trimmed_name.len], trimmed_name);
+                        on_conflict_columns[idx] = on_conflict_storage[idx][0..trimmed_name.len];
+                    }
+
+                    return .{
+                        .len = build_insert_rows_query(
+                            query_buf,
+                            table,
+                            write_columns[0..write_column_count],
+                            row_slices[0..bulk_count],
+                            on_conflict_columns[0..on_conflict_count],
+                            if (on_conflict_count > 0) opts.prefer.resolution else .none,
+                            include_returning,
+                        ),
+                        .json_fields = result_fields,
+                        .json_field_count = result_field_count,
+                    };
+                }
+            } else if (sql_op == .insert and column_filter_count > 0 and result_field_count > 0) {
+                var projected_fields: [MAX_COLUMNS]JsonField = undefined;
+                result_field_count = project_fields_to_columns(
+                    result_fields[0..result_field_count],
+                    &projected_fields,
+                    column_filter_buf[0..column_filter_count],
+                    opts.prefer.missing_default,
+                ) orelse return null;
+                @memcpy(result_fields[0..result_field_count], projected_fields[0..result_field_count]);
+            }
+
+            if (sql_op == .insert and on_conflict_count > 0 and result_field_count > 0) {
+                var insert_column_names: [MAX_COLUMNS][]const u8 = undefined;
+                for (result_fields[0..result_field_count], 0..) |field, idx| {
+                    insert_column_names[idx] = field.name;
+                }
+                var on_conflict_columns: [MAX_COLUMNS][]const u8 = undefined;
+                for (on_conflict_buf[0..on_conflict_count], 0..) |raw_name, idx| {
+                    var decoded_name_buf: [256]u8 = undefined;
+                    const decoded_name = decode_query_component_into(&decoded_name_buf, raw_name) orelse return null;
+                    const trimmed_name = trim_ascii_spaces(decoded_name);
+                    if (trimmed_name.len == 0 or trimmed_name.len > on_conflict_storage[idx].len) return null;
+                    @memcpy(on_conflict_storage[idx][0..trimmed_name.len], trimmed_name);
+                    on_conflict_columns[idx] = on_conflict_storage[idx][0..trimmed_name.len];
+                }
+
+                var row_scalars: [MAX_COLUMNS]WriteScalar = undefined;
+                for (result_fields[0..result_field_count], 0..) |field, idx| {
+                    row_scalars[idx] = json_field_to_scalar(field);
+                }
+                var row_slices: [1][]const WriteScalar = .{row_scalars[0..result_field_count]};
+
+                return .{
+                    .len = build_insert_rows_query(
+                        query_buf,
+                        table,
+                        insert_column_names[0..result_field_count],
+                        row_slices[0..1],
+                        on_conflict_columns[0..on_conflict_count],
+                        opts.prefer.resolution,
+                        include_returning,
+                    ),
+                    .json_fields = result_fields,
+                    .json_field_count = result_field_count,
+                };
+            }
+        }
+    }
+
+    if ((sql_op == .update or sql_op == .delete) and pagination.limit != null) {
+        const limited = build_limited_write_query(
+            query_buf,
+            sql_op,
+            table,
+            where_clause,
+            order_specs,
+            pagination,
+            result_fields[0..result_field_count],
+            include_returning,
+        ) orelse return null;
+        return .{
+            .len = limited,
+            .json_fields = result_fields,
+            .json_field_count = result_field_count,
+        };
+    }
+
+    return .{
+        .len = build_sql_query(
+            query_buf,
+            sql_op,
+            table,
+            where_clause,
+            result_fields[0..result_field_count],
+            select_clause,
+            order_specs,
+            pagination,
+            include_returning,
+        ),
+        .json_fields = result_fields,
+        .json_field_count = result_field_count,
+    };
+}
+
 fn parse_rpc_body_params(
     body_format: RequestBodyFormat,
     body_data: []const u8,
@@ -3492,6 +5898,30 @@ fn parse_rpc_body_params(
         .binary => set_rpc_single_raw_param(rpc_call, "data", body_data),
         .none, .unsupported => {},
     }
+}
+
+fn fetch_rpc_metadata_blocking(
+    conninfo: []const u8,
+    schema_name: ?[]const u8,
+    function_name: []const u8,
+    requested_param_count: usize,
+    allow_single_unnamed_fallback: bool,
+) ?RpcMetadata {
+    var query_buf: [MAX_QUERY_SIZE]u8 = undefined;
+    const query_len = build_rpc_metadata_query(
+        &query_buf,
+        schema_name,
+        function_name,
+        requested_param_count,
+        allow_single_unnamed_fallback,
+    );
+    const pg_result = execute_pg_query(conninfo, query_buf[0..query_len]);
+    defer if (pg_result.result != null) pgClear(pg_result.result);
+    if (!pg_result.success) return null;
+
+    const metadata = parse_rpc_metadata_result(pg_result.result);
+    if (!metadata.found) return null;
+    return metadata;
 }
 
 export fn ngx_http_pgrest_client_body_handler(r: [*c]ngx_http_request_t) callconv(.c) void {
@@ -3556,6 +5986,12 @@ fn handle_rpc_call(
         return send_unsupported_media_type(r, "{\"message\":\"Unsupported request media type\"}");
     }
 
+    const resolved_schema = resolve_request_schema(r, loc_conf);
+    if (resolved_schema.disallowed) {
+        var err_buf: [512]u8 = undefined;
+        return send_json_error(r, NGX_HTTP_NOT_ACCEPTABLE, format_schema_error(&err_buf, resolved_schema.allowed_raw));
+    }
+
     // Extract function name from URI
     const function_name = extract_rpc_function_name(r.*.uri) orelse {
         r.*.headers_out.status = http.NGX_HTTP_BAD_REQUEST;
@@ -3569,20 +6005,68 @@ fn handle_rpc_call(
     rpc_call.param_count = 0;
     rpc_call.function_name = function_name;
     rpc_call.prefer_single_object = opts.prefer.params_single_object;
+    const body_data = get_request_body_slice(r);
 
     // Try to parse POST body first (if present)
-    if (get_request_body_slice(r)) |body_data| {
-        parse_rpc_body_params(body_format, body_data, r.*.pool, &rpc_call);
+    if (body_data) |payload| {
+        parse_rpc_body_params(body_format, payload, r.*.pool, &rpc_call);
     }
 
-    // If no body parameters, parse query string
+    const effective_schema = resolved_default_schema_name(resolved_schema);
+    const metadata = fetch_rpc_metadata_blocking(
+        conninfo,
+        effective_schema,
+        function_name,
+        rpc_call.param_count,
+        body_data != null and rpc_allow_single_unnamed_fallback(body_format, rpc_call.prefer_single_object),
+    ) orelse return rpc_metadata_not_found_response(r);
+
     if (rpc_call.param_count == 0) {
-        parse_rpc_params(r.*.args, &rpc_call);
+        var rpc_args_buf: [MAX_QUERY_SIZE]u8 = undefined;
+        const rpc_args = filter_rpc_query_args_by_metadata(r.*.args, &metadata, true, &rpc_args_buf);
+        parse_rpc_params(rpc_args, &rpc_call);
     }
+
+    if (!rpc_method_allowed(r.*.method, metadata)) {
+        return rpc_method_not_allowed_response(r, metadata);
+    }
+
+    if (body_data) |payload| {
+        if (apply_rpc_single_unnamed_param(metadata, body_format, payload, &rpc_call)) {
+            // use single unnamed parameter binding
+        }
+    }
+    collapse_rpc_variadic_param(&rpc_call, &metadata);
 
     // Build RPC query
     var query_buf: [MAX_QUERY_SIZE]u8 = undefined;
-    const query_len = build_rpc_call_query(&query_buf, function_name, &rpc_call);
+    const query_len = if (rpc_returns_table_like(metadata)) blk: {
+        var where_buf: [MAX_QUERY_SIZE]u8 = undefined;
+        var read_args_buf: [MAX_QUERY_SIZE]u8 = undefined;
+        const read_args = filter_rpc_query_args_by_metadata(r.*.args, &metadata, false, &read_args_buf);
+        const where_result = build_where_clause_from_args(&where_buf, read_args);
+        if (where_result.invalid) return send_json_error(r, http.NGX_HTTP_BAD_REQUEST, "{\"message\":\"Invalid filter parameter\"}");
+
+        var select_buf: [MAX_QUERY_SIZE]u8 = undefined;
+        const select_result = build_select_clause_from_args(&select_buf, read_args);
+        if (select_result.invalid) return send_json_error(r, http.NGX_HTTP_BAD_REQUEST, "{\"message\":\"Invalid select parameter\"}");
+
+        var order_specs: [MAX_ORDER_COLUMNS]OrderSpec = undefined;
+        const order_parse = parse_order(read_args, &order_specs);
+        if (order_parse.invalid) return reject_invalid_order(r);
+
+        const pagination = parse_pagination(read_args);
+        break :blk build_rpc_table_query(
+            &query_buf,
+            resolved_schema.name,
+            function_name,
+            &rpc_call,
+            where_buf[0..where_result.len],
+            select_buf[0..select_result.len],
+            order_specs[0..order_parse.count],
+            pagination,
+        );
+    } else build_rpc_call_query(&query_buf, resolved_schema.name, function_name, &rpc_call);
     const query = query_buf[0..query_len];
 
     // Extract JWT token for PostgreSQL
@@ -3708,9 +6192,6 @@ fn ngx_http_pgrest_handler(r: [*c]ngx_http_request_t) callconv(.c) ngx_int_t {
     if (should_reject_invalid_prefer(opts)) {
         return reject_invalid_prefer(r);
     }
-    if (should_reject_invalid_prefer(opts)) {
-        return reject_invalid_prefer(r);
-    }
 
     const body_format = parse_content_type_from_request(r);
     if (request_needs_body(r) and body_format == .unsupported) {
@@ -3722,6 +6203,12 @@ fn ngx_http_pgrest_handler(r: [*c]ngx_http_request_t) callconv(.c) ngx_int_t {
         return handle_rpc_call(r, conninfo, loc_conf, opts);
     }
 
+    const resolved_schema = resolve_request_schema(r, loc_conf);
+    if (resolved_schema.disallowed) {
+        var err_buf: [512]u8 = undefined;
+        return send_json_error(r, NGX_HTTP_NOT_ACCEPTABLE, format_schema_error(&err_buf, resolved_schema.allowed_raw));
+    }
+
     // Extract table name from URI
     const table_name = extract_table_name(r.*.uri) orelse {
         // No table specified - return error
@@ -3731,14 +6218,11 @@ fn ngx_http_pgrest_handler(r: [*c]ngx_http_request_t) callconv(.c) ngx_int_t {
         return http.ngx_http_send_special(r, http.NGX_HTTP_LAST);
     };
 
-    // Extract schema name from Profile header if present
-    const schema_name = extract_schema_name(r, r.*.method);
-
     // Build qualified table name (schema.table or just table)
     var qualified_table_buf: [512]u8 = undefined;
     const qualified_table_len = build_qualified_table_name(
         qualified_table_buf[0..],
-        schema_name,
+        resolved_schema.name,
         table_name,
     );
     const qualified_table = qualified_table_buf[0..qualified_table_len];
@@ -3755,43 +6239,47 @@ fn ngx_http_pgrest_handler(r: [*c]ngx_http_request_t) callconv(.c) ngx_int_t {
     const write_contract = write_response_contract(sql_op, opts.prefer);
 
     // Parse query string filters
-    var filters: [MAX_FILTERS]Filter = undefined;
-    const filter_count = parse_filters(r.*.args, &filters);
+    var where_buf: [MAX_QUERY_SIZE]u8 = undefined;
+    const where_result = build_where_clause_from_args(&where_buf, r.*.args);
+    if (where_result.invalid) {
+        return send_json_error(r, http.NGX_HTTP_BAD_REQUEST, "{\"message\":\"Invalid filter parameter\"}");
+    }
+    const where_len = where_result.len;
 
     // Parse column selection (?select=col1,col2)
-    var select_cols: [MAX_SELECT_COLUMNS][]const u8 = undefined;
-    const select_count = parse_select_columns(r.*.args, &select_cols);
+    var select_buf: [MAX_QUERY_SIZE]u8 = undefined;
+    const select_result = build_select_clause_from_args(&select_buf, r.*.args);
+    if (select_result.invalid) {
+        return send_json_error(r, http.NGX_HTTP_BAD_REQUEST, "{\"message\":\"Invalid select parameter\"}");
+    }
 
-    // Parse ordering (?order=col.desc)
+    // Parse ordering (?order=col.desc.nullslast)
     var order_specs: [MAX_ORDER_COLUMNS]OrderSpec = undefined;
-    const order_count = parse_order(r.*.args, &order_specs);
+    const order_parse = parse_order(r.*.args, &order_specs);
+    if (order_parse.invalid) {
+        return reject_invalid_order(r);
+    }
+    const order_count = order_parse.count;
 
     // Parse pagination (?limit=N&offset=M)
     const pagination = parse_pagination(r.*.args);
 
-    // Parse request body for POST/PATCH
-    var json_fields: [MAX_COLUMNS]JsonField = undefined;
-    var json_field_count: usize = 0;
-
-    if (sql_op == .insert or sql_op == .update) {
-        if (get_request_body_slice(r)) |body_data| {
-            json_field_count = parse_write_body_fields(body_format, body_data, r.*.pool, &json_fields);
-        }
-    }
-
-    // Build SQL query
     var query_buf: [MAX_QUERY_SIZE]u8 = undefined;
-    const query_len = build_sql_query(
+    const table_query = build_table_query(
         &query_buf,
+        r,
+        r.*.pool,
         sql_op,
         qualified_table,
-        filters[0..filter_count],
-        json_fields[0..json_field_count],
-        select_cols[0..select_count],
+        body_format,
+        opts,
+        where_buf[0..where_len],
+        select_buf[0..select_result.len],
         order_specs[0..order_count],
         pagination,
         if (is_write_request) write_contract.include_returning else true,
-    );
+    ) orelse return send_json_error(r, http.NGX_HTTP_BAD_REQUEST, "{\"message\":\"Invalid write payload\"}");
+    const query_len = table_query.len;
     const query = query_buf[0..query_len];
 
     // Extract JWT token for PostgreSQL
@@ -3893,6 +6381,12 @@ fn handle_rpc_call_upstream(
         return send_unsupported_media_type(r, "{\"message\":\"Unsupported request media type\"}");
     }
 
+    const resolved_schema = resolve_request_schema(r, loc_conf);
+    if (resolved_schema.disallowed) {
+        var err_buf: [512]u8 = undefined;
+        return send_json_error(r, NGX_HTTP_NOT_ACCEPTABLE, format_schema_error(&err_buf, resolved_schema.allowed_raw));
+    }
+
     // Extract function name from URI
     const function_name = extract_rpc_function_name(r.*.uri) orelse {
         return http.NGX_HTTP_BAD_REQUEST;
@@ -3908,10 +6402,11 @@ fn handle_rpc_call_upstream(
     rpc_call.param_count = 0;
     rpc_call.function_name = function_name;
     rpc_call.prefer_single_object = opts.prefer.params_single_object;
+    const body_data = get_request_body_slice(r);
 
     // Try to parse POST body first (if present)
-    if (get_request_body_slice(r)) |body_data| {
-        parse_rpc_body_params(body_format, body_data, r.*.pool, &rpc_call);
+    if (body_data) |payload| {
+        parse_rpc_body_params(body_format, payload, r.*.pool, &rpc_call);
     }
 
     // If no body parameters, parse query string
@@ -3919,12 +6414,21 @@ fn handle_rpc_call_upstream(
         parse_rpc_params(r.*.args, &rpc_call);
     }
 
-    // Build RPC query into the context
-    ctx.*.query_len = build_rpc_call_query(&ctx[0].query, function_name, &rpc_call);
+    const effective_schema = resolved_default_schema_name(resolved_schema);
+
+    // Build metadata query into the context
+    ctx.*.query_len = build_rpc_metadata_query(
+        &ctx[0].query,
+        effective_schema,
+        function_name,
+        rpc_call.param_count,
+        body_data != null and rpc_allow_single_unnamed_fallback(body_format, rpc_call.prefer_single_object),
+    );
     ctx[0].query[ctx.*.query_len] = 0; // null terminate
 
     ctx.*.pool_conn = null;
     ctx.*.query_state = .none;
+    ctx.*.rpc_phase = .metadata;
     ctx.*.result = null;
     ctx.*.request = r;
     ctx.*.response_format = opts.response_format;
@@ -3934,8 +6438,11 @@ fn handle_rpc_call_upstream(
     ctx.*.prefer_params_single_object = opts.prefer.params_single_object;
     ctx.*.prefer_return_mode = opts.prefer.return_mode;
     ctx.*.prefer_handling = opts.prefer.handling;
+    ctx.*.prefer_resolution = opts.prefer.resolution;
+    ctx.*.prefer_resolution_applied = opts.prefer.resolution_applied;
     ctx.*.prefer_max_affected = opts.prefer.max_affected orelse 0;
     ctx.*.prefer_has_max_affected = opts.prefer.max_affected != null;
+    ctx.*.prefer_missing_default = opts.prefer.missing_default;
     ctx.*.prefer_invalid = opts.prefer.invalid;
     ctx.*.emit_range_headers = opts.emit_range_headers;
     ctx.*.write_status = http.NGX_HTTP_OK;
@@ -3983,6 +6490,12 @@ fn ngx_http_pgrest_upstream_handler(r: [*c]ngx_http_request_t) callconv(.c) ngx_
         return send_not_acceptable(r, "{\"message\":\"None of these media types are available\"}");
     }
 
+    const resolved_schema = resolve_request_schema(r, loc_conf);
+    if (resolved_schema.disallowed) {
+        var err_buf: [512]u8 = undefined;
+        return send_json_error(r, NGX_HTTP_NOT_ACCEPTABLE, format_schema_error(&err_buf, resolved_schema.allowed_raw));
+    }
+
     const body_format = parse_content_type_from_request(r);
     if (request_needs_body(r) and body_format == .unsupported) {
         return send_unsupported_media_type(r, "{\"message\":\"Unsupported request media type\"}");
@@ -3998,11 +6511,10 @@ fn ngx_http_pgrest_upstream_handler(r: [*c]ngx_http_request_t) callconv(.c) ngx_
         return http.NGX_HTTP_BAD_REQUEST;
     };
 
-    const schema_name = extract_schema_name(r, r.*.method);
     var qualified_table_buf: [512]u8 = undefined;
     const qualified_table_len = build_qualified_table_name(
         qualified_table_buf[0..],
-        schema_name,
+        resolved_schema.name,
         table_name,
     );
     const qualified_table = qualified_table_buf[0..qualified_table_len];
@@ -4015,29 +6527,30 @@ fn ngx_http_pgrest_upstream_handler(r: [*c]ngx_http_request_t) callconv(.c) ngx_
     const write_contract = write_response_contract(sql_op, opts.prefer);
 
     // Parse query string filters
-    var filters: [MAX_FILTERS]Filter = undefined;
-    const filter_count = parse_filters(r.*.args, &filters);
+    var where_buf: [MAX_QUERY_SIZE]u8 = undefined;
+    const where_result = build_where_clause_from_args(&where_buf, r.*.args);
+    if (where_result.invalid) {
+        return send_json_error(r, http.NGX_HTTP_BAD_REQUEST, "{\"message\":\"Invalid filter parameter\"}");
+    }
+    const where_len = where_result.len;
 
     // Parse column selection
-    var select_cols: [MAX_SELECT_COLUMNS][]const u8 = undefined;
-    const select_count = parse_select_columns(r.*.args, &select_cols);
+    var select_buf: [MAX_QUERY_SIZE]u8 = undefined;
+    const select_result = build_select_clause_from_args(&select_buf, r.*.args);
+    if (select_result.invalid) {
+        return send_json_error(r, http.NGX_HTTP_BAD_REQUEST, "{\"message\":\"Invalid select parameter\"}");
+    }
 
     // Parse ordering
     var order_specs: [MAX_ORDER_COLUMNS]OrderSpec = undefined;
-    const order_count = parse_order(r.*.args, &order_specs);
+    const order_parse = parse_order(r.*.args, &order_specs);
+    if (order_parse.invalid) {
+        return reject_invalid_order(r);
+    }
+    const order_count = order_parse.count;
 
     // Parse pagination
     const pagination = parse_pagination(r.*.args);
-
-    // Parse request body for POST/PATCH
-    var json_fields: [MAX_COLUMNS]JsonField = undefined;
-    var json_field_count: usize = 0;
-
-    if (sql_op == .insert or sql_op == .update) {
-        if (get_request_body_slice(r)) |body_data| {
-            json_field_count = parse_write_body_fields(body_format, body_data, r.*.pool, &json_fields);
-        }
-    }
 
     // Allocate request context
     const ctx = core.ngz_pcalloc_c(PgRequestCtx, r.*.pool) orelse {
@@ -4045,17 +6558,21 @@ fn ngx_http_pgrest_upstream_handler(r: [*c]ngx_http_request_t) callconv(.c) ngx_
     };
 
     // Build SQL query into the context
-    ctx.*.query_len = build_sql_query(
+    const table_query = build_table_query(
         &ctx[0].query,
+        r,
+        r.*.pool,
         sql_op,
         qualified_table,
-        filters[0..filter_count],
-        json_fields[0..json_field_count],
-        select_cols[0..select_count],
+        body_format,
+        opts,
+        where_buf[0..where_len],
+        select_buf[0..select_result.len],
         order_specs[0..order_count],
         pagination,
         if (is_write_request) write_contract.include_returning else true,
-    );
+    ) orelse return send_json_error(r, http.NGX_HTTP_BAD_REQUEST, "{\"message\":\"Invalid write payload\"}");
+    ctx.*.query_len = table_query.len;
     ctx[0].query[ctx.*.query_len] = 0; // null terminate
 
     ctx.*.pool_conn = null;
@@ -4069,8 +6586,11 @@ fn ngx_http_pgrest_upstream_handler(r: [*c]ngx_http_request_t) callconv(.c) ngx_
     ctx.*.prefer_params_single_object = opts.prefer.params_single_object;
     ctx.*.prefer_return_mode = opts.prefer.return_mode;
     ctx.*.prefer_handling = opts.prefer.handling;
+    ctx.*.prefer_resolution = opts.prefer.resolution;
+    ctx.*.prefer_resolution_applied = opts.prefer.resolution_applied;
     ctx.*.prefer_max_affected = opts.prefer.max_affected orelse 0;
     ctx.*.prefer_has_max_affected = opts.prefer.max_affected != null;
+    ctx.*.prefer_missing_default = opts.prefer.missing_default;
     ctx.*.prefer_invalid = opts.prefer.invalid;
     ctx.*.emit_range_headers = opts.emit_range_headers;
     ctx.*.write_status = if (is_write_request) write_contract.status else http.NGX_HTTP_OK;
@@ -4197,7 +6717,10 @@ fn finalize_pg_response(ctx: *PgRequestCtx) void {
             .params_single_object = ctx.*.prefer_params_single_object,
             .return_mode = ctx.*.prefer_return_mode,
             .handling = ctx.*.prefer_handling,
+            .resolution = ctx.*.prefer_resolution,
+            .resolution_applied = ctx.*.prefer_resolution_applied,
             .max_affected = if (ctx.*.prefer_has_max_affected) ctx.*.prefer_max_affected else null,
+            .missing_default = ctx.*.prefer_missing_default,
             .invalid = ctx.*.prefer_invalid,
         },
         .emit_range_headers = ctx.*.emit_range_headers,
@@ -4219,6 +6742,117 @@ fn finalize_pg_response(ctx: *PgRequestCtx) void {
     // Format result as JSON
     const ntuples = pgNtuples(result);
     const nfields = pgNfields(result);
+
+    if (ctx.*.rpc_phase == .metadata) {
+        const metadata = parse_rpc_metadata_result(result);
+        if (!metadata.found) {
+            const rc = rpc_metadata_not_found_response(r);
+            ctx.*.request = null;
+            release_pooled_ctx(ctx, false);
+            http.ngx_http_finalize_request(r, rc);
+            return;
+        }
+
+        if (!rpc_method_allowed(r.*.method, metadata)) {
+            const rc = rpc_method_not_allowed_response(r, metadata);
+            ctx.*.request = null;
+            release_pooled_ctx(ctx, false);
+            http.ngx_http_finalize_request(r, rc);
+            return;
+        }
+
+        const resolved_schema = resolve_request_schema(r, core.castPtr(
+            ngx_pgrest_loc_conf_t,
+            conf.ngx_http_get_module_loc_conf(r, &ngx_http_pgrest_module),
+        ) orelse {
+            const rc = http.NGX_HTTP_INTERNAL_SERVER_ERROR;
+            ctx.*.request = null;
+            release_pooled_ctx(ctx, true);
+            http.ngx_http_finalize_request(r, rc);
+            return;
+        });
+        const function_name = extract_rpc_function_name(r.*.uri) orelse {
+            const rc = http.NGX_HTTP_BAD_REQUEST;
+            ctx.*.request = null;
+            release_pooled_ctx(ctx, false);
+            http.ngx_http_finalize_request(r, rc);
+            return;
+        };
+
+        var rpc_call: RpcCall = undefined;
+        rpc_call.param_count = 0;
+        rpc_call.function_name = function_name;
+        rpc_call.prefer_single_object = opts.prefer.params_single_object;
+        const body_format = parse_content_type_from_request(r);
+        const body_data = get_request_body_slice(r);
+        if (body_data) |payload| {
+            parse_rpc_body_params(body_format, payload, r.*.pool, &rpc_call);
+        }
+        if (rpc_call.param_count == 0) {
+            var rpc_args_buf: [MAX_QUERY_SIZE]u8 = undefined;
+            const rpc_args = filter_rpc_query_args_by_metadata(r.*.args, &metadata, true, &rpc_args_buf);
+            parse_rpc_params(rpc_args, &rpc_call);
+        }
+        if (body_data) |payload| {
+            _ = apply_rpc_single_unnamed_param(metadata, body_format, payload, &rpc_call);
+        }
+        collapse_rpc_variadic_param(&rpc_call, &metadata);
+
+        ctx.*.query_len = if (rpc_returns_table_like(metadata)) blk: {
+            var where_buf: [MAX_QUERY_SIZE]u8 = undefined;
+            var read_args_buf: [MAX_QUERY_SIZE]u8 = undefined;
+            const read_args = filter_rpc_query_args_by_metadata(r.*.args, &metadata, false, &read_args_buf);
+            const where_result = build_where_clause_from_args(&where_buf, read_args);
+            if (where_result.invalid) {
+                const rc = send_json_error(r, http.NGX_HTTP_BAD_REQUEST, "{\"message\":\"Invalid filter parameter\"}");
+                ctx.*.request = null;
+                release_pooled_ctx(ctx, false);
+                http.ngx_http_finalize_request(r, rc);
+                return;
+            }
+
+            var select_buf: [MAX_QUERY_SIZE]u8 = undefined;
+            const select_result = build_select_clause_from_args(&select_buf, read_args);
+            if (select_result.invalid) {
+                const rc = send_json_error(r, http.NGX_HTTP_BAD_REQUEST, "{\"message\":\"Invalid select parameter\"}");
+                ctx.*.request = null;
+                release_pooled_ctx(ctx, false);
+                http.ngx_http_finalize_request(r, rc);
+                return;
+            }
+
+            var order_specs: [MAX_ORDER_COLUMNS]OrderSpec = undefined;
+            const order_parse = parse_order(read_args, &order_specs);
+            if (order_parse.invalid) {
+                const rc = reject_invalid_order(r);
+                ctx.*.request = null;
+                release_pooled_ctx(ctx, false);
+                http.ngx_http_finalize_request(r, rc);
+                return;
+            }
+
+            const pagination = parse_pagination(read_args);
+            break :blk build_rpc_table_query(
+                &ctx.query,
+                resolved_schema.name,
+                function_name,
+                &rpc_call,
+                where_buf[0..where_result.len],
+                select_buf[0..select_result.len],
+                order_specs[0..order_parse.count],
+                pagination,
+            );
+        } else build_rpc_call_query(&ctx.query, resolved_schema.name, function_name, &rpc_call);
+        ctx.query[ctx.*.query_len] = 0;
+        ctx.*.rpc_phase = .call;
+
+        if (ctx.*.pool_conn) |pool_conn| {
+            if (!start_pooled_query(ctx, pool_conn)) {
+                finalize_pooled_failure(ctx);
+            }
+            return;
+        }
+    }
 
     if (opts.response_format == .unsupported) {
         const rc = send_not_acceptable(r, "{\"message\":\"None of these media types are available\"}");
@@ -4684,6 +7318,14 @@ export const ngx_http_pgrest_commands = [_]ngx_command_t{
         .post = null,
     },
     ngx_command_t{
+        .name = ngx_string("pgrest_schemas"),
+        .type = conf.NGX_HTTP_LOC_CONF | conf.NGX_CONF_TAKE1,
+        .set = ngx_conf_set_pgrest_schemas,
+        .conf = conf.NGX_HTTP_LOC_CONF_OFFSET,
+        .offset = 0,
+        .post = null,
+    },
+    ngx_command_t{
         .name = ngx_string("pgrest_jwt_secret"),
         .type = conf.NGX_HTTP_LOC_CONF | conf.NGX_CONF_TAKE1,
         .set = ngx_conf_set_pgrest_jwt_secret,
@@ -4717,4 +7359,213 @@ export var ngx_http_pgrest_module = ngx.module.make_module(
 );
 
 const expectEqual = std.testing.expectEqual;
-test "pgrest module" {}
+const expect = std.testing.expect;
+const expectEqualStrings = std.testing.expectEqualStrings;
+
+test "pgrest module" {
+    try expect(ngx_http_pgrest_module.version > 0);
+}
+
+test "parse_order supports null ordering modifiers" {
+    const spec1 = parse_order_spec("age") orelse return error.TestUnexpectedResult;
+    try expectEqual(@as(OrderDir, .asc), spec1.dir);
+    try expectEqual(@as(OrderNulls, .none), spec1.nulls);
+    try expectEqualStrings("age", spec1.expr());
+
+    const spec2 = parse_order_spec("age.desc.nullslast") orelse return error.TestUnexpectedResult;
+    try expectEqual(@as(OrderDir, .desc), spec2.dir);
+    try expectEqual(@as(OrderNulls, .last), spec2.nulls);
+    try expectEqualStrings("age", spec2.expr());
+
+    const spec3 = parse_order_spec("age.nullsfirst") orelse return error.TestUnexpectedResult;
+    try expectEqual(@as(OrderDir, .asc), spec3.dir);
+    try expectEqual(@as(OrderNulls, .first), spec3.nulls);
+}
+
+test "parse_order supports json path ordering" {
+    const spec = parse_order_spec("location->>lat.desc.nullslast") orelse return error.TestUnexpectedResult;
+    try expectEqualStrings("location->>lat", spec.expr());
+    try expectEqual(@as(OrderDir, .desc), spec.dir);
+    try expectEqual(@as(OrderNulls, .last), spec.nulls);
+}
+
+test "parse_order rejects malformed ordering" {
+    try expect(parse_order_spec("name.foo") == null);
+    try expect(parse_order_spec("name.desc.asc") == null);
+    try expect(parse_order_spec("name.nullsfirst.nullslast") == null);
+    try expect(parse_order_spec("name.") == null);
+    try expect(parse_order_spec(".desc") == null);
+}
+
+test "parse_order parses comma separated order clause" {
+    var orders: [MAX_ORDER_COLUMNS]OrderSpec = undefined;
+    const result = parse_order(ngx_string("order=age.desc.nullslast,height.asc"), &orders);
+
+    try expect(!result.invalid);
+    try expectEqual(@as(usize, 2), result.count);
+    try expectEqualStrings("age", orders[0].expr());
+    try expectEqual(@as(OrderDir, .desc), orders[0].dir);
+    try expectEqual(@as(OrderNulls, .last), orders[0].nulls);
+    try expectEqualStrings("height", orders[1].expr());
+    try expectEqual(@as(OrderDir, .asc), orders[1].dir);
+    try expectEqual(@as(OrderNulls, .none), orders[1].nulls);
+}
+
+test "build_where_clause_from_filters preserves current filter semantics" {
+    const filters = [_]Filter{
+        .{ .column = "status", .op = .eq, .value = "active" },
+        .{ .column = "deleted_at", .op = .is_, .value = "null" },
+    };
+    var buf_out: [256]u8 = undefined;
+    const len = build_where_clause_from_filters(&buf_out, &filters);
+
+    try expectEqualStrings("status = 'active' AND deleted_at IS NULL", buf_out[0..len]);
+}
+
+test "build_where_clause_from_args supports logical operators and not" {
+    var buf_out: [512]u8 = undefined;
+    const result = build_where_clause_from_args(&buf_out, ngx_string("or=(age.lt.18,not.and(age.gte.11,age.lte.17))"));
+
+    try expect(!result.invalid);
+    try expectEqualStrings("(age < '18' OR NOT (age >= '11' AND age <= '17'))" , buf_out[0..result.len]);
+}
+
+test "build_where_clause_from_args supports any modifier and wildcard like" {
+    var buf_out: [512]u8 = undefined;
+    const result = build_where_clause_from_args(&buf_out, ngx_string("last_name=like(any).{O*,P*}"));
+
+    try expect(!result.invalid);
+    try expectEqualStrings("last_name LIKE ANY (ARRAY['O%','P%'])", buf_out[0..result.len]);
+}
+
+test "build_where_clause_from_args supports all modifier and advanced operators" {
+    var buf_out: [1024]u8 = undefined;
+    const result = build_where_clause_from_args(&buf_out, ngx_string("last_name=like(all).{O*,*n}&name=match.^J.*n$&headline=fts(french).amusant&meta=isdistinct.null&tags=cs.{example,new}&range=adj.(1,10)"));
+
+    try expect(!result.invalid);
+    try expectEqualStrings("last_name LIKE ALL (ARRAY['O%','%n']) AND name ~ '^J.*n$' AND headline @@ to_tsquery('french', 'amusant') AND meta IS DISTINCT FROM NULL AND tags @> '{example,new}' AND range -|- '(1,10)'", buf_out[0..result.len]);
+}
+
+test "build_where_clause_from_args supports quoted identifiers and quoted in values" {
+    var buf_out: [512]u8 = undefined;
+    const result = build_where_clause_from_args(&buf_out, ngx_string("%22information.cpe%22=like.*MS*&name=in.(%22Hebdon,John%22,%22Williams,Mary%22)"));
+
+    try expect(!result.invalid);
+    try expectEqualStrings("\"information.cpe\" LIKE '%MS%' AND name IN ('Hebdon,John','Williams,Mary')", buf_out[0..result.len]);
+}
+
+test "build_where_clause_from_args supports json path filters" {
+    var buf_out: [512]u8 = undefined;
+    const result = build_where_clause_from_args(&buf_out, ngx_string("json_data->>blood_type=eq.A-&json_data->age=gt.20"));
+
+    try expect(!result.invalid);
+    try expectEqualStrings("to_jsonb(json_data)->>'blood_type' = 'A-' AND to_jsonb(json_data)->'age' > 20", buf_out[0..result.len]);
+}
+
+test "build_select_clause_from_args supports aliases and casts" {
+    var buf_out: [512]u8 = undefined;
+    const result = build_select_clause_from_args(&buf_out, ngx_string("select=fullName:full_name,birthDate:birth_date,salary::text"));
+
+    try expect(!result.invalid);
+    try expectEqualStrings("full_name AS fullName,birth_date AS birthDate,salary::text", buf_out[0..result.len]);
+}
+
+test "build_select_clause_from_args supports json and array paths" {
+    var buf_out: [512]u8 = undefined;
+    const result = build_select_clause_from_args(&buf_out, ngx_string("select=id,json_data->>blood_type,json_data->phones,primary_language:languages->0"));
+
+    try expect(!result.invalid);
+    try expectEqualStrings("id,to_jsonb(json_data)->>'blood_type' AS blood_type,to_jsonb(json_data)->'phones' AS phones,to_jsonb(languages)->0 AS primary_language", buf_out[0..result.len]);
+}
+
+test "build_select_clause_from_args decodes encoded path operators" {
+    var buf_out: [512]u8 = undefined;
+    const result = build_select_clause_from_args(&buf_out, ngx_string("select=id,json_data-%3E%3Eblood_type,json_data-%3Ephones,primary_language:languages-%3E0"));
+
+    try expect(!result.invalid);
+    try expectEqualStrings("id,to_jsonb(json_data)->>'blood_type' AS blood_type,to_jsonb(json_data)->'phones' AS phones,to_jsonb(languages)->0 AS primary_language", buf_out[0..result.len]);
+}
+
+test "build_sql_query renders json path ordering" {
+    var query_buf: [1024]u8 = undefined;
+    const spec = parse_order_spec("location->>lat.desc.nullslast") orelse return error.TestUnexpectedResult;
+    const len = build_sql_query(&query_buf, .select, "countries", "", &.{}, "*", &.{spec}, .{ .limit = null, .offset = null }, false);
+
+    try expectEqualStrings("SELECT * FROM countries ORDER BY to_jsonb(location)->>'lat' DESC NULLS LAST", query_buf[0..len]);
+}
+
+test "parse_on_conflict_param parses unique column list" {
+    var columns: [MAX_COLUMNS][]const u8 = undefined;
+    const count = parse_on_conflict_param(ngx_string("on_conflict=id,name"), &columns) orelse return error.TestUnexpectedResult;
+
+    try expectEqual(@as(usize, 2), count);
+    try expectEqualStrings("id", columns[0]);
+    try expectEqualStrings("name", columns[1]);
+}
+
+test "build_insert_rows_query renders merge duplicates upsert" {
+    var query_buf: [1024]u8 = undefined;
+    const row = [_]WriteScalar{
+        .{ .value = "1", .is_null = false, .is_number = true, .is_boolean = false, .use_default = false },
+        .{ .value = "Sara B.", .is_null = false, .is_number = false, .is_boolean = false, .use_default = false },
+    };
+    const rows = [_][]const WriteScalar{row[0..]};
+    const len = build_insert_rows_query(&query_buf, "users", &.{ "id", "name" }, rows[0..], &.{ "id" }, .merge_duplicates, true);
+
+    try expectEqualStrings(
+        "INSERT INTO users (id,name) VALUES (1,'Sara B.') ON CONFLICT (id) DO UPDATE SET id=EXCLUDED.id,name=EXCLUDED.name RETURNING *",
+        query_buf[0..len],
+    );
+}
+
+test "build_limited_write_query renders update with limit and order" {
+    var query_buf: [1024]u8 = undefined;
+    const spec = parse_order_spec("id") orelse return error.TestUnexpectedResult;
+    const fields = [_]JsonField{.{
+        .name = "status",
+        .value = "inactive",
+        .name_buf = [_]u8{0} ** 256,
+        .value_buf = [_]u8{0} ** 1024,
+        .is_null = false,
+        .is_number = false,
+        .is_boolean = false,
+        .is_missing = false,
+    }};
+    const len = build_limited_write_query(&query_buf, .update, "users", "last_login < '2020-01-01'", &.{spec}, .{ .limit = 10, .offset = null }, &fields, true) orelse return error.TestUnexpectedResult;
+
+    try expectEqualStrings(
+        "WITH pgrest_limited AS (SELECT ctid FROM users WHERE last_login < '2020-01-01' ORDER BY id ASC LIMIT 10) UPDATE users SET status='inactive' WHERE ctid IN (SELECT ctid FROM pgrest_limited) RETURNING *",
+        query_buf[0..len],
+    );
+}
+
+test "collapse_rpc_variadic_param merges repeated variadic values into ARRAY syntax" {
+    var rpc_call: RpcCall = undefined;
+    rpc_call.function_name = "plus_one";
+    rpc_call.param_count = 3;
+    rpc_call.prefer_single_object = false;
+    rpc_call.raw_body = std.mem.zeroes([4096]u8);
+    rpc_call.raw_body_len = 0;
+
+    rpc_call.params[0] = .{ .name = "v", .value = "1", .is_numeric = true };
+    rpc_call.params[1] = .{ .name = "v", .value = "2", .is_numeric = true };
+    rpc_call.params[2] = .{ .name = "other", .value = "x" };
+
+    var metadata = RpcMetadata{ .found = true, .has_variadic = true };
+    @memcpy(metadata.variadic_param_name_buf[0..1], "v");
+    metadata.variadic_param_name_len = 1;
+
+    collapse_rpc_variadic_param(&rpc_call, &metadata);
+
+    try expectEqual(@as(usize, 2), rpc_call.param_count);
+    try expectEqualStrings("v", rpc_call.params[0].name);
+    try expectEqualStrings("ARRAY[1,2]", rpc_call.params[0].value);
+    try expect(rpc_call.params[0].is_raw);
+    try expectEqualStrings("other", rpc_call.params[1].name);
+}
+
+test "auth base64url decode handles jwt alphabet via submodule" {
+    var out: [8]u8 = undefined;
+    const len = base64url_decode("SGVsbG8", &out) orelse return error.TestUnexpectedResult;
+    try expectEqualStrings("Hello", out[0..len]);
+}
