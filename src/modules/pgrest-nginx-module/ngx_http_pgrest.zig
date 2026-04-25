@@ -15,10 +15,8 @@ const CJSON = cjson.CJSON;
 // libpq types and functions (re-exported from ngx_pq.zig)
 const PGconn = pq.PGconn;
 const PGresult = pq.PGresult;
-const pgConnectdb = pq.pgConnectdb;
 const pgFinish = pq.pgFinish;
 const pgStatus = pq.pgStatus;
-const pgExec = pq.pgExec;
 const pgResultStatus = pq.pgResultStatus;
 const pgNtuples = pq.pgNtuples;
 const pgNfields = pq.pgNfields;
@@ -27,8 +25,6 @@ const pgGetvalue = pq.pgGetvalue;
 const pgGetisnull = pq.pgGetisnull;
 const pgGetlength = pq.pgGetlength;
 const pgClear = pq.pgClear;
-const pgErrorMessage = pq.pgErrorMessage;
-const CONNECTION_OK = pq.CONNECTION_OK;
 const PGRES_TUPLES_OK = pq.PGRES_TUPLES_OK;
 const PGRES_COMMAND_OK = pq.PGRES_COMMAND_OK;
 
@@ -96,7 +92,6 @@ const ngx_pgrest_srv_conf_t = extern struct {
 const ngx_pgrest_loc_conf_t = extern struct {
     upstream: ngx_str_t,
     conninfo: ngx_str_t, // PostgreSQL connection string
-    pooling: ngx_flag_t, // Enable connection pooling (non-blocking mode)
     ups: http.ngx_http_upstream_conf_t,
     schemas_raw: ngx_str_t,
 
@@ -217,6 +212,9 @@ const PgRequestCtx = extern struct {
     query_len: usize, // Query length
     next_query: [MAX_QUERY_SIZE]u8,
     next_query_len: usize,
+    followup_queries: [2][MAX_QUERY_SIZE]u8,
+    followup_query_lens: [2]usize,
+    followup_query_count: usize,
     result: ?*PGresult, // Query result
     request: ?*ngx_http_request_t, // Back-reference to HTTP request
     response_format: ResponseFormat,
@@ -276,9 +274,6 @@ fn ensure_pool_conninfo(conninfo: []const u8) bool {
 /// Global connection pool (one per upstream)
 var g_conn_pool: PgConnPool = undefined;
 var g_pool_initialized: bool = false;
-
-/// Result of executing a PostgreSQL query
-const PgQueryResult = pgrest_auth.PgQueryResult;
 
 /// Maximum size for JSON result buffer
 const MAX_JSON_SIZE = 65536;
@@ -1163,6 +1158,106 @@ fn finalize_pooled_failure(ctx: *PgRequestCtx) void {
     http.ngx_http_finalize_request(r, rc);
 }
 
+fn set_active_query(ctx: *PgRequestCtx, query: []const u8) bool {
+    if (query.len == 0 or query.len >= ctx.*.query.len) return false;
+    @memcpy(ctx.*.query[0..query.len], query);
+    ctx.*.query_len = query.len;
+    ctx.*.query[query.len] = 0;
+    return true;
+}
+
+fn queue_followup_query(ctx: *PgRequestCtx, query: []const u8) bool {
+    if (query.len == 0) return false;
+
+    if (ctx.*.next_query_len == 0) {
+        if (query.len >= ctx.*.next_query.len) return false;
+        @memcpy(ctx.*.next_query[0..query.len], query);
+        ctx.*.next_query_len = query.len;
+        ctx.*.next_query[query.len] = 0;
+        return true;
+    }
+
+    if (ctx.*.followup_query_count >= ctx.*.followup_queries.len) return false;
+    const slot = ctx.*.followup_query_count;
+    if (query.len >= ctx.*.followup_queries[slot].len) return false;
+    @memcpy(ctx.*.followup_queries[slot][0..query.len], query);
+    ctx.*.followup_query_lens[slot] = query.len;
+    ctx.*.followup_queries[slot][query.len] = 0;
+    ctx.*.followup_query_count += 1;
+    return true;
+}
+
+fn promote_followup_query(ctx: *PgRequestCtx) bool {
+    if (ctx.*.next_query_len == 0) return false;
+    if (!set_active_query(ctx, ctx.*.next_query[0..ctx.*.next_query_len])) return false;
+
+    if (ctx.*.followup_query_count > 0) {
+        const next_len = ctx.*.followup_query_lens[0];
+        @memcpy(ctx.*.next_query[0..next_len], ctx.*.followup_queries[0][0..next_len]);
+        ctx.*.next_query_len = next_len;
+        ctx.*.next_query[next_len] = 0;
+
+        var i: usize = 1;
+        while (i < ctx.*.followup_query_count) : (i += 1) {
+            const dest = i - 1;
+            const len = ctx.*.followup_query_lens[i];
+            @memcpy(ctx.*.followup_queries[dest][0..len], ctx.*.followup_queries[i][0..len]);
+            ctx.*.followup_query_lens[dest] = len;
+            ctx.*.followup_queries[dest][len] = 0;
+        }
+        ctx.*.followup_query_count -= 1;
+    } else {
+        ctx.*.next_query_len = 0;
+    }
+
+    return true;
+}
+
+fn queue_jwt_setup_queries(ctx: *PgRequestCtx, loc_conf: *ngx_pgrest_loc_conf_t) bool {
+    const r = ctx.*.request orelse return false;
+    const jwt_token = extract_jwt_token(r);
+
+    if (jwt_token) |token| {
+        var jwt_query: [MAX_QUERY_SIZE]u8 = undefined;
+        const jwt_query_len = pgrest_auth.build_set_postgresql_jwt_claim_query(token, &jwt_query) orelse return false;
+        if (!queue_followup_query(ctx, jwt_query[0..jwt_query_len])) return false;
+    }
+
+    const secret = if (loc_conf.*.jwt_secret.len > 0 and loc_conf.*.jwt_secret.data != core.nullptr(u8))
+        core.slicify(u8, loc_conf.*.jwt_secret.data, loc_conf.*.jwt_secret.len)
+    else
+        "";
+    const anon_role = if (loc_conf.*.anon_role.len > 0 and loc_conf.*.anon_role.data != core.nullptr(u8))
+        core.slicify(u8, loc_conf.*.anon_role.data, loc_conf.*.anon_role.len)
+    else
+        "";
+    const role_claim = if (loc_conf.*.jwt_role_claim.len > 0 and loc_conf.*.jwt_role_claim.data != core.nullptr(u8))
+        core.slicify(u8, loc_conf.*.jwt_role_claim.data, loc_conf.*.jwt_role_claim.len)
+    else
+        "role";
+
+    var role_to_set: ?[]const u8 = null;
+    if (jwt_token) |token| {
+        if (secret.len > 0) {
+            if (validate_jwt_hs256(token, secret)) {
+                role_to_set = extract_jwt_role(r.*.pool, token, role_claim) orelse if (anon_role.len > 0) anon_role else null;
+            } else if (anon_role.len > 0) {
+                role_to_set = anon_role;
+            }
+        }
+    } else if (anon_role.len > 0) {
+        role_to_set = anon_role;
+    }
+
+    if (role_to_set) |role| {
+        var role_query: [MAX_QUERY_SIZE]u8 = undefined;
+        const role_query_len = pgrest_auth.build_set_postgresql_role_query(role, &role_query) orelse return false;
+        if (!queue_followup_query(ctx, role_query[0..role_query_len])) return false;
+    }
+
+    return true;
+}
+
 fn start_pooled_query(ctx: *PgRequestCtx, pool_conn: *PgPoolConn) bool {
     const conn = pool_conn.conn orelse return false;
 
@@ -1570,24 +1665,6 @@ fn format_result_as_json_smart(
     return format_result_as_json_with_options(result, ntuples, nfields, json_buf, strip_nulls);
 }
 
-/// JWT config for role-based access
-const JwtConfig = pgrest_auth.JwtConfig;
-
-/// Execute a SQL query against PostgreSQL (blocking)
-/// Optional JWT token for setting request.jwt claim and role in PostgreSQL
-fn execute_pg_query_with_jwt(
-    conninfo: []const u8,
-    query: []const u8,
-    jwt_token: ?[]const u8,
-    jwt_config: ?JwtConfig,
-) PgQueryResult {
-    return pgrest_auth.execute_pg_query_with_jwt(conninfo, query, jwt_token, jwt_config);
-}
-
-/// Execute a SQL query against PostgreSQL (blocking)
-fn execute_pg_query(conninfo: []const u8, query: []const u8) PgQueryResult {
-    return pgrest_auth.execute_pg_query(conninfo, query);
-}
 
 fn pgrest_create_srv_conf(cf: [*c]ngx_conf_t) callconv(.c) ?*anyopaque {
     if (core.ngz_pcalloc_c(ngx_pgrest_srv_conf_t, cf.*.pool)) |srv| {
@@ -1598,7 +1675,6 @@ fn pgrest_create_srv_conf(cf: [*c]ngx_conf_t) callconv(.c) ?*anyopaque {
 
 fn pgrest_create_loc_conf(cf: [*c]ngx_conf_t) callconv(.c) ?*anyopaque {
     if (core.ngz_pcalloc_c(ngx_pgrest_loc_conf_t, cf.*.pool)) |loc| {
-        loc.*.pooling = 0; // Disabled by default (blocking mode)
         // Default role claim name is "role"
         loc.*.jwt_role_claim = ngx_string("role");
         init_upstream_conf(&loc.*.ups);
@@ -1665,29 +1741,10 @@ fn ngx_conf_set_pgrest_pass(
                 http.ngx_http_core_loc_conf_t,
                 conf.ngx_http_conf_get_module_loc_conf(cf, &ngx_http_core_module),
             )) |clcf| {
-                // Use pooling handler if enabled, otherwise blocking handler
-                if (loc.*.pooling == 1) {
-                    clcf.*.handler = ngx_http_pgrest_upstream_handler;
-                } else {
-                    clcf.*.handler = ngx_http_pgrest_handler;
-                }
+                clcf.*.handler = ngx_http_pgrest_upstream_handler;
                 return NGX_CONF_OK;
             }
         }
-    }
-    return NGX_CONF_ERROR;
-}
-
-fn ngx_conf_set_pgrest_pooling(
-    cf: [*c]ngx_conf_t,
-    cmd: [*c]ngx_command_t,
-    data: ?*anyopaque,
-) callconv(.c) [*c]u8 {
-    _ = cf;
-    _ = cmd;
-    if (core.castPtr(ngx_pgrest_loc_conf_t, data)) |loc| {
-        loc.*.pooling = 1;
-        return NGX_CONF_OK;
     }
     return NGX_CONF_ERROR;
 }
@@ -6179,34 +6236,6 @@ fn parse_rpc_body_params(
     }
 }
 
-fn fetch_rpc_metadata_blocking(
-    conninfo: []const u8,
-    schema_name: ?[]const u8,
-    function_name: []const u8,
-    requested_param_count: usize,
-    allow_single_unnamed_fallback: bool,
-) ?RpcMetadata {
-    var query_buf: [MAX_QUERY_SIZE]u8 = undefined;
-    const query_len = build_rpc_metadata_query(
-        &query_buf,
-        schema_name,
-        function_name,
-        requested_param_count,
-        allow_single_unnamed_fallback,
-    );
-    const pg_result = execute_pg_query(conninfo, query_buf[0..query_len]);
-    defer if (pg_result.result != null) pgClear(pg_result.result);
-    if (!pg_result.success) return null;
-
-    const metadata = parse_rpc_metadata_result(pg_result.result);
-    if (!metadata.found) return null;
-    return metadata;
-}
-
-export fn ngx_http_pgrest_client_body_handler(r: [*c]ngx_http_request_t) callconv(.c) void {
-    http.ngx_http_finalize_request(r, ngx_http_pgrest_handler(r));
-}
-
 export fn ngx_http_pgrest_upstream_client_body_handler(r: [*c]ngx_http_request_t) callconv(.c) void {
     const rc = ngx_http_pgrest_upstream_handler(r);
     if (rc != core.NGX_DONE) {
@@ -6251,468 +6280,6 @@ fn extract_table_name(uri: ngx_str_t) ?[]const u8 {
     }
 
     return path[start..end];
-}
-
-/// Handle RPC (stored procedure) call in blocking mode
-fn handle_rpc_call(
-    r: [*c]ngx_http_request_t,
-    conninfo: []const u8,
-    loc_conf: *ngx_pgrest_loc_conf_t,
-    opts: RequestOptions,
-) ngx_int_t {
-    var response_opts = opts;
-    const body_format = parse_content_type_from_request(r);
-    if (request_needs_body(r) and body_format == .unsupported) {
-        return send_unsupported_media_type(r, "{\"message\":\"Unsupported request media type\"}");
-    }
-
-    const resolved_schema = resolve_request_schema(r, loc_conf);
-    if (resolved_schema.disallowed) {
-        var err_buf: [512]u8 = undefined;
-        return send_json_error(r, NGX_HTTP_NOT_ACCEPTABLE, format_schema_error(&err_buf, resolved_schema.allowed_raw));
-    }
-
-    // Extract function name from URI
-    const function_name = extract_rpc_function_name(r.*.uri) orelse {
-        r.*.headers_out.status = http.NGX_HTTP_BAD_REQUEST;
-        r.*.headers_out.content_length_n = 0;
-        _ = http.ngx_http_send_header(r);
-        return http.ngx_http_send_special(r, http.NGX_HTTP_LAST);
-    };
-
-    // Parse RPC parameters from query string or POST body
-    var rpc_call: RpcCall = undefined;
-    rpc_call.param_count = 0;
-    rpc_call.function_name = function_name;
-    rpc_call.prefer_single_object = opts.prefer.params_single_object;
-    const body_data = get_request_body_slice(r);
-
-    // Try to parse POST body first (if present)
-    if (body_data) |payload| {
-        parse_rpc_body_params(body_format, payload, r.*.pool, &rpc_call);
-    }
-
-    const effective_schema = resolved_default_schema_name(resolved_schema);
-    const metadata = fetch_rpc_metadata_blocking(
-        conninfo,
-        effective_schema,
-        function_name,
-        rpc_call.param_count,
-        body_data != null and rpc_allow_single_unnamed_fallback(body_format, rpc_call.prefer_single_object),
-    ) orelse return rpc_metadata_not_found_response(r);
-
-    if (rpc_call.param_count == 0) {
-        var rpc_args_buf: [MAX_QUERY_SIZE]u8 = undefined;
-        const rpc_args = filter_rpc_query_args_by_metadata(r.*.args, &metadata, true, &rpc_args_buf);
-        parse_rpc_params(rpc_args, &rpc_call);
-    }
-
-    if (!rpc_method_allowed(r.*.method, metadata)) {
-        return rpc_method_not_allowed_response(r, metadata);
-    }
-
-    if (body_data) |payload| {
-        if (apply_rpc_single_unnamed_param(metadata, body_format, payload, &rpc_call)) {
-            // use single unnamed parameter binding
-        }
-    }
-    collapse_rpc_variadic_param(&rpc_call, &metadata);
-
-    // Build RPC query
-    var query_buf: [MAX_QUERY_SIZE]u8 = undefined;
-    var count_query_buf: [MAX_QUERY_SIZE]u8 = undefined;
-    var response_range_start: usize = 0;
-    var total_count: ?i64 = null;
-    const query_len = if (rpc_returns_table_like(metadata)) blk: {
-        var where_buf: [MAX_QUERY_SIZE]u8 = undefined;
-        var read_args_buf: [MAX_QUERY_SIZE]u8 = undefined;
-        const read_args = filter_rpc_query_args_by_metadata(r.*.args, &metadata, false, &read_args_buf);
-        const where_result = build_where_clause_from_args(&where_buf, read_args);
-        if (where_result.invalid) return send_json_error(r, http.NGX_HTTP_BAD_REQUEST, "{\"message\":\"Invalid filter parameter\"}");
-
-        var select_buf: [MAX_QUERY_SIZE]u8 = undefined;
-        const select_result = build_select_clause_from_args(&select_buf, read_args);
-        if (select_result.invalid) return send_json_error(r, http.NGX_HTTP_BAD_REQUEST, "{\"message\":\"Invalid select parameter\"}");
-
-        var group_by_buf: [MAX_QUERY_SIZE]u8 = undefined;
-        const group_by_result = build_group_by_clause_from_args(&group_by_buf, read_args);
-        if (group_by_result.invalid) return send_json_error(r, http.NGX_HTTP_BAD_REQUEST, "{\"message\":\"Invalid select parameter\"}");
-
-        var order_specs: [MAX_ORDER_COLUMNS]OrderSpec = undefined;
-        const order_parse = parse_order(read_args, &order_specs);
-        if (order_parse.invalid) return reject_invalid_order(r);
-
-        const pagination_info = effective_read_pagination(read_args, response_opts);
-        response_range_start = pagination_info.range_start;
-
-        if (read_count_requested(response_opts)) {
-            response_opts.prefer.count_applied = true;
-            const count_query_len = build_rpc_table_query(
-                &count_query_buf,
-                resolved_schema.name,
-                function_name,
-                &rpc_call,
-                where_buf[0..where_result.len],
-                "count(*)",
-                "",
-                &.{},
-                .{ .limit = null, .offset = null },
-            );
-            const count_result = execute_pg_query_with_jwt(conninfo, count_query_buf[0..count_query_len], extract_jwt_token(r), if (loc_conf.*.jwt_secret.len > 0) JwtConfig{
-                .secret = core.slicify(u8, loc_conf.*.jwt_secret.data, loc_conf.*.jwt_secret.len),
-                .anon_role = core.slicify(u8, loc_conf.*.anon_role.data, loc_conf.*.anon_role.len),
-                .role_claim = core.slicify(u8, loc_conf.*.jwt_role_claim.data, loc_conf.*.jwt_role_claim.len),
-                .pool = r.*.pool,
-            } else null);
-            defer if (count_result.result != null) pgClear(count_result.result);
-            if (!count_result.success) return http.NGX_HTTP_INTERNAL_SERVER_ERROR;
-            total_count = parse_count_query_result(count_result.result);
-        }
-
-        break :blk build_rpc_table_query(
-            &query_buf,
-            resolved_schema.name,
-            function_name,
-            &rpc_call,
-            where_buf[0..where_result.len],
-            select_buf[0..select_result.len],
-            group_by_buf[0..group_by_result.len],
-            order_specs[0..order_parse.count],
-            pagination_info.pagination,
-        );
-    } else build_rpc_call_query(&query_buf, resolved_schema.name, function_name, &rpc_call);
-    const query = query_buf[0..query_len];
-
-    // Extract JWT token for PostgreSQL
-    const jwt_token = extract_jwt_token(r);
-
-    // Build JWT config if secret is configured
-    const jwt_config: ?JwtConfig = if (loc_conf.*.jwt_secret.len > 0) JwtConfig{
-        .secret = core.slicify(u8, loc_conf.*.jwt_secret.data, loc_conf.*.jwt_secret.len),
-        .anon_role = core.slicify(u8, loc_conf.*.anon_role.data, loc_conf.*.anon_role.len),
-        .role_claim = core.slicify(u8, loc_conf.*.jwt_role_claim.data, loc_conf.*.jwt_role_claim.len),
-        .pool = r.*.pool,
-    } else null;
-
-    // Execute RPC against PostgreSQL (with JWT if provided)
-    const pg_result = execute_pg_query_with_jwt(conninfo, query, jwt_token, jwt_config);
-    defer if (pg_result.result != null) pgClear(pg_result.result);
-
-    // Build JSON response based on query result
-    if (!pg_result.success) {
-        // Return error response
-        const err_prefix = "{\"error\": \"RPC call failed\", \"function\": \"";
-        const err_suffix = "\"}";
-        const err_len = err_prefix.len + function_name.len + err_suffix.len;
-
-        const b = buf.ngx_create_temp_buf(r.*.pool, err_len) orelse {
-            return http.NGX_HTTP_INTERNAL_SERVER_ERROR;
-        };
-
-        @memcpy(b.*.last[0..err_prefix.len], err_prefix);
-        b.*.last += err_prefix.len;
-        @memcpy(b.*.last[0..function_name.len], function_name);
-        b.*.last += function_name.len;
-        @memcpy(b.*.last[0..err_suffix.len], err_suffix);
-        b.*.last += err_suffix.len;
-
-        b.*.flags.last_buf = true;
-        b.*.flags.last_in_chain = true;
-
-        var out: ngx_chain_t = std.mem.zeroes(ngx_chain_t);
-        out.buf = b;
-        out.next = null;
-
-        r.*.headers_out.status = http.NGX_HTTP_INTERNAL_SERVER_ERROR;
-        r.*.headers_out.content_length_n = @intCast(err_len);
-
-        const header_rc = http.ngx_http_send_header(r);
-        if (header_rc == NGX_ERROR or header_rc > http.NGX_HTTP_SPECIAL_RESPONSE) {
-            return header_rc;
-        }
-        return http.ngx_http_output_filter(r, &out);
-    }
-
-    if (opts.response_format == .unsupported) {
-        return send_not_acceptable(r, "{\"message\":\"None of these media types are available\"}");
-    }
-
-    if (opts.singular_object and pg_result.ntuples != 1) {
-        return send_not_acceptable(r, "{\"message\":\"JSON object requested, multiple (or no) rows returned\"}");
-    }
-
-    // Format query results according to requested format
-    var response_buf: [MAX_JSON_SIZE]u8 = undefined;
-    var response_len: usize = 0;
-    var content_type: [*:0]const u8 = "application/json";
-
-    response_len = format_result_for_response(
-        pg_result.result,
-        pg_result.ntuples,
-        pg_result.nfields,
-        opts,
-        &response_buf,
-        &content_type,
-    ) catch |err| switch (err) {
-        error.BinaryShapeUnsupported => return send_not_acceptable(r, "{\"message\":\"application/octet-stream requires exactly one row and one column\"}"),
-        error.ResponseTooLarge => return http.NGX_HTTP_INTERNAL_SERVER_ERROR,
-    };
-
-    return finalize_response_send(
-        r,
-        response_buf[0..response_len],
-        content_type,
-        pg_result.ntuples,
-        response_range_start,
-        total_count,
-        response_opts,
-        http.NGX_HTTP_OK,
-        true,
-    );
-}
-
-/// Content handler for pgrest_pass locations
-fn ngx_http_pgrest_handler(r: [*c]ngx_http_request_t) callconv(.c) ngx_int_t {
-    if (request_needs_body(r) and r.*.request_body == null) {
-        const rc = http.ngx_http_read_client_request_body(r, ngx_http_pgrest_client_body_handler);
-        if (rc >= http.NGX_HTTP_SPECIAL_RESPONSE) {
-            return rc;
-        }
-        return core.NGX_DONE;
-    }
-
-    // Get location config to retrieve connection string
-    const loc_conf = core.castPtr(
-        ngx_pgrest_loc_conf_t,
-        conf.ngx_http_get_module_loc_conf(r, &ngx_http_pgrest_module),
-    ) orelse {
-        r.*.headers_out.status = http.NGX_HTTP_INTERNAL_SERVER_ERROR;
-        r.*.headers_out.content_length_n = 0;
-        _ = http.ngx_http_send_header(r);
-        return http.ngx_http_send_special(r, http.NGX_HTTP_LAST);
-    };
-
-    // Get connection string
-    const conninfo = core.slicify(u8, loc_conf.*.conninfo.data, loc_conf.*.conninfo.len);
-    if (conninfo.len == 0) {
-        r.*.headers_out.status = http.NGX_HTTP_INTERNAL_SERVER_ERROR;
-        r.*.headers_out.content_length_n = 0;
-        _ = http.ngx_http_send_header(r);
-        return http.ngx_http_send_special(r, http.NGX_HTTP_LAST);
-    }
-
-    const opts = parse_request_options(r);
-    var response_opts = opts;
-    if (opts.response_format == .unsupported) {
-        return send_not_acceptable(r, "{\"message\":\"None of these media types are available\"}");
-    }
-    if (should_reject_invalid_prefer(opts)) {
-        return reject_invalid_prefer(r);
-    }
-
-    const body_format = parse_content_type_from_request(r);
-    if (request_needs_body(r) and body_format == .unsupported) {
-        return send_unsupported_media_type(r, "{\"message\":\"Unsupported request media type\"}");
-    }
-
-    // Check if this is an RPC (stored procedure) call
-    if (is_rpc_endpoint(r.*.uri)) {
-        return handle_rpc_call(r, conninfo, loc_conf, opts);
-    }
-
-    const resolved_schema = resolve_request_schema(r, loc_conf);
-    if (resolved_schema.disallowed) {
-        var err_buf: [512]u8 = undefined;
-        return send_json_error(r, NGX_HTTP_NOT_ACCEPTABLE, format_schema_error(&err_buf, resolved_schema.allowed_raw));
-    }
-
-    // Extract table name from URI
-    const table_name = extract_table_name(r.*.uri) orelse {
-        // No table specified - return error
-        r.*.headers_out.status = http.NGX_HTTP_BAD_REQUEST;
-        r.*.headers_out.content_length_n = 0;
-        _ = http.ngx_http_send_header(r);
-        return http.ngx_http_send_special(r, http.NGX_HTTP_LAST);
-    };
-
-    // Build qualified table name (schema.table or just table)
-    var qualified_table_buf: [512]u8 = undefined;
-    const qualified_table_len = build_qualified_table_name(
-        qualified_table_buf[0..],
-        resolved_schema.name,
-        table_name,
-    );
-    const qualified_table = qualified_table_buf[0..qualified_table_len];
-
-    // Map HTTP method to SQL operation
-    const sql_op = SqlOp.fromMethod(r.*.method) orelse {
-        // Unsupported method
-        r.*.headers_out.status = http.NGX_HTTP_NOT_ALLOWED;
-        r.*.headers_out.content_length_n = 0;
-        _ = http.ngx_http_send_header(r);
-        return http.ngx_http_send_special(r, http.NGX_HTTP_LAST);
-    };
-    const is_write_request = sql_op == .insert or sql_op == .update or sql_op == .delete;
-    const write_contract = write_response_contract(sql_op, opts.prefer);
-
-    // Parse query string filters
-    var where_buf: [MAX_QUERY_SIZE]u8 = undefined;
-    const where_result = build_where_clause_from_args(&where_buf, r.*.args);
-    if (where_result.invalid) {
-        return send_json_error(r, http.NGX_HTTP_BAD_REQUEST, "{\"message\":\"Invalid filter parameter\"}");
-    }
-    const where_len = where_result.len;
-
-    // Parse column selection (?select=col1,col2)
-    var select_buf: [MAX_QUERY_SIZE]u8 = undefined;
-    const select_result = build_select_clause_from_args(&select_buf, r.*.args);
-    if (select_result.invalid) {
-        return send_json_error(r, http.NGX_HTTP_BAD_REQUEST, "{\"message\":\"Invalid select parameter\"}");
-    }
-
-    var group_by_buf: [MAX_QUERY_SIZE]u8 = undefined;
-    const group_by_result = build_group_by_clause_from_args(&group_by_buf, r.*.args);
-    if (group_by_result.invalid) {
-        return send_json_error(r, http.NGX_HTTP_BAD_REQUEST, "{\"message\":\"Invalid select parameter\"}");
-    }
-
-    // Parse ordering (?order=col.desc.nullslast)
-    var order_specs: [MAX_ORDER_COLUMNS]OrderSpec = undefined;
-    const order_parse = parse_order(r.*.args, &order_specs);
-    if (order_parse.invalid) {
-        return reject_invalid_order(r);
-    }
-    const order_count = order_parse.count;
-
-    // Parse pagination (?limit=N&offset=M)
-    const pagination_info = effective_read_pagination(r.*.args, response_opts);
-    const pagination = pagination_info.pagination;
-    const response_range_start = pagination_info.range_start;
-
-    var query_buf: [MAX_QUERY_SIZE]u8 = undefined;
-    const table_query = build_table_query(
-        &query_buf,
-        r,
-        r.*.pool,
-        sql_op,
-        qualified_table,
-        body_format,
-        opts,
-        where_buf[0..where_len],
-        select_buf[0..select_result.len],
-        group_by_buf[0..group_by_result.len],
-        order_specs[0..order_count],
-        pagination,
-        if (is_write_request) write_contract.include_returning else true,
-    ) orelse return send_json_error(r, http.NGX_HTTP_BAD_REQUEST, "{\"message\":\"Invalid write payload\"}");
-    const query_len = table_query.len;
-    const query = query_buf[0..query_len];
-
-    // Extract JWT token for PostgreSQL
-    const jwt_token = extract_jwt_token(r);
-
-    // Build JWT config if secret is configured
-    const jwt_config: ?JwtConfig = if (loc_conf.*.jwt_secret.len > 0) JwtConfig{
-        .secret = core.slicify(u8, loc_conf.*.jwt_secret.data, loc_conf.*.jwt_secret.len),
-        .anon_role = core.slicify(u8, loc_conf.*.anon_role.data, loc_conf.*.anon_role.len),
-        .role_claim = core.slicify(u8, loc_conf.*.jwt_role_claim.data, loc_conf.*.jwt_role_claim.len),
-        .pool = r.*.pool,
-    } else null;
-
-    var total_count: ?i64 = null;
-    if (!is_write_request and read_count_requested(response_opts)) {
-        response_opts.prefer.count_applied = true;
-        var count_query_buf: [MAX_QUERY_SIZE]u8 = undefined;
-        const count_query_len = build_table_count_query(
-            &count_query_buf,
-            qualified_table,
-            where_buf[0..where_len],
-        );
-        const count_result = execute_pg_query_with_jwt(conninfo, count_query_buf[0..count_query_len], jwt_token, jwt_config);
-        defer if (count_result.result != null) pgClear(count_result.result);
-        if (!count_result.success) {
-            return http.NGX_HTTP_INTERNAL_SERVER_ERROR;
-        }
-        total_count = parse_count_query_result(count_result.result);
-    }
-
-    // Execute query against PostgreSQL (with JWT if provided)
-    const pg_result = execute_pg_query_with_jwt(conninfo, query, jwt_token, jwt_config);
-    defer if (pg_result.result != null) pgClear(pg_result.result);
-
-    // Build JSON response based on query result
-    if (!pg_result.success) {
-        // Return error response
-        const err_prefix = "{\"error\": \"Query failed\", \"sql\": \"";
-        const err_suffix = "\"}";
-        const err_len = err_prefix.len + query.len + err_suffix.len;
-
-        const b = buf.ngx_create_temp_buf(r.*.pool, err_len) orelse {
-            return http.NGX_HTTP_INTERNAL_SERVER_ERROR;
-        };
-
-        @memcpy(b.*.last[0..err_prefix.len], err_prefix);
-        b.*.last += err_prefix.len;
-        @memcpy(b.*.last[0..query.len], query);
-        b.*.last += query.len;
-        @memcpy(b.*.last[0..err_suffix.len], err_suffix);
-        b.*.last += err_suffix.len;
-
-        b.*.flags.last_buf = true;
-        b.*.flags.last_in_chain = true;
-
-        var out: ngx_chain_t = std.mem.zeroes(ngx_chain_t);
-        out.buf = b;
-        out.next = null;
-
-        r.*.headers_out.status = http.NGX_HTTP_INTERNAL_SERVER_ERROR;
-        r.*.headers_out.content_length_n = @intCast(err_len);
-
-        const header_rc = http.ngx_http_send_header(r);
-        if (header_rc == NGX_ERROR or header_rc > http.NGX_HTTP_SPECIAL_RESPONSE) {
-            return header_rc;
-        }
-        return http.ngx_http_output_filter(r, &out);
-    }
-
-    if (opts.singular_object and pg_result.ntuples != 1) {
-        return send_not_acceptable(r, "{\"message\":\"JSON object requested, multiple (or no) rows returned\"}");
-    }
-
-    if (is_write_request) {
-        if (enforce_max_affected(r, opts, pg_result.ntuples)) |rc| {
-            return rc;
-        }
-    }
-
-    // Format query results according to requested format
-    var response_buf: [MAX_JSON_SIZE]u8 = undefined;
-    var response_len: usize = 0;
-    var content_type: [*:0]const u8 = "application/json";
-
-    response_len = format_result_for_response(
-        pg_result.result,
-        pg_result.ntuples,
-        pg_result.nfields,
-        opts,
-        &response_buf,
-        &content_type,
-    ) catch |err| switch (err) {
-        error.BinaryShapeUnsupported => return send_not_acceptable(r, "{\"message\":\"application/octet-stream requires exactly one row and one column\"}"),
-        error.ResponseTooLarge => return http.NGX_HTTP_INTERNAL_SERVER_ERROR,
-    };
-
-    return finalize_response_send(
-        r,
-        response_buf[0..response_len],
-        content_type,
-        pg_result.ntuples,
-        response_range_start,
-        total_count,
-        response_opts,
-        if (is_write_request) write_contract.status else http.NGX_HTTP_OK,
-        if (is_write_request) write_contract.send_body else true,
-    );
 }
 
 /// Handle RPC (stored procedure) call in non-blocking mode with connection pooling
@@ -6796,6 +6363,7 @@ fn handle_rpc_call_upstream(
     ctx.*.total_count = 0;
     ctx.*.has_total_count = false;
     ctx.*.next_query_len = 0;
+    ctx.*.followup_query_count = 0;
     ctx.*.write_status = http.NGX_HTTP_OK;
     ctx.*.write_send_body = true;
     ctx.*.is_write_request = false;
@@ -6839,6 +6407,9 @@ fn ngx_http_pgrest_upstream_handler(r: [*c]ngx_http_request_t) callconv(.c) ngx_
     const opts = parse_request_options(r);
     if (opts.response_format == .unsupported) {
         return send_not_acceptable(r, "{\"message\":\"None of these media types are available\"}");
+    }
+    if (should_reject_invalid_prefer(opts)) {
+        return reject_invalid_prefer(r);
     }
 
     const resolved_schema = resolve_request_schema(r, loc_conf);
@@ -6915,9 +6486,9 @@ fn ngx_http_pgrest_upstream_handler(r: [*c]ngx_http_request_t) callconv(.c) ngx_
         return http.NGX_HTTP_INTERNAL_SERVER_ERROR;
     };
 
-    // Build SQL query into the context
+    var table_query_buf: [MAX_QUERY_SIZE]u8 = undefined;
     const table_query = build_table_query(
-        &ctx[0].query,
+        &table_query_buf,
         r,
         r.*.pool,
         sql_op,
@@ -6931,8 +6502,6 @@ fn ngx_http_pgrest_upstream_handler(r: [*c]ngx_http_request_t) callconv(.c) ngx_
         pagination,
         if (is_write_request) write_contract.include_returning else true,
     ) orelse return send_json_error(r, http.NGX_HTTP_BAD_REQUEST, "{\"message\":\"Invalid write payload\"}");
-    ctx.*.query_len = table_query.len;
-    ctx[0].query[ctx.*.query_len] = 0; // null terminate
 
     ctx.*.pool_conn = null;
     ctx.*.query_state = .none;
@@ -6957,19 +6526,41 @@ fn ngx_http_pgrest_upstream_handler(r: [*c]ngx_http_request_t) callconv(.c) ngx_
     ctx.*.response_range_start = pagination_info.range_start;
     ctx.*.total_count = 0;
     ctx.*.has_total_count = false;
+    ctx.*.next_query_len = 0;
+    ctx.*.followup_query_count = 0;
     ctx.*.write_status = if (is_write_request) write_contract.status else http.NGX_HTTP_OK;
     ctx.*.write_send_body = if (is_write_request) write_contract.send_body else true;
     ctx.*.is_write_request = is_write_request;
 
+    if (!queue_jwt_setup_queries(ctx, loc_conf)) {
+        return http.NGX_HTTP_INTERNAL_SERVER_ERROR;
+    }
+    const has_setup_queries = ctx.*.next_query_len > 0;
+
     if (!is_write_request and read_count_requested(opts)) {
-        @memcpy(ctx.*.next_query[0..ctx.*.query_len], ctx.*.query[0..ctx.*.query_len]);
-        ctx.*.next_query_len = ctx.*.query_len;
-        ctx.*.query_len = build_table_count_query(ctx.*.query[0..], qualified_table, where_buf[0..where_len]);
-        ctx[0].query[ctx.*.query_len] = 0;
+        var count_query_buf: [MAX_QUERY_SIZE]u8 = undefined;
+        const count_query_len = build_table_count_query(&count_query_buf, qualified_table, where_buf[0..where_len]);
+        if (!set_active_query(ctx, count_query_buf[0..count_query_len])) {
+            return http.NGX_HTTP_INTERNAL_SERVER_ERROR;
+        }
+        if (!queue_followup_query(ctx, table_query_buf[0..table_query.len])) {
+            return http.NGX_HTTP_INTERNAL_SERVER_ERROR;
+        }
         ctx.*.rpc_phase = .count;
     } else {
-        ctx.*.next_query_len = 0;
+        if (!set_active_query(ctx, table_query_buf[0..table_query.len])) {
+            return http.NGX_HTTP_INTERNAL_SERVER_ERROR;
+        }
         ctx.*.rpc_phase = .call;
+    }
+
+    if (has_setup_queries) {
+        if (!queue_followup_query(ctx, ctx.*.query[0..ctx.*.query_len])) {
+            return http.NGX_HTTP_INTERNAL_SERVER_ERROR;
+        }
+        if (!promote_followup_query(ctx)) {
+            return http.NGX_HTTP_INTERNAL_SERVER_ERROR;
+        }
     }
 
     return start_pooled_request(ctx, loc_conf);
@@ -7116,6 +6707,20 @@ fn finalize_pg_response(ctx: *PgRequestCtx) void {
         return;
     }
 
+    if (status == PGRES_COMMAND_OK and std.mem.startsWith(u8, ctx.*.query[0..ctx.*.query_len], "SET ")) {
+        if (!promote_followup_query(ctx)) {
+            finalize_pooled_failure(ctx);
+            return;
+        }
+
+        if (ctx.*.pool_conn) |pool_conn| {
+            if (!start_pooled_query(ctx, pool_conn)) {
+                finalize_pooled_failure(ctx);
+            }
+            return;
+        }
+    }
+
     if (ctx.*.rpc_phase == .count) {
         const parsed_total = parse_count_query_result(result) orelse {
             finalize_pooled_failure(ctx);
@@ -7129,10 +6734,10 @@ fn finalize_pg_response(ctx: *PgRequestCtx) void {
             return;
         }
 
-        @memcpy(ctx.*.query[0..ctx.*.next_query_len], ctx.*.next_query[0..ctx.*.next_query_len]);
-        ctx.*.query_len = ctx.*.next_query_len;
-        ctx.*.query[ctx.*.query_len] = 0;
-        ctx.*.next_query_len = 0;
+        if (!promote_followup_query(ctx)) {
+            finalize_pooled_failure(ctx);
+            return;
+        }
         ctx.*.rpc_phase = .call;
 
         if (ctx.*.pool_conn) |pool_conn| {
@@ -7165,7 +6770,7 @@ fn finalize_pg_response(ctx: *PgRequestCtx) void {
             return;
         }
 
-        const resolved_schema = resolve_request_schema(r, core.castPtr(
+        const loc_conf = core.castPtr(
             ngx_pgrest_loc_conf_t,
             conf.ngx_http_get_module_loc_conf(r, &ngx_http_pgrest_module),
         ) orelse {
@@ -7174,7 +6779,8 @@ fn finalize_pg_response(ctx: *PgRequestCtx) void {
             release_pooled_ctx(ctx, true);
             http.ngx_http_finalize_request(r, rc);
             return;
-        });
+        };
+        const resolved_schema = resolve_request_schema(r, loc_conf);
         const function_name = extract_rpc_function_name(r.*.uri) orelse {
             const rc = http.NGX_HTTP_BAD_REQUEST;
             ctx.*.request = null;
@@ -7202,6 +6808,18 @@ fn finalize_pg_response(ctx: *PgRequestCtx) void {
         }
         collapse_rpc_variadic_param(&rpc_call, &metadata);
 
+        ctx.*.next_query_len = 0;
+        ctx.*.followup_query_count = 0;
+        if (!queue_jwt_setup_queries(ctx, loc_conf)) {
+            const rc = http.NGX_HTTP_INTERNAL_SERVER_ERROR;
+            ctx.*.request = null;
+            release_pooled_ctx(ctx, true);
+            http.ngx_http_finalize_request(r, rc);
+            return;
+        }
+        const has_setup_queries = ctx.*.next_query_len > 0;
+
+        var rpc_query_buf: [MAX_QUERY_SIZE]u8 = undefined;
         ctx.*.query_len = if (rpc_returns_table_like(metadata)) blk: {
             var where_buf: [MAX_QUERY_SIZE]u8 = undefined;
             var read_args_buf: [MAX_QUERY_SIZE]u8 = undefined;
@@ -7249,7 +6867,7 @@ fn finalize_pg_response(ctx: *PgRequestCtx) void {
             ctx.*.response_range_start = pagination_info.range_start;
 
             const data_query_len = build_rpc_table_query(
-                if (read_count_requested(opts)) &ctx.*.next_query else &ctx.*.query,
+                &rpc_query_buf,
                 resolved_schema.name,
                 function_name,
                 &rpc_call,
@@ -7260,9 +6878,16 @@ fn finalize_pg_response(ctx: *PgRequestCtx) void {
                 pagination_info.pagination,
             );
             if (read_count_requested(opts)) {
-                ctx.*.next_query_len = data_query_len;
-                break :blk build_rpc_table_query(
-                    &ctx.*.query,
+                if (!queue_followup_query(ctx, rpc_query_buf[0..data_query_len])) {
+                    const rc = http.NGX_HTTP_INTERNAL_SERVER_ERROR;
+                    ctx.*.request = null;
+                    release_pooled_ctx(ctx, true);
+                    http.ngx_http_finalize_request(r, rc);
+                    return;
+                }
+                var count_query_buf: [MAX_QUERY_SIZE]u8 = undefined;
+                const count_query_len = build_rpc_table_query(
+                    &count_query_buf,
                     resolved_schema.name,
                     function_name,
                     &rpc_call,
@@ -7272,10 +6897,52 @@ fn finalize_pg_response(ctx: *PgRequestCtx) void {
                     &.{},
                     .{ .limit = null, .offset = null },
                 );
+                if (!set_active_query(ctx, count_query_buf[0..count_query_len])) {
+                    const rc = http.NGX_HTTP_INTERNAL_SERVER_ERROR;
+                    ctx.*.request = null;
+                    release_pooled_ctx(ctx, true);
+                    http.ngx_http_finalize_request(r, rc);
+                    return;
+                }
+                break :blk count_query_len;
+            }
+            if (!set_active_query(ctx, rpc_query_buf[0..data_query_len])) {
+                const rc = http.NGX_HTTP_INTERNAL_SERVER_ERROR;
+                ctx.*.request = null;
+                release_pooled_ctx(ctx, true);
+                http.ngx_http_finalize_request(r, rc);
+                return;
             }
             break :blk data_query_len;
-        } else build_rpc_call_query(&ctx.query, resolved_schema.name, function_name, &rpc_call);
-        ctx.query[ctx.*.query_len] = 0;
+        } else build_rpc_call_query(&rpc_query_buf, resolved_schema.name, function_name, &rpc_call);
+
+        if (!rpc_returns_table_like(metadata)) {
+            if (!set_active_query(ctx, rpc_query_buf[0..ctx.*.query_len])) {
+                const rc = http.NGX_HTTP_INTERNAL_SERVER_ERROR;
+                ctx.*.request = null;
+                release_pooled_ctx(ctx, true);
+                http.ngx_http_finalize_request(r, rc);
+                return;
+            }
+        }
+
+        if (has_setup_queries) {
+            if (!queue_followup_query(ctx, ctx.*.query[0..ctx.*.query_len])) {
+                const rc = http.NGX_HTTP_INTERNAL_SERVER_ERROR;
+                ctx.*.request = null;
+                release_pooled_ctx(ctx, true);
+                http.ngx_http_finalize_request(r, rc);
+                return;
+            }
+            if (!promote_followup_query(ctx)) {
+                const rc = http.NGX_HTTP_INTERNAL_SERVER_ERROR;
+                ctx.*.request = null;
+                release_pooled_ctx(ctx, true);
+                http.ngx_http_finalize_request(r, rc);
+                return;
+            }
+        }
+
         ctx.*.rpc_phase = if (read_count_requested(opts) and rpc_returns_table_like(metadata)) .count else .call;
 
         if (ctx.*.pool_conn) |pool_conn| {
@@ -7732,14 +7399,6 @@ export const ngx_http_pgrest_commands = [_]ngx_command_t{
         .type = conf.NGX_HTTP_UPS_CONF | conf.NGX_CONF_1MORE,
         .set = conf.ngx_conf_set_num_slot,
         .conf = conf.NGX_HTTP_SRV_CONF_OFFSET,
-        .offset = 0,
-        .post = null,
-    },
-    ngx_command_t{
-        .name = ngx_string("pgrest_pooling"),
-        .type = conf.NGX_HTTP_LOC_CONF | conf.NGX_CONF_NOARGS,
-        .set = ngx_conf_set_pgrest_pooling,
-        .conf = conf.NGX_HTTP_LOC_CONF_OFFSET,
         .offset = 0,
         .post = null,
     },

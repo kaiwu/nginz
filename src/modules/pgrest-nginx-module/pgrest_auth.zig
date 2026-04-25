@@ -10,37 +10,14 @@ const CJSON = cjson.CJSON;
 
 const PGconn = pq.PGconn;
 const PGresult = pq.PGresult;
-const pgConnectdb = pq.pgConnectdb;
-const pgFinish = pq.pgFinish;
-const pgStatus = pq.pgStatus;
 const pgExec = pq.pgExec;
 const pgResultStatus = pq.pgResultStatus;
-const pgNtuples = pq.pgNtuples;
-const pgNfields = pq.pgNfields;
 const pgClear = pq.pgClear;
-const pgErrorMessage = pq.pgErrorMessage;
-const CONNECTION_OK = pq.CONNECTION_OK;
-const PGRES_TUPLES_OK = pq.PGRES_TUPLES_OK;
 const PGRES_COMMAND_OK = pq.PGRES_COMMAND_OK;
 
 const ngx_str_t = core.ngx_str_t;
 const ngx_pool_t = core.ngx_pool_t;
 const ngx_http_request_t = http.ngx_http_request_t;
-
-pub const JwtConfig = struct {
-    secret: []const u8,
-    anon_role: []const u8,
-    role_claim: []const u8,
-    pool: [*c]ngx_pool_t,
-};
-
-pub const PgQueryResult = struct {
-    success: bool,
-    ntuples: i32,
-    nfields: i32,
-    result: ?*PGresult,
-    error_msg: ?[*:0]u8,
-};
 
 fn extract_header_value(r: [*c]ngx_http_request_t, header_name: []const u8) ?[]const u8 {
     if (r == null) return null;
@@ -92,27 +69,7 @@ pub fn set_postgresql_jwt_claim(conn: ?*PGconn, jwt_token: []const u8) bool {
     if (conn == null or jwt_token.len == 0) return true;
 
     var query_buf: [8192]u8 = undefined;
-    var pos: usize = 0;
-    const set_prefix = "SET request.jwt TO '";
-    @memcpy(query_buf[pos..][0..set_prefix.len], set_prefix);
-    pos += set_prefix.len;
-
-    for (jwt_token) |c| {
-        if (pos >= query_buf.len - 10) break;
-        if (c == '\'') {
-            query_buf[pos] = '\'';
-            pos += 1;
-            query_buf[pos] = '\'';
-            pos += 1;
-        } else {
-            query_buf[pos] = c;
-            pos += 1;
-        }
-    }
-
-    query_buf[pos] = '\'';
-    pos += 1;
-    query_buf[pos] = 0;
+    _ = build_set_postgresql_jwt_claim_query(jwt_token, &query_buf) orelse return false;
 
     const result = pgExec(conn, &query_buf);
     if (result == null) return false;
@@ -203,14 +160,28 @@ pub fn set_postgresql_role(conn: ?*PGconn, role: []const u8) bool {
     if (conn == null or role.len == 0) return true;
 
     var query_buf: [512]u8 = undefined;
+    _ = build_set_postgresql_role_query(role, &query_buf) orelse return false;
+
+    const result = pgExec(conn, &query_buf);
+    if (result == null) return false;
+    const status = pgResultStatus(result);
+    pgClear(result);
+    return status == PGRES_COMMAND_OK;
+}
+
+pub fn build_set_postgresql_jwt_claim_query(jwt_token: []const u8, query_buf: []u8) ?usize {
+    if (jwt_token.len == 0) return null;
+
     var pos: usize = 0;
-    const set_prefix = "SET ROLE '";
+    const set_prefix = "SET request.jwt TO '";
+    if (set_prefix.len + jwt_token.len + 4 > query_buf.len) return null;
     @memcpy(query_buf[pos..][0..set_prefix.len], set_prefix);
     pos += set_prefix.len;
 
-    for (role) |c| {
-        if (pos >= query_buf.len - 10) break;
+    for (jwt_token) |c| {
+        if (pos >= query_buf.len - 2) return null;
         if (c == '\'') {
+            if (pos >= query_buf.len - 3) return null;
             query_buf[pos] = '\'';
             pos += 1;
             query_buf[pos] = '\'';
@@ -221,84 +192,41 @@ pub fn set_postgresql_role(conn: ?*PGconn, role: []const u8) bool {
         }
     }
 
+    if (pos >= query_buf.len - 1) return null;
     query_buf[pos] = '\'';
     pos += 1;
     query_buf[pos] = 0;
-
-    const result = pgExec(conn, &query_buf);
-    if (result == null) return false;
-    const status = pgResultStatus(result);
-    pgClear(result);
-    return status == PGRES_COMMAND_OK;
+    return pos;
 }
 
-pub fn execute_pg_query_with_jwt(
-    conninfo: []const u8,
-    query: []const u8,
-    jwt_token: ?[]const u8,
-    jwt_config: ?JwtConfig,
-) PgQueryResult {
-    var conn_buf: [512]u8 = undefined;
-    var query_buf: [16384]u8 = undefined;
+pub fn build_set_postgresql_role_query(role: []const u8, query_buf: []u8) ?usize {
+    if (role.len == 0) return null;
 
-    if (conninfo.len >= conn_buf.len or query.len >= query_buf.len) {
-        return .{ .success = false, .ntuples = 0, .nfields = 0, .result = null, .error_msg = null };
-    }
+    var pos: usize = 0;
+    const set_prefix = "SET ROLE '";
+    if (set_prefix.len + role.len + 4 > query_buf.len) return null;
+    @memcpy(query_buf[pos..][0..set_prefix.len], set_prefix);
+    pos += set_prefix.len;
 
-    @memcpy(conn_buf[0..conninfo.len], conninfo);
-    conn_buf[conninfo.len] = 0;
-    @memcpy(query_buf[0..query.len], query);
-    query_buf[query.len] = 0;
-
-    const conn = pgConnectdb(&conn_buf);
-    if (conn == null) {
-        return .{ .success = false, .ntuples = 0, .nfields = 0, .result = null, .error_msg = null };
-    }
-
-    if (pgStatus(conn) != CONNECTION_OK) {
-        const err = pgErrorMessage(conn);
-        pgFinish(conn);
-        return .{ .success = false, .ntuples = 0, .nfields = 0, .result = null, .error_msg = err };
-    }
-
-    if (jwt_token) |token| {
-        _ = set_postgresql_jwt_claim(conn, token);
-        if (jwt_config) |cfg| {
-            if (cfg.secret.len > 0) {
-                if (validate_jwt_hs256(token, cfg.secret)) {
-                    if (extract_jwt_role(cfg.pool, token, cfg.role_claim)) |role| {
-                        _ = set_postgresql_role(conn, role);
-                    } else if (cfg.anon_role.len > 0) {
-                        _ = set_postgresql_role(conn, cfg.anon_role);
-                    }
-                } else if (cfg.anon_role.len > 0) {
-                    _ = set_postgresql_role(conn, cfg.anon_role);
-                }
-            }
-        }
-    } else if (jwt_config) |cfg| {
-        if (cfg.anon_role.len > 0) {
-            _ = set_postgresql_role(conn, cfg.anon_role);
+    for (role) |c| {
+        if (pos >= query_buf.len - 2) return null;
+        if (c == '\'') {
+            if (pos >= query_buf.len - 3) return null;
+            query_buf[pos] = '\'';
+            pos += 1;
+            query_buf[pos] = '\'';
+            pos += 1;
+        } else {
+            query_buf[pos] = c;
+            pos += 1;
         }
     }
 
-    const result = pgExec(conn, &query_buf);
-    const status = pgResultStatus(result);
-    if (status != PGRES_TUPLES_OK and status != pq.PGRES_COMMAND_OK) {
-        const err = pgErrorMessage(conn);
-        if (result != null) pgClear(result);
-        pgFinish(conn);
-        return .{ .success = false, .ntuples = 0, .nfields = 0, .result = null, .error_msg = err };
-    }
-
-    const ntuples = pgNtuples(result);
-    const nfields = pgNfields(result);
-    pgFinish(conn);
-    return .{ .success = true, .ntuples = ntuples, .nfields = nfields, .result = result, .error_msg = null };
-}
-
-pub fn execute_pg_query(conninfo: []const u8, query: []const u8) PgQueryResult {
-    return execute_pg_query_with_jwt(conninfo, query, null, null);
+    if (pos >= query_buf.len - 1) return null;
+    query_buf[pos] = '\'';
+    pos += 1;
+    query_buf[pos] = 0;
+    return pos;
 }
 
 test "auth base64url decode handles jwt alphabet" {
