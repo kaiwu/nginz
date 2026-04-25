@@ -94,10 +94,67 @@ pub fn hmac_sha256(key: []const u8, data: []const u8, output: *[32]u8) bool {
     return len == 32;
 }
 
-pub fn validate_jwt_hs256(token: []const u8, secret: []const u8) bool {
+pub const JwtValidationError = enum {
+    invalid_format,
+    invalid_signature,
+    expired,
+    not_yet_valid,
+};
+
+fn validate_jwt_structure(token: []const u8) bool {
     const first_dot = std.mem.indexOfScalar(u8, token, '.') orelse return false;
+    if (first_dot == 0) return false;
     const rest = token[first_dot + 1 ..];
     const second_dot = std.mem.indexOfScalar(u8, rest, '.') orelse return false;
+    if (second_dot == 0) return false;
+    if (std.mem.indexOfScalar(u8, rest[second_dot + 1 ..], '.') != null) return false;
+    if (rest[second_dot + 1 ..].len == 0) return false;
+    return true;
+}
+
+fn validate_jwt_claims(pool: [*c]ngx_pool_t, token: []const u8) ?JwtValidationError {
+    const first_dot = std.mem.indexOfScalar(u8, token, '.') orelse return .invalid_format;
+    const rest = token[first_dot + 1 ..];
+    const second_dot = std.mem.indexOfScalar(u8, rest, '.') orelse return .invalid_format;
+    const payload_b64 = rest[0..second_dot];
+
+    var payload_buf: [4096]u8 = undefined;
+    const payload_len = base64url_decode(payload_b64, &payload_buf) orelse return .invalid_format;
+    if (payload_len < 2 or payload_buf[0] != '{') return .invalid_format;
+
+    var cj = CJSON.init(pool);
+    const json = cj.decode(ngx_str_t{ .data = @constCast(payload_buf[0..payload_len].ptr), .len = payload_len }) catch return .invalid_format;
+    defer cj.free(json);
+
+    const now = @as(i64, @intCast(core.ngx_time()));
+
+    if (CJSON.query(json, "$.exp")) |node| {
+        if (CJSON.intValue(node)) |exp| {
+            if (now > exp) return .expired;
+        }
+    }
+
+    if (CJSON.query(json, "$.iat")) |node| {
+        if (CJSON.intValue(node)) |iat| {
+            if (now < iat) return .not_yet_valid;
+        }
+    }
+
+    if (CJSON.query(json, "$.nbf")) |node| {
+        if (CJSON.intValue(node)) |nbf| {
+            if (now < nbf) return .not_yet_valid;
+        }
+    }
+
+    return null;
+}
+
+pub fn validate_jwt_hs256(token: []const u8, secret: []const u8) bool {
+    if (!validate_jwt_structure(token)) return false;
+
+    const first_dot = std.mem.indexOfScalar(u8, token, '.').?;
+    const rest = token[first_dot + 1 ..];
+    const second_dot = std.mem.indexOfScalar(u8, rest, '.').?;
 
     const header_payload = token[0 .. first_dot + 1 + second_dot];
     const signature_b64 = rest[second_dot + 1 ..];
@@ -112,6 +169,16 @@ pub fn validate_jwt_hs256(token: []const u8, secret: []const u8) bool {
     var diff: u8 = 0;
     for (0..32) |i| diff |= signature[i] ^ expected[i];
     return diff == 0;
+}
+
+pub fn validate_jwt_token(pool: [*c]ngx_pool_t, token: []const u8, secret: []const u8) ?JwtValidationError {
+    if (!validate_jwt_structure(token)) return .invalid_format;
+
+    if (secret.len > 0) {
+        if (!validate_jwt_hs256(token, secret)) return .invalid_signature;
+    }
+
+    return validate_jwt_claims(pool, token);
 }
 
 pub fn extract_jwt_role(pool: [*c]ngx_pool_t, jwt_token: []const u8, role_claim: []const u8) ?[]const u8 {
@@ -199,4 +266,15 @@ test "auth base64url decode handles jwt alphabet" {
     var out: [8]u8 = undefined;
     const len = base64url_decode("SGVsbG8", &out) orelse return error.TestUnexpectedResult;
     try std.testing.expectEqualStrings("Hello", out[0..len]);
+}
+
+test "validate_jwt_structure rejects malformed tokens" {
+    try std.testing.expect(!validate_jwt_structure(""));
+    try std.testing.expect(!validate_jwt_structure("nodots"));
+    try std.testing.expect(!validate_jwt_structure("one.two"));
+    try std.testing.expect(!validate_jwt_structure("one.two.three.extra"));
+    try std.testing.expect(!validate_jwt_structure(".two.three"));
+    try std.testing.expect(!validate_jwt_structure("one..three"));
+    try std.testing.expect(!validate_jwt_structure("one.two."));
+    try std.testing.expect(validate_jwt_structure("eyJhbGciOiJIUzI1NiJ9.eyJyb2xlIjoiYWRtaW4ifQ.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c"));
 }

@@ -599,6 +599,7 @@ const RequestOptions = struct {
     prefer: PreferOptions = .{},
     emit_range_headers: bool = false,
     range_requested: bool = false,
+    range_invalid: bool = false,
     range_start: usize = 0,
     range_end: ?usize = null,
 };
@@ -802,17 +803,27 @@ fn parse_request_options(r: [*c]ngx_http_request_t) RequestOptions {
         const trimmed = trim_ascii_spaces(range_val);
         if (trimmed.len > 0) {
             const dash = std.mem.indexOfScalar(u8, trimmed, '-') orelse trimmed.len;
-            if (dash > 0 and dash < trimmed.len) {
-                const start = std.fmt.parseInt(usize, trimmed[0..dash], 10) catch opts.range_start;
-                const end_slice = trimmed[dash + 1 ..];
-                opts.range_requested = true;
-                opts.range_start = start;
-                opts.range_end = if (end_slice.len == 0)
-                    null
-                else blk: {
-                    const parsed_end = std.fmt.parseInt(usize, end_slice, 10) catch start;
-                    break :blk if (parsed_end >= start) parsed_end else start;
+            if (dash == 0 or dash == trimmed.len) {
+                opts.range_invalid = true;
+            } else {
+                const start = std.fmt.parseInt(usize, trimmed[0..dash], 10) catch blk: {
+                    opts.range_invalid = true;
+                    break :blk 0;
                 };
+                if (!opts.range_invalid) {
+                    const end_slice = trimmed[dash + 1 ..];
+                    opts.range_requested = true;
+                    opts.range_start = start;
+                    opts.range_end = if (end_slice.len == 0)
+                        null
+                    else blk: {
+                        const parsed_end = std.fmt.parseInt(usize, end_slice, 10) catch {
+                            opts.range_invalid = true;
+                            break :blk start;
+                        };
+                        break :blk if (parsed_end >= start) parsed_end else start;
+                    };
+                }
             }
         }
     }
@@ -1311,7 +1322,7 @@ fn release_pooled_ctx(ctx: *PgRequestCtx, failed: bool) void {
 
 fn finalize_pooled_failure(ctx: *PgRequestCtx) void {
     const r = ctx.*.request orelse return;
-    const rc = send_json_error(r, http.NGX_HTTP_INTERNAL_SERVER_ERROR, "{\"error\":\"Query failed\"}");
+    const rc = send_json_error(r, http.NGX_HTTP_INTERNAL_SERVER_ERROR, "{\"message\":\"Query failed\"}");
     ctx.*.request = null;
     release_pooled_ctx(ctx, true);
     http.ngx_http_finalize_request(r, rc);
@@ -1372,14 +1383,20 @@ fn promote_followup_query(ctx: *PgRequestCtx) bool {
     return true;
 }
 
-fn queue_jwt_setup_queries(ctx: *PgRequestCtx, loc_conf: *ngx_pgrest_loc_conf_t) bool {
-    const r = ctx.*.request orelse return false;
+const JwtSetupResult = enum {
+    ok,
+    unauthorized,
+    failed,
+};
+
+fn queue_jwt_setup_queries(ctx: *PgRequestCtx, loc_conf: *ngx_pgrest_loc_conf_t) JwtSetupResult {
+    const r = ctx.*.request orelse return .failed;
     const jwt_token = extract_jwt_token(r);
 
     if (jwt_token) |token| {
         var jwt_query: [MAX_QUERY_SIZE]u8 = undefined;
-        const jwt_query_len = pgrest_auth.build_set_postgresql_jwt_claim_query(token, &jwt_query) orelse return false;
-        if (!queue_followup_query(ctx, jwt_query[0..jwt_query_len])) return false;
+        const jwt_query_len = pgrest_auth.build_set_postgresql_jwt_claim_query(token, &jwt_query) orelse return .failed;
+        if (!queue_followup_query(ctx, jwt_query[0..jwt_query_len])) return .failed;
     }
 
     const secret = if (loc_conf.*.jwt_secret.len > 0 and loc_conf.*.jwt_secret.data != core.nullptr(u8))
@@ -1398,11 +1415,16 @@ fn queue_jwt_setup_queries(ctx: *PgRequestCtx, loc_conf: *ngx_pgrest_loc_conf_t)
     var role_to_set: ?[]const u8 = null;
     if (jwt_token) |token| {
         if (secret.len > 0) {
-            if (validate_jwt_hs256(token, secret)) {
-                role_to_set = extract_jwt_role(r.*.pool, token, role_claim) orelse if (anon_role.len > 0) anon_role else null;
-            } else if (anon_role.len > 0) {
-                role_to_set = anon_role;
+            if (pgrest_auth.validate_jwt_token(r.*.pool, token, secret)) |err| {
+                _ = send_json_error(r, http.NGX_HTTP_UNAUTHORIZED, switch (err) {
+                    .invalid_format => "{\"message\":\"Invalid JWT format\"}",
+                    .invalid_signature => "{\"message\":\"Invalid JWT signature\"}",
+                    .expired => "{\"message\":\"JWT token has expired\"}",
+                    .not_yet_valid => "{\"message\":\"JWT token is not yet valid\"}",
+                });
+                return .unauthorized;
             }
+            role_to_set = extract_jwt_role(r.*.pool, token, role_claim) orelse if (anon_role.len > 0) anon_role else null;
         }
     } else if (anon_role.len > 0) {
         role_to_set = anon_role;
@@ -1410,11 +1432,11 @@ fn queue_jwt_setup_queries(ctx: *PgRequestCtx, loc_conf: *ngx_pgrest_loc_conf_t)
 
     if (role_to_set) |role| {
         var role_query: [MAX_QUERY_SIZE]u8 = undefined;
-        const role_query_len = pgrest_auth.build_set_postgresql_role_query(role, &role_query) orelse return false;
-        if (!queue_followup_query(ctx, role_query[0..role_query_len])) return false;
+        const role_query_len = pgrest_auth.build_set_postgresql_role_query(role, &role_query) orelse return .failed;
+        if (!queue_followup_query(ctx, role_query[0..role_query_len])) return .failed;
     }
 
-    return true;
+    return .ok;
 }
 
 fn start_pooled_query(ctx: *PgRequestCtx, pool_conn: *PgPoolConn) bool {
@@ -7493,6 +7515,9 @@ fn ngx_http_pgrest_upstream_handler(r: [*c]ngx_http_request_t) callconv(.c) ngx_
     if (should_reject_invalid_prefer(opts)) {
         return reject_invalid_prefer(r);
     }
+    if (opts.range_invalid) {
+        return send_json_error(r, http.NGX_HTTP_BAD_REQUEST, "{\"message\":\"Invalid Range header\"}");
+    }
 
     const resolved_schema = resolve_request_schema(r, loc_conf);
     if (resolved_schema.disallowed) {
@@ -7663,8 +7688,10 @@ fn ngx_http_pgrest_upstream_handler(r: [*c]ngx_http_request_t) callconv(.c) ngx_
         if (is_write_request) write_contract.include_returning else true,
     ) orelse return send_json_error(r, http.NGX_HTTP_BAD_REQUEST, "{\"message\":\"Invalid write payload\"}");
 
-    if (!ctx.*.table_embed_metadata and !queue_jwt_setup_queries(ctx, loc_conf)) {
-        return http.NGX_HTTP_INTERNAL_SERVER_ERROR;
+    if (!ctx.*.table_embed_metadata) {
+        const jwt_result = queue_jwt_setup_queries(ctx, loc_conf);
+        if (jwt_result == .unauthorized) return http.NGX_HTTP_UNAUTHORIZED;
+        if (jwt_result == .failed) return http.NGX_HTTP_INTERNAL_SERVER_ERROR;
     }
     const has_setup_queries = ctx.*.next_query_len > 0;
 
@@ -7958,6 +7985,13 @@ fn finalize_pg_response(ctx: *PgRequestCtx) void {
             return;
         }
         const req_opts = parse_request_options(r);
+        if (req_opts.range_invalid) {
+            const rc = send_json_error(r, http.NGX_HTTP_BAD_REQUEST, "{\"message\":\"Invalid Range header\"}");
+            ctx.*.request = null;
+            release_pooled_ctx(ctx, false);
+            http.ngx_http_finalize_request(r, rc);
+            return;
+        }
         const pagination_info = effective_read_pagination(r.*.args, req_opts);
         ctx.*.response_range_start = pagination_info.range_start;
 
@@ -7985,7 +8019,14 @@ fn finalize_pg_response(ctx: *PgRequestCtx) void {
 
         ctx.*.next_query_len = 0;
         ctx.*.followup_query_count = 0;
-        if (!queue_jwt_setup_queries(ctx, loc_conf)) {
+        const jwt_result = queue_jwt_setup_queries(ctx, loc_conf);
+        if (jwt_result == .unauthorized) {
+            ctx.*.request = null;
+            release_pooled_ctx(ctx, false);
+            http.ngx_http_finalize_request(r, http.NGX_HTTP_UNAUTHORIZED);
+            return;
+        }
+        if (jwt_result == .failed) {
             finalize_pooled_failure(ctx);
             return;
         }
@@ -8085,7 +8126,14 @@ fn finalize_pg_response(ctx: *PgRequestCtx) void {
 
         ctx.*.next_query_len = 0;
         ctx.*.followup_query_count = 0;
-        if (!queue_jwt_setup_queries(ctx, loc_conf)) {
+        const jwt_result2 = queue_jwt_setup_queries(ctx, loc_conf);
+        if (jwt_result2 == .unauthorized) {
+            ctx.*.request = null;
+            release_pooled_ctx(ctx, false);
+            http.ngx_http_finalize_request(r, http.NGX_HTTP_UNAUTHORIZED);
+            return;
+        }
+        if (jwt_result2 == .failed) {
             const rc = http.NGX_HTTP_INTERNAL_SERVER_ERROR;
             ctx.*.request = null;
             release_pooled_ctx(ctx, true);

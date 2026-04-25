@@ -676,6 +676,61 @@ This module is not a standalone PostgREST server. It is an nginx upstream module
 
 ---
 
+## Batch 12: Execution-Path Parity Gap Closure and Hardening — Detailed Task List (Easy → Hard)
+
+This section collects every tail left by batches 1–11, decides whether it belongs in Batch 12, and turns the Batch 12 inclusions into actionable todos ordered from easy to hard. The rule for Batch 12 is **hardening and gap closure only**; anything that is genuinely new feature surface stays explicitly deferred.
+
+### Easy
+
+- [x] **[Easy]** **Directive reference section in README** — documented every exported `pgrest_*` directive in a single reference table.
+- [x] **[Easy]** **Parity matrix in README** — added a matrix mapping each roadmap category to Implemented / Partial / Missing status.
+- [x] **[Easy]** **Batch 12 documentation delta** — added a "Batch 12 Changes" section to README documenting everything closed in this batch.
+- [x] **[Easy]** **Embedding read coverage for non-JSON formats** — documented the JSON-only contract and added explicit rejection tests for non-JSON embedding formats.
+- [x] **[Easy]** **Error response parity** — standardized all client-facing and server error responses to use `{"message":"..."}` consistently.
+- [x] **[Easy]** **JWT malformed-payload hardening** — `pgrest_auth.zig` now rejects tokens with invalid Base64url, missing required segments, or unparseable JSON payload with `401 Unauthorized` instead of falling through to anon role.
+- [x] **[Easy]** **JWT `exp` claim enforcement** — expired tokens now return `401 Unauthorized` with "JWT token has expired".
+- [x] **[Easy]** **JWT `iat` / `nbf` sanity checks** — tokens with future `iat` or not-yet-valid `nbf` now return `401 Unauthorized` with "JWT token is not yet valid".
+- [x] **[Easy]** **Malformed payload handling** — malformed `Range` headers now return `400 Bad Request`. Malformed JSON/CSV/XML bodies already return `400` via "Invalid write payload". Malformed `Prefer` and filter/select/order parameters already return `400` with specific messages.
+
+### Medium
+
+- [ ] **[Medium]** **JWT integration coverage** — add Bun tests for expired JWT, future-dated JWT, malformed JWT, and missing-signature JWT against both blocking and pooled paths.
+- [ ] **[Medium]** **SQL/runtime error handling** — add explicit behavior and tests for: SQL syntax errors emitted by PostgreSQL, constraint violations, missing table/function errors, insufficient privilege errors.
+- [ ] **[Medium]** **Connection error handling** — add explicit behavior and tests for: PostgreSQL unreachable, connection timeout, connection reset mid-query, DNS failure.
+- [ ] **[Medium]** **View semantic review** — verify and document whether table-read filtering, ordering, pagination, and write semantics behave correctly for PostgreSQL views (updatable and non-updatable) under the current schema-allowlist model. Add integration coverage where gaps are found.
+- [ ] **[Medium]** **ROADMAP-to-tests audit** — verify that every roadmap section (1–11) has at least one integration test that exercises its primary behavior; list any sections that still lack coverage and add tests.
+- [ ] **[Medium]** **Real `count=planned` and `count=estimated`** — replace the current exact-count fallback with PostgreSQL planner/statistics estimates (`EXPLAIN` row estimates or `pg_class`/`pg_stat` lookups) so the HTTP contract (`Prefer: count=planned|estimated`) matches the promised semantics.
+
+### Hard
+
+- [ ] **[Hard]** **Audit upstream configuration sharing** — review how `pgrest_pass`, `pgrest_schemas`, and keepalive settings are shared across requests in the pooled path.
+- [ ] **[Hard]** **Eliminate silent cross-request state leakage** — ensure JWT role, schema profile, and Prefer settings from one request cannot influence another request that reuses the same pooled connection.
+- [ ] **[Hard]** **Add pooled-state integration coverage** — create tests that alternate requests with different roles/schemas on the same pooled connection and assert isolation.
+- [ ] **[Hard]** **Audit all SQL construction sites** — identify every location in `pgrest_query.zig`, `pgrest_rpc.zig`, and `ngx_http_pgrest.zig` where user input is interpolated into SQL strings.
+- [ ] **[Hard]** **Parameterized filter values** — convert the filter-operator value rendering (`eq`, `gt`, `like`, etc.) from string interpolation to PostgreSQL positional parameters (`$1`, `$2`, …) where feasible.
+- [ ] **[Hard]** **Parameterized RPC arguments** — convert named and positional RPC arguments from string interpolation to parameters.
+- [ ] **[Hard]** **Parameterized write payloads** — convert `INSERT`/`UPDATE`/`DELETE` value lists from string interpolation to parameters.
+- [ ] **[Hard]** **Zig-level tests for parameterized queries** — add parser/builder tests that assert parameter placeholders are generated correctly.
+- [ ] **[Hard]** **Integration coverage for parameterized queries** — add Bun tests that inject malicious payloads and assert they are treated as parameter data, not executable SQL.
+
+### Items intentionally deferred BEYOND Batch 12 (new feature surface, not hardening)
+
+These are not Batch 12 tails; they are features that were deferred from earlier batches and remain out of scope because they expand the feature surface rather than close existing gaps.
+
+- **Spread syntax (`...rel`)** — deferred from Batch 11.
+- **Null-based embed filters and empty embeds** — deferred from Batch 11.
+- **Mutation-time embedding** — deferred from Batch 11.
+- **Recursive / view / computed / table-valued-function relationship inference** — deferred from Batch 11.
+- **Aggregate ordering and `HAVING`-style filtering** — deferred from Batch 9.
+- **Embedding-aware aggregate behavior** — deferred from Batch 9.
+- **`Prefer: tx=commit|rollback`** — excluded from Batch 3 and remains out of scope.
+- **Default-primary-key upsert inference without explicit conflict target** — excluded from Batch 6 (requires schema-cache metadata this upstream module does not maintain).
+- **Custom media type handlers** — excluded from Batch 2.
+- **Full PostgREST-style OpenAPI override/customization** — excluded from Batch 11.
+- **Dynamic schema reloading / configuration** — excluded from Batch 5.
+
+---
+
 ## Compact Execution Table
 
 This table is meant to make the batches implementation-ready. The file list is intentionally conservative and names the files we already know are central today.

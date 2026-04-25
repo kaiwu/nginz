@@ -1270,6 +1270,44 @@ Error responses:
 - **Embedding and aggregate grammar** - relationship embedding, spread syntax, and aggregate/computed-field `select` semantics remain future work outside the current Batch 4 subset
  - **Advanced embed semantics** - `!inner`, spread syntax, null-based embed filtering, mutation-time embedding, and non-table relationship inference remain future work
 
+## Directive Reference
+
+| Directive | Syntax | Context | Default | Description |
+|-----------|--------|---------|---------|-------------|
+| `pgrest_pass` | `pgrest_pass "conninfo"` | `location` | — | PostgreSQL connection string for the location. Registers the pgrest content handler. |
+| `pgrest_server` | `pgrest_server "conninfo"` | `upstream` | — | Defines an upstream PostgreSQL server for pooled connections. |
+| `pgrest_keepalive` | `pgrest_keepalive count` | `upstream` | — | Sets the maximum number of idle keepalive connections for the upstream pool. |
+| `pgrest_schemas` | `pgrest_schemas "schema1, schema2"` | `location` | — | Allowlist of schemas. The first schema becomes the default. Disallowed schemas receive `PGRST106`. |
+| `pgrest_jwt_secret` | `pgrest_jwt_secret "secret"` | `location` | — | HS256 secret for JWT signature validation. When set, tokens are validated before role extraction. |
+| `pgrest_anon_role` | `pgrest_anon_role "role"` | `location` | — | PostgreSQL role to use when no valid JWT is provided. |
+| `pgrest_jwt_role_claim` | `pgrest_jwt_role_claim "claim"` | `location` | `role` | JWT claim name that contains the PostgreSQL role. |
+
+## PostgREST Parity Matrix
+
+| Category | Status | Notes |
+|----------|--------|-------|
+| Tables / URL grammar | Partial | Logical ops, advanced operators, escaping, aliasing, casting, JSON paths supported. Embedding grammar beyond direct FK is partial. |
+| Media types / representation | Partial | JSON, CSV, plain text, XML, and constrained octet-stream supported. Custom media handlers are out of scope. |
+| RPC | Partial | Volatility gating, unnamed params, variadics, table-valued return with filtering/order/pagination supported. RPC embedding is out of scope. |
+| Pagination / count | Partial | Range headers, `Prefer: count=exact` supported. `count=planned/estimated` uses exact count fallback. |
+| Prefer header | Partial | `return`, `handling`, `max-affected`, `missing=default`, `resolution` supported. `tx=commit/rollback` is out of scope. |
+| Schema / profiles | Implemented | `pgrest_schemas` allowlist, `Accept-Profile`, `Content-Profile`, default schema selection. |
+| Bulk writes / upsert | Partial | Bulk JSON/CSV inserts, `columns`, `missing=default`, explicit upsert, limited update/delete supported. Default PK upsert inference is out of scope. |
+| Embedding / relationships | Partial | One-level to-one/to-many, many-to-many, nested embedding, `!inner`, `!fk` disambiguation supported. Spread syntax, null embed filters, mutation-time embedding are out of scope. |
+| Aggregates / computed fields | Partial | `sum`, `avg`, `min`, `max`, `count`, grouped queries, computed field select/filter/order supported. Aggregate ordering and `HAVING` are out of scope. |
+| OPTIONS / CORS / OpenAPI | Partial | Basic `OPTIONS`, CORS simple/preflight, minimal OpenAPI root documents supported. Full OpenAPI customization is out of scope. |
+| JWT auth | Implemented | Signature validation, `exp`/`iat`/`nbf` enforcement, role claim extraction, passthrough to PostgreSQL. |
+| Execution-path parity | Partial | Blocking and pooled paths are aligned for all supported features. Parameterized queries and full failure-mode coverage remain hardening work. |
+
+## Batch 12 Changes
+
+This section documents the Batch 12 hardening fixes that are now in place.
+
+- **JWT validation hardening** — Tokens with invalid format, invalid signature, expired `exp`, future `iat`, or not-yet-valid `nbf` now return `401 Unauthorized` instead of falling back to the anonymous role.
+- **Error response parity** — All client-facing errors now use the consistent `{"message":"..."}` shape. Server errors also use `{"message":"..."}` for consistency.
+- **Malformed Range header rejection** — Invalid `Range` headers (missing dash, dash at start/end) now return `400 Bad Request` with a clear message instead of being silently ignored.
+- **Embedded resource format boundary** — Non-JSON response formats for embedded reads are explicitly rejected with `406 Not Acceptable` and a clear message.
+
 ## Limitations
 
 - **Basic SQL injection prevention** - Values are quoted but not fully parameterized

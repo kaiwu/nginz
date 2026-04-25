@@ -2088,7 +2088,7 @@ describe("pgrest module", () => {
       expect(pgMock.getLastSetRole()).toBe("anon");
     });
 
-    test("invalid JWT signature uses anon_role", async () => {
+    test("invalid JWT signature returns 401", async () => {
       const jwt = createJwt(
         { sub: "user123", role: "admin", exp: Math.floor(Date.now() / 1000) + 3600 },
         "wrong-secret-key" // Different secret = invalid signature
@@ -2097,10 +2097,46 @@ describe("pgrest module", () => {
       const res = await fetch(`${TEST_URL}/jwt-api/users`, {
         headers: { Authorization: `Bearer ${jwt}` },
       });
-      expect(res.status).toBe(200);
+      expect(res.status).toBe(401);
+      const body = await res.json();
+      expect(body.message).toBe("Invalid JWT signature");
+    });
 
-      // Should use anon role since JWT signature is invalid
-      expect(pgMock.getLastSetRole()).toBe("anon");
+    test("expired JWT returns 401", async () => {
+      const jwt = createJwt(
+        { sub: "user123", role: "admin", exp: Math.floor(Date.now() / 1000) - 3600 },
+        JWT_SECRET
+      );
+
+      const res = await fetch(`${TEST_URL}/jwt-api/users`, {
+        headers: { Authorization: `Bearer ${jwt}` },
+      });
+      expect(res.status).toBe(401);
+      const body = await res.json();
+      expect(body.message).toBe("JWT token has expired");
+    });
+
+    test("future iat JWT returns 401", async () => {
+      const jwt = createJwt(
+        { sub: "user123", role: "admin", exp: Math.floor(Date.now() / 1000) + 3600, iat: Math.floor(Date.now() / 1000) + 1800 },
+        JWT_SECRET
+      );
+
+      const res = await fetch(`${TEST_URL}/jwt-api/users`, {
+        headers: { Authorization: `Bearer ${jwt}` },
+      });
+      expect(res.status).toBe(401);
+      const body = await res.json();
+      expect(body.message).toBe("JWT token is not yet valid");
+    });
+
+    test("malformed JWT returns 401", async () => {
+      const res = await fetch(`${TEST_URL}/jwt-api/users`, {
+        headers: { Authorization: `Bearer not.a.valid.jwt.token` },
+      });
+      expect(res.status).toBe(401);
+      const body = await res.json();
+      expect(body.message).toBe("Invalid JWT format");
     });
 
     test("missing JWT uses anon_role", async () => {
@@ -2124,6 +2160,37 @@ describe("pgrest module", () => {
 
       // Check that the JWT was also set as request.jwt
       expect(pgMock.getLastSetJwt()).toBe(jwt);
+    });
+  });
+
+  describe("malformed payload handling", () => {
+    test("malformed Range header returns 400", async () => {
+      const res = await fetch(`${TEST_URL}/api/users`, {
+        headers: { Range: "invalid-range" },
+      });
+      expect(res.status).toBe(400);
+      const body = await res.json();
+      expect(body.message).toBe("Invalid Range header");
+    });
+
+    test("Range header with dash at start returns 400", async () => {
+      const res = await fetch(`${TEST_URL}/api/users`, {
+        headers: { Range: "-10" },
+      });
+      expect(res.status).toBe(400);
+      const body = await res.json();
+      expect(body.message).toBe("Invalid Range header");
+    });
+  });
+
+  describe("embedding format rejection", () => {
+    test("non-JSON Accept with embedding returns 406", async () => {
+      const res = await fetch(`${TEST_URL}/api/users?select=id,name,orders(id)`, {
+        headers: { Accept: "text/csv" },
+      });
+      expect(res.status).toBe(406);
+      const body = await res.json();
+      expect(body.message).toBe("Embedded resources are only available for JSON responses");
     });
   });
 });
