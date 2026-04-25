@@ -840,14 +840,31 @@ pub const AcmeStorage = struct {
         return std.fmt.bufPrint(buf, "{s}/account.key", .{self.storage_path}) catch return error.PathTooLong;
     }
 
-    pub fn saveAccountKey(self: *Self, pem: []const u8) !void {
+    fn writeFileAtomic(path: []const u8, pem: []const u8, mode: u32) !void {
         const io = localIo();
-        var path_buf: [512]u8 = undefined;
-        const path = try self.accountKeyPath(&path_buf);
+        var tmp_buf: [1024]u8 = undefined;
+        const tmp_path = std.fmt.bufPrint(&tmp_buf, "{s}.tmp", .{path}) catch return error.PathTooLong;
 
-        var file = try std.Io.Dir.cwd().createFile(io, path, .{ .permissions = .fromMode(0o600) });
+        var file = try std.Io.Dir.cwd().createFile(io, tmp_path, .{ .permissions = .fromMode(mode) });
         defer file.close(io);
         try file.writeStreamingAll(io, pem);
+
+        var old_z: [1024]u8 = undefined;
+        @memcpy(old_z[0..tmp_path.len], tmp_path);
+        old_z[tmp_path.len] = 0;
+        var new_z: [1024]u8 = undefined;
+        @memcpy(new_z[0..path.len], path);
+        new_z[path.len] = 0;
+
+        if (std.c.rename(@ptrCast(&old_z[0]), @ptrCast(&new_z[0])) != 0) {
+            return error.RenameFailed;
+        }
+    }
+
+    pub fn saveAccountKey(self: *Self, pem: []const u8) !void {
+        var path_buf: [512]u8 = undefined;
+        const path = try self.accountKeyPath(&path_buf);
+        try writeFileAtomic(path, pem, 0o600);
     }
 
     pub fn loadAccountKey(self: *Self, buf: []u8) ![]const u8 {
@@ -874,14 +891,9 @@ pub const AcmeStorage = struct {
 
     pub fn saveDomainKey(self: *Self, domain: []const u8, pem: []const u8) !void {
         try self.ensureDomainDir(domain);
-        const io = localIo();
-
         var path_buf: [512]u8 = undefined;
         const path = try self.domainKeyPath(domain, &path_buf);
-
-        var file = try std.Io.Dir.cwd().createFile(io, path, .{ .permissions = .fromMode(0o600) });
-        defer file.close(io);
-        try file.writeStreamingAll(io, pem);
+        try writeFileAtomic(path, pem, 0o600);
     }
 
     pub fn loadDomainKey(self: *Self, domain: []const u8, buf: []u8) ![]const u8 {
@@ -908,14 +920,9 @@ pub const AcmeStorage = struct {
 
     pub fn saveCertificate(self: *Self, domain: []const u8, pem: []const u8) !void {
         try self.ensureDomainDir(domain);
-        const io = localIo();
-
         var path_buf: [512]u8 = undefined;
         const path = try self.certPath(domain, &path_buf);
-
-        var file = try std.Io.Dir.cwd().createFile(io, path, .{ .permissions = .fromMode(0o644) });
-        defer file.close(io);
-        try file.writeStreamingAll(io, pem);
+        try writeFileAtomic(path, pem, 0o644);
     }
 
     pub fn loadCertificate(self: *Self, domain: []const u8, buf: []u8) ![]const u8 {
