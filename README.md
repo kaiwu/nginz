@@ -17,15 +17,24 @@ $ bun test
 Nginx development requires some system library dependencies, which shall be addressed first.
 A Dockerfile is provided as reference so that one can build their own dev image.
 
-For nftables-related work, `tests/nftset/` now includes a Docker-isolated live nftables suite.
-It provisions temporary tables/sets inside a disposable container namespace via `sudo docker`,
-so nobody's host nftables ruleset needs to be modified during development or CI-like validation.
+### Container Tests
 
-For ACME-related work, `tests/acme/` uses disposable Dockerized ACME services to assert the live
-single-domain HTTP-01 flow against a real protocol implementation. The images currently used are:
+Three modules rely on running containers for their integration tests. All container interaction uses `sudo docker`.
+
+**nftset** — Docker-isolated live nftables suite. Provisions temporary tables/sets inside a
+disposable container namespace so the host nftables ruleset is never touched.
+
+**acme** — Disposable Dockerized ACME services for the live single-domain HTTP-01 flow:
 
 - `ghcr.io/letsencrypt/pebble:latest`
 - `ghcr.io/letsencrypt/pebble-challtestsrv:latest`
+
+**pgrest** — Requires a running PostgreSQL container named `pg18`. The tests create and drop a
+dedicated database on each run, so no manual setup is needed beyond starting the container:
+
+```bash
+sudo docker run -d --name pg18 -p 5432:5432 -e POSTGRES_HOST_AUTH_METHOD=trust postgres:18.1-trixie
+```
 
 > [!NOTE]
 > The SSL zig bindings are generated with `OpenSSL 3`.
