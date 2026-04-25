@@ -612,6 +612,13 @@ This module is not a standalone PostgREST server. It is an nginx upstream module
 **Unlocks**
 - A usable but limited embedding model for common parent/child and to-one cases
 
+### Batch 10 progress update
+
+- ✅ Completed: table reads now introspect direct foreign-key metadata in the active schema and support one-level many-to-one and one-to-many embedding on JSON responses.
+- ✅ Completed: basic `!fk` disambiguation is supported using PostgreSQL constraint names.
+- ✅ Completed: embedded reads now accept basic scoped filters, ordering, limit, and offset parameters such as `orders.status=eq.paid`, `orders.order=id.desc`, and `orders.limit=2`.
+- ✅ Completed: mock integration coverage exercises one-level to-one and to-many embedding behavior.
+
 ### Batch 11: Resource Embedding and Relationships — Phase 2
 
 **Theme:** Finish the advanced relationship model after phase 1 is stable.
@@ -637,6 +644,14 @@ This module is not a standalone PostgREST server. It is an nginx upstream module
 
 **Unlocks**
 - Near-complete public interface parity for advanced consumers
+
+### Batch 11 progress update
+
+- ✅ Completed: table reads now support many-to-many embedding via join-table inference and nested embedding on the JSON read path.
+- ✅ Completed: `!inner` now filters parent rows by related-row existence on the embedding read path.
+- ✅ Completed: the interface surface now includes `OPTIONS` responses, basic CORS headers for simple/preflight flows, and minimal OpenAPI discovery documents on `/api/` and `/rpc/`.
+- ✅ Completed: mock integration coverage exercises many-to-many plus nested embedding behavior, and the container suite now includes real PostgreSQL relationship fixtures for direct and join-table embeddings.
+- ℹ️ Remaining Batch 11 boundary: advanced embed semantics (spread syntax, null-based embed filters), mutation-time embedding, and recursive/view/computed/table-valued-function relationship inference remain deferred to hardening/future work.
 
 ### Batch 12: Execution-Path Parity Gap Closure and Hardening
 

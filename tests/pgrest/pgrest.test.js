@@ -40,6 +40,43 @@ describe("pgrest module", () => {
       ],
     }));
 
+    pgMock.setQueryHandler(/FROM pg_constraint.*'users'.*'orders'|FROM pg_constraint.*'orders'.*'users'/, () => ({
+      columns: ["source", "target", "constraint", "source_cols", "target_cols"],
+      rows: [["orders", "users", "orders_user_id_fkey", "user_id", "id"]],
+    }));
+
+    pgMock.setQueryHandler(/FROM pg_constraint.*'users'.*'teams'|FROM pg_constraint.*'teams'.*'users'/, () => ({
+      columns: ["source", "target", "constraint", "source_cols", "target_cols"],
+      rows: [
+        ["memberships", "users", "memberships_user_id_fkey", "user_id", "id"],
+        ["memberships", "teams", "memberships_team_id_fkey", "team_id", "id"],
+        ["teams", "users", "teams_owner_id_fkey", "owner_id", "id"],
+      ],
+    }));
+
+    pgMock.setQueryHandler(/^SELECT id,name,\(SELECT COALESCE\(json_agg\(pgrest_embed_row\), '\[\]'\) FROM \(SELECT id,amount FROM orders AS pgrest_rel_orders WHERE pgrest_rel_orders\.user_id = users\.id\) AS pgrest_embed_row\) AS orders FROM users ORDER BY id ASC$/, () => ({
+      columns: ["id", "name", "orders"],
+      rows: [
+        ["1", "John Doe", '[{"id":"10","amount":"42.50"},{"id":"11","amount":"84.00"}]'],
+        ["2", "Jane Smith", '[]'],
+      ],
+    }));
+
+    pgMock.setQueryHandler(/^SELECT id,name,\(SELECT COALESCE\(json_agg\(pgrest_embed_row\), '\[\]'\) FROM \(SELECT id FROM orders AS pgrest_rel_orders WHERE pgrest_rel_orders\.user_id = users\.id\) AS pgrest_embed_row\) AS orders FROM users WHERE EXISTS \(SELECT 1 FROM orders AS pgrest_rel_orders WHERE pgrest_rel_orders\.user_id = users\.id\) ORDER BY id ASC$/, () => ({
+      columns: ["id", "name", "orders"],
+      rows: [["1", "John Doe", '[{"id":"10"},{"id":"11"}]']],
+    }));
+
+    pgMock.setQueryHandler(/^SELECT id,amount,\(SELECT row_to_json\(pgrest_embed_row\) FROM \(SELECT id,name FROM users AS pgrest_rel_user WHERE pgrest_rel_user\.id = orders\.user_id\) AS pgrest_embed_row\) AS user FROM orders ORDER BY id ASC$/, () => ({
+      columns: ["id", "amount", "user"],
+      rows: [["10", "42.50", '{"id":"1","name":"John Doe"}']],
+    }));
+
+    pgMock.setQueryHandler(/^SELECT id,\(SELECT COALESCE\(json_agg\(pgrest_embed_row\), '\[\]'\) FROM \(SELECT id,name,\(SELECT row_to_json\(pgrest_embed_row\) FROM \(SELECT id,name FROM users AS pgrest_rel_teams_owner WHERE pgrest_rel_teams_owner\.id = pgrest_rel_teams\.owner_id\) AS pgrest_embed_row\) AS owner FROM teams AS pgrest_rel_teams JOIN memberships AS pgrest_junction ON pgrest_rel_teams\.id = pgrest_junction\.team_id WHERE pgrest_junction\.user_id = users\.id\) AS pgrest_embed_row\) AS teams FROM users ORDER BY id ASC$/, () => ({
+      columns: ["id", "teams"],
+      rows: [["1", '[{"id":"7","name":"Platform","owner":{"id":"2","name":"Jane Smith"}}]']],
+    }));
+
     // Handler for SELECT with single column (name)
     pgMock.setQueryHandler(/^SELECT name FROM users/, (query) => ({
       columns: ["name"],
@@ -850,6 +887,77 @@ describe("pgrest module", () => {
     expect(lastSql()).toBe(
       "SELECT id,name FROM users WHERE status = 'active' ORDER BY id DESC LIMIT 1 OFFSET 1"
     );
+  });
+
+  test("GET /api/users supports one-level to-many embedding", async () => {
+    pgMock.clearTracking();
+    const res = await fetch(`${TEST_URL}/api/users?select=id,name,orders(id,amount)&order=id.asc`);
+    expect(res.status).toBe(200);
+
+    const body = await res.json();
+    expect(body).toEqual([
+      {
+        id: "1",
+        name: "John Doe",
+        orders: [
+          { id: "10", amount: "42.50" },
+          { id: "11", amount: "84.00" },
+        ],
+      },
+      {
+        id: "2",
+        name: "Jane Smith",
+        orders: [],
+      },
+    ]);
+  });
+
+  test("GET /api/orders supports one-level to-one embedding with alias", async () => {
+    const res = await fetch(`${TEST_URL}/api/orders?select=id,amount,user:users(id,name)&order=id.asc`);
+    expect(res.status).toBe(200);
+
+    const body = await res.json();
+    expect(body).toEqual([
+      {
+        id: "10",
+        amount: "42.50",
+        user: { id: "1", name: "John Doe" },
+      },
+    ]);
+  });
+
+  test("GET /api/users supports !inner embedding to filter parent rows", async () => {
+    const res = await fetch(`${TEST_URL}/api/users?select=id,name,orders!inner(id)&order=id.asc`);
+    expect(res.status).toBe(200);
+
+    const body = await res.json();
+    expect(body).toEqual([
+      {
+        id: "1",
+        name: "John Doe",
+        orders: [{ id: "10" }, { id: "11" }],
+      },
+    ]);
+  });
+
+  test("GET /api/users supports many-to-many plus nested embedding", async () => {
+    pgMock.clearTracking();
+    const res = await fetch(`${TEST_URL}/api/users?select=id,teams!memberships_team_id_fkey(id,name,owner:users(id,name))&order=id.asc`);
+    expect(res.status).toBe(200);
+
+    const body = await res.json();
+    expect(body).toEqual([
+      {
+        id: "1",
+        teams: [
+          {
+            id: "7",
+            name: "Platform",
+            owner: { id: "2", name: "Jane Smith" },
+          },
+        ],
+      },
+    ]);
   });
 
   // ============================================================================
@@ -1869,6 +1977,40 @@ describe("pgrest module", () => {
     expect(res.headers.get("content-range")).toBe("0-2/*");
     const body = await res.text();
     expect(body).toBe("");
+  });
+
+  test("OPTIONS /api/users returns allow and CORS headers", async () => {
+    const res = await fetch(`${TEST_URL}/api/users`, {
+      method: "OPTIONS",
+      headers: {
+        Origin: "https://example.com",
+        "Access-Control-Request-Method": "GET",
+      },
+    });
+    expect(res.status).toBe(204);
+    expect(res.headers.get("allow")).toBe("OPTIONS,GET,HEAD,POST,PATCH,PUT,DELETE");
+    expect(res.headers.get("access-control-allow-origin")).toBe("*");
+  });
+
+  test("OPTIONS /rpc/add_them returns rpc allow and CORS headers", async () => {
+    const res = await fetch(`${TEST_URL}/rpc/add_them`, {
+      method: "OPTIONS",
+      headers: {
+        Origin: "https://example.com",
+        "Access-Control-Request-Method": "POST",
+      },
+    });
+    expect(res.status).toBe(204);
+    expect(res.headers.get("allow")).toBe("OPTIONS,GET,HEAD,POST");
+    expect(res.headers.get("access-control-allow-origin")).toBe("*");
+  });
+
+  test("GET /api/ returns an OpenAPI discovery document", async () => {
+    const res = await fetch(`${TEST_URL}/api/`);
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.openapi).toBe("3.1.0");
+    expect(body.paths["/api/{table}"]).toBeDefined();
   });
   // ============================================================================
   // Health Check

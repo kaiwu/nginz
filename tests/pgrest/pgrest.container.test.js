@@ -96,6 +96,18 @@ CREATE TABLE orders (
     order_date DATE NOT NULL
 );
 
+CREATE TABLE teams (
+    id       SERIAL PRIMARY KEY,
+    owner_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+    name     TEXT NOT NULL
+);
+
+CREATE TABLE memberships (
+    user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+    team_id INTEGER REFERENCES teams(id) ON DELETE CASCADE,
+    PRIMARY KEY (user_id, team_id)
+);
+
 INSERT INTO users (name, email, status, age, bio) VALUES
     ('Alice Smith', 'alice@example.com', 'active',   30, 'Engineer'),
     ('Bob Jones',   'bob@example.com',   'active',   25, 'Designer'),
@@ -109,6 +121,15 @@ INSERT INTO orders (user_id, amount, order_date) VALUES
     (2, 150.00, '2023-01-01'),
     (3,  50.00, '2023-01-02'),
     (4, 300.00, '2023-01-03');
+
+INSERT INTO teams (owner_id, name) VALUES
+    (2, 'Platform'),
+    (1, 'Growth');
+
+INSERT INTO memberships (user_id, team_id) VALUES
+    (1, 1),
+    (2, 1),
+    (1, 2);
 
 CREATE OR REPLACE FUNCTION get_user_count()
 RETURNS BIGINT LANGUAGE SQL STABLE AS $func$
@@ -174,6 +195,78 @@ describe("pgrest module - real PostgreSQL 18 integration", () => {
     expect(keys).toContain("name");
     expect(keys).not.toContain("email");
     expect(keys).not.toContain("status");
+  });
+
+  test("GET /api/users embeds direct child orders", async () => {
+    const res = await fetch(`${TEST_URL}/api/users?select=id,name,orders(id,amount)&order=id.asc&limit=1`);
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body).toEqual([
+      {
+        id: "1",
+        name: "Alice Smith",
+        orders: [
+          { id: 1, amount: 100 },
+          { id: 2, amount: 200 },
+        ],
+      },
+    ]);
+  });
+
+  test("GET /api/orders embeds parent user with alias", async () => {
+    const res = await fetch(`${TEST_URL}/api/orders?select=id,amount,user:users(id,name)&order=id.asc&limit=1`);
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body).toEqual([
+      {
+        id: "1",
+        amount: "100.00",
+        user: { id: 1, name: "Alice Smith" },
+      },
+    ]);
+  });
+
+  test("GET /api/users supports !inner embedding to filter parent rows", async () => {
+    const res = await fetch(`${TEST_URL}/api/users?select=id,name,orders!inner(id)&order=id.asc`);
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body).toEqual([
+      {
+        id: "1",
+        name: "Alice Smith",
+        orders: [{ id: 1 }, { id: 2 }],
+      },
+      {
+        id: "2",
+        name: "Bob Jones",
+        orders: [{ id: 3 }],
+      },
+      {
+        id: "3",
+        name: "Carol White",
+        orders: [{ id: 4 }],
+      },
+      {
+        id: "4",
+        name: "Dave Brown",
+        orders: [{ id: 5 }],
+      },
+    ]);
+  });
+
+  test("GET /api/users embeds many-to-many teams with nested owner", async () => {
+    const res = await fetch(`${TEST_URL}/api/users?select=id,teams!memberships_team_id_fkey(id,name,owner:users(id,name))&order=id.asc&limit=1`);
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body).toEqual([
+      {
+        id: "1",
+        teams: [
+          { id: 1, name: "Platform", owner: { id: 2, name: "Bob Jones" } },
+          { id: 2, name: "Growth", owner: { id: 1, name: "Alice Smith" } },
+        ],
+      },
+    ]);
   });
 
   // =========================================================================
@@ -321,6 +414,40 @@ describe("pgrest module - real PostgreSQL 18 integration", () => {
     expect(res.headers.get("content-type")).toContain("application/json");
     const text = await res.text();
     expect(text).toBe("");
+  });
+
+  test("OPTIONS /api/users returns allow and CORS headers", async () => {
+    const res = await fetch(`${TEST_URL}/api/users`, {
+      method: "OPTIONS",
+      headers: {
+        Origin: "https://example.com",
+        "Access-Control-Request-Method": "GET",
+      },
+    });
+    expect(res.status).toBe(204);
+    expect(res.headers.get("allow")).toBe("OPTIONS,GET,HEAD,POST,PATCH,PUT,DELETE");
+    expect(res.headers.get("access-control-allow-origin")).toBe("*");
+  });
+
+  test("OPTIONS /rpc/add_them returns rpc allow and CORS headers", async () => {
+    const res = await fetch(`${TEST_URL}/rpc/add_them`, {
+      method: "OPTIONS",
+      headers: {
+        Origin: "https://example.com",
+        "Access-Control-Request-Method": "POST",
+      },
+    });
+    expect(res.status).toBe(204);
+    expect(res.headers.get("allow")).toBe("OPTIONS,GET,HEAD,POST");
+    expect(res.headers.get("access-control-allow-origin")).toBe("*");
+  });
+
+  test("GET /api/ returns an OpenAPI discovery document", async () => {
+    const res = await fetch(`${TEST_URL}/api/`);
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.openapi).toBe("3.1.0");
+    expect(body.paths["/api/{table}"]).toBeDefined();
   });
 
   // =========================================================================

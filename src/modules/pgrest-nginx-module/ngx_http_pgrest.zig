@@ -51,6 +51,7 @@ const NGX_HTTP_METHOD_NOT_ALLOWED: ngx_uint_t = 405;
 const NGX_HTTP_NOT_ACCEPTABLE: ngx_uint_t = 406;
 const NGX_HTTP_UNSUPPORTED_MEDIA_TYPE: ngx_uint_t = 415;
 const NGX_HTTP_PARTIAL_CONTENT: ngx_uint_t = 206;
+const NGX_HTTP_OPTIONS_METHOD: ngx_uint_t = 0x00000200;
 
 const NGX_CONF_OK = conf.NGX_CONF_OK;
 const NGX_CONF_ERROR = conf.NGX_CONF_ERROR;
@@ -236,6 +237,10 @@ const PgRequestCtx = extern struct {
     response_range_start: usize,
     total_count: i64,
     has_total_count: bool,
+    table_embed_metadata: bool,
+    raw_json_field_count: usize,
+    raw_json_field_lens: [8]usize,
+    raw_json_fields: [8][64]u8,
     write_status: ngx_uint_t,
     write_send_body: bool,
     is_write_request: bool,
@@ -598,10 +603,119 @@ const RequestOptions = struct {
     range_end: ?usize = null,
 };
 
+const MAX_EMBED_NODES = 16;
+const MAX_RELATION_EDGES = 32;
+const MAX_TABLE_NAMES = 16;
+
+const SelectPlanNode = struct {
+    alias_len: usize = 0,
+    alias_buf: [64]u8 = std.mem.zeroes([64]u8),
+    relation_len: usize = 0,
+    relation_buf: [64]u8 = std.mem.zeroes([64]u8),
+    fk_hint_len: usize = 0,
+    fk_hint_buf: [96]u8 = std.mem.zeroes([96]u8),
+    path_len: usize = 0,
+    path_buf: [128]u8 = std.mem.zeroes([128]u8),
+    inner_select_len: usize = 0,
+    inner_select_buf: [512]u8 = std.mem.zeroes([512]u8),
+    parent_index: i32 = -1,
+    inner: bool = false,
+
+    fn alias(self: *const SelectPlanNode) []const u8 {
+        return self.alias_buf[0..self.alias_len];
+    }
+
+    fn relation(self: *const SelectPlanNode) []const u8 {
+        return self.relation_buf[0..self.relation_len];
+    }
+
+    fn fkHint(self: *const SelectPlanNode) ?[]const u8 {
+        return if (self.fk_hint_len == 0) null else self.fk_hint_buf[0..self.fk_hint_len];
+    }
+
+    fn path(self: *const SelectPlanNode) []const u8 {
+        return self.path_buf[0..self.path_len];
+    }
+
+    fn innerSelect(self: *const SelectPlanNode) []const u8 {
+        return self.inner_select_buf[0..self.inner_select_len];
+    }
+};
+
+const SelectPlan = struct {
+    invalid: bool = false,
+    has_embeds: bool = false,
+    root_scalar_len: usize = 0,
+    root_scalar_buf: [1024]u8 = std.mem.zeroes([1024]u8),
+    node_count: usize = 0,
+    nodes: [MAX_EMBED_NODES]SelectPlanNode = std.mem.zeroes([MAX_EMBED_NODES]SelectPlanNode),
+
+    fn rootScalar(self: *const SelectPlan) []const u8 {
+        return self.root_scalar_buf[0..self.root_scalar_len];
+    }
+};
+
+const RelationEdge = struct {
+    source_len: usize = 0,
+    source_buf: [64]u8 = std.mem.zeroes([64]u8),
+    target_len: usize = 0,
+    target_buf: [64]u8 = std.mem.zeroes([64]u8),
+    constraint_len: usize = 0,
+    constraint_buf: [96]u8 = std.mem.zeroes([96]u8),
+    source_cols_len: usize = 0,
+    source_cols_buf: [128]u8 = std.mem.zeroes([128]u8),
+    target_cols_len: usize = 0,
+    target_cols_buf: [128]u8 = std.mem.zeroes([128]u8),
+
+    fn source(self: *const RelationEdge) []const u8 {
+        return self.source_buf[0..self.source_len];
+    }
+
+    fn target(self: *const RelationEdge) []const u8 {
+        return self.target_buf[0..self.target_len];
+    }
+
+    fn constraint(self: *const RelationEdge) []const u8 {
+        return self.constraint_buf[0..self.constraint_len];
+    }
+
+    fn sourceCols(self: *const RelationEdge) []const u8 {
+        return self.source_cols_buf[0..self.source_cols_len];
+    }
+
+    fn targetCols(self: *const RelationEdge) []const u8 {
+        return self.target_cols_buf[0..self.target_cols_len];
+    }
+};
+
+const RelationMetadata = struct {
+    edge_count: usize = 0,
+    edges: [MAX_RELATION_EDGES]RelationEdge = std.mem.zeroes([MAX_RELATION_EDGES]RelationEdge),
+};
+
+const ResolvedRelationKind = enum(u8) {
+    to_one,
+    to_many,
+    many_to_many,
+};
+
+const ResolvedRelation = struct {
+    kind: ResolvedRelationKind,
+    direct_edge_index: ?usize = null,
+    junction_edge_to_parent: ?usize = null,
+    junction_edge_to_target: ?usize = null,
+};
+
 const WriteResponseContract = struct {
     status: ngx_uint_t,
     send_body: bool,
     include_returning: bool,
+};
+
+const TableQueryBuildResult = struct {
+    len: usize,
+    json_fields: [MAX_COLUMNS]JsonField,
+    json_field_count: usize,
 };
 
 const ResolvedSchema = struct {
@@ -831,6 +945,15 @@ fn append_response_header(
     return true;
 }
 
+fn append_cors_headers(r: [*c]ngx_http_request_t, allow_methods: ?[]const u8) void {
+    if (extract_header_value(r, "origin") == null and extract_header_value(r, "access-control-request-method") == null) return;
+    _ = append_response_header(r, "Access-Control-Allow-Origin", "access-control-allow-origin", "*");
+    _ = append_response_header(r, "Access-Control-Allow-Headers", "access-control-allow-headers", "Authorization, Content-Type, Prefer, Accept, Range, Range-Unit, Accept-Profile, Content-Profile");
+    if (allow_methods) |methods| {
+        _ = append_response_header(r, "Access-Control-Allow-Methods", "access-control-allow-methods", methods);
+    }
+}
+
 fn append_preference_applied_header(r: [*c]ngx_http_request_t, opts: RequestOptions) void {
     var buf_out: [256]u8 = undefined;
     var pos: usize = 0;
@@ -945,12 +1068,13 @@ fn read_response_status(status: ngx_uint_t, range_start: usize, ntuples: i32, to
         status;
 }
 
-fn send_json_error(r: [*c]ngx_http_request_t, status: ngx_uint_t, body: []const u8) ngx_int_t {
+fn send_json_payload(r: [*c]ngx_http_request_t, status: ngx_uint_t, body: []const u8) ngx_int_t {
     r.*.headers_out.status = status;
     const content_type = "application/json";
     r.*.headers_out.content_type = ngx_str_t{ .data = @constCast(content_type), .len = content_type.len };
     r.*.headers_out.content_type_len = content_type.len;
     r.*.headers_out.content_length_n = @intCast(body.len);
+    append_cors_headers(r, null);
 
     const header_rc = http.ngx_http_send_header(r);
     if (header_rc == NGX_ERROR or header_rc > http.NGX_HTTP_SPECIAL_RESPONSE) {
@@ -976,12 +1100,40 @@ fn send_json_error(r: [*c]ngx_http_request_t, status: ngx_uint_t, body: []const 
     return http.ngx_http_output_filter(r, &out);
 }
 
+fn send_json_error(r: [*c]ngx_http_request_t, status: ngx_uint_t, body: []const u8) ngx_int_t {
+    return send_json_payload(r, status, body);
+}
+
 fn send_not_acceptable(r: [*c]ngx_http_request_t, body: []const u8) ngx_int_t {
     return send_json_error(r, NGX_HTTP_NOT_ACCEPTABLE, body);
 }
 
 fn send_unsupported_media_type(r: [*c]ngx_http_request_t, body: []const u8) ngx_int_t {
     return send_json_error(r, NGX_HTTP_UNSUPPORTED_MEDIA_TYPE, body);
+}
+
+fn is_uri_root_path(uri: ngx_str_t, suffix: []const u8) bool {
+    if (uri.len == 0 or uri.data == core.nullptr(u8)) return false;
+    const path = core.slicify(u8, uri.data, uri.len);
+    return std.mem.eql(u8, path, suffix) or (path.len + 1 == suffix.len and suffix[suffix.len - 1] == '/' and std.mem.eql(u8, path, suffix[0 .. suffix.len - 1]));
+}
+
+fn send_options_response(r: [*c]ngx_http_request_t, allow_methods: []const u8) ngx_int_t {
+    r.*.headers_out.status = http.NGX_HTTP_NO_CONTENT;
+    r.*.headers_out.content_length_n = 0;
+    _ = append_response_header(r, "Allow", "allow", allow_methods);
+    append_cors_headers(r, allow_methods);
+    const header_rc = http.ngx_http_send_header(r);
+    if (header_rc == NGX_ERROR or header_rc > http.NGX_HTTP_SPECIAL_RESPONSE) return header_rc;
+    return http.ngx_http_send_special(r, http.NGX_HTTP_LAST);
+}
+
+fn send_openapi_root(r: [*c]ngx_http_request_t, flavor: []const u8) ngx_int_t {
+    const body = if (std.mem.eql(u8, flavor, "rpc"))
+        "{\"openapi\":\"3.1.0\",\"info\":{\"title\":\"nginz pgrest rpc\",\"version\":\"0.1.0\"},\"paths\":{\"/rpc/{function}\":{\"get\":{\"summary\":\"Invoke stable/immutable RPC\"},\"post\":{\"summary\":\"Invoke RPC\"},\"options\":{\"summary\":\"Discover RPC route capabilities\"}}}}"
+    else
+        "{\"openapi\":\"3.1.0\",\"info\":{\"title\":\"nginz pgrest\",\"version\":\"0.1.0\"},\"paths\":{\"/api/{table}\":{\"get\":{\"summary\":\"Read table rows\"},\"head\":{\"summary\":\"Read headers only\"},\"post\":{\"summary\":\"Insert rows\"},\"patch\":{\"summary\":\"Update rows\"},\"put\":{\"summary\":\"Upsert a row\"},\"delete\":{\"summary\":\"Delete rows\"},\"options\":{\"summary\":\"Discover table route capabilities\"}}}}";
+    return send_json_payload(r, http.NGX_HTTP_OK, body);
 }
 
 fn prefer_invalid_status() ngx_uint_t {
@@ -1038,6 +1190,7 @@ fn finalize_response_send(
 
     append_preference_applied_header(r, opts);
     append_range_headers(r, range_start, ntuples, total_count, opts);
+    append_cors_headers(r, null);
 
     const header_rc = http.ngx_http_send_header(r);
     if (header_rc == NGX_ERROR or header_rc > http.NGX_HTTP_SPECIAL_RESPONSE) {
@@ -1098,6 +1251,9 @@ fn format_result_for_response(
     opts: RequestOptions,
     response_buf: []u8,
     content_type: *[*:0]const u8,
+    raw_json_fields: []const [64]u8,
+    raw_json_field_lens: []const usize,
+    raw_json_field_count: usize,
 ) FormatResponseError!usize {
     switch (opts.response_format) {
         .json => {
@@ -1109,6 +1265,9 @@ fn format_result_for_response(
                 response_buf,
                 opts.singular_object,
                 opts.strip_nulls,
+                raw_json_fields,
+                raw_json_field_lens,
+                raw_json_field_count,
             );
         },
         .csv => {
@@ -1368,6 +1527,13 @@ fn start_pooled_request(ctx: *PgRequestCtx, loc_conf: *ngx_pgrest_loc_conf_t) ng
     return core.NGX_DONE;
 }
 
+fn column_is_raw_json(raw_json_fields: []const [64]u8, raw_json_field_lens: []const usize, raw_json_field_count: usize, name: []const u8) bool {
+    for (raw_json_field_lens[0..raw_json_field_count], 0..) |len, idx| {
+        if (std.mem.eql(u8, raw_json_fields[idx][0..len], name)) return true;
+    }
+    return false;
+}
+
 /// Format a single row as a JSON object
 /// Used when singular object format is requested
 /// If strip_nulls is true, skips null values
@@ -1377,6 +1543,9 @@ fn format_row_as_json_object_impl(
     nfields: i32,
     json_buf: []u8,
     strip_nulls: bool,
+    raw_json_fields: []const [64]u8,
+    raw_json_field_lens: []const usize,
+    raw_json_field_count: usize,
 ) usize {
     if (result == null) return 0;
 
@@ -1404,8 +1573,11 @@ fn format_row_as_json_object_impl(
 
         // Get column name
         const fname = pgFname(result, col);
+        var emit_raw_json = false;
         if (fname != null) {
             // "column_name":
+            const field_name = std.mem.span(fname);
+            emit_raw_json = column_is_raw_json(raw_json_fields, raw_json_field_lens, raw_json_field_count, field_name);
             json_buf[pos] = '"';
             pos += 1;
 
@@ -1430,41 +1602,46 @@ fn format_row_as_json_object_impl(
             // Get value
             const value = pgGetvalue(result, row, col);
             if (value != null) {
-                // Quote string values
-                json_buf[pos] = '"';
-                pos += 1;
+                if (emit_raw_json) {
+                    const value_slice = std.mem.span(value);
+                    @memcpy(json_buf[pos..][0..value_slice.len], value_slice);
+                    pos += value_slice.len;
+                } else {
+                    // Quote string values
+                    json_buf[pos] = '"';
+                    pos += 1;
 
-                var i: usize = 0;
-                while (value[i] != 0 and pos < json_buf.len - 10) : (i += 1) {
-                    const c = value[i];
-                    // Escape special JSON characters
-                    if (c == '"' or c == '\\') {
-                        json_buf[pos] = '\\';
-                        pos += 1;
+                    var i: usize = 0;
+                    while (value[i] != 0 and pos < json_buf.len - 10) : (i += 1) {
+                        const c = value[i];
+                        // Escape special JSON characters
+                        if (c == '"' or c == '\\') {
+                            json_buf[pos] = '\\';
+                            pos += 1;
+                        }
+                        if (c == '\n') {
+                            json_buf[pos] = '\\';
+                            pos += 1;
+                            json_buf[pos] = 'n';
+                            pos += 1;
+                        } else if (c == '\r') {
+                            json_buf[pos] = '\\';
+                            pos += 1;
+                            json_buf[pos] = 'r';
+                            pos += 1;
+                        } else if (c == '\t') {
+                            json_buf[pos] = '\\';
+                            pos += 1;
+                            json_buf[pos] = 't';
+                            pos += 1;
+                        } else {
+                            json_buf[pos] = c;
+                            pos += 1;
+                        }
                     }
-                    if (c == '\n') {
-                        json_buf[pos] = '\\';
-                        pos += 1;
-                        json_buf[pos] = 'n';
-                        pos += 1;
-                    } else if (c == '\r') {
-                        json_buf[pos] = '\\';
-                        pos += 1;
-                        json_buf[pos] = 'r';
-                        pos += 1;
-                    } else if (c == '\t') {
-                        json_buf[pos] = '\\';
-                        pos += 1;
-                        json_buf[pos] = 't';
-                        pos += 1;
-                    } else {
-                        json_buf[pos] = c;
-                        pos += 1;
-                    }
+                    json_buf[pos] = '"';
+                    pos += 1;
                 }
-
-                json_buf[pos] = '"';
-                pos += 1;
             } else {
                 const null_str = "null";
                 @memcpy(json_buf[pos..][0..null_str.len], null_str);
@@ -1488,7 +1665,7 @@ fn format_row_as_json_object(
     nfields: i32,
     json_buf: []u8,
 ) usize {
-    return format_row_as_json_object_impl(result, row, nfields, json_buf, false);
+    return format_row_as_json_object_impl(result, row, nfields, json_buf, false, &.{}, &.{}, 0);
 }
 
 /// Returns the length of JSON written to buffer
@@ -1612,6 +1789,9 @@ fn format_result_as_json_with_options(
     nfields: i32,
     json_buf: []u8,
     strip_nulls: bool,
+    raw_json_fields: []const [64]u8,
+    raw_json_field_lens: []const usize,
+    raw_json_field_count: usize,
 ) usize {
     var pos: usize = 0;
 
@@ -1627,7 +1807,7 @@ fn format_result_as_json_with_options(
         }
 
         // Use the implementation with null stripping option
-        const row_len = format_row_as_json_object_impl(result, row, nfields, json_buf[pos..], strip_nulls);
+        const row_len = format_row_as_json_object_impl(result, row, nfields, json_buf[pos..], strip_nulls, raw_json_fields, raw_json_field_lens, raw_json_field_count);
         pos += row_len;
     }
 
@@ -1648,12 +1828,15 @@ fn format_result_as_json_smart(
     json_buf: []u8,
     singular_object: bool,
     strip_nulls: bool,
+    raw_json_fields: []const [64]u8,
+    raw_json_field_lens: []const usize,
+    raw_json_field_count: usize,
 ) usize {
     // Check if singular object format is requested
     if (singular_object) {
         // For singular object format, return first row if it exists
         if (ntuples >= 1) {
-            return format_row_as_json_object_impl(result, 0, nfields, json_buf, strip_nulls);
+            return format_row_as_json_object_impl(result, 0, nfields, json_buf, strip_nulls, raw_json_fields, raw_json_field_lens, raw_json_field_count);
         }
         // If no rows, return empty object
         json_buf[0] = '{';
@@ -1662,7 +1845,7 @@ fn format_result_as_json_smart(
     }
 
     // Default: return array format (with optional null stripping)
-    return format_result_as_json_with_options(result, ntuples, nfields, json_buf, strip_nulls);
+    return format_result_as_json_with_options(result, ntuples, nfields, json_buf, strip_nulls, raw_json_fields, raw_json_field_lens, raw_json_field_count);
 }
 
 
@@ -3092,8 +3275,18 @@ fn parse_select_items(args: ngx_str_t, columns: *[MAX_SELECT_COLUMNS][]const u8)
                         ')' => {
                             if (depth > 0) depth -= 1;
                         },
-                        ',' => if (depth == 0) {},
-                        '&' => if (depth == 0) {},
+                        ',' => {
+                            if (depth != 0) {
+                                pos += 1;
+                                continue;
+                            }
+                        },
+                        '&' => {
+                            if (depth != 0) {
+                                pos += 1;
+                                continue;
+                            }
+                        },
                         else => {
                             pos += 1;
                             continue;
@@ -3121,6 +3314,219 @@ fn parse_select_items(args: ngx_str_t, columns: *[MAX_SELECT_COLUMNS][]const u8)
     }
 
     return 0;
+}
+
+fn extract_select_param(args: ngx_str_t) ?[]const u8 {
+    if (args.len == 0 or args.data == core.nullptr(u8)) return null;
+    const query = core.slicify(u8, args.data, args.len);
+    var pos: usize = 0;
+    while (pos < query.len) {
+        if (pos + 7 <= query.len and std.mem.eql(u8, query[pos .. pos + 7], "select=")) {
+            const start = pos + 7;
+            var end = start;
+            while (end < query.len and query[end] != '&') : (end += 1) {}
+            return query[start..end];
+        }
+        while (pos < query.len and query[pos] != '&') : (pos += 1) {}
+        pos += 1;
+    }
+    return null;
+}
+
+fn append_select_scalar(target: []u8, target_len: *usize, item: []const u8) bool {
+    if (item.len == 0) return true;
+    const needed = target_len.* + (if (target_len.* > 0) @as(usize, 1) else @as(usize, 0)) + item.len;
+    if (needed > target.len) return false;
+    if (target_len.* > 0) {
+        target[target_len.*] = ',';
+        target_len.* += 1;
+    }
+    @memcpy(target[target_len.*..][0..item.len], item);
+    target_len.* += item.len;
+    return true;
+}
+
+fn parse_select_plan_value(plan: *SelectPlan, select_value: []const u8, parent_index: i32, path_prefix: []const u8, scalar_out: []u8, scalar_len: *usize) void {
+    var items: [MAX_SELECT_COLUMNS][]const u8 = undefined;
+    const fake = ngx_str_t{ .data = @constCast(select_value.ptr), .len = select_value.len };
+    const count = parse_select_items(fake, &items);
+    if (count == 0 and select_value.len > 0) {
+        // parse_select_items expects a full query string with select=
+        var wrapped_buf: [640]u8 = undefined;
+        const prefix = "select=";
+        if (prefix.len + select_value.len > wrapped_buf.len) {
+            plan.invalid = true;
+            return;
+        }
+        @memcpy(wrapped_buf[0..prefix.len], prefix);
+        @memcpy(wrapped_buf[prefix.len..][0..select_value.len], select_value);
+        const wrapped = ngx_str_t{ .data = @constCast(wrapped_buf[0..].ptr), .len = prefix.len + select_value.len };
+        const wrapped_count = parse_select_items(wrapped, &items);
+        if (wrapped_count == 0 and select_value.len != 0) {
+            plan.invalid = true;
+            return;
+        }
+        return parse_select_plan_value_items(plan, items[0..wrapped_count], parent_index, path_prefix, scalar_out, scalar_len);
+    }
+    parse_select_plan_value_items(plan, items[0..count], parent_index, path_prefix, scalar_out, scalar_len);
+}
+
+fn parse_select_plan_value_items(plan: *SelectPlan, items: []const []const u8, parent_index: i32, path_prefix: []const u8, scalar_out: []u8, scalar_len: *usize) void {
+    for (items) |raw_item| {
+        const trimmed_item = trim_ascii_spaces(raw_item);
+        var decoded_buf: [512]u8 = undefined;
+        const item = decode_query_component_into(&decoded_buf, trimmed_item) orelse {
+            plan.invalid = true;
+            return;
+        };
+        if (item.len == 0) continue;
+
+        const open_paren = if (parse_aggregate_expression(item) != null) null else find_top_level_open_paren(item);
+        if (open_paren == null or item[item.len - 1] != ')') {
+            if (!append_select_scalar(scalar_out, scalar_len, item)) {
+                plan.invalid = true;
+                return;
+            }
+            continue;
+        }
+
+        plan.has_embeds = true;
+        if (plan.node_count >= plan.nodes.len) {
+            plan.invalid = true;
+            return;
+        }
+
+        const node_index = plan.node_count;
+        plan.node_count += 1;
+        var node = &plan.nodes[node_index];
+        node.parent_index = parent_index;
+
+        const head = trim_ascii_spaces(item[0..open_paren.?]);
+        const inner_select = item[open_paren.? + 1 .. item.len - 1];
+
+        var alias: ?[]const u8 = null;
+        var relation_part = head;
+        if (find_top_level_alias_separator(head)) |colon| {
+            alias = trim_ascii_spaces(head[0..colon]);
+            relation_part = trim_ascii_spaces(head[colon + 1 ..]);
+        }
+
+        var relation = relation_part;
+        var fk_hint: ?[]const u8 = null;
+        var embed_inner = false;
+        if (std.mem.indexOfScalar(u8, relation_part, '!')) |bang| {
+            relation = trim_ascii_spaces(relation_part[0..bang]);
+            var modifier_it = std.mem.splitScalar(u8, relation_part[bang + 1 ..], '!');
+            while (modifier_it.next()) |modifier_raw| {
+                const modifier = trim_ascii_spaces(modifier_raw);
+                if (modifier.len == 0) continue;
+                if (std.mem.eql(u8, modifier, "inner")) {
+                    embed_inner = true;
+                } else if (fk_hint == null) {
+                    fk_hint = modifier;
+                }
+            }
+        }
+
+        const alias_name = alias orelse relation;
+        if (relation.len == 0 or alias_name.len == 0 or relation.len > node.relation_buf.len or alias_name.len > node.alias_buf.len or inner_select.len > node.inner_select_buf.len) {
+            plan.invalid = true;
+            return;
+        }
+        @memcpy(node.relation_buf[0..relation.len], relation);
+        node.relation_len = relation.len;
+        @memcpy(node.alias_buf[0..alias_name.len], alias_name);
+        node.alias_len = alias_name.len;
+        @memcpy(node.inner_select_buf[0..inner_select.len], inner_select);
+        node.inner_select_len = inner_select.len;
+        if (fk_hint) |hint| {
+            if (hint.len > node.fk_hint_buf.len) {
+                plan.invalid = true;
+                return;
+            }
+            @memcpy(node.fk_hint_buf[0..hint.len], hint);
+            node.fk_hint_len = hint.len;
+        }
+        node.inner = embed_inner;
+
+        const path_len = if (path_prefix.len == 0) alias_name.len else path_prefix.len + 1 + alias_name.len;
+        if (path_len > node.path_buf.len) {
+            plan.invalid = true;
+            return;
+        }
+        if (path_prefix.len > 0) {
+            @memcpy(node.path_buf[0..path_prefix.len], path_prefix);
+            node.path_buf[path_prefix.len] = '.';
+            @memcpy(node.path_buf[path_prefix.len + 1 ..][0..alias_name.len], alias_name);
+        } else {
+            @memcpy(node.path_buf[0..alias_name.len], alias_name);
+        }
+        node.path_len = path_len;
+
+        var child_scalar_len: usize = 0;
+        var child_scalar_buf: [512]u8 = std.mem.zeroes([512]u8);
+        parse_select_plan_value(plan, inner_select, @intCast(node_index), node.path(), &child_scalar_buf, &child_scalar_len);
+        if (plan.invalid) return;
+    }
+}
+
+fn build_select_plan_from_args(args: ngx_str_t) SelectPlan {
+    var plan = SelectPlan{};
+    const select_value = extract_select_param(args) orelse return plan;
+    parse_select_plan_value(&plan, select_value, -1, "", &plan.root_scalar_buf, &plan.root_scalar_len);
+    return plan;
+}
+
+fn find_top_level_open_paren(value: []const u8) ?usize {
+    var depth: usize = 0;
+    var in_quotes = false;
+    var escaped = false;
+    for (value, 0..) |c, i| {
+        if (in_quotes) {
+            if (escaped) {
+                escaped = false;
+                continue;
+            }
+            if (c == '\\') {
+                escaped = true;
+                continue;
+            }
+            if (c == '"') in_quotes = false;
+            continue;
+        }
+        switch (c) {
+            '"' => in_quotes = true,
+            '(' => {
+                if (depth == 0) return i;
+                depth += 1;
+            },
+            ')' => {
+                if (depth > 0) depth -= 1;
+            },
+            else => {},
+        }
+    }
+    return null;
+}
+
+fn build_select_clause_from_value(buf_out: []u8, select_value: []const u8) WhereClauseResult {
+    var wrapped_buf: [640]u8 = undefined;
+    const prefix = "select=";
+    if (prefix.len + select_value.len > wrapped_buf.len) return .{ .len = 0, .invalid = true };
+    @memcpy(wrapped_buf[0..prefix.len], prefix);
+    @memcpy(wrapped_buf[prefix.len..][0..select_value.len], select_value);
+    const wrapped = ngx_str_t{ .data = @constCast(wrapped_buf[0..].ptr), .len = prefix.len + select_value.len };
+    return build_select_clause_from_args(buf_out, wrapped);
+}
+
+fn build_group_by_clause_from_value(buf_out: []u8, select_value: []const u8) WhereClauseResult {
+    var wrapped_buf: [640]u8 = undefined;
+    const prefix = "select=";
+    if (prefix.len + select_value.len > wrapped_buf.len) return .{ .len = 0, .invalid = true };
+    @memcpy(wrapped_buf[0..prefix.len], prefix);
+    @memcpy(wrapped_buf[prefix.len..][0..select_value.len], select_value);
+    const wrapped = ngx_str_t{ .data = @constCast(wrapped_buf[0..].ptr), .len = prefix.len + select_value.len };
+    return build_group_by_clause_from_args(buf_out, wrapped);
 }
 
 fn render_select_item(select_out: []u8, raw_item: []const u8, group_out: []u8) ?SelectItemRenderResult {
@@ -3247,6 +3653,211 @@ fn build_group_by_clause_from_args(buf_out: []u8, args: ngx_str_t) WhereClauseRe
     }
 
     return .{ .len = if (saw_aggregate) pos else 0, .invalid = false };
+}
+
+fn append_unique_table_name(names: *[MAX_TABLE_NAMES][64]u8, lens: *[MAX_TABLE_NAMES]usize, count: *usize, value: []const u8) bool {
+    for (lens[0..count.*], 0..) |len, idx| {
+        if (std.mem.eql(u8, names[idx][0..len], value)) return true;
+    }
+    if (count.* >= names.len or value.len > names[0].len) return false;
+    @memcpy(names[count.*][0..value.len], value);
+    lens[count.*] = value.len;
+    count.* += 1;
+    return true;
+}
+
+fn collect_plan_table_names(plan: *const SelectPlan, root_table: []const u8, names: *[MAX_TABLE_NAMES][64]u8, lens: *[MAX_TABLE_NAMES]usize) ?usize {
+    var count: usize = 0;
+    if (!append_unique_table_name(names, lens, &count, root_table)) return null;
+    for (plan.nodes[0..plan.node_count]) |node| {
+        if (!append_unique_table_name(names, lens, &count, node.relation())) return null;
+    }
+    return count;
+}
+
+fn build_relationship_metadata_query(query_buf: []u8, schema_name: ?[]const u8, table_names: *const [MAX_TABLE_NAMES][64]u8, table_name_lens: *const [MAX_TABLE_NAMES]usize, table_name_count: usize) usize {
+    var pos: usize = 0;
+    const prefix =
+        "SELECT src.relname, tgt.relname, c.conname, STRING_AGG(sa.attname, ',' ORDER BY ord.ord), STRING_AGG(ta.attname, ',' ORDER BY ord.ord) FROM pg_constraint c JOIN pg_class src ON src.oid = c.conrelid JOIN pg_namespace sn ON sn.oid = src.relnamespace JOIN pg_class tgt ON tgt.oid = c.confrelid JOIN pg_namespace tn ON tn.oid = tgt.relnamespace JOIN LATERAL unnest(c.conkey, c.confkey) WITH ORDINALITY AS ord(src_attnum, tgt_attnum, ord) ON TRUE JOIN pg_attribute sa ON sa.attrelid = src.oid AND sa.attnum = ord.src_attnum JOIN pg_attribute ta ON ta.attrelid = tgt.oid AND ta.attnum = ord.tgt_attnum WHERE c.contype = 'f' AND sn.nspname = ";
+    @memcpy(query_buf[pos..][0..prefix.len], prefix);
+    pos += prefix.len;
+    pos = append_sql_quoted(query_buf, pos, schema_name orelse "public");
+    const mid = " AND tn.nspname = ";
+    @memcpy(query_buf[pos..][0..mid.len], mid);
+    pos += mid.len;
+    pos = append_sql_quoted(query_buf, pos, schema_name orelse "public");
+    const list_prefix = " AND (src.relname IN (";
+    @memcpy(query_buf[pos..][0..list_prefix.len], list_prefix);
+    pos += list_prefix.len;
+    for (table_name_lens[0..table_name_count], 0..) |len, idx| {
+        if (idx > 0) {
+            query_buf[pos] = ',';
+            pos += 1;
+        }
+        pos = append_sql_quoted(query_buf, pos, table_names[idx][0..len]);
+    }
+    const between = ") OR tgt.relname IN (";
+    @memcpy(query_buf[pos..][0..between.len], between);
+    pos += between.len;
+    for (table_name_lens[0..table_name_count], 0..) |len, idx| {
+        if (idx > 0) {
+            query_buf[pos] = ',';
+            pos += 1;
+        }
+        pos = append_sql_quoted(query_buf, pos, table_names[idx][0..len]);
+    }
+    const suffix = ")) GROUP BY src.relname, tgt.relname, c.conname ORDER BY src.relname, tgt.relname, c.conname";
+    @memcpy(query_buf[pos..][0..suffix.len], suffix);
+    pos += suffix.len;
+    return pos;
+}
+
+fn copy_relation_string(dest: []u8, dest_len: *usize, value: []const u8) bool {
+    if (value.len > dest.len) return false;
+    @memcpy(dest[0..value.len], value);
+    dest_len.* = value.len;
+    return true;
+}
+
+fn parse_relation_metadata(result: ?*PGresult) ?RelationMetadata {
+    var meta = RelationMetadata{};
+    if (result == null) return meta;
+    const rows = pgNtuples(result);
+    var row: i32 = 0;
+    while (row < rows) : (row += 1) {
+        if (meta.edge_count >= meta.edges.len) return null;
+        var edge = &meta.edges[meta.edge_count];
+        const source = pgGetvalue(result, row, 0) orelse return null;
+        const target = pgGetvalue(result, row, 1) orelse return null;
+        const constraint = pgGetvalue(result, row, 2) orelse return null;
+        const source_cols = pgGetvalue(result, row, 3) orelse return null;
+        const target_cols = pgGetvalue(result, row, 4) orelse return null;
+        if (!copy_relation_string(&edge.source_buf, &edge.source_len, std.mem.span(source)) or
+            !copy_relation_string(&edge.target_buf, &edge.target_len, std.mem.span(target)) or
+            !copy_relation_string(&edge.constraint_buf, &edge.constraint_len, std.mem.span(constraint)) or
+            !copy_relation_string(&edge.source_cols_buf, &edge.source_cols_len, std.mem.span(source_cols)) or
+            !copy_relation_string(&edge.target_cols_buf, &edge.target_cols_len, std.mem.span(target_cols))) return null;
+        meta.edge_count += 1;
+    }
+    return meta;
+}
+
+fn scoped_args_match(full_key: []const u8, prefix: []const u8, immediate_only: bool) ?[]const u8 {
+    if (prefix.len == 0) return full_key;
+    if (!std.mem.startsWith(u8, full_key, prefix)) return null;
+    if (full_key.len <= prefix.len or full_key[prefix.len] != '.') return null;
+    const stripped = full_key[prefix.len + 1 ..];
+    if (immediate_only and std.mem.indexOfScalar(u8, stripped, '.') != null) return null;
+    return stripped;
+}
+
+fn build_scoped_args(args: ngx_str_t, prefix: []const u8, immediate_only: bool, out: []u8) ngx_str_t {
+    if (args.len == 0 or args.data == core.nullptr(u8)) return .{ .data = core.nullptr(u8), .len = 0 };
+    const query = core.slicify(u8, args.data, args.len);
+    var pos: usize = 0;
+    var out_pos: usize = 0;
+    while (pos < query.len) {
+        var end = pos;
+        while (end < query.len and query[end] != '&') : (end += 1) {}
+        const pair = query[pos..end];
+        if (pair.len > 0) {
+            const eq = std.mem.indexOfScalar(u8, pair, '=') orelse pair.len;
+            const key = pair[0..eq];
+            if (scoped_args_match(key, prefix, immediate_only)) |stripped_key| {
+                if (out_pos > 0) {
+                    out[out_pos] = '&';
+                    out_pos += 1;
+                }
+                @memcpy(out[out_pos..][0..stripped_key.len], stripped_key);
+                out_pos += stripped_key.len;
+                if (eq < pair.len) {
+                    out[out_pos] = '=';
+                    out_pos += 1;
+                    const value = pair[eq + 1 ..];
+                    @memcpy(out[out_pos..][0..value.len], value);
+                    out_pos += value.len;
+                }
+            }
+        }
+        if (end == query.len) break;
+        pos = end + 1;
+    }
+    return if (out_pos == 0) .{ .data = core.nullptr(u8), .len = 0 } else .{ .data = out.ptr, .len = out_pos };
+}
+
+fn append_qualified_column_list(buf_out: []u8, pos_in: usize, table_alias: []const u8, column_list: []const u8) ?usize {
+    var pos = pos_in;
+    var it = std.mem.splitScalar(u8, column_list, ',');
+    var first = true;
+    while (it.next()) |part| {
+        const col = trim_ascii_spaces(part);
+        if (col.len == 0) return null;
+        if (!first) {
+            buf_out[pos] = ',';
+            pos += 1;
+        }
+        first = false;
+        @memcpy(buf_out[pos..][0..table_alias.len], table_alias);
+        pos += table_alias.len;
+        buf_out[pos] = '.';
+        pos += 1;
+        pos = append_sql_identifier(buf_out, pos, col);
+    }
+    return pos;
+}
+
+fn append_column_equality_pairs(buf_out: []u8, pos_in: usize, left_alias: []const u8, left_cols: []const u8, right_alias: []const u8, right_cols: []const u8) ?usize {
+    var pos = pos_in;
+    var left_it = std.mem.splitScalar(u8, left_cols, ',');
+    var right_it = std.mem.splitScalar(u8, right_cols, ',');
+    var first = true;
+    while (left_it.next()) |left_part| {
+        const right_part = right_it.next() orelse return null;
+        const left_col = trim_ascii_spaces(left_part);
+        const right_col = trim_ascii_spaces(right_part);
+        if (left_col.len == 0 or right_col.len == 0) return null;
+        if (!first) {
+            const and_sep = " AND ";
+            @memcpy(buf_out[pos..][0..and_sep.len], and_sep);
+            pos += and_sep.len;
+        }
+        first = false;
+        @memcpy(buf_out[pos..][0..left_alias.len], left_alias);
+        pos += left_alias.len;
+        buf_out[pos] = '.';
+        pos += 1;
+        pos = append_sql_identifier(buf_out, pos, left_col);
+        const eq_sep = " = ";
+        @memcpy(buf_out[pos..][0..eq_sep.len], eq_sep);
+        pos += eq_sep.len;
+        @memcpy(buf_out[pos..][0..right_alias.len], right_alias);
+        pos += right_alias.len;
+        buf_out[pos] = '.';
+        pos += 1;
+        pos = append_sql_identifier(buf_out, pos, right_col);
+    }
+    if (right_it.next() != null) return null;
+    return pos;
+}
+
+fn append_raw_json_field_name(ctx: *PgRequestCtx, name: []const u8) bool {
+    if (ctx.*.raw_json_field_count >= ctx.*.raw_json_fields.len or name.len > ctx.*.raw_json_fields[0].len) return false;
+    @memcpy(ctx.*.raw_json_fields[ctx.*.raw_json_field_count][0..name.len], name);
+    ctx.*.raw_json_field_lens[ctx.*.raw_json_field_count] = name.len;
+    ctx.*.raw_json_field_count += 1;
+    return true;
+}
+
+fn build_safe_sql_alias(buf_out: []u8, prefix: []const u8, raw: []const u8) []const u8 {
+    var pos: usize = 0;
+    @memcpy(buf_out[pos..][0..prefix.len], prefix);
+    pos += prefix.len;
+    for (raw) |c| {
+        if (pos >= buf_out.len) break;
+        buf_out[pos] = if (std.ascii.isAlphanumeric(c) or c == '_') c else '_';
+        pos += 1;
+    }
+    return buf_out[0..pos];
 }
 
 fn append_list_items_sql(
@@ -5909,6 +6520,490 @@ fn build_insert_rows_query(
     return pos;
 }
 
+fn relation_hint_matches(edge: *const RelationEdge, hint: ?[]const u8) bool {
+    return if (hint) |h| std.mem.eql(u8, edge.constraint(), h) else true;
+}
+
+fn resolve_relation(metadata: *const RelationMetadata, current_table: []const u8, node: *const SelectPlanNode) ?ResolvedRelation {
+    var direct_match: ?ResolvedRelation = null;
+    var direct_count: usize = 0;
+    for (metadata.edges[0..metadata.edge_count], 0..) |edge, idx| {
+        if (!relation_hint_matches(&edge, node.fkHint())) continue;
+        if (std.mem.eql(u8, edge.source(), current_table) and std.mem.eql(u8, edge.target(), node.relation())) {
+            direct_match = .{ .kind = .to_one, .direct_edge_index = idx };
+            direct_count += 1;
+        } else if (std.mem.eql(u8, edge.source(), node.relation()) and std.mem.eql(u8, edge.target(), current_table)) {
+            direct_match = .{ .kind = .to_many, .direct_edge_index = idx };
+            direct_count += 1;
+        }
+    }
+    if (direct_count == 1 and direct_match != null) return direct_match;
+    if (direct_count > 1) return null;
+
+    var junction_match: ?ResolvedRelation = null;
+    var junction_count: usize = 0;
+    for (metadata.edges[0..metadata.edge_count], 0..) |edge_a, idx_a| {
+        if (!std.mem.eql(u8, edge_a.target(), current_table)) continue;
+        for (metadata.edges[0..metadata.edge_count], 0..) |edge_b, idx_b| {
+            if (idx_a == idx_b) continue;
+            if (!std.mem.eql(u8, edge_a.source(), edge_b.source())) continue;
+            if (!std.mem.eql(u8, edge_b.target(), node.relation())) continue;
+            if (!relation_hint_matches(&edge_a, node.fkHint()) and !relation_hint_matches(&edge_b, node.fkHint())) continue;
+            junction_match = .{ .kind = .many_to_many, .junction_edge_to_parent = idx_a, .junction_edge_to_target = idx_b };
+            junction_count += 1;
+        }
+    }
+    return if (junction_count == 1) junction_match else null;
+}
+
+fn count_direct_children(plan: *const SelectPlan, parent_index: i32) usize {
+    var count: usize = 0;
+    for (plan.nodes[0..plan.node_count]) |node| {
+        if (node.parent_index == parent_index) count += 1;
+    }
+    return count;
+}
+
+fn build_child_select_list(
+    buf_out: []u8,
+    schema_name: ?[]const u8,
+    current_table: []const u8,
+    table_alias: []const u8,
+    current_path: []const u8,
+    inner_select: []const u8,
+    request_args: ngx_str_t,
+    metadata: *const RelationMetadata,
+) ?usize {
+    var child_plan = SelectPlan{};
+    parse_select_plan_value(&child_plan, inner_select, -1, current_path, &child_plan.root_scalar_buf, &child_plan.root_scalar_len);
+    if (child_plan.invalid) return null;
+
+    var pos: usize = 0;
+    var scalar_added = false;
+    if (child_plan.root_scalar_len > 0) {
+        var scalar_select_buf: [1024]u8 = undefined;
+        const scalar_result = build_select_clause_from_value(&scalar_select_buf, child_plan.rootScalar());
+        if (scalar_result.invalid) return null;
+        if (scalar_result.len > 0) {
+            @memcpy(buf_out[pos..][0..scalar_result.len], scalar_select_buf[0..scalar_result.len]);
+            pos += scalar_result.len;
+            scalar_added = true;
+        }
+    }
+    if (!scalar_added and count_direct_children(&child_plan, -1) == 0) {
+        buf_out[0] = '*';
+        return 1;
+    }
+
+    for (child_plan.nodes[0..child_plan.node_count]) |node| {
+        if (node.parent_index != -1) continue;
+        if (pos > 0) {
+            buf_out[pos] = ',';
+            pos += 1;
+        }
+        pos = build_embed_projection_sql(buf_out, pos, schema_name, current_table, table_alias, &node, request_args, metadata) orelse return null;
+        const as_sep = " AS ";
+        @memcpy(buf_out[pos..][0..as_sep.len], as_sep);
+        pos += as_sep.len;
+        pos = append_sql_identifier(buf_out, pos, node.alias());
+    }
+    return pos;
+}
+
+fn build_embed_projection_sql(
+    buf_out: []u8,
+    pos_in: usize,
+    schema_name: ?[]const u8,
+    current_table: []const u8,
+    current_alias: []const u8,
+    node: *const SelectPlanNode,
+    request_args: ngx_str_t,
+    metadata: *const RelationMetadata,
+) ?usize {
+    const resolved = resolve_relation(metadata, current_table, node) orelse return null;
+    var pos = pos_in;
+    buf_out[pos] = '(';
+    pos += 1;
+    const select_prefix = "SELECT ";
+    @memcpy(buf_out[pos..][0..select_prefix.len], select_prefix);
+    pos += select_prefix.len;
+
+    var child_alias_buf: [96]u8 = undefined;
+    const child_alias = build_safe_sql_alias(&child_alias_buf, "pgrest_rel_", node.path());
+    var child_table_buf: [128]u8 = undefined;
+    const child_table_len = build_qualified_table_name(&child_table_buf, schema_name, node.relation());
+    const child_table = child_table_buf[0..child_table_len];
+
+    switch (resolved.kind) {
+        .to_one => {
+            const prefix = "row_to_json(pgrest_embed_row) FROM (SELECT ";
+            @memcpy(buf_out[pos..][0..prefix.len], prefix);
+            pos += prefix.len;
+            var child_select_buf: [2048]u8 = undefined;
+            const child_select_len = build_child_select_list(&child_select_buf, schema_name, node.relation(), child_alias, node.path(), node.innerSelect(), request_args, metadata) orelse return null;
+            @memcpy(buf_out[pos..][0..child_select_len], child_select_buf[0..child_select_len]);
+            pos += child_select_len;
+            const from_sep = " FROM ";
+            @memcpy(buf_out[pos..][0..from_sep.len], from_sep);
+            pos += from_sep.len;
+            @memcpy(buf_out[pos..][0..child_table.len], child_table);
+            pos += child_table.len;
+            const as_sep = " AS ";
+            @memcpy(buf_out[pos..][0..as_sep.len], as_sep);
+            pos += as_sep.len;
+            @memcpy(buf_out[pos..][0..child_alias.len], child_alias);
+            pos += child_alias.len;
+            const where_sep = " WHERE ";
+            @memcpy(buf_out[pos..][0..where_sep.len], where_sep);
+            pos += where_sep.len;
+            const edge = &metadata.edges[resolved.direct_edge_index.?];
+            pos = append_column_equality_pairs(buf_out, pos, child_alias, edge.targetCols(), current_alias, edge.sourceCols()) orelse return null;
+        },
+        .to_many => {
+            const prefix = "COALESCE(json_agg(pgrest_embed_row), '[]') FROM (SELECT ";
+            @memcpy(buf_out[pos..][0..prefix.len], prefix);
+            pos += prefix.len;
+            var child_select_buf: [2048]u8 = undefined;
+            const child_select_len = build_child_select_list(&child_select_buf, schema_name, node.relation(), child_alias, node.path(), node.innerSelect(), request_args, metadata) orelse return null;
+            @memcpy(buf_out[pos..][0..child_select_len], child_select_buf[0..child_select_len]);
+            pos += child_select_len;
+            const from_sep = " FROM ";
+            @memcpy(buf_out[pos..][0..from_sep.len], from_sep);
+            pos += from_sep.len;
+            @memcpy(buf_out[pos..][0..child_table.len], child_table);
+            pos += child_table.len;
+            const as_sep = " AS ";
+            @memcpy(buf_out[pos..][0..as_sep.len], as_sep);
+            pos += as_sep.len;
+            @memcpy(buf_out[pos..][0..child_alias.len], child_alias);
+            pos += child_alias.len;
+            const where_sep = " WHERE ";
+            @memcpy(buf_out[pos..][0..where_sep.len], where_sep);
+            pos += where_sep.len;
+            const edge = &metadata.edges[resolved.direct_edge_index.?];
+            pos = append_column_equality_pairs(buf_out, pos, child_alias, edge.sourceCols(), current_alias, edge.targetCols()) orelse return null;
+        },
+        .many_to_many => {
+            const prefix = "COALESCE(json_agg(pgrest_embed_row), '[]') FROM (SELECT ";
+            @memcpy(buf_out[pos..][0..prefix.len], prefix);
+            pos += prefix.len;
+            var child_select_buf: [2048]u8 = undefined;
+            const child_select_len = build_child_select_list(&child_select_buf, schema_name, node.relation(), child_alias, node.path(), node.innerSelect(), request_args, metadata) orelse return null;
+            @memcpy(buf_out[pos..][0..child_select_len], child_select_buf[0..child_select_len]);
+            pos += child_select_len;
+            const from_sep = " FROM ";
+            @memcpy(buf_out[pos..][0..from_sep.len], from_sep);
+            pos += from_sep.len;
+            @memcpy(buf_out[pos..][0..child_table.len], child_table);
+            pos += child_table.len;
+            const as_sep = " AS ";
+            @memcpy(buf_out[pos..][0..as_sep.len], as_sep);
+            pos += as_sep.len;
+            @memcpy(buf_out[pos..][0..child_alias.len], child_alias);
+            pos += child_alias.len;
+            const join_sep = " JOIN ";
+            @memcpy(buf_out[pos..][0..join_sep.len], join_sep);
+            pos += join_sep.len;
+            const parent_edge = &metadata.edges[resolved.junction_edge_to_parent.?];
+            const target_edge = &metadata.edges[resolved.junction_edge_to_target.?];
+            var junction_table_buf: [128]u8 = undefined;
+            const junction_table_len = build_qualified_table_name(&junction_table_buf, schema_name, parent_edge.source());
+            const junction_table = junction_table_buf[0..junction_table_len];
+            @memcpy(buf_out[pos..][0..junction_table.len], junction_table);
+            pos += junction_table.len;
+            const junction_alias = "pgrest_junction";
+            @memcpy(buf_out[pos..][0..as_sep.len], as_sep);
+            pos += as_sep.len;
+            @memcpy(buf_out[pos..][0..junction_alias.len], junction_alias);
+            pos += junction_alias.len;
+            const on_sep = " ON ";
+            @memcpy(buf_out[pos..][0..on_sep.len], on_sep);
+            pos += on_sep.len;
+            pos = append_column_equality_pairs(buf_out, pos, child_alias, target_edge.targetCols(), junction_alias, target_edge.sourceCols()) orelse return null;
+            const where_sep = " WHERE ";
+            @memcpy(buf_out[pos..][0..where_sep.len], where_sep);
+            pos += where_sep.len;
+            pos = append_column_equality_pairs(buf_out, pos, junction_alias, parent_edge.sourceCols(), current_alias, parent_edge.targetCols()) orelse return null;
+        },
+    }
+
+    var scoped_args_buf: [2048]u8 = undefined;
+    const scoped_args = build_scoped_args(request_args, node.path(), true, &scoped_args_buf);
+    var where_buf: [1024]u8 = undefined;
+    const where_result = build_where_clause_from_args(&where_buf, scoped_args);
+    if (where_result.invalid) return null;
+    if (where_result.len > 0) {
+        const and_sep = " AND ";
+        @memcpy(buf_out[pos..][0..and_sep.len], and_sep);
+        pos += and_sep.len;
+        @memcpy(buf_out[pos..][0..where_result.len], where_buf[0..where_result.len]);
+        pos += where_result.len;
+    }
+
+    var child_plan = SelectPlan{};
+    parse_select_plan_value(&child_plan, node.innerSelect(), -1, node.path(), &child_plan.root_scalar_buf, &child_plan.root_scalar_len);
+    if (child_plan.invalid) return null;
+    for (child_plan.nodes[0..child_plan.node_count]) |child_node| {
+        if (child_node.parent_index != -1 or !child_node.inner) continue;
+        const and_sep = " AND ";
+        @memcpy(buf_out[pos..][0..and_sep.len], and_sep);
+        pos += and_sep.len;
+        pos = build_embed_exists_sql(buf_out, pos, schema_name, node.relation(), child_alias, &child_node, request_args, metadata) orelse return null;
+    }
+
+    var group_buf: [1024]u8 = undefined;
+    const group_result = if (child_plan.root_scalar_len > 0) build_group_by_clause_from_value(&group_buf, child_plan.rootScalar()) else WhereClauseResult{ .len = 0, .invalid = false };
+    if (group_result.invalid) return null;
+    if (group_result.len > 0) {
+        const group_sep = " GROUP BY ";
+        @memcpy(buf_out[pos..][0..group_sep.len], group_sep);
+        pos += group_sep.len;
+        @memcpy(buf_out[pos..][0..group_result.len], group_buf[0..group_result.len]);
+        pos += group_result.len;
+    }
+
+    var order_specs: [MAX_ORDER_COLUMNS]OrderSpec = undefined;
+    const order_result = parse_order(scoped_args, &order_specs);
+    if (order_result.invalid) return null;
+    if (order_result.count > 0) {
+        const order_sep = " ORDER BY ";
+        @memcpy(buf_out[pos..][0..order_sep.len], order_sep);
+        pos += order_sep.len;
+        for (order_specs[0..order_result.count], 0..) |spec, idx| {
+            if (idx > 0) {
+                buf_out[pos] = ',';
+                pos += 1;
+            }
+            pos = append_column_expression(buf_out, pos, spec.expr()) orelse return null;
+            const dir = if (spec.dir == .desc) " DESC" else " ASC";
+            @memcpy(buf_out[pos..][0..dir.len], dir);
+            pos += dir.len;
+            switch (spec.nulls) {
+                .none => {},
+                .first => {
+                    const s = " NULLS FIRST";
+                    @memcpy(buf_out[pos..][0..s.len], s);
+                    pos += s.len;
+                },
+                .last => {
+                    const s = " NULLS LAST";
+                    @memcpy(buf_out[pos..][0..s.len], s);
+                    pos += s.len;
+                },
+            }
+        }
+    }
+    const pagination = parse_pagination(scoped_args);
+    if (pagination.limit) |limit| {
+        const s = " LIMIT ";
+        @memcpy(buf_out[pos..][0..s.len], s);
+        pos += s.len;
+        const num = std.fmt.bufPrint(buf_out[pos..], "{d}", .{limit}) catch return null;
+        pos += num.len;
+    }
+    if (pagination.offset) |offset| {
+        const s = " OFFSET ";
+        @memcpy(buf_out[pos..][0..s.len], s);
+        pos += s.len;
+        const num = std.fmt.bufPrint(buf_out[pos..], "{d}", .{offset}) catch return null;
+        pos += num.len;
+    }
+    const close = ") AS pgrest_embed_row)";
+    @memcpy(buf_out[pos..][0..close.len], close);
+    pos += close.len;
+    return pos;
+}
+
+fn build_embed_exists_sql(
+    buf_out: []u8,
+    pos_in: usize,
+    schema_name: ?[]const u8,
+    current_table: []const u8,
+    current_alias: []const u8,
+    node: *const SelectPlanNode,
+    request_args: ngx_str_t,
+    metadata: *const RelationMetadata,
+) ?usize {
+    const resolved = resolve_relation(metadata, current_table, node) orelse return null;
+    var pos = pos_in;
+    const prefix = "EXISTS (SELECT 1 FROM ";
+    @memcpy(buf_out[pos..][0..prefix.len], prefix);
+    pos += prefix.len;
+
+    var child_table_buf: [128]u8 = undefined;
+    const child_table_len = build_qualified_table_name(&child_table_buf, schema_name, node.relation());
+    const child_table = child_table_buf[0..child_table_len];
+    var child_alias_buf: [96]u8 = undefined;
+    const child_alias = build_safe_sql_alias(&child_alias_buf, "pgrest_rel_", node.path());
+
+    @memcpy(buf_out[pos..][0..child_table.len], child_table);
+    pos += child_table.len;
+    const as_sep = " AS ";
+    @memcpy(buf_out[pos..][0..as_sep.len], as_sep);
+    pos += as_sep.len;
+    @memcpy(buf_out[pos..][0..child_alias.len], child_alias);
+    pos += child_alias.len;
+    switch (resolved.kind) {
+        .to_one => {
+            const where_sep = " WHERE ";
+            @memcpy(buf_out[pos..][0..where_sep.len], where_sep);
+            pos += where_sep.len;
+            const edge = &metadata.edges[resolved.direct_edge_index.?];
+            pos = append_column_equality_pairs(buf_out, pos, child_alias, edge.targetCols(), current_alias, edge.sourceCols()) orelse return null;
+        },
+        .to_many => {
+            const where_sep = " WHERE ";
+            @memcpy(buf_out[pos..][0..where_sep.len], where_sep);
+            pos += where_sep.len;
+            const edge = &metadata.edges[resolved.direct_edge_index.?];
+            pos = append_column_equality_pairs(buf_out, pos, child_alias, edge.sourceCols(), current_alias, edge.targetCols()) orelse return null;
+        },
+        .many_to_many => {
+            const join_sep = " JOIN ";
+            @memcpy(buf_out[pos..][0..join_sep.len], join_sep);
+            pos += join_sep.len;
+            const parent_edge = &metadata.edges[resolved.junction_edge_to_parent.?];
+            const target_edge = &metadata.edges[resolved.junction_edge_to_target.?];
+            var junction_table_buf: [128]u8 = undefined;
+            const junction_table_len = build_qualified_table_name(&junction_table_buf, schema_name, parent_edge.source());
+            const junction_table = junction_table_buf[0..junction_table_len];
+            @memcpy(buf_out[pos..][0..junction_table.len], junction_table);
+            pos += junction_table.len;
+            const junction_alias = "pgrest_junction";
+            @memcpy(buf_out[pos..][0..as_sep.len], as_sep);
+            pos += as_sep.len;
+            @memcpy(buf_out[pos..][0..junction_alias.len], junction_alias);
+            pos += junction_alias.len;
+            const on_sep = " ON ";
+            @memcpy(buf_out[pos..][0..on_sep.len], on_sep);
+            pos += on_sep.len;
+            pos = append_column_equality_pairs(buf_out, pos, child_alias, target_edge.targetCols(), junction_alias, target_edge.sourceCols()) orelse return null;
+            const where_sep = " WHERE ";
+            @memcpy(buf_out[pos..][0..where_sep.len], where_sep);
+            pos += where_sep.len;
+            pos = append_column_equality_pairs(buf_out, pos, junction_alias, parent_edge.sourceCols(), current_alias, parent_edge.targetCols()) orelse return null;
+        },
+    }
+
+    var scoped_args_buf: [2048]u8 = undefined;
+    const scoped_args = build_scoped_args(request_args, node.path(), true, &scoped_args_buf);
+    var where_buf: [1024]u8 = undefined;
+    const where_result = build_where_clause_from_args(&where_buf, scoped_args);
+    if (where_result.invalid) return null;
+    if (where_result.len > 0) {
+        const and_sep = " AND ";
+        @memcpy(buf_out[pos..][0..and_sep.len], and_sep);
+        pos += and_sep.len;
+        @memcpy(buf_out[pos..][0..where_result.len], where_buf[0..where_result.len]);
+        pos += where_result.len;
+    }
+    buf_out[pos] = ')';
+    pos += 1;
+    return pos;
+}
+
+fn build_table_embed_query(
+    query_buf: []u8,
+    qualified_table: []const u8,
+    root_table: []const u8,
+    schema_name: ?[]const u8,
+    where_clause: []const u8,
+    root_select_clause: []const u8,
+    root_group_by_clause: []const u8,
+    order_specs: []const OrderSpec,
+    pagination: Pagination,
+    request_args: ngx_str_t,
+    plan: *const SelectPlan,
+    metadata: *const RelationMetadata,
+) ?usize {
+    var pos: usize = 0;
+    var has_where = false;
+    const prefix = "SELECT ";
+    @memcpy(query_buf[pos..][0..prefix.len], prefix);
+    pos += prefix.len;
+    var wrote_any = false;
+    if (root_select_clause.len > 0) {
+        @memcpy(query_buf[pos..][0..root_select_clause.len], root_select_clause);
+        pos += root_select_clause.len;
+        wrote_any = true;
+    }
+    for (plan.nodes[0..plan.node_count]) |node| {
+        if (node.parent_index != -1) continue;
+        if (wrote_any) {
+            query_buf[pos] = ',';
+            pos += 1;
+        }
+        pos = build_embed_projection_sql(query_buf, pos, schema_name, root_table, root_table, &node, request_args, metadata) orelse return null;
+        const as_sep = " AS ";
+        @memcpy(query_buf[pos..][0..as_sep.len], as_sep);
+        pos += as_sep.len;
+        pos = append_sql_identifier(query_buf, pos, node.alias());
+        wrote_any = true;
+    }
+    if (!wrote_any) {
+        query_buf[pos] = '*';
+        pos += 1;
+    }
+    const from_sep = " FROM ";
+    @memcpy(query_buf[pos..][0..from_sep.len], from_sep);
+    pos += from_sep.len;
+    @memcpy(query_buf[pos..][0..qualified_table.len], qualified_table);
+    pos += qualified_table.len;
+    if (where_clause.len > 0) {
+        const where_sep = " WHERE ";
+        @memcpy(query_buf[pos..][0..where_sep.len], where_sep);
+        pos += where_sep.len;
+        @memcpy(query_buf[pos..][0..where_clause.len], where_clause);
+        pos += where_clause.len;
+        has_where = true;
+    }
+    for (plan.nodes[0..plan.node_count]) |node| {
+        if (node.parent_index != -1 or !node.inner) continue;
+        const joiner = if (has_where) " AND " else " WHERE ";
+        @memcpy(query_buf[pos..][0..joiner.len], joiner);
+        pos += joiner.len;
+        pos = build_embed_exists_sql(query_buf, pos, schema_name, root_table, root_table, &node, request_args, metadata) orelse return null;
+        has_where = true;
+    }
+    if (root_group_by_clause.len > 0) {
+        const group_sep = " GROUP BY ";
+        @memcpy(query_buf[pos..][0..group_sep.len], group_sep);
+        pos += group_sep.len;
+        @memcpy(query_buf[pos..][0..root_group_by_clause.len], root_group_by_clause);
+        pos += root_group_by_clause.len;
+    }
+    if (order_specs.len > 0) {
+        const order_sep = " ORDER BY ";
+        @memcpy(query_buf[pos..][0..order_sep.len], order_sep);
+        pos += order_sep.len;
+        for (order_specs, 0..) |spec, idx| {
+            if (idx > 0) {
+                query_buf[pos] = ',';
+                pos += 1;
+            }
+            pos = append_column_expression(query_buf, pos, spec.expr()) orelse return null;
+            const dir = if (spec.dir == .desc) " DESC" else " ASC";
+            @memcpy(query_buf[pos..][0..dir.len], dir);
+            pos += dir.len;
+        }
+    }
+    if (pagination.limit) |limit| {
+        const s = " LIMIT ";
+        @memcpy(query_buf[pos..][0..s.len], s);
+        pos += s.len;
+        const num = std.fmt.bufPrint(query_buf[pos..], "{d}", .{limit}) catch return null;
+        pos += num.len;
+    }
+    if (pagination.offset) |offset| {
+        const s = " OFFSET ";
+        @memcpy(query_buf[pos..][0..s.len], s);
+        pos += s.len;
+        const num = std.fmt.bufPrint(query_buf[pos..], "{d}", .{offset}) catch return null;
+        pos += num.len;
+    }
+    return pos;
+}
+
 fn build_table_query(
     query_buf: []u8,
     r: [*c]ngx_http_request_t,
@@ -5923,7 +7018,7 @@ fn build_table_query(
     order_specs: []const OrderSpec,
     pagination: Pagination,
     include_returning: bool,
-) ?struct { len: usize, json_fields: [MAX_COLUMNS]JsonField, json_field_count: usize } {
+) ?TableQueryBuildResult {
     var result_fields: [MAX_COLUMNS]JsonField = undefined;
     var result_field_count: usize = 0;
     var write_column_storage: [MAX_COLUMNS][256]u8 = undefined;
@@ -6405,6 +7500,20 @@ fn ngx_http_pgrest_upstream_handler(r: [*c]ngx_http_request_t) callconv(.c) ngx_
         return send_json_error(r, NGX_HTTP_NOT_ACCEPTABLE, format_schema_error(&err_buf, resolved_schema.allowed_raw));
     }
 
+    if (r.*.method == NGX_HTTP_OPTIONS_METHOD) {
+        if (is_rpc_endpoint(r.*.uri)) {
+            return send_options_response(r, "OPTIONS,GET,HEAD,POST");
+        }
+        return send_options_response(r, "OPTIONS,GET,HEAD,POST,PATCH,PUT,DELETE");
+    }
+
+    if ((r.*.method == http.NGX_HTTP_GET or r.*.method == http.NGX_HTTP_HEAD) and is_uri_root_path(r.*.uri, "/api/")) {
+        return send_openapi_root(r, "table");
+    }
+    if ((r.*.method == http.NGX_HTTP_GET or r.*.method == http.NGX_HTTP_HEAD) and is_uri_root_path(r.*.uri, "/rpc/")) {
+        return send_openapi_root(r, "rpc");
+    }
+
     const body_format = parse_content_type_from_request(r);
     if (request_needs_body(r) and body_format == .unsupported) {
         return send_unsupported_media_type(r, "{\"message\":\"Unsupported request media type\"}");
@@ -6443,15 +7552,29 @@ fn ngx_http_pgrest_upstream_handler(r: [*c]ngx_http_request_t) callconv(.c) ngx_
     }
     const where_len = where_result.len;
 
+    const select_plan = build_select_plan_from_args(r.*.args);
+    if (select_plan.invalid) {
+        return send_json_error(r, http.NGX_HTTP_BAD_REQUEST, "{\"message\":\"Invalid select parameter\"}");
+    }
+    if (select_plan.has_embeds and opts.response_format != .json) {
+        return send_not_acceptable(r, "{\"message\":\"Embedded resources are only available for JSON responses\"}");
+    }
+
     // Parse column selection
     var select_buf: [MAX_QUERY_SIZE]u8 = undefined;
-    const select_result = build_select_clause_from_args(&select_buf, r.*.args);
+    const select_result = if (select_plan.has_embeds)
+        build_select_clause_from_value(&select_buf, select_plan.rootScalar())
+    else
+        build_select_clause_from_args(&select_buf, r.*.args);
     if (select_result.invalid) {
         return send_json_error(r, http.NGX_HTTP_BAD_REQUEST, "{\"message\":\"Invalid select parameter\"}");
     }
 
     var group_by_buf: [MAX_QUERY_SIZE]u8 = undefined;
-    const group_by_result = build_group_by_clause_from_args(&group_by_buf, r.*.args);
+    const group_by_result = if (select_plan.has_embeds)
+        build_group_by_clause_from_value(&group_by_buf, select_plan.rootScalar())
+    else
+        build_group_by_clause_from_args(&group_by_buf, r.*.args);
     if (group_by_result.invalid) {
         return send_json_error(r, http.NGX_HTTP_BAD_REQUEST, "{\"message\":\"Invalid select parameter\"}");
     }
@@ -6474,21 +7597,6 @@ fn ngx_http_pgrest_upstream_handler(r: [*c]ngx_http_request_t) callconv(.c) ngx_
     };
 
     var table_query_buf: [MAX_QUERY_SIZE]u8 = undefined;
-    const table_query = build_table_query(
-        &table_query_buf,
-        r,
-        r.*.pool,
-        sql_op,
-        qualified_table,
-        body_format,
-        opts,
-        where_buf[0..where_len],
-        select_buf[0..select_result.len],
-        group_by_buf[0..group_by_result.len],
-        order_specs[0..order_count],
-        pagination,
-        if (is_write_request) write_contract.include_returning else true,
-    ) orelse return send_json_error(r, http.NGX_HTTP_BAD_REQUEST, "{\"message\":\"Invalid write payload\"}");
 
     ctx.*.pool_conn = null;
     ctx.*.query_state = .none;
@@ -6513,18 +7621,59 @@ fn ngx_http_pgrest_upstream_handler(r: [*c]ngx_http_request_t) callconv(.c) ngx_
     ctx.*.response_range_start = pagination_info.range_start;
     ctx.*.total_count = 0;
     ctx.*.has_total_count = false;
+    ctx.*.table_embed_metadata = false;
+    ctx.*.raw_json_field_count = 0;
     ctx.*.next_query_len = 0;
     ctx.*.followup_query_count = 0;
     ctx.*.write_status = if (is_write_request) write_contract.status else http.NGX_HTTP_OK;
     ctx.*.write_send_body = if (is_write_request) write_contract.send_body else true;
     ctx.*.is_write_request = is_write_request;
 
-    if (!queue_jwt_setup_queries(ctx, loc_conf)) {
+    const table_query = if (sql_op == .select and select_plan.has_embeds) blk: {
+        var table_names: [MAX_TABLE_NAMES][64]u8 = std.mem.zeroes([MAX_TABLE_NAMES][64]u8);
+        var table_name_lens: [MAX_TABLE_NAMES]usize = std.mem.zeroes([MAX_TABLE_NAMES]usize);
+        const table_name_count = collect_plan_table_names(&select_plan, table_name, &table_names, &table_name_lens) orelse {
+            return send_json_error(r, http.NGX_HTTP_BAD_REQUEST, "{\"message\":\"Invalid embed parameter\"}");
+        };
+        const metadata_query_len = build_relationship_metadata_query(&table_query_buf, resolved_schema.name, &table_names, &table_name_lens, table_name_count);
+        ctx.*.table_embed_metadata = true;
+        for (select_plan.nodes[0..select_plan.node_count]) |node| {
+            if (node.parent_index == -1 and !append_raw_json_field_name(ctx, node.alias())) {
+                return http.NGX_HTTP_INTERNAL_SERVER_ERROR;
+            }
+        }
+        break :blk TableQueryBuildResult{
+            .len = metadata_query_len,
+            .json_fields = undefined,
+            .json_field_count = 0,
+        };
+    } else build_table_query(
+        &table_query_buf,
+        r,
+        r.*.pool,
+        sql_op,
+        qualified_table,
+        body_format,
+        opts,
+        where_buf[0..where_len],
+        select_buf[0..select_result.len],
+        group_by_buf[0..group_by_result.len],
+        order_specs[0..order_count],
+        pagination,
+        if (is_write_request) write_contract.include_returning else true,
+    ) orelse return send_json_error(r, http.NGX_HTTP_BAD_REQUEST, "{\"message\":\"Invalid write payload\"}");
+
+    if (!ctx.*.table_embed_metadata and !queue_jwt_setup_queries(ctx, loc_conf)) {
         return http.NGX_HTTP_INTERNAL_SERVER_ERROR;
     }
     const has_setup_queries = ctx.*.next_query_len > 0;
 
-    if (!is_write_request and read_count_requested(opts)) {
+    if (ctx.*.table_embed_metadata) {
+        if (!set_active_query(ctx, table_query_buf[0..table_query.len])) {
+            return http.NGX_HTTP_INTERNAL_SERVER_ERROR;
+        }
+        ctx.*.rpc_phase = .metadata;
+    } else if (!is_write_request and read_count_requested(opts)) {
         var count_query_buf: [MAX_QUERY_SIZE]u8 = undefined;
         const count_query_len = build_table_count_query(&count_query_buf, qualified_table, where_buf[0..where_len]);
         if (!set_active_query(ctx, count_query_buf[0..count_query_len])) {
@@ -6738,6 +7887,145 @@ fn finalize_pg_response(ctx: *PgRequestCtx) void {
     // Format result as JSON
     const ntuples = pgNtuples(result);
     const nfields = pgNfields(result);
+
+    if (ctx.*.rpc_phase == .metadata and ctx.*.table_embed_metadata) {
+        const metadata = parse_relation_metadata(result) orelse {
+            finalize_pooled_failure(ctx);
+            return;
+        };
+        const loc_conf = core.castPtr(
+            ngx_pgrest_loc_conf_t,
+            conf.ngx_http_get_module_loc_conf(r, &ngx_http_pgrest_module),
+        ) orelse {
+            finalize_pooled_failure(ctx);
+            return;
+        };
+        const resolved_schema = resolve_request_schema(r, loc_conf);
+        const table_name = extract_table_name(r.*.uri) orelse {
+            const rc = http.NGX_HTTP_BAD_REQUEST;
+            ctx.*.request = null;
+            release_pooled_ctx(ctx, false);
+            http.ngx_http_finalize_request(r, rc);
+            return;
+        };
+        var qualified_table_buf: [512]u8 = undefined;
+        const qualified_table_len = build_qualified_table_name(qualified_table_buf[0..], resolved_schema.name, table_name);
+        const qualified_table = qualified_table_buf[0..qualified_table_len];
+
+        var where_buf: [MAX_QUERY_SIZE]u8 = undefined;
+        const where_result = build_where_clause_from_args(&where_buf, r.*.args);
+        if (where_result.invalid) {
+            const rc = send_json_error(r, http.NGX_HTTP_BAD_REQUEST, "{\"message\":\"Invalid filter parameter\"}");
+            ctx.*.request = null;
+            release_pooled_ctx(ctx, false);
+            http.ngx_http_finalize_request(r, rc);
+            return;
+        }
+
+        const select_plan = build_select_plan_from_args(r.*.args);
+        if (select_plan.invalid) {
+            const rc = send_json_error(r, http.NGX_HTTP_BAD_REQUEST, "{\"message\":\"Invalid select parameter\"}");
+            ctx.*.request = null;
+            release_pooled_ctx(ctx, false);
+            http.ngx_http_finalize_request(r, rc);
+            return;
+        }
+        var select_buf: [MAX_QUERY_SIZE]u8 = undefined;
+        const select_result = build_select_clause_from_value(&select_buf, select_plan.rootScalar());
+        if (select_result.invalid) {
+            const rc = send_json_error(r, http.NGX_HTTP_BAD_REQUEST, "{\"message\":\"Invalid select parameter\"}");
+            ctx.*.request = null;
+            release_pooled_ctx(ctx, false);
+            http.ngx_http_finalize_request(r, rc);
+            return;
+        }
+        var group_by_buf: [MAX_QUERY_SIZE]u8 = undefined;
+        const group_by_result = build_group_by_clause_from_value(&group_by_buf, select_plan.rootScalar());
+        if (group_by_result.invalid) {
+            const rc = send_json_error(r, http.NGX_HTTP_BAD_REQUEST, "{\"message\":\"Invalid select parameter\"}");
+            ctx.*.request = null;
+            release_pooled_ctx(ctx, false);
+            http.ngx_http_finalize_request(r, rc);
+            return;
+        }
+        var order_specs: [MAX_ORDER_COLUMNS]OrderSpec = undefined;
+        const order_parse = parse_order(r.*.args, &order_specs);
+        if (order_parse.invalid) {
+            const rc = reject_invalid_order(r);
+            ctx.*.request = null;
+            release_pooled_ctx(ctx, false);
+            http.ngx_http_finalize_request(r, rc);
+            return;
+        }
+        const req_opts = parse_request_options(r);
+        const pagination_info = effective_read_pagination(r.*.args, req_opts);
+        ctx.*.response_range_start = pagination_info.range_start;
+
+        var data_query_buf: [MAX_QUERY_SIZE]u8 = undefined;
+        const data_query_len = build_table_embed_query(
+            &data_query_buf,
+            qualified_table,
+            table_name,
+            resolved_schema.name,
+            where_buf[0..where_result.len],
+            select_buf[0..select_result.len],
+            group_by_buf[0..group_by_result.len],
+            order_specs[0..order_parse.count],
+            pagination_info.pagination,
+            r.*.args,
+            &select_plan,
+            &metadata,
+        ) orelse {
+            const rc = send_json_error(r, http.NGX_HTTP_BAD_REQUEST, "{\"message\":\"Invalid embed parameter\"}");
+            ctx.*.request = null;
+            release_pooled_ctx(ctx, false);
+            http.ngx_http_finalize_request(r, rc);
+            return;
+        };
+
+        ctx.*.next_query_len = 0;
+        ctx.*.followup_query_count = 0;
+        if (!queue_jwt_setup_queries(ctx, loc_conf)) {
+            finalize_pooled_failure(ctx);
+            return;
+        }
+        const has_setup_queries = ctx.*.next_query_len > 0;
+        if (read_count_requested(req_opts)) {
+            if (!queue_followup_query(ctx, data_query_buf[0..data_query_len])) {
+                finalize_pooled_failure(ctx);
+                return;
+            }
+            var count_query_buf: [MAX_QUERY_SIZE]u8 = undefined;
+            const count_query_len = build_table_count_query(&count_query_buf, qualified_table, where_buf[0..where_result.len]);
+            if (!set_active_query(ctx, count_query_buf[0..count_query_len])) {
+                finalize_pooled_failure(ctx);
+                return;
+            }
+            ctx.*.rpc_phase = .count;
+        } else {
+            if (!set_active_query(ctx, data_query_buf[0..data_query_len])) {
+                finalize_pooled_failure(ctx);
+                return;
+            }
+            ctx.*.rpc_phase = .call;
+        }
+        if (has_setup_queries) {
+            if (!queue_followup_query(ctx, ctx.*.query[0..ctx.*.query_len])) {
+                finalize_pooled_failure(ctx);
+                return;
+            }
+            if (!promote_followup_query(ctx)) {
+                finalize_pooled_failure(ctx);
+                return;
+            }
+        }
+        if (ctx.*.pool_conn) |pool_conn| {
+            if (!start_pooled_query(ctx, pool_conn)) {
+                finalize_pooled_failure(ctx);
+            }
+            return;
+        }
+    }
 
     if (ctx.*.rpc_phase == .metadata) {
         const metadata = parse_rpc_metadata_result(result);
@@ -6976,6 +8264,9 @@ fn finalize_pg_response(ctx: *PgRequestCtx) void {
         opts,
         &response_buf,
         &content_type,
+        &ctx.*.raw_json_fields,
+        &ctx.*.raw_json_field_lens,
+        ctx.*.raw_json_field_count,
     ) catch |err| switch (err) {
         error.BinaryShapeUnsupported => {
             const rc = send_not_acceptable(r, "{\"message\":\"application/octet-stream requires exactly one row and one column\"}");

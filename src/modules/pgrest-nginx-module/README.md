@@ -19,6 +19,7 @@ This split is intentionally mechanical so future batches can grow one concern wi
 - **RESTful CRUD operations** - Maps HTTP methods to SQL operations
 - **PostgREST-compatible filtering** - Query string filters like `?column=op.value`
 - **Column selection** - Select specific columns with `?select=col1,col2`
+- **Resource embedding** - Direct FK one-to-one/one-to-many plus many-to-many embedding with nested JSON reads on the table path
 - **Ordering** - Sort results with `?order=column.desc`
 - **Pagination** - Limit/offset with `?limit=N&offset=M`
 - **JSON response formatting** - Query results returned as JSON array
@@ -1108,6 +1109,31 @@ Current Batch 9 boundary:
 - `HAVING`-style aggregate filtering is not implemented
 - embedding-aware aggregate behavior remains deferred to later embedding batches
 
+## Resource Embedding and Relationships
+
+Batch 10 and the core relationship parts of Batch 11 now land on the table-read path for JSON responses.
+
+Supported embedding forms:
+
+- one-level to-one embedding via direct foreign keys, e.g. `select=id,user:users(id,name)`
+- one-level to-many embedding via reverse foreign keys, e.g. `select=id,name,orders(id,amount)`
+- many-to-many embedding via join-table inference, e.g. `select=id,teams!memberships_team_id_fkey(id,name)`
+- nested embedding on top of those relationships, e.g. `select=id,teams!memberships_team_id_fkey(id,name,owner:users(id,name))`
+- `!inner` on embeds to filter parent rows by related-row existence, e.g. `select=id,name,orders!inner(id)`
+- basic `!fk` disambiguation using the PostgreSQL constraint name
+- embedded filtering/order/limit/offset using scoped query parameters such as `orders.limit=2`, `orders.order=id.desc`, or `orders.status=eq.paid`
+
+Current relationship scope:
+
+- relationships are currently table-to-table only
+- relationship metadata is derived from PostgreSQL foreign-key introspection in the active schema
+- embedded responses are currently JSON-only; non-JSON embedded reads are rejected explicitly
+
+Current Batch 11 boundary:
+
+- advanced embed semantics such as spread syntax, null-based embed filters, and mutation-time embedding are still out of scope
+- view/computed/table-valued-function relationship inference remains out of scope
+
 ## RPC Response Formats
 
 The response format for RPC calls depends on what your function returns. The format can be controlled via the `Accept` header:
@@ -1232,6 +1258,8 @@ Error responses:
 - ✅ **Single unnamed RPC parameters** - matching `json/jsonb`, `text`, `xml`, and `bytea` single-unnamed-parameter functions now use positional body binding
 - ✅ **Variadic repeated parameters** - repeated GET and form-urlencoded RPC parameters now collapse into one variadic `ARRAY[...]` argument when metadata marks the target parameter as variadic
 - ✅ **Table-valued RPC read grammar** - composite/table-returning RPC functions now support `select`, filters, ordering, and pagination
+- ✅ **Embedded resource reads** - table reads now support direct-FK to-one/to-many embedding, many-to-many join-table inference, nested embedding, and basic `!fk` disambiguation on JSON responses
+- ✅ **Interface/discovery surface** - table and RPC routes now respond to `OPTIONS`, emit basic CORS headers for simple/preflight flows, and expose a minimal OpenAPI discovery document on `/api/` and `/rpc/`
 - ✅ **JWT Authentication** - Authorization header support with JWT passed to PostgreSQL via request.jwt claim
 
 ## Planned Features
@@ -1240,6 +1268,7 @@ Error responses:
 - **Broader write semantics** - transaction preferences, default conflict-target inference without explicit schema metadata, and richer RPC-specific Prefer behavior
 - **Variadic functions** - Multiple parameter values for variadic functions
 - **Embedding and aggregate grammar** - relationship embedding, spread syntax, and aggregate/computed-field `select` semantics remain future work outside the current Batch 4 subset
+ - **Advanced embed semantics** - `!inner`, spread syntax, null-based embed filtering, mutation-time embedding, and non-table relationship inference remain future work
 
 ## Limitations
 
