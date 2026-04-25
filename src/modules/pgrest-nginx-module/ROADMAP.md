@@ -20,15 +20,15 @@ The goal is not to list every internal cleanup task. The goal is to get `pgrest`
 - Schema profile headers: `Accept-Profile`, `Content-Profile`
 - RPC GET/POST calls with JSON bodies and JSON array parameters
 - `Prefer: params=single-object`
-- JSON, CSV, plain text, and XML response formatting in the blocking path
-- `application/vnd.pgrst.object+json` and `nulls=stripped` in the blocking path
+- JSON, CSV, plain text, and XML response formatting
+- `application/vnd.pgrst.object+json` and `nulls=stripped`
 - JWT signature validation, JWT passthrough, and role switching
-- A non-blocking / pooled execution path
+- Non-blocking / pooled execution path
 
 ### Important parity caveats
 
 - Several features are only **partial parity**, not full PostgREST behavior.
-- The blocking and pooled execution paths do **not** currently behave the same.
+- The module now uses a single non-blocking pooled execution path.
 - Some README claims are ahead of actual behavior, especially around binary/media handling.
 
 ---
@@ -61,7 +61,7 @@ Current module support is centered on single-resource CRUD plus a limited subset
 
 **Status:** Partial
 
-The blocking path supports multiple formats, but representation semantics are still short of PostgREST parity.
+Multiple formats are supported, but representation semantics are still short of PostgREST parity.
 
 ### Action points (easy → hard)
 
@@ -72,7 +72,7 @@ The blocking path supports multiple formats, but representation semantics are st
 - **[Medium]** Add request-body media type parity where applicable: `application/x-www-form-urlencoded`, `text/csv`, `application/octet-stream`, `text/plain`, `text/xml`.
 - **[Medium]** Support PostgREST-style vendor media handling beyond current JSON variants where practical.
 - **[Hard]** Add custom media type handler parity, or clearly define the subset intentionally unsupported.
-- **[Hard]** Make representation/media behavior identical across blocking and pooled execution paths.
+- **[Hard]** Make representation/media behavior identical across all execution paths.
 
 ---
 
@@ -109,7 +109,7 @@ Query-param `limit` and `offset` exist, but PostgREST’s HTTP-level pagination 
 - **[Medium]** Emit partial-content responses where PostgREST would use them.
 - **[Medium]** Add `Prefer: count=exact|planned|estimated` parsing and response behavior.
 - **[Hard]** Extend pagination/count semantics to table-valued functions and other supported endpoint types.
-- **[Hard]** Keep range/count behavior consistent across blocking and pooled execution paths.
+- **[Hard]** Keep range/count behavior consistent across all execution paths.
 
 ---
 
@@ -144,7 +144,7 @@ Profile headers exist, but PostgREST schema governance is broader than raw schem
 - **[Medium]** Enforce an explicit schema allowlist model similar to PostgREST `db-schemas` instead of accepting arbitrary profile values.
 - **[Medium]** Return PostgREST-style errors for disallowed or invalid profile headers.
 - **[Medium]** Add default-schema selection rules that match PostgREST’s multi-schema behavior.
-- **[Hard]** Ensure pooled execution uses the same schema qualification behavior as the blocking path.
+- **[Hard]** Harden schema qualification behavior edge cases.
 - **[Hard]** Consider whether dynamic schema reloading/configuration belongs in scope; if yes, design it explicitly instead of letting it emerge accidentally.
 
 ---
@@ -212,11 +212,11 @@ This is the main cross-cutting category that can quietly break every feature abo
 
 ### Action points (easy → hard)
 
-- **[Easy]** Add a parity checklist so every newly added feature is tested in both blocking and pooled modes.
-- **[Easy]** Add explicit tests for `pgrest_pooling`, `pgrest_server`, and `pgrest_keepalive`.
-- **[Medium]** Unify schema/profile behavior across blocking and pooled paths.
-- **[Medium]** Unify content negotiation and JSON variants across blocking and pooled paths.
-- **[Medium]** Unify error formatting and status code behavior across both paths.
+- **[Easy]** Add a parity checklist so every newly added feature is tested end-to-end.
+- **[Easy]** Add explicit tests for `pgrest_server` and `pgrest_keepalive`.
+- **[Medium]** Harden schema/profile behavior edge cases.
+- **[Medium]** Harden content negotiation and JSON variant edge cases.
+- **[Medium]** Harden error formatting and status code behavior.
 - **[Medium]** Enforce JWT expiration and other basic token validation semantics that are currently absent.
 - **[Hard]** Replace manual SQL string construction with parameterized query execution where feasible.
 - **[Hard]** Revisit global pooled-state design so upstream configuration is not silently shared in the wrong places.
@@ -246,21 +246,20 @@ This is the first implementation batch because it is the smallest self-contained
 
 ### Batch 1 goals
 
-- Make the blocking and pooled execution paths behave closer to each other.
 - Lock down HTTP semantics that later batches will rely on.
 - Improve observable protocol correctness before adding new feature surface.
 
 ### Included in Batch 1
 
-- **Execution-path parity tests** for features that already exist in blocking mode and need pooled-mode coverage.
-- **Directive coverage** for `pgrest_pooling`, `pgrest_server`, and `pgrest_keepalive`.
+- **Execution-path integration tests** for features that need end-to-end coverage.
+- **Directive coverage** for `pgrest_server` and `pgrest_keepalive`.
 - **Singular object correctness** for `application/vnd.pgrst.object+json`.
 - **Unsupported Accept handling** so invalid media requests do not silently fall back to JSON.
 - **HEAD support** for read endpoints.
 - **Range header foundation**: `Range-Unit`, `Range`, and `Content-Range` basics.
 - **Central Prefer parsing** for currently supported behavior.
 - **Preference-Applied headers** when behavior is actually honored.
-- **Error/status parity** between blocking and pooled paths for the features covered by this batch.
+- **Error/status parity** across the feature set covered by this batch.
 
 ### Explicitly excluded from Batch 1
 
@@ -284,13 +283,13 @@ These stay out of the first batch because they enlarge the parser, require intro
 
 ### Batch 1 acceptance criteria
 
-- Every feature touched in this batch has integration coverage in both blocking and pooled modes where applicable.
+- Every feature touched in this batch has integration coverage where applicable.
 - `application/vnd.pgrst.object+json` no longer silently returns `{}` for zero rows or silently picks the first row from multiple rows.
 - Unknown `Accept` values fail with an explicit unsupported-media response instead of defaulting to JSON.
 - `HEAD` on supported read endpoints returns headers without a response body.
 - Read endpoints can emit the basic range headers needed for later pagination/count work.
 - `Prefer: params=single-object` is parsed centrally and emits `Preference-Applied` when honored.
-- Equivalent success and failure cases return aligned status codes and response structure across blocking and pooled paths.
+- Equivalent success and failure cases return aligned status codes and response structure.
 
 ### Batch boundaries
 
@@ -312,7 +311,7 @@ These batches are intended to fully cover the roadmap while keeping the highest-
 
 - Every batch must ship its own **tests** and **documentation deltas** alongside code changes.
 - Every batch must state what is **explicitly out of scope** so it does not silently absorb later work.
-- Any feature that exists in both blocking and pooled execution paths must be tested in both paths before a batch is considered done.
+- Every feature must have integration coverage before a batch is considered done.
 - Parser-expansion batches must not quietly redesign execution-path or schema-governance behavior.
 - Introspection-heavy work must stay behind schema/profile stabilization.
 
@@ -644,7 +643,7 @@ This module is not a standalone PostgREST server. It is an nginx upstream module
 **Theme:** Final parity closure, safety, and proof that the roadmap is fully covered.
 
 **Includes**
-- Remaining blocking vs pooled path gap closure
+- Remaining hardening and edge case closure
 - JWT expiration and related token-validation hardening
 - Parameterized query execution where feasible
 - Global pooled-state design cleanup where necessary
@@ -668,7 +667,7 @@ This table is meant to make the batches implementation-ready. The file list is i
 
 | Batch | Primary Goal | Likely Files | Main Tests | Main Blockers | Exit Criteria |
 |---|---|---|---|---|---|
-| 1 | HTTP contract + path parity baseline | `src/modules/pgrest-nginx-module/ngx_http_pgrest.zig`, `tests/pgrest/pgrest.test.js`, `tests/pgrest/nginx.conf`, `src/modules/pgrest-nginx-module/README.md` | singular object errors, unsupported `Accept`, `HEAD`, range foundation, pooled-vs-blocking parity, directive coverage | current blocking/pooled divergence | existing semantics are aligned across both paths for covered features and documented |
+| 1 | HTTP contract + path parity baseline | `src/modules/pgrest-nginx-module/ngx_http_pgrest.zig`, `tests/pgrest/pgrest.test.js`, `tests/pgrest/nginx.conf`, `src/modules/pgrest-nginx-module/README.md` | singular object errors, unsupported `Accept`, `HEAD`, range foundation, directive coverage | path divergence | existing semantics are aligned and documented |
 | 2 | Finish media/body format correctness | same files as Batch 1 | binary response behavior, request-body media handling, representation parity by Accept type | binary handling and pooled-path formatting gaps | supported media/body formats behave consistently and README claims match reality |
 | 3 | Complete Prefer response contract | `ngx_http_pgrest.zig`, `tests/pgrest/pgrest.test.js`, `README.md` | `Preference-Applied`, strict/lenient handling, `return=*`, `max-affected` | central parser extension without breaking existing behavior | Prefer behavior is centralized, tested, and stable for current write paths |
 | 4 | Expand URL grammar safely | `ngx_http_pgrest.zig`, `tests/pgrest/pgrest.test.js`, `README.md` | operator matrix, escaping/quoted values, ordering semantics, alias/cast/path grammar | parser breadth and SQL builder complexity | grammar additions pass without changing unrelated execution semantics |
@@ -679,7 +678,7 @@ This table is meant to make the batches implementation-ready. The file list is i
 | 9 | Add aggregates and computed fields | `ngx_http_pgrest.zig`, `tests/pgrest/pgrest.test.js`, `README.md` | aggregate select cases, grouped output, computed field select/filter/order, cast/path interactions | select grammar and result-shaping complexity | aggregate/computed-field support works on the stabilized grammar layer without relationship coupling |
 | 10 | Embedding phase 1 | `ngx_http_pgrest.zig`, `tests/pgrest/pgrest.test.js`, `README.md` | one-level to-one/to-many embedding, basic `!fk`, embedded filters/order/limit | relationship model choice and bounded introspection | a narrow relationship model works reliably and stays within upstream/performance guardrails |
 | 11 | Embedding phase 2 + interface surface | `ngx_http_pgrest.zig`, `tests/pgrest/pgrest.test.js`, `tests/pgrest/nginx.conf`, `README.md` | many-to-many, nested embed, advanced embed filters, spread, OPTIONS, CORS, OpenAPI/root metadata | highest feature coupling and public-surface breadth | advanced relationship/API-surface work lands without reopening earlier contract decisions |
-| 12 | Final parity closure and hardening | `ngx_http_pgrest.zig`, `tests/pgrest/pgrest.test.js`, `README.md` | pooled-vs-blocking gap sweep, JWT expiry, error-path coverage, SQL/runtime failure coverage, final docs/tests audit | hardening without accidental new features | remaining parity gaps are closed or intentionally documented as out of scope for upstream/performance reasons |
+| 12 | Final parity closure and hardening | `ngx_http_pgrest.zig`, `tests/pgrest/pgrest.test.js`, `README.md` | JWT expiry, error-path coverage, SQL/runtime failure coverage, final docs/tests audit | hardening without accidental new features | remaining gaps are closed or intentionally documented as out of scope for upstream/performance reasons |
 
 ---
 

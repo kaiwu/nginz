@@ -3798,12 +3798,6 @@ fn extract_jwt_token(r: [*c]ngx_http_request_t) ?[]const u8 {
     return pgrest_auth.extract_jwt_token(r);
 }
 
-/// Set PostgreSQL session claims by executing SET request.jwt TO <token>
-/// This allows PostgreSQL functions to access JWT data via current_setting('request.jwt')
-fn set_postgresql_jwt_claim(conn: ?*PGconn, jwt_token: []const u8) bool {
-    return pgrest_auth.set_postgresql_jwt_claim(conn, jwt_token);
-}
-
 // ============================================================================
 // JWT Role Support
 // ============================================================================
@@ -3827,13 +3821,6 @@ fn validate_jwt_hs256(token: []const u8, secret: []const u8) bool {
 /// Returns the role string or null if not found/invalid
 fn extract_jwt_role(pool: [*c]ngx_pool_t, jwt_token: []const u8, role_claim: []const u8) ?[]const u8 {
     return pgrest_auth.extract_jwt_role(pool, jwt_token, role_claim);
-}
-
-/// Set PostgreSQL session role from JWT 'role' claim
-/// This allows PostgreSQL to enforce row-level security based on JWT role
-/// Executes: SET ROLE '<role>'
-fn set_postgresql_role(conn: ?*PGconn, role: []const u8) bool {
-    return pgrest_auth.set_postgresql_role(conn, role);
 }
 
 /// ============================================================================

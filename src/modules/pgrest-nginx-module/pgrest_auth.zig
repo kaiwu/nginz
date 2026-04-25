@@ -1,19 +1,11 @@
 const std = @import("std");
 const ngx = @import("ngx");
 
-const pq = ngx.pq;
 const ssl = ngx.ssl;
 const core = ngx.core;
 const http = ngx.http;
 const cjson = ngx.cjson;
 const CJSON = cjson.CJSON;
-
-const PGconn = pq.PGconn;
-const PGresult = pq.PGresult;
-const pgExec = pq.pgExec;
-const pgResultStatus = pq.pgResultStatus;
-const pgClear = pq.pgClear;
-const PGRES_COMMAND_OK = pq.PGRES_COMMAND_OK;
 
 const ngx_str_t = core.ngx_str_t;
 const ngx_pool_t = core.ngx_pool_t;
@@ -63,19 +55,6 @@ pub fn extract_jwt_token(r: [*c]ngx_http_request_t) ?[]const u8 {
         }
     }
     return null;
-}
-
-pub fn set_postgresql_jwt_claim(conn: ?*PGconn, jwt_token: []const u8) bool {
-    if (conn == null or jwt_token.len == 0) return true;
-
-    var query_buf: [8192]u8 = undefined;
-    _ = build_set_postgresql_jwt_claim_query(jwt_token, &query_buf) orelse return false;
-
-    const result = pgExec(conn, &query_buf);
-    if (result == null) return false;
-    const status = pgResultStatus(result);
-    pgClear(result);
-    return status == PGRES_COMMAND_OK;
 }
 
 pub fn base64url_decode(input: []const u8, output: []u8) ?usize {
@@ -154,19 +133,6 @@ pub fn extract_jwt_role(pool: [*c]ngx_pool_t, jwt_token: []const u8, role_claim:
     const role_node = CJSON.query(json, query) orelse return null;
     const role_str = CJSON.stringValue(role_node) orelse return null;
     return core.slicify(u8, role_str.data, role_str.len);
-}
-
-pub fn set_postgresql_role(conn: ?*PGconn, role: []const u8) bool {
-    if (conn == null or role.len == 0) return true;
-
-    var query_buf: [512]u8 = undefined;
-    _ = build_set_postgresql_role_query(role, &query_buf) orelse return false;
-
-    const result = pgExec(conn, &query_buf);
-    if (result == null) return false;
-    const status = pgResultStatus(result);
-    pgClear(result);
-    return status == PGRES_COMMAND_OK;
 }
 
 pub fn build_set_postgresql_jwt_claim_query(jwt_token: []const u8, query_buf: []u8) ?usize {

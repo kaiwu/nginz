@@ -6,8 +6,8 @@ A PostgREST-like nginx module written in Zig that provides a RESTful API for Pos
 
 The pgrest implementation is no longer a single growing file. The current split keeps nginx-facing module glue in `ngx_http_pgrest.zig` and moves reusable logic into focused submodules:
 
-- `ngx_http_pgrest.zig` - nginx module entrypoint, directives, request orchestration, pooled/blocking execution glue
-- `pgrest_auth.zig` - JWT extraction/validation and blocking query helpers with Zig tests
+- `ngx_http_pgrest.zig` - nginx module entrypoint, directives, request orchestration, pooled execution glue
+- `pgrest_auth.zig` - JWT extraction/validation and query helpers with Zig tests
 - `pgrest_query.zig` - SQL grammar, table query builders, and write-query helpers with Zig tests
 - `pgrest_rpc.zig` - RPC metadata/query-shaping helpers with Zig tests
 
@@ -22,7 +22,7 @@ This split is intentionally mechanical so future batches can grow one concern wi
 - **Ordering** - Sort results with `?order=column.desc`
 - **Pagination** - Limit/offset with `?limit=N&offset=M`
 - **JSON response formatting** - Query results returned as JSON array
-- **Non-blocking I/O** - Connection pooling with async operations (with `pgrest_pooling`)
+- **Non-blocking I/O** - Connection pooling with async operations
 
 ### RPC/Stored Procedures
 - **RPC/Stored Procedures** - Call PostgreSQL functions via `/rpc/function_name`
@@ -44,26 +44,6 @@ location /api/ {
     pgrest_pass "host=localhost dbname=mydb user=postgres password=secret";
 }
 ```
-
-### Connection Pooling (Non-blocking Mode)
-
-Enable connection pooling for better performance with concurrent requests:
-
-```nginx
-location /api/ {
-    # Enable connection pooling (non-blocking mode)
-    pgrest_pooling;
-
-    # Connection string for PostgreSQL
-    pgrest_pass "host=localhost dbname=mydb user=postgres password=secret";
-}
-```
-
-With `pgrest_pooling` enabled:
-- Connections are reused across requests
-- Non-blocking I/O with nginx's event model
-- Up to 16 pooled connections (configurable)
-- Automatic connection state management
 
 ## JWT Authentication
 
@@ -298,9 +278,6 @@ Call PostgreSQL stored functions and procedures via HTTP endpoints. Perfect for 
 
 ```nginx
 location /rpc/ {
-    # Enable connection pooling (optional but recommended)
-    pgrest_pooling;
-    
     # PostgreSQL connection string
     pgrest_pass "host=localhost dbname=mydb user=postgres password=secret";
 }
@@ -613,7 +590,7 @@ Current Batch 8 behavior:
 
 - query-parameter pagination (`limit`/`offset`) still works and now drives the emitted `Content-Range`
 - `Range: start-end` and open-ended `Range: start-` requests override read pagination for top-level reads
-- `Prefer: count=exact|planned|estimated` is accepted on table reads and table-valued RPC reads in both blocking and pooled modes
+- `Prefer: count=exact|planned|estimated` is accepted on table reads and table-valued RPC reads
 - partial counted responses return `206 Partial Content` when the selected window is smaller than the known total
 
 Current Batch 8 boundary:
@@ -780,7 +757,7 @@ Current Batch 3 boundary:
 
 ### Bulk Insert and Upsert Semantics
 
-Batch 6 adds the current advanced table-write subset in both blocking and pooled modes:
+Batch 6 adds the current advanced table-write subset:
 
 - JSON array bodies are emitted as a single multi-row `INSERT ... VALUES (...), (...)`
 - `text/csv` table writes support multi-row inserts using the header row as the write column list
@@ -1078,7 +1055,7 @@ curl "http://localhost/api/people?select=id,json_data->>blood_type,json_data->ph
 
 ## Aggregate Functions and Computed Fields
 
-Batch 9 adds the current top-level aggregate/computed-field subset for table reads in both blocking and pooled modes.
+Batch 9 adds the current top-level aggregate/computed-field subset for table reads.
 
 Supported aggregate select forms:
 
@@ -1254,7 +1231,7 @@ Error responses:
 - ✅ **RPC volatility gating** - RPC GET/HEAD now respects metadata-backed volatility checks and rejects `VOLATILE` functions with `405`
 - ✅ **Single unnamed RPC parameters** - matching `json/jsonb`, `text`, `xml`, and `bytea` single-unnamed-parameter functions now use positional body binding
 - ✅ **Variadic repeated parameters** - repeated GET and form-urlencoded RPC parameters now collapse into one variadic `ARRAY[...]` argument when metadata marks the target parameter as variadic
-- ✅ **Table-valued RPC read grammar** - composite/table-returning RPC functions now support `select`, filters, ordering, and pagination in both blocking and pooled paths
+- ✅ **Table-valued RPC read grammar** - composite/table-returning RPC functions now support `select`, filters, ordering, and pagination
 - ✅ **JWT Authentication** - Authorization header support with JWT passed to PostgreSQL via request.jwt claim
 
 ## Planned Features
@@ -1289,6 +1266,6 @@ Error responses:
 - [x] Bun integration coverage exists at `tests/pgrest/`.
 - [x] Gap recorded: this audit pass expanded Bun coverage for schema-profile headers, combined query shaping, PATCH/DELETE write paths, singular-object and `nulls=stripped` JSON formats, RPC array parameters, and `Prefer: params=single-object` behavior.
 - [x] Gap recorded: real bugs were fixed in request-body handling, SQL value rendering for JSON/RPC parameters, `is`/`in` filter SQL generation, text/plain formatting, and binary Accept fallback behavior.
-- [x] Gap recorded: the README does not provide directive reference coverage for `pgrest_server`, `pgrest_keepalive`, `pgrest_pooling`, and `pgrest_pass` alongside the other exported `pgrest_*` directives.
-- [x] Gap recorded: Batch 2 now documents octet-stream as a constrained single-row/single-column response format and records the explicit request-body media mappings that are tested in both blocking and pooled paths.
+- [x] Gap recorded: the README does not provide directive reference coverage for `pgrest_server`, `pgrest_keepalive`, and `pgrest_pass` alongside the other exported `pgrest_*` directives.
+- [x] Gap recorded: Batch 2 now documents octet-stream as a constrained single-row/single-column response format and records the explicit request-body media mappings.
 - [x] No additional documentation gaps were identified in this audit pass.
