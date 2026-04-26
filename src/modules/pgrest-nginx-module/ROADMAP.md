@@ -694,12 +694,12 @@ This section collects every tail left by batches 1–11, decides whether it belo
 
 ### Medium
 
-- [ ] **[Medium]** **JWT integration coverage** — add Bun tests for expired JWT, future-dated JWT, malformed JWT, and missing-signature JWT against both blocking and pooled paths.
-- [ ] **[Medium]** **SQL/runtime error handling** — add explicit behavior and tests for: SQL syntax errors emitted by PostgreSQL, constraint violations, missing table/function errors, insufficient privilege errors.
-- [ ] **[Medium]** **Connection error handling** — add explicit behavior and tests for: PostgreSQL unreachable, connection timeout, connection reset mid-query, DNS failure.
-- [ ] **[Medium]** **View semantic review** — verify and document whether table-read filtering, ordering, pagination, and write semantics behave correctly for PostgreSQL views (updatable and non-updatable) under the current schema-allowlist model. Add integration coverage where gaps are found.
-- [ ] **[Medium]** **ROADMAP-to-tests audit** — verify that every roadmap section (1–11) has at least one integration test that exercises its primary behavior; list any sections that still lack coverage and add tests.
-- [ ] **[Medium]** **Real `count=planned` and `count=estimated`** — replace the current exact-count fallback with PostgreSQL planner/statistics estimates (`EXPLAIN` row estimates or `pg_class`/`pg_stat` lookups) so the HTTP contract (`Prefer: count=planned|estimated`) matches the promised semantics.
+- [x] **[Medium]** **JWT integration coverage** — Bun tests now cover expired JWT, future-dated JWT, malformed JWT, and missing-signature JWT on the active pooled path.
+- [x] **[Medium]** **SQL/runtime error handling** — explicit behavior and integration coverage now exist for PostgreSQL syntax errors, constraint violations, missing table/function errors, and insufficient privilege errors.
+- [x] **[Medium]** **Connection error handling** — explicit behavior and tests now cover PostgreSQL unreachable, connection timeout, connection reset mid-query, and DNS failure on the pooled path.
+- [x] **[Medium]** **View semantic review** — integration coverage now verifies filtering, ordering, pagination, and write behavior for updatable and non-updatable PostgreSQL views under the current schema-allowlist model, and README documents the observed subset.
+- [x] **[Medium]** **ROADMAP-to-tests audit** — README now records an explicit roadmap-section-to-test mapping for sections 1–11, with section 11 tracked as documentation/audit evidence.
+- [x] **[Medium]** **Real `count=planned` and `count=estimated`** — the exact-count fallback is gone from active table-read and table-valued RPC count handling; planner-backed `EXPLAIN` row estimates now drive `planned` and `estimated` counts.
 
 ### Hard
 

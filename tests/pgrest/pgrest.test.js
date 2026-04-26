@@ -10,6 +10,7 @@ import {
 
 const MODULE = "pgrest";
 let pgMock;
+let resetPgMock;
 
 function lastSql() {
   return pgMock.getLastQuery();
@@ -19,6 +20,8 @@ describe("pgrest module", () => {
   beforeAll(async () => {
     // Start PostgreSQL mock server
     pgMock = createPostgresMock(MOCK_PORTS.POSTGRES);
+    resetPgMock = createPostgresMock(15434);
+    resetPgMock.setQueryHandler(/^SELECT \* FROM users$/, () => ({ close: true }));
 
     // Default handler for SELECT * FROM users (no filters)
     pgMock.setQueryHandler(/^SELECT \* FROM users$/, (query) => ({
@@ -290,6 +293,11 @@ describe("pgrest module", () => {
       rows: [["3"]],
     }));
 
+    pgMock.setQueryHandler(/^EXPLAIN \(FORMAT JSON\) SELECT 1 FROM users$/, () => ({
+      columns: ["QUERY PLAN"],
+      rows: [['[{"Plan":{"Node Type":"Seq Scan","Relation Name":"users","Plan Rows":314}}]']],
+    }));
+
     pgMock.setQueryHandler(/^SELECT \* FROM users LIMIT 1 OFFSET 1$/, () => ({
       columns: ["id", "name", "email", "status"],
       rows: [["2", "Jane Smith", "jane@example.com", "active"]],
@@ -501,6 +509,11 @@ describe("pgrest module", () => {
       rows: [["3"]],
     }));
 
+    pgMock.setQueryHandler(/^EXPLAIN \(FORMAT JSON\) SELECT 1 FROM "best_films_2017"\(\) WHERE rating > '8'$/, () => ({
+      columns: ["QUERY PLAN"],
+      rows: [['[{"Plan":{"Node Type":"Function Scan","Function Name":"best_films_2017","Plan Rows":271}}]']],
+    }));
+
     // Handler for RPC: add_them
     pgMock.setQueryHandler(/SELECT add_them\(/, (query) => ({
       columns: ["add_them"],
@@ -543,6 +556,9 @@ describe("pgrest module", () => {
     await stopNginz();
     if (pgMock) {
       pgMock.stop();
+    }
+    if (resetPgMock) {
+      resetPgMock.stop();
     }
     cleanupRuntime(MODULE);
   });
@@ -1705,6 +1721,40 @@ describe("pgrest module", () => {
     expect(lastSql()).toBe(`SELECT title,rating FROM "best_films_2017"() WHERE rating > '8' ORDER BY title DESC LIMIT 2`);
   });
 
+  test("GET /users with Prefer: count=planned uses EXPLAIN instead of count(*)", async () => {
+    pgMock.clearTracking();
+
+    const res = await fetch(`${TEST_URL}/api/users?limit=2`, {
+      headers: {
+        Prefer: "count=planned",
+      },
+    });
+
+    expect(res.status).toBe(206);
+    expect(res.headers.get("preference-applied")).toContain("count=planned");
+    expect(res.headers.get("content-range")).toBe("0-1/314");
+    expect(pgMock.getQueryLog()).toContain("EXPLAIN (FORMAT JSON) SELECT 1 FROM users");
+    expect(pgMock.getQueryLog()).not.toContain("SELECT count(*) FROM users");
+    expect(lastSql()).toBe("SELECT * FROM users LIMIT 2");
+  });
+
+  test("GET /rpc/best_films_2017 with Prefer: count=estimated uses EXPLAIN instead of count(*)", async () => {
+    pgMock.clearTracking();
+
+    const res = await fetch(`${TEST_URL}/rpc/best_films_2017?select=title,rating&rating=gt.8&order=title.desc&limit=2`, {
+      headers: {
+        Prefer: "count=estimated",
+      },
+    });
+
+    expect(res.status).toBe(206);
+    expect(res.headers.get("preference-applied")).toContain("count=estimated");
+    expect(res.headers.get("content-range")).toBe("0-1/271");
+    expect(pgMock.getQueryLog()).toContain(`EXPLAIN (FORMAT JSON) SELECT 1 FROM "best_films_2017"() WHERE rating > '8'`);
+    expect(pgMock.getQueryLog()).not.toContain(`SELECT count(*) FROM "best_films_2017"() WHERE rating > '8'`);
+    expect(lastSql()).toBe(`SELECT title,rating FROM "best_films_2017"() WHERE rating > '8' ORDER BY title DESC LIMIT 2`);
+  });
+
   test("POST /rpc/plus_one with form body collapses repeated params into a variadic ARRAY argument", async () => {
     pgMock.clearTracking();
 
@@ -2133,6 +2183,17 @@ describe("pgrest module", () => {
     test("malformed JWT returns 401", async () => {
       const res = await fetch(`${TEST_URL}/jwt-api/users`, {
         headers: { Authorization: `Bearer not.a.valid.jwt.token` },
+      });
+      expect(res.status).toBe(401);
+      const body = await res.json();
+      expect(body.message).toBe("Invalid JWT format");
+    });
+
+    test("JWT without signature segment returns 401", async () => {
+      const header = Buffer.from(JSON.stringify({ alg: "HS256", typ: "JWT" })).toString("base64url");
+      const payload = Buffer.from(JSON.stringify({ sub: "user123", role: "admin" })).toString("base64url");
+      const res = await fetch(`${TEST_URL}/jwt-api/users`, {
+        headers: { Authorization: `Bearer ${header}.${payload}` },
       });
       expect(res.status).toBe(401);
       const body = await res.json();

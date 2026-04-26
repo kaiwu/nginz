@@ -480,7 +480,7 @@ The response format depends on what your function returns:
 
 **Error response**:
 ```json
-{"error": "RPC call failed", "function": "get_user"}
+{"message": "Undefined function"}
 ```
 
 ### Parameter Types
@@ -587,16 +587,18 @@ For `GET` and `HEAD` reads, pgrest now emits HTTP item-range metadata on table r
 - `Content-Range: start-end/*` when no total count is requested
 - `Content-Range: start-end/total` when `Prefer: count=*` is requested and a total count is available
 
-Current Batch 8 behavior:
+Current pagination/count behavior:
 
 - query-parameter pagination (`limit`/`offset`) still works and now drives the emitted `Content-Range`
 - `Range: start-end` and open-ended `Range: start-` requests override read pagination for top-level reads
 - `Prefer: count=exact|planned|estimated` is accepted on table reads and table-valued RPC reads
 - partial counted responses return `206 Partial Content` when the selected window is smaller than the known total
 
-Current Batch 8 boundary:
+Current boundary:
 
-- `count=planned` and `count=estimated` currently reuse the same exact count query path instead of PostgreSQL estimate/planner statistics
+- `count=exact` uses `COUNT(*)`
+- `count=planned` and `count=estimated` use PostgreSQL planner estimates via `EXPLAIN (FORMAT JSON)` on the filtered read shape
+- because this module does not yet expose a PostgREST-style row-threshold setting, `count=estimated` currently uses the same planner-estimate path as `count=planned` instead of a threshold-based hybrid strategy
 - range/count handling is currently implemented for top-level table reads and table-valued RPC reads, not for embedding (which remains future work)
 
 ### INSERT (POST)
@@ -1165,7 +1167,7 @@ curl -X POST "http://localhost/rpc/get_users" \
 
 **Error response**:
 ```json
-{"error": "RPC call failed", "function": "get_users"}
+{"message": "PostgreSQL query failed"}
 ```
 
 ### CSV Response
@@ -1236,7 +1238,7 @@ Other formats (CSV, XML, plain text) are available via `Accept` header as docume
 Error responses:
 
 ```json
-{"error": "Query failed", "sql": "SELECT * FROM nonexistent"}
+{"message": "Undefined table"}
 ```
 
 ## Completed Features (v1.0+)
@@ -1289,7 +1291,7 @@ Error responses:
 | Tables / URL grammar | Partial | Logical ops, advanced operators, escaping, aliasing, casting, JSON paths supported. Embedding grammar beyond direct FK is partial. |
 | Media types / representation | Partial | JSON, CSV, plain text, XML, and constrained octet-stream supported. Custom media handlers are out of scope. |
 | RPC | Partial | Volatility gating, unnamed params, variadics, table-valued return with filtering/order/pagination supported. RPC embedding is out of scope. |
-| Pagination / count | Partial | Range headers, `Prefer: count=exact` supported. `count=planned/estimated` uses exact count fallback. |
+| Pagination / count | Partial | Range headers, `Prefer: count=exact|planned|estimated`, planner-backed estimate counts for table reads and table-valued RPC reads. Embedding counts remain out of scope. |
 | Prefer header | Partial | `return`, `handling`, `max-affected`, `missing=default`, `resolution` supported. `tx=commit/rollback` is out of scope. |
 | Schema / profiles | Implemented | `pgrest_schemas` allowlist, `Accept-Profile`, `Content-Profile`, default schema selection. |
 | Bulk writes / upsert | Partial | Bulk JSON/CSV inserts, `columns`, `missing=default`, explicit upsert, limited update/delete supported. Default PK upsert inference is out of scope. |
@@ -1297,7 +1299,7 @@ Error responses:
 | Aggregates / computed fields | Partial | `sum`, `avg`, `min`, `max`, `count`, grouped queries, computed field select/filter/order supported. Aggregate ordering and `HAVING` are out of scope. |
 | OPTIONS / CORS / OpenAPI | Partial | Basic `OPTIONS`, CORS simple/preflight, minimal OpenAPI root documents supported. Full OpenAPI customization is out of scope. |
 | JWT auth | Implemented | Signature validation, `exp`/`iat`/`nbf` enforcement, role claim extraction, passthrough to PostgreSQL. |
-| Execution-path parity | Partial | Blocking and pooled paths are aligned for all supported features. Parameterized queries and full failure-mode coverage remain hardening work. |
+| Execution-path parity | Partial | The active implementation is the pooled/nonblocking path. Connection/runtime failure coverage is in place; parameterized queries and pooled-state isolation remain hardening work. |
 
 ## Batch 12 Changes
 
@@ -1305,8 +1307,12 @@ This section documents the Batch 12 hardening fixes that are now in place.
 
 - **JWT validation hardening** — Tokens with invalid format, invalid signature, expired `exp`, future `iat`, or not-yet-valid `nbf` now return `401 Unauthorized` instead of falling back to the anonymous role.
 - **Error response parity** — All client-facing errors now use the consistent `{"message":"..."}` shape. Server errors also use `{"message":"..."}` for consistency.
+- **Runtime and transport error classification** — PostgreSQL syntax errors, undefined tables/functions, constraint violations, insufficient-privilege failures, unreachable hosts, DNS failures, connection resets, and timed-out pooled requests now return explicit HTTP status/message pairs instead of collapsing into a generic `500 Query failed`.
 - **Malformed Range header rejection** — Invalid `Range` headers (missing dash, dash at start/end) now return `400 Bad Request` with a clear message instead of being silently ignored.
 - **Embedded resource format boundary** — Non-JSON response formats for embedded reads are explicitly rejected with `406 Not Acceptable` and a clear message.
+- **View semantics audit** — integration coverage now verifies filtering, ordering, pagination, and writes on ordinary PostgreSQL views; simple single-table views work with the existing table path, while non-updatable views fail with PostgreSQL-driven errors.
+- **Planner-backed count semantics** — `Prefer: count=planned|estimated` no longer falls back to exact counts on the active read path.
+- **ROADMAP coverage audit** — roadmap sections 1–11 now have explicit integration coverage evidence in `tests/pgrest/`, with section 11 tracked as documentation/audit evidence rather than a synthetic runtime feature.
 
 ## Limitations
 
@@ -1335,4 +1341,16 @@ This section documents the Batch 12 hardening fixes that are now in place.
 - [x] Gap recorded: real bugs were fixed in request-body handling, SQL value rendering for JSON/RPC parameters, `is`/`in` filter SQL generation, text/plain formatting, and binary Accept fallback behavior.
 - [x] Gap recorded: the README does not provide directive reference coverage for `pgrest_server`, `pgrest_keepalive`, and `pgrest_pass` alongside the other exported `pgrest_*` directives.
 - [x] Gap recorded: Batch 2 now documents octet-stream as a constrained single-row/single-column response format and records the explicit request-body media mappings.
+- [x] ROADMAP section coverage map:
+  - 1. Tables / URL grammar → `tests/pgrest/pgrest.test.js`, `tests/pgrest/pgrest.container.test.js`
+  - 2. Media types / representation → `tests/pgrest/pgrest.test.js`, `tests/pgrest/pgrest.container.test.js`
+  - 3. RPC → `tests/pgrest/pgrest.test.js`, `tests/pgrest/pgrest.container.test.js`
+  - 4. Pagination / count / HTTP semantics → `tests/pgrest/pgrest.test.js`, `tests/pgrest/pgrest.container.test.js`
+  - 5. Prefer header parity → `tests/pgrest/pgrest.test.js`, `tests/pgrest/pgrest.container.test.js`
+  - 6. Schemas / profiles → `tests/pgrest/pgrest.test.js`, `tests/pgrest/pgrest.container.test.js`
+  - 7. Embedding / relationships → `tests/pgrest/pgrest.test.js`, `tests/pgrest/pgrest.container.test.js`
+  - 8. Aggregates / computed fields → `tests/pgrest/pgrest.test.js`, `tests/pgrest/pgrest.container.test.js`
+  - 9. OPTIONS / CORS / OpenAPI → `tests/pgrest/pgrest.test.js`, `tests/pgrest/pgrest.container.test.js`
+  - 10. Execution-path correctness / hardening → `tests/pgrest/pgrest.test.js`, `tests/pgrest/pgrest.connection.test.js`, `tests/pgrest/pgrest.container.test.js`
+  - 11. Documentation / coverage alignment → this checklist plus the pgrest Bun suites under `tests/pgrest/`
 - [x] No additional documentation gaps were identified in this audit pass.

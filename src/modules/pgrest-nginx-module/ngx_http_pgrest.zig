@@ -4,6 +4,7 @@ const pgrest_auth = @import("pgrest_auth.zig");
 
 const pq = ngx.pq;
 const buf = ngx.buf;
+const event = ngx.event;
 const ssl = ngx.ssl;
 const core = ngx.core;
 const conf = ngx.conf;
@@ -25,6 +26,10 @@ const pgGetvalue = pq.pgGetvalue;
 const pgGetisnull = pq.pgGetisnull;
 const pgGetlength = pq.pgGetlength;
 const pgClear = pq.pgClear;
+const pgErrorMessage = pq.pgErrorMessage;
+const pgResultErrorMessage = pq.pgResultErrorMessage;
+const pgResultErrorField = pq.pgResultErrorField;
+const PG_DIAG_SQLSTATE = pq.PG_DIAG_SQLSTATE;
 const PGRES_TUPLES_OK = pq.PGRES_TUPLES_OK;
 const PGRES_COMMAND_OK = pq.PGRES_COMMAND_OK;
 
@@ -108,6 +113,7 @@ const ngx_pgrest_loc_conf_t = extern struct {
 
 /// Maximum connections in the pool
 const POOL_MAX_CONNECTIONS = 16;
+const PGREST_POOL_TIMEOUT_MS: ngx_msec_t = 5000;
 
 /// Connection state in the pool
 const PgConnState = enum(c_int) {
@@ -850,7 +856,31 @@ fn read_count_requested(opts: RequestOptions) bool {
     return opts.prefer.count_mode != .none;
 }
 
-fn build_table_count_query(query_buf: []u8, table: []const u8, where_clause: []const u8) usize {
+fn build_explain_query(query_buf: []u8, inner_query: []const u8) usize {
+    const prefix = "EXPLAIN (FORMAT JSON) ";
+    @memcpy(query_buf[0..prefix.len], prefix);
+    @memcpy(query_buf[prefix.len..][0..inner_query.len], inner_query);
+    return prefix.len + inner_query.len;
+}
+
+fn build_table_count_query(query_buf: []u8, table: []const u8, where_clause: []const u8, mode: PreferCountMode) usize {
+    if (mode == .planned or mode == .estimated) {
+        var inner_query_buf: [MAX_QUERY_SIZE]u8 = undefined;
+        const inner_query_len = build_sql_query(
+            &inner_query_buf,
+            .select,
+            table,
+            where_clause,
+            &.{},
+            "1",
+            "",
+            &.{},
+            .{ .limit = null, .offset = null },
+            false,
+        );
+        return build_explain_query(query_buf, inner_query_buf[0..inner_query_len]);
+    }
+
     return build_sql_query(
         query_buf,
         .select,
@@ -865,10 +895,62 @@ fn build_table_count_query(query_buf: []u8, table: []const u8, where_clause: []c
     );
 }
 
-fn parse_count_query_result(result: ?*PGresult) ?i64 {
+fn build_rpc_table_count_query(
+    query_buf: []u8,
+    mode: PreferCountMode,
+    schema_name: ?[]const u8,
+    function_name: []const u8,
+    rpc_call: *const RpcCall,
+    where_clause: []const u8,
+) usize {
+    if (mode == .planned or mode == .estimated) {
+        var inner_query_buf: [MAX_QUERY_SIZE]u8 = undefined;
+        const inner_query_len = build_rpc_table_query(
+            &inner_query_buf,
+            schema_name,
+            function_name,
+            rpc_call,
+            where_clause,
+            "1",
+            "",
+            &.{},
+            .{ .limit = null, .offset = null },
+        );
+        return build_explain_query(query_buf, inner_query_buf[0..inner_query_len]);
+    }
+
+    return build_rpc_table_query(
+        query_buf,
+        schema_name,
+        function_name,
+        rpc_call,
+        where_clause,
+        "count(*)",
+        "",
+        &.{},
+        .{ .limit = null, .offset = null },
+    );
+}
+
+fn parse_explain_plan_rows(text: []const u8) ?i64 {
+    const marker = "\"Plan Rows\":";
+    const start_idx = std.mem.indexOf(u8, text, marker) orelse return null;
+    var idx = start_idx + marker.len;
+    while (idx < text.len and std.ascii.isWhitespace(text[idx])) : (idx += 1) {}
+    const digits_start = idx;
+    while (idx < text.len and std.ascii.isDigit(text[idx])) : (idx += 1) {}
+    if (idx == digits_start) return null;
+    return std.fmt.parseInt(i64, text[digits_start..idx], 10) catch null;
+}
+
+fn parse_count_query_result(mode: PreferCountMode, result: ?*PGresult) ?i64 {
     if (result == null or pgNtuples(result) == 0 or pgGetisnull(result, 0, 0) != 0) return 0;
     const value = pgGetvalue(result, 0, 0) orelse return null;
-    return std.fmt.parseInt(i64, std.mem.span(value), 10) catch null;
+    const text = std.mem.span(value);
+    if (mode == .planned or mode == .estimated) {
+        return parse_explain_plan_rows(text);
+    }
+    return std.fmt.parseInt(i64, text, 10) catch null;
 }
 
 fn is_valid_schema_identifier(value: []const u8) bool {
@@ -1311,6 +1393,14 @@ fn release_pooled_ctx(ctx: *PgRequestCtx, failed: bool) void {
     }
 
     if (ctx.*.pool_conn) |pool_conn| {
+        if (pool_conn.ngx_conn) |ngx_conn| {
+            if (ngx_conn.*.read != core.nullptr(core.ngx_event_t) and ngx_conn.*.read.*.flags.timer_set) {
+                event.ngx_event_del_timer(ngx_conn.*.read);
+            }
+            if (ngx_conn.*.write != core.nullptr(core.ngx_event_t) and ngx_conn.*.write.*.flags.timer_set) {
+                event.ngx_event_del_timer(ngx_conn.*.write);
+            }
+        }
         pool_conn.request_ctx = null;
         if (failed) {
             pool_conn.state = .conn_error;
@@ -1320,9 +1410,107 @@ fn release_pooled_ctx(ctx: *PgRequestCtx, failed: bool) void {
     }
 }
 
+fn finalize_pooled_timeout(ctx: *PgRequestCtx) void {
+    const r = ctx.*.request orelse return;
+    const rc = send_json_error(r, 504, "{\"message\":\"PostgreSQL connection timed out\"}");
+    ctx.*.request = null;
+    release_pooled_ctx(ctx, true);
+    http.ngx_http_finalize_request(r, rc);
+}
+
+const FailureResponse = struct {
+    status: ngx_uint_t,
+    body: []const u8,
+};
+
+fn contains_ascii_insensitive(haystack: []const u8, needle: []const u8) bool {
+    if (needle.len == 0) return true;
+    if (needle.len > haystack.len) return false;
+    var i: usize = 0;
+    while (i + needle.len <= haystack.len) : (i += 1) {
+        if (std.ascii.eqlIgnoreCase(haystack[i .. i + needle.len], needle)) return true;
+    }
+    return false;
+}
+
+fn classify_connection_error_message(message: []const u8) FailureResponse {
+    if (contains_ascii_insensitive(message, "could not translate host name")) {
+        return .{ .status = http.NGX_HTTP_SERVICE_UNAVAILABLE, .body = "{\"message\":\"PostgreSQL DNS resolution failed\"}" };
+    }
+    if (contains_ascii_insensitive(message, "timeout expired") or contains_ascii_insensitive(message, "timed out")) {
+        return .{ .status = 504, .body = "{\"message\":\"PostgreSQL connection timed out\"}" };
+    }
+    if (contains_ascii_insensitive(message, "connection reset by peer") or contains_ascii_insensitive(message, "server closed the connection unexpectedly")) {
+        return .{ .status = http.NGX_HTTP_SERVICE_UNAVAILABLE, .body = "{\"message\":\"PostgreSQL connection reset\"}" };
+    }
+    if (contains_ascii_insensitive(message, "connection refused") or
+        contains_ascii_insensitive(message, "could not connect to server") or
+        contains_ascii_insensitive(message, "no route to host"))
+    {
+        return .{ .status = http.NGX_HTTP_SERVICE_UNAVAILABLE, .body = "{\"message\":\"PostgreSQL is unreachable\"}" };
+    }
+    return .{ .status = http.NGX_HTTP_SERVICE_UNAVAILABLE, .body = "{\"message\":\"PostgreSQL connection failed\"}" };
+}
+
+fn classify_result_error(result: *PGresult) FailureResponse {
+    const sqlstate_ptr = pgResultErrorField(result, PG_DIAG_SQLSTATE);
+    const sqlstate = if (sqlstate_ptr != null) std.mem.span(sqlstate_ptr) else "";
+    if (std.mem.eql(u8, sqlstate, "42601")) {
+        return .{ .status = http.NGX_HTTP_BAD_REQUEST, .body = "{\"message\":\"SQL syntax error\"}" };
+    }
+    if (std.mem.eql(u8, sqlstate, "42P01")) {
+        return .{ .status = http.NGX_HTTP_NOT_FOUND, .body = "{\"message\":\"Undefined table\"}" };
+    }
+    if (std.mem.eql(u8, sqlstate, "42883")) {
+        return .{ .status = http.NGX_HTTP_NOT_FOUND, .body = "{\"message\":\"Undefined function\"}" };
+    }
+    if (std.mem.eql(u8, sqlstate, "42501")) {
+        return .{ .status = http.NGX_HTTP_FORBIDDEN, .body = "{\"message\":\"Insufficient privileges\"}" };
+    }
+    if (std.mem.startsWith(u8, sqlstate, "23")) {
+        return .{ .status = 409, .body = "{\"message\":\"Constraint violation\"}" };
+    }
+    if (std.mem.startsWith(u8, sqlstate, "08")) {
+        return .{ .status = http.NGX_HTTP_SERVICE_UNAVAILABLE, .body = "{\"message\":\"PostgreSQL connection failed\"}" };
+    }
+
+    const message_ptr = pgResultErrorMessage(result);
+    const message = if (message_ptr != null) std.mem.span(message_ptr) else "";
+    if (contains_ascii_insensitive(message, "syntax error")) {
+        return .{ .status = http.NGX_HTTP_BAD_REQUEST, .body = "{\"message\":\"SQL syntax error\"}" };
+    }
+    if (contains_ascii_insensitive(message, "does not exist")) {
+        if (contains_ascii_insensitive(message, "function")) {
+            return .{ .status = http.NGX_HTTP_NOT_FOUND, .body = "{\"message\":\"Undefined function\"}" };
+        }
+        if (contains_ascii_insensitive(message, "relation")) {
+            return .{ .status = http.NGX_HTTP_NOT_FOUND, .body = "{\"message\":\"Undefined table\"}" };
+        }
+    }
+    if (contains_ascii_insensitive(message, "permission denied")) {
+        return .{ .status = http.NGX_HTTP_FORBIDDEN, .body = "{\"message\":\"Insufficient privileges\"}" };
+    }
+    return .{ .status = http.NGX_HTTP_INTERNAL_SERVER_ERROR, .body = "{\"message\":\"PostgreSQL query failed\"}" };
+}
+
+fn classify_pooled_failure(ctx: *PgRequestCtx) FailureResponse {
+    if (ctx.*.result) |result| {
+        return classify_result_error(result);
+    }
+    if (ctx.*.pool_conn) |pool_conn| {
+        if (pool_conn.conn) |conn| {
+            const message_ptr = pgErrorMessage(conn);
+            const message = if (message_ptr != null) std.mem.span(message_ptr) else "";
+            if (message.len != 0) return classify_connection_error_message(message);
+        }
+    }
+    return .{ .status = http.NGX_HTTP_INTERNAL_SERVER_ERROR, .body = "{\"message\":\"Query failed\"}" };
+}
+
 fn finalize_pooled_failure(ctx: *PgRequestCtx) void {
     const r = ctx.*.request orelse return;
-    const rc = send_json_error(r, http.NGX_HTTP_INTERNAL_SERVER_ERROR, "{\"message\":\"Query failed\"}");
+    const failure = classify_pooled_failure(ctx);
+    const rc = send_json_error(r, failure.status, failure.body);
     ctx.*.request = null;
     release_pooled_ctx(ctx, true);
     http.ngx_http_finalize_request(r, rc);
@@ -1442,6 +1630,15 @@ fn queue_jwt_setup_queries(ctx: *PgRequestCtx, loc_conf: *ngx_pgrest_loc_conf_t)
 fn start_pooled_query(ctx: *PgRequestCtx, pool_conn: *PgPoolConn) bool {
     const conn = pool_conn.conn orelse return false;
 
+    if (pool_conn.ngx_conn) |ngx_conn| {
+        if (ngx_conn.*.read != core.nullptr(core.ngx_event_t)) {
+            event.ngx_event_add_timer(ngx_conn.*.read, PGREST_POOL_TIMEOUT_MS);
+        }
+        if (ngx_conn.*.write != core.nullptr(core.ngx_event_t)) {
+            event.ngx_event_add_timer(ngx_conn.*.write, PGREST_POOL_TIMEOUT_MS);
+        }
+    }
+
     if (ctx.*.result != null) {
         pgClear(ctx.*.result);
         ctx.*.result = null;
@@ -1493,8 +1690,11 @@ fn start_pooled_request(ctx: *PgRequestCtx, loc_conf: *ngx_pgrest_loc_conf_t) ng
     const conn = pgConnectStart(&g_conn_pool.conninfo);
     if (conn == null) return http.NGX_HTTP_INTERNAL_SERVER_ERROR;
     if (pgStatus(conn) == pq.CONNECTION_BAD) {
+        const message_ptr = pgErrorMessage(conn);
+        const message = if (message_ptr != null) std.mem.span(message_ptr) else "";
+        const failure = classify_connection_error_message(message);
         pgFinish(conn);
-        return http.NGX_HTTP_INTERNAL_SERVER_ERROR;
+        return send_json_error(ctx.*.request, failure.status, failure.body);
     }
     if (pgSetnonblocking(conn, 1) != 0) {
         pgFinish(conn);
@@ -1532,6 +1732,7 @@ fn start_pooled_request(ctx: *PgRequestCtx, loc_conf: *ngx_pgrest_loc_conf_t) ng
             ctx.*.pool_conn = null;
             return http.NGX_HTTP_INTERNAL_SERVER_ERROR;
         }
+        event.ngx_event_add_timer(ngx_conn.*.read, PGREST_POOL_TIMEOUT_MS);
     }
     if (ngx_conn.*.write != core.nullptr(core.ngx_event_t)) {
         ngx_conn.*.write.*.log = ngx_conn.*.log;
@@ -1542,6 +1743,7 @@ fn start_pooled_request(ctx: *PgRequestCtx, loc_conf: *ngx_pgrest_loc_conf_t) ng
             ctx.*.pool_conn = null;
             return http.NGX_HTTP_INTERNAL_SERVER_ERROR;
         }
+        event.ngx_event_add_timer(ngx_conn.*.write, PGREST_POOL_TIMEOUT_MS);
     }
 
     ctx.*.request.?.*.main.*.flags0.count += 1;
@@ -5404,7 +5606,7 @@ fn rpc_method_not_allowed_response(r: [*c]ngx_http_request_t, metadata: RpcMetad
 }
 
 fn rpc_metadata_not_found_response(r: [*c]ngx_http_request_t) ngx_int_t {
-    return send_json_error(r, http.NGX_HTTP_NOT_FOUND, "{\"message\":\"RPC function metadata not found\"}");
+    return send_json_error(r, http.NGX_HTTP_NOT_FOUND, "{\"message\":\"Undefined function\"}");
 }
 
 fn apply_rpc_single_unnamed_param(
@@ -7702,7 +7904,7 @@ fn ngx_http_pgrest_upstream_handler(r: [*c]ngx_http_request_t) callconv(.c) ngx_
         ctx.*.rpc_phase = .metadata;
     } else if (!is_write_request and read_count_requested(opts)) {
         var count_query_buf: [MAX_QUERY_SIZE]u8 = undefined;
-        const count_query_len = build_table_count_query(&count_query_buf, qualified_table, where_buf[0..where_len]);
+        const count_query_len = build_table_count_query(&count_query_buf, qualified_table, where_buf[0..where_len], opts.prefer.count_mode);
         if (!set_active_query(ctx, count_query_buf[0..count_query_len])) {
             return http.NGX_HTTP_INTERNAL_SERVER_ERROR;
         }
@@ -7736,6 +7938,13 @@ fn ngx_pgrest_conn_write_handler(ev: [*c]core.ngx_event_t) callconv(.c) void {
     const pool_conn = core.castPtr(PgPoolConn, c.*.data) orelse return;
     const ctx = pool_conn.*.request_ctx orelse return;
 
+    if (ev.*.flags.timedout) {
+        if (ev.*.flags.timer_set) event.ngx_event_del_timer(ev);
+        ev.*.flags.timedout = false;
+        finalize_pooled_timeout(ctx);
+        return;
+    }
+
     if (pool_conn.*.state == .connecting) {
         // Continue connection polling
         poll_pg_connection(ctx, pool_conn);
@@ -7762,6 +7971,13 @@ fn ngx_pgrest_conn_read_handler(ev: [*c]core.ngx_event_t) callconv(.c) void {
     const c = core.castPtr(core.ngx_connection_t, ev.*.data) orelse return;
     const pool_conn = core.castPtr(PgPoolConn, c.*.data) orelse return;
     const ctx = pool_conn.*.request_ctx orelse return;
+
+    if (ev.*.flags.timedout) {
+        if (ev.*.flags.timer_set) event.ngx_event_del_timer(ev);
+        ev.*.flags.timedout = false;
+        finalize_pooled_timeout(ctx);
+        return;
+    }
 
     if (pool_conn.*.state == .connecting) {
         // Continue connection polling
@@ -7885,7 +8101,7 @@ fn finalize_pg_response(ctx: *PgRequestCtx) void {
     }
 
     if (ctx.*.rpc_phase == .count) {
-        const parsed_total = parse_count_query_result(result) orelse {
+        const parsed_total = parse_count_query_result(ctx.*.prefer_count_mode, result) orelse {
             finalize_pooled_failure(ctx);
             return;
         };
@@ -8037,7 +8253,7 @@ fn finalize_pg_response(ctx: *PgRequestCtx) void {
                 return;
             }
             var count_query_buf: [MAX_QUERY_SIZE]u8 = undefined;
-            const count_query_len = build_table_count_query(&count_query_buf, qualified_table, where_buf[0..where_result.len]);
+        const count_query_len = build_table_count_query(&count_query_buf, qualified_table, where_buf[0..where_result.len], opts.prefer.count_mode);
             if (!set_active_query(ctx, count_query_buf[0..count_query_len])) {
                 finalize_pooled_failure(ctx);
                 return;
@@ -8141,7 +8357,6 @@ fn finalize_pg_response(ctx: *PgRequestCtx) void {
             return;
         }
         const has_setup_queries = ctx.*.next_query_len > 0;
-
         var rpc_query_buf: [MAX_QUERY_SIZE]u8 = undefined;
         ctx.*.query_len = if (rpc_returns_table_like(metadata)) blk: {
             var where_buf: [MAX_QUERY_SIZE]u8 = undefined;
@@ -8209,16 +8424,13 @@ fn finalize_pg_response(ctx: *PgRequestCtx) void {
                     return;
                 }
                 var count_query_buf: [MAX_QUERY_SIZE]u8 = undefined;
-                const count_query_len = build_rpc_table_query(
+                const count_query_len = build_rpc_table_count_query(
                     &count_query_buf,
+                    opts.prefer.count_mode,
                     resolved_schema.name,
                     function_name,
                     &rpc_call,
                     where_buf[0..where_result.len],
-                    "count(*)",
-                    "",
-                    &.{},
-                    .{ .limit = null, .offset = null },
                 );
                 if (!set_active_query(ctx, count_query_buf[0..count_query_len])) {
                     const rc = http.NGX_HTTP_INTERNAL_SERVER_ERROR;

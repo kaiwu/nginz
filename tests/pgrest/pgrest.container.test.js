@@ -61,6 +61,19 @@ function psqlAdmin(sql) {
   return stdout;
 }
 
+function psqlAdminDb(sql) {
+  const result = Bun.spawnSync(
+    ["sudo", "docker", "exec", "-i", PG_CONTAINER, "psql", "-U", "postgres", "-d", PG_DB],
+    { stdout: "pipe", stderr: "pipe", stdin: Buffer.from(sql) }
+  );
+  const stdout = result.stdout ? Buffer.from(result.stdout).toString() : "";
+  const stderr = result.stderr ? Buffer.from(result.stderr).toString() : "";
+  if (result.exitCode !== 0) {
+    throw new Error(`psqlAdminDb failed:\n${stdout}${stderr}`);
+  }
+  return stdout;
+}
+
 // Run SQL as the test user against the test database.
 function psqlDb(sql) {
   const result = Bun.spawnSync(
@@ -140,6 +153,50 @@ CREATE OR REPLACE FUNCTION add_them(a INTEGER, b INTEGER)
 RETURNS INTEGER LANGUAGE SQL IMMUTABLE AS $func$
     SELECT a + b;
 $func$;
+
+CREATE OR REPLACE FUNCTION active_users()
+RETURNS TABLE(name TEXT, age INTEGER) LANGUAGE SQL STABLE AS $func$
+    SELECT u.name, u.age FROM users u;
+$func$;
+
+CREATE OR REPLACE FUNCTION broken_sql()
+RETURNS INTEGER LANGUAGE plpgsql STABLE AS $func$
+BEGIN
+    EXECUTE 'SELECT FROM';
+    RETURN 1;
+END;
+$func$;
+
+CREATE VIEW active_users_view AS
+SELECT id, name, email, status, age, bio
+FROM users
+WHERE status = 'active';
+
+CREATE VIEW users_editable_view AS
+SELECT id, name, email, status, age, bio
+FROM users;
+
+CREATE VIEW user_order_summary_view AS
+SELECT u.id, u.name, COUNT(o.id) AS order_count
+FROM users u
+LEFT JOIN orders o ON o.user_id = u.id
+GROUP BY u.id, u.name;
+`;
+
+const RESTRICTED_SQL = `
+CREATE TABLE secret_docs (
+    id SERIAL PRIMARY KEY,
+    title TEXT NOT NULL
+);
+INSERT INTO secret_docs (title) VALUES ('Top Secret');
+REVOKE ALL ON TABLE secret_docs FROM PUBLIC;
+REVOKE ALL ON TABLE secret_docs FROM ${PG_USER};
+
+CREATE TABLE readonly_docs (
+    id SERIAL PRIMARY KEY,
+    title TEXT NOT NULL
+);
+GRANT SELECT ON TABLE readonly_docs TO ${PG_USER};
 `;
 
 // ---------------------------------------------------------------------------
@@ -155,6 +212,7 @@ describe("pgrest module - real PostgreSQL 18 integration", () => {
     psqlAdmin(`CREATE USER ${PG_USER} WITH PASSWORD '${PG_PASSWORD}';`);
     run(["sudo", "docker", "exec", PG_CONTAINER, "createdb", "-U", "postgres", `--owner=${PG_USER}`, PG_DB]);
     psqlDb(SETUP_SQL);
+    psqlAdminDb(RESTRICTED_SQL);
 
     await startNginz(`tests/${MODULE}/nginx.container.conf`, MODULE);
   }, 60000);
@@ -961,6 +1019,94 @@ describe("pgrest module - real PostgreSQL 18 integration", () => {
     expect(res.headers.get("range-unit")).toBe("items");
     expect(res.headers.get("preference-applied")).toContain("count=estimated");
     expect(res.headers.get("content-range")).toMatch(/^0-1\/\d+$/);
+  });
+
+  test("Prefer: count=planned works for table-valued RPC reads", async () => {
+    const res = await fetch(`${TEST_URL}/rpc/active_users?select=name,age&age=gt.20&order=name.asc&limit=2`, {
+      headers: { Prefer: "count=planned" },
+    });
+    expect(res.status).toBe(206);
+    expect(res.headers.get("range-unit")).toBe("items");
+    expect(res.headers.get("preference-applied")).toContain("count=planned");
+    expect(res.headers.get("content-range")).toMatch(/^0-1\/\d+$/);
+  });
+
+  // =========================================================================
+  // SQL/runtime and connection-style error handling
+  // =========================================================================
+
+  test("GET /api/no_such_table returns 404 for undefined table", async () => {
+    const res = await fetch(`${TEST_URL}/api/no_such_table`);
+    expect(res.status).toBe(404);
+    expect(await res.json()).toEqual({ message: "Undefined table" });
+  });
+
+  test("GET /rpc/no_such_function returns 404 for undefined function", async () => {
+    const res = await fetch(`${TEST_URL}/rpc/no_such_function`);
+    expect(res.status).toBe(404);
+    expect(await res.json()).toEqual({ message: "Undefined function" });
+  });
+
+  test("GET /rpc/broken_sql returns 400 for PostgreSQL syntax errors", async () => {
+    const res = await fetch(`${TEST_URL}/rpc/broken_sql`);
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ message: "SQL syntax error" });
+  });
+
+  test("POST /api/users duplicate email returns 409 for constraint violation", async () => {
+    const res = await fetch(`${TEST_URL}/api/users`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: "Dup User", email: "alice@example.com", status: "active", age: 33 }),
+    });
+    expect(res.status).toBe(409);
+    expect(await res.json()).toEqual({ message: "Constraint violation" });
+  });
+
+  test("POST /api/readonly_docs returns 403 for insufficient privilege", async () => {
+    const res = await fetch(`${TEST_URL}/api/readonly_docs`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ title: "Denied" }),
+    });
+    expect(res.status).toBe(403);
+    expect(await res.json()).toEqual({ message: "Insufficient privileges" });
+  });
+
+  // =========================================================================
+  // View semantics
+  // =========================================================================
+
+  test("GET /api/active_users_view supports filtering, ordering, and pagination on views", async () => {
+    const res = await fetch(`${TEST_URL}/api/active_users_view?age=gte.25&order=name.desc&limit=2`);
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual([
+      { id: "4", name: "Dave Brown", email: "dave@example.com", status: "active", age: "45", bio: null },
+      { id: "2", name: "Bob Jones", email: "bob@example.com", status: "active", age: "25", bio: "Designer" },
+    ]);
+  });
+
+  test("PATCH /api/users_editable_view updates rows through an updatable view", async () => {
+    const res = await fetch(`${TEST_URL}/api/users_editable_view?id=eq.1`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", Prefer: "return=representation" },
+      body: JSON.stringify({ bio: "Updated via view" }),
+    });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body[0].id).toBe("1");
+    expect(body[0].bio).toBe("Updated via view");
+  });
+
+  test("PATCH /api/user_order_summary_view fails for a non-updatable view", async () => {
+    const res = await fetch(`${TEST_URL}/api/user_order_summary_view?id=eq.1`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", Prefer: "return=representation" },
+      body: JSON.stringify({ name: "Nope" }),
+    });
+    expect(res.status).toBeGreaterThanOrEqual(400);
+    const body = await res.json();
+    expect(body.message).toBeDefined();
   });
 
   // =========================================================================

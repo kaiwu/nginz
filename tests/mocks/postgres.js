@@ -201,6 +201,15 @@ export class PostgresMock {
     for (const [pattern, handler] of this.queryHandlers) {
       if (query.match(pattern)) {
         const result = handler(query);
+        if (result?.close) {
+          socket.end();
+          return;
+        }
+        if (result?.error) {
+          this.sendError(socket, result.error);
+          socket.write(Buffer.from([0x5a, 0, 0, 0, 5, 0x49]));
+          return;
+        }
         this.sendQueryResult(socket, result.columns, result.rows);
         // Send ReadyForQuery after custom handler
         socket.write(Buffer.from([0x5a, 0, 0, 0, 5, 0x49]));
@@ -361,10 +370,13 @@ export class PostgresMock {
     socket.write(buf);
   }
 
-  sendError(socket, message) {
+  sendError(socket, error) {
     // Error message format: 'E' + length + severity + code + message + null
-    const severity = "ERROR";
-    const code = "42000";
+    const severity = error?.severity ?? "ERROR";
+    const code = error?.code ?? "42000";
+    const message = error?.message ?? "mock error";
+    const detail = error?.detail ?? null;
+    const hint = error?.hint ?? null;
 
     let len =
       4 +
@@ -376,8 +388,17 @@ export class PostgresMock {
       1 +
       1 +
       message.length +
-      1 +
       1;
+
+    if (detail) {
+      len += 1 + detail.length + 1;
+    }
+
+    if (hint) {
+      len += 1 + hint.length + 1;
+    }
+
+    len += 1;
 
     const buf = Buffer.alloc(1 + len);
     let offset = 0;
@@ -400,6 +421,20 @@ export class PostgresMock {
     buf.write(message, offset);
     offset += message.length;
     buf[offset++] = 0;
+
+    if (detail) {
+      buf[offset++] = 0x44; // 'D' detail
+      buf.write(detail, offset);
+      offset += detail.length;
+      buf[offset++] = 0;
+    }
+
+    if (hint) {
+      buf[offset++] = 0x48; // 'H' hint
+      buf.write(hint, offset);
+      offset += hint.length;
+      buf[offset++] = 0;
+    }
 
     buf[offset++] = 0; // terminator
 

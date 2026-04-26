@@ -70,6 +70,8 @@ pub const pgGetlength = pq.PQgetlength;
 pub const pgClear = pq.PQclear;
 pub const pgErrorMessage = pq.PQerrorMessage;
 pub const pgResultErrorMessage = pq.PQresultErrorMessage;
+pub const pgResultErrorField = pq.PQresultErrorField;
+pub const PG_DIAG_SQLSTATE = pq.PG_DIAG_SQLSTATE;
 
 // Non-blocking connection functions
 pub const pgConnectStart = pq.PQconnectStart;
