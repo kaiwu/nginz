@@ -57,7 +57,7 @@ pub fn build_core(
         .root_module = b.createModule(.{
             .pic = true,
             .target = target,
-            .optimize = optimize,
+            .optimize = common.c_optimize(optimize),
             .link_libc = true,
         }),
     });

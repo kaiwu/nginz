@@ -103,15 +103,6 @@ const PN = struct {
     n: []const u8,
 };
 
-fn obj(f: []const u8) []const u8 {
-    const file = struct {
-        var buf: [256]u8 = undefined;
-    };
-    @memcpy(file.buf[0..f.len], f);
-    @memcpy(file.buf[f.len .. f.len + 9], "_module.o");
-    return file.buf[0 .. f.len + 9];
-}
-
 fn module_path(f: []const u8) PN {
     var l: usize = 0;
     var d: usize = 0;
@@ -168,26 +159,23 @@ pub fn build(b: *std.Build) void {
     });
     nginz.root_module.addObject(ngz_modules);
 
+    const ngz_zig_modules = b.addObject(.{
+        .name = "ngz_zig_modules",
+        .root_module = b.createModule(.{
+            .pic = true,
+            .root_source_file = b.path("src/ngz_zig_modules.zig"),
+            .target = target,
+            .optimize = optimize,
+            .link_libc = true,
+        }),
+    });
     for (modules) |m| {
-        const pn = module_path(m);
-        const o = b.addObject(.{
-            .name = pn.n,
-            .root_module = b.createModule(.{
-                .pic = true,
-                .root_source_file = b.path(m),
-                .target = target,
-                .optimize = optimize,
-                .link_libc = true,
-            }),
-        });
-        o.root_module.addIncludePath(b.path(pn.p));
-        o.root_module.addImport("ngx", nginx);
-        o.root_module.addImport("ngx_libinjection", ngx_libinjection);
-        o.bundle_compiler_rt = true;
-        nginz.root_module.addObject(o);
-        const install_object = b.addInstallFile(o.getEmittedBin(), obj(pn.n));
-        b.getInstallStep().dependOn(&install_object.step);
+        ngz_zig_modules.root_module.addIncludePath(b.path(module_path(m).p));
     }
+    ngz_zig_modules.root_module.addImport("ngx", nginx);
+    ngz_zig_modules.root_module.addImport("ngx_libinjection", ngx_libinjection);
+    ngz_zig_modules.bundle_compiler_rt = true;
+    nginz.root_module.addObject(ngz_zig_modules);
 
     const cjsonlib = cjson.build_cjson(b, target, optimize);
     const libinjectionlib = libinjection.build_libinjection(b, target, optimize);

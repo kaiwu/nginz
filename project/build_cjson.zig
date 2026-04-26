@@ -1,4 +1,5 @@
 const std = @import("std");
+const common = @import("build_common.zig");
 
 pub const CJSON_C_FLAGS = [_][]const u8{
     "-std=c89",
@@ -45,7 +46,7 @@ pub fn build_cjson(
         .root_module = b.createModule(.{
             .pic = true,
             .target = target,
-            .optimize = optimize,
+            .optimize = common.c_optimize(optimize),
             .link_libc = true,
         }),
     });

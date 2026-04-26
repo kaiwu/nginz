@@ -1,4 +1,5 @@
 const std = @import("std");
+const common = @import("build_common.zig");
 
 pub const LIBINJECTION_C_FLAGS = [_][]const u8{
     "-std=gnu11",
@@ -26,7 +27,7 @@ pub fn build_libinjection(
         .root_module = b.createModule(.{
             .pic = true,
             .target = target,
-            .optimize = optimize,
+            .optimize = common.c_optimize(optimize),
             .link_libc = true,
         }),
     });

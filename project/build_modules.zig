@@ -13,7 +13,7 @@ pub fn build_modules(
         .root_module = b.createModule(.{
             .pic = true,
             .target = target,
-            .optimize = optimize,
+            .optimize = common.c_optimize(optimize),
             .link_libc = true,
         }),
     });
@@ -46,7 +46,7 @@ pub fn build_test_modules(
         .root_module = b.createModule(.{
             .pic = true,
             .target = target,
-            .optimize = optimize,
+            .optimize = common.c_optimize(optimize),
             .link_libc = true,
         }),
     });

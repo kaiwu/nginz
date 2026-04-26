@@ -50,7 +50,7 @@ pub fn build_njs(
         .root_module = b.createModule(.{
             .pic = true,
             .target = target,
-            .optimize = optimize,
+            .optimize = common.c_optimize(optimize),
             .link_libc = true,
         }),
     });
@@ -82,7 +82,7 @@ pub fn build_njs(
         .root_module = b.createModule(.{
             .pic = true,
             .target = target,
-            .optimize = optimize,
+            .optimize = common.c_optimize(optimize),
             .link_libc = true,
         }),
     });

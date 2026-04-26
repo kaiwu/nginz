@@ -45,6 +45,12 @@ const EXCLUDES = [_][]const u8{
     "ngx_http_degradation_module.c",
 };
 
+// ReleaseSafe has no effect on C code (safety checks are Zig-only) but costs
+// the same LLVM memory as ReleaseFast. Cap it to ReleaseSmall (-Os) for C blobs.
+pub fn c_optimize(opt: std.builtin.OptimizeMode) std.builtin.OptimizeMode {
+    return if (opt == .ReleaseSafe) .ReleaseSmall else opt;
+}
+
 pub fn append(files: *ArrayList([]const u8), src: []const []const u8) !void {
     for (src) |f| {
         try files.append(f);
