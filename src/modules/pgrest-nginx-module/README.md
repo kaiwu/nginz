@@ -1276,9 +1276,8 @@ Error responses:
 
 | Directive | Syntax | Context | Default | Description |
 |-----------|--------|---------|---------|-------------|
-| `pgrest_pass` | `pgrest_pass "conninfo"` | `location` | — | PostgreSQL connection string for the location. Registers the pgrest content handler. |
-| `pgrest_server` | `pgrest_server "conninfo"` | `upstream` | — | Defines an upstream PostgreSQL server for pooled connections. |
-| `pgrest_keepalive` | `pgrest_keepalive count` | `upstream` | — | Sets the maximum number of idle keepalive connections for the upstream pool. |
+| `pgrest_pass` | `pgrest_pass "conninfo"` | `location` | — | PostgreSQL connection string for the location. Registers the pgrest content handler. All `pgrest_pass` locations in a worker process share one connection pool; pointing two locations at different hosts is not supported while connections are active. |
+| `pgrest_pool_size` | `pgrest_pool_size N` | `location` | 16 | Maximum number of pooled connections (1–16). Inherited by nested locations. |
 | `pgrest_schemas` | `pgrest_schemas "schema1, schema2"` | `location` | — | Allowlist of schemas. The first schema becomes the default. Disallowed schemas receive `PGRST106`. |
 | `pgrest_jwt_secret` | `pgrest_jwt_secret "secret"` | `location` | — | HS256 secret for JWT signature validation. When set, tokens are validated before role extraction. |
 | `pgrest_anon_role` | `pgrest_anon_role "role"` | `location` | — | PostgreSQL role to use when no valid JWT is provided. |
@@ -1339,7 +1338,7 @@ This section documents the Batch 12 hardening fixes that are now in place.
 - [x] Bun integration coverage exists at `tests/pgrest/`.
 - [x] Gap recorded: this audit pass expanded Bun coverage for schema-profile headers, combined query shaping, PATCH/DELETE write paths, singular-object and `nulls=stripped` JSON formats, RPC array parameters, and `Prefer: params=single-object` behavior.
 - [x] Gap recorded: real bugs were fixed in request-body handling, SQL value rendering for JSON/RPC parameters, `is`/`in` filter SQL generation, text/plain formatting, and binary Accept fallback behavior.
-- [x] Gap recorded: the README does not provide directive reference coverage for `pgrest_server`, `pgrest_keepalive`, and `pgrest_pass` alongside the other exported `pgrest_*` directives.
+- [x] Gap closed: directive reference table now covers all active directives. `pgrest_server`/`pgrest_keepalive` were removed (broken dead code); `pgrest_pool_size` replaces them with a working LOC-level pool-size directive.
 - [x] Gap recorded: Batch 2 now documents octet-stream as a constrained single-row/single-column response format and records the explicit request-body media mappings.
 - [x] ROADMAP section coverage map:
   - 1. Tables / URL grammar → `tests/pgrest/pgrest.test.js`, `tests/pgrest/pgrest.container.test.js`

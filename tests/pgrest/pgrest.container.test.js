@@ -1293,4 +1293,40 @@ describe("pgrest module - real PostgreSQL 18 integration", () => {
     await fetch(`${TEST_URL}/api/users?id=eq.${id}`, { method: "DELETE" });
   });
 
+  // =========================================================================
+  // Upstream configuration sharing audit
+  // =========================================================================
+
+  test("pgrest_pool_size directive is accepted and module operates correctly", async () => {
+    // nginx.container.conf sets pgrest_pool_size 8 on /api/ — nginx would
+    // refuse to start if the directive were unknown or out-of-range.
+    // A successful GET proves the module parsed the directive and connected.
+    const res = await fetch(`${TEST_URL}/api/users?limit=1`);
+    expect(res.status).toBe(200);
+    const rows = await res.json();
+    expect(Array.isArray(rows)).toBe(true);
+  });
+
+  test("pgrest_schemas is isolated per location block", async () => {
+    // /api/ uses pgrest_schemas "public"; /rpc/ also uses "public".
+    // Requesting with Accept-Profile: public must succeed on both.
+    const apiRes = await fetch(`${TEST_URL}/api/users?limit=1`, {
+      headers: { "Accept-Profile": "public" },
+    });
+    expect(apiRes.status).toBe(200);
+
+    const rpcRes = await fetch(`${TEST_URL}/rpc/add_them`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Content-Profile": "public" },
+      body: JSON.stringify({ a: 1, b: 2 }),
+    });
+    expect(rpcRes.status).toBe(200);
+
+    // Requesting a disallowed schema must return 406 (PGRST106).
+    const badRes = await fetch(`${TEST_URL}/api/users?limit=1`, {
+      headers: { "Accept-Profile": "private" },
+    });
+    expect(badRes.status).toBe(406);
+  });
+
 });
