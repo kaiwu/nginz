@@ -2222,6 +2222,54 @@ describe("pgrest module", () => {
       // Check that the JWT was also set as request.jwt
       expect(pgMock.getLastSetJwt()).toBe(jwt);
     });
+
+    test("every request starts with RESET ROLE to prevent cross-request role leakage", async () => {
+      pgMock.clearTracking();
+
+      const res = await fetch(`${TEST_URL}/jwt-api/users`);
+      expect(res.status).toBe(200);
+
+      // RESET ROLE must be the first query so any role set by a previous
+      // request on the same pooled connection is always cleared.
+      const log = pgMock.getQueryLog();
+      expect(log[0]).toBe("RESET ROLE");
+      expect(pgMock.getResetRoleCount()).toBeGreaterThanOrEqual(1);
+    });
+
+    test("request without JWT clears request.jwt session variable", async () => {
+      pgMock.clearTracking();
+
+      const res = await fetch(`${TEST_URL}/jwt-api/users`);
+      expect(res.status).toBe(200);
+
+      // The JWT session variable must be cleared so a stale token from a
+      // previous request on the same pooled connection cannot leak.
+      expect(pgMock.getLastSetJwt()).toBe("");
+    });
+
+    test("role does not leak from authenticated to unauthenticated request on same connection", async () => {
+      // Request 1: authenticated, sets a specific role via JWT
+      const jwt = createJwt(
+        { sub: "user123", role: "authenticated_user", exp: Math.floor(Date.now() / 1000) + 3600 },
+        JWT_SECRET
+      );
+      const res1 = await fetch(`${TEST_URL}/jwt-api/users`, {
+        headers: { Authorization: `Bearer ${jwt}` },
+      });
+      expect(res1.status).toBe(200);
+      expect(pgMock.getLastSetRole()).toBe("authenticated_user");
+
+      // Request 2: no JWT — after RESET ROLE the connection-level role is
+      // the database user (anon is configured for jwt-api, so anon is set).
+      pgMock.clearTracking();
+      const res2 = await fetch(`${TEST_URL}/jwt-api/users`);
+      expect(res2.status).toBe(200);
+
+      // RESET ROLE must have fired, clearing the previous role.
+      expect(pgMock.getResetRoleCount()).toBeGreaterThanOrEqual(1);
+      // Then anon_role was re-applied for this request.
+      expect(pgMock.getLastSetRole()).toBe("anon");
+    });
   });
 
   describe("malformed payload handling", () => {

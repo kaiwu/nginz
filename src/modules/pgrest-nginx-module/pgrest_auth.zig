@@ -202,6 +202,22 @@ pub fn extract_jwt_role(pool: [*c]ngx_pool_t, jwt_token: []const u8, role_claim:
     return core.slicify(u8, role_str.data, role_str.len);
 }
 
+pub fn build_reset_role_query(query_buf: []u8) ?usize {
+    const q = "RESET ROLE";
+    if (q.len + 1 > query_buf.len) return null;
+    @memcpy(query_buf[0..q.len], q);
+    query_buf[q.len] = 0;
+    return q.len;
+}
+
+pub fn build_clear_jwt_query(query_buf: []u8) ?usize {
+    const q = "SET request.jwt TO ''";
+    if (q.len + 1 > query_buf.len) return null;
+    @memcpy(query_buf[0..q.len], q);
+    query_buf[q.len] = 0;
+    return q.len;
+}
+
 pub fn build_set_postgresql_jwt_claim_query(jwt_token: []const u8, query_buf: []u8) ?usize {
     if (jwt_token.len == 0) return null;
 
@@ -260,6 +276,25 @@ pub fn build_set_postgresql_role_query(role: []const u8, query_buf: []u8) ?usize
     pos += 1;
     query_buf[pos] = 0;
     return pos;
+}
+
+test "build_reset_role_query produces RESET ROLE" {
+    var buf: [64]u8 = undefined;
+    const len = build_reset_role_query(&buf) orelse return error.TestUnexpectedResult;
+    try std.testing.expectEqualStrings("RESET ROLE", buf[0..len]);
+    try std.testing.expectEqual(@as(u8, 0), buf[len]);
+}
+
+test "build_clear_jwt_query produces SET request.jwt TO empty" {
+    var buf: [64]u8 = undefined;
+    const len = build_clear_jwt_query(&buf) orelse return error.TestUnexpectedResult;
+    try std.testing.expectEqualStrings("SET request.jwt TO ''", buf[0..len]);
+    try std.testing.expectEqual(@as(u8, 0), buf[len]);
+}
+
+test "build_reset_role_query fails on undersized buffer" {
+    var buf: [4]u8 = undefined;
+    try std.testing.expectEqual(@as(?usize, null), build_reset_role_query(&buf));
 }
 
 test "auth base64url decode handles jwt alphabet" {

@@ -219,8 +219,8 @@ const PgRequestCtx = extern struct {
     query_len: usize, // Query length
     next_query: [MAX_QUERY_SIZE]u8,
     next_query_len: usize,
-    followup_queries: [2][MAX_QUERY_SIZE]u8,
-    followup_query_lens: [2]usize,
+    followup_queries: [4][MAX_QUERY_SIZE]u8,
+    followup_query_lens: [4]usize,
     followup_query_count: usize,
     result: ?*PGresult, // Query result
     request: ?*ngx_http_request_t, // Back-reference to HTTP request
@@ -1577,14 +1577,35 @@ const JwtSetupResult = enum {
     failed,
 };
 
+/// Sets up the per-request session isolation chain for the pooled path.
+///
+/// Always queues at least two queries before the caller's main query:
+///   1. RESET ROLE   – erases any role left by a previous request on this connection
+///   2. SET request.jwt or clear it – isolates the JWT session variable
+///   3. SET ROLE (conditional) – applies the role for this request
+///
+/// ctx.query is set to RESET ROLE (the first query to send).  Callers must
+/// append their main queries via queue_followup_query instead of using
+/// set_active_query + the old "has_setup_queries / promote" dance.
 fn queue_jwt_setup_queries(ctx: *PgRequestCtx, loc_conf: *ngx_pgrest_loc_conf_t) JwtSetupResult {
     const r = ctx.*.request orelse return .failed;
     const jwt_token = extract_jwt_token(r);
 
+    // 1. RESET ROLE is always first — it erases any role left by a previous
+    //    request that ran on the same pooled connection.
+    var reset_buf: [32]u8 = undefined;
+    const reset_len = pgrest_auth.build_reset_role_query(&reset_buf) orelse return .failed;
+    if (!set_active_query(ctx, reset_buf[0..reset_len])) return .failed;
+
+    // 2. Set or clear request.jwt so downstream PG functions always see the
+    //    correct value for this request, never the previous request's token.
+    var jwt_buf: [MAX_QUERY_SIZE]u8 = undefined;
     if (jwt_token) |token| {
-        var jwt_query: [MAX_QUERY_SIZE]u8 = undefined;
-        const jwt_query_len = pgrest_auth.build_set_postgresql_jwt_claim_query(token, &jwt_query) orelse return .failed;
-        if (!queue_followup_query(ctx, jwt_query[0..jwt_query_len])) return .failed;
+        const jwt_len = pgrest_auth.build_set_postgresql_jwt_claim_query(token, &jwt_buf) orelse return .failed;
+        if (!queue_followup_query(ctx, jwt_buf[0..jwt_len])) return .failed;
+    } else {
+        const clear_len = pgrest_auth.build_clear_jwt_query(&jwt_buf) orelse return .failed;
+        if (!queue_followup_query(ctx, jwt_buf[0..clear_len])) return .failed;
     }
 
     const secret = if (loc_conf.*.jwt_secret.len > 0 and loc_conf.*.jwt_secret.data != core.nullptr(u8))
@@ -1600,6 +1621,7 @@ fn queue_jwt_setup_queries(ctx: *PgRequestCtx, loc_conf: *ngx_pgrest_loc_conf_t)
     else
         "role";
 
+    // 3. Validate JWT and determine which role to apply.
     var role_to_set: ?[]const u8 = null;
     if (jwt_token) |token| {
         if (secret.len > 0) {
@@ -7890,41 +7912,35 @@ fn ngx_http_pgrest_upstream_handler(r: [*c]ngx_http_request_t) callconv(.c) ngx_
         if (is_write_request) write_contract.include_returning else true,
     ) orelse return send_json_error(r, http.NGX_HTTP_BAD_REQUEST, "{\"message\":\"Invalid write payload\"}");
 
-    if (!ctx.*.table_embed_metadata) {
-        const jwt_result = queue_jwt_setup_queries(ctx, loc_conf);
-        if (jwt_result == .unauthorized) return http.NGX_HTTP_UNAUTHORIZED;
-        if (jwt_result == .failed) return http.NGX_HTTP_INTERNAL_SERVER_ERROR;
-    }
-    const has_setup_queries = ctx.*.next_query_len > 0;
-
     if (ctx.*.table_embed_metadata) {
+        // Metadata phase runs as the connection user; JWT/role setup happens
+        // in the second phase after the metadata result arrives.
         if (!set_active_query(ctx, table_query_buf[0..table_query.len])) {
             return http.NGX_HTTP_INTERNAL_SERVER_ERROR;
         }
         ctx.*.rpc_phase = .metadata;
-    } else if (!is_write_request and read_count_requested(opts)) {
-        var count_query_buf: [MAX_QUERY_SIZE]u8 = undefined;
-        const count_query_len = build_table_count_query(&count_query_buf, qualified_table, where_buf[0..where_len], opts.prefer.count_mode);
-        if (!set_active_query(ctx, count_query_buf[0..count_query_len])) {
-            return http.NGX_HTTP_INTERNAL_SERVER_ERROR;
-        }
-        if (!queue_followup_query(ctx, table_query_buf[0..table_query.len])) {
-            return http.NGX_HTTP_INTERNAL_SERVER_ERROR;
-        }
-        ctx.*.rpc_phase = .count;
     } else {
-        if (!set_active_query(ctx, table_query_buf[0..table_query.len])) {
-            return http.NGX_HTTP_INTERNAL_SERVER_ERROR;
-        }
-        ctx.*.rpc_phase = .call;
-    }
+        // queue_jwt_setup_queries sets ctx.query = RESET ROLE and queues
+        // jwt/role setup as followup.  Main queries are then appended after.
+        const jwt_result = queue_jwt_setup_queries(ctx, loc_conf);
+        if (jwt_result == .unauthorized) return http.NGX_HTTP_UNAUTHORIZED;
+        if (jwt_result == .failed) return http.NGX_HTTP_INTERNAL_SERVER_ERROR;
 
-    if (has_setup_queries) {
-        if (!queue_followup_query(ctx, ctx.*.query[0..ctx.*.query_len])) {
-            return http.NGX_HTTP_INTERNAL_SERVER_ERROR;
-        }
-        if (!promote_followup_query(ctx)) {
-            return http.NGX_HTTP_INTERNAL_SERVER_ERROR;
+        if (!is_write_request and read_count_requested(opts)) {
+            var count_query_buf: [MAX_QUERY_SIZE]u8 = undefined;
+            const count_query_len = build_table_count_query(&count_query_buf, qualified_table, where_buf[0..where_len], opts.prefer.count_mode);
+            if (!queue_followup_query(ctx, count_query_buf[0..count_query_len])) {
+                return http.NGX_HTTP_INTERNAL_SERVER_ERROR;
+            }
+            if (!queue_followup_query(ctx, table_query_buf[0..table_query.len])) {
+                return http.NGX_HTTP_INTERNAL_SERVER_ERROR;
+            }
+            ctx.*.rpc_phase = .count;
+        } else {
+            if (!queue_followup_query(ctx, table_query_buf[0..table_query.len])) {
+                return http.NGX_HTTP_INTERNAL_SERVER_ERROR;
+            }
+            ctx.*.rpc_phase = .call;
         }
     }
 
@@ -8086,7 +8102,8 @@ fn finalize_pg_response(ctx: *PgRequestCtx) void {
         return;
     }
 
-    if (status == PGRES_COMMAND_OK and std.mem.startsWith(u8, ctx.*.query[0..ctx.*.query_len], "SET ")) {
+    const active_q = ctx.*.query[0..ctx.*.query_len];
+    if (status == PGRES_COMMAND_OK and (std.mem.startsWith(u8, active_q, "SET ") or std.mem.startsWith(u8, active_q, "RESET "))) {
         if (!promote_followup_query(ctx)) {
             finalize_pooled_failure(ctx);
             return;
@@ -8246,35 +8263,26 @@ fn finalize_pg_response(ctx: *PgRequestCtx) void {
             finalize_pooled_failure(ctx);
             return;
         }
-        const has_setup_queries = ctx.*.next_query_len > 0;
+        // queue_jwt_setup_queries set ctx.query = RESET ROLE; append main
+        // queries in the correct order: count (if requested) then data.
         if (read_count_requested(req_opts)) {
-            if (!queue_followup_query(ctx, data_query_buf[0..data_query_len])) {
+            var count_query_buf: [MAX_QUERY_SIZE]u8 = undefined;
+            const count_query_len = build_table_count_query(&count_query_buf, qualified_table, where_buf[0..where_result.len], opts.prefer.count_mode);
+            if (!queue_followup_query(ctx, count_query_buf[0..count_query_len])) {
                 finalize_pooled_failure(ctx);
                 return;
             }
-            var count_query_buf: [MAX_QUERY_SIZE]u8 = undefined;
-        const count_query_len = build_table_count_query(&count_query_buf, qualified_table, where_buf[0..where_result.len], opts.prefer.count_mode);
-            if (!set_active_query(ctx, count_query_buf[0..count_query_len])) {
+            if (!queue_followup_query(ctx, data_query_buf[0..data_query_len])) {
                 finalize_pooled_failure(ctx);
                 return;
             }
             ctx.*.rpc_phase = .count;
         } else {
-            if (!set_active_query(ctx, data_query_buf[0..data_query_len])) {
+            if (!queue_followup_query(ctx, data_query_buf[0..data_query_len])) {
                 finalize_pooled_failure(ctx);
                 return;
             }
             ctx.*.rpc_phase = .call;
-        }
-        if (has_setup_queries) {
-            if (!queue_followup_query(ctx, ctx.*.query[0..ctx.*.query_len])) {
-                finalize_pooled_failure(ctx);
-                return;
-            }
-            if (!promote_followup_query(ctx)) {
-                finalize_pooled_failure(ctx);
-                return;
-            }
         }
         if (ctx.*.pool_conn) |pool_conn| {
             if (!start_pooled_query(ctx, pool_conn)) {
@@ -8356,9 +8364,10 @@ fn finalize_pg_response(ctx: *PgRequestCtx) void {
             http.ngx_http_finalize_request(r, rc);
             return;
         }
-        const has_setup_queries = ctx.*.next_query_len > 0;
+        // queue_jwt_setup_queries set ctx.query = RESET ROLE.  Append the
+        // actual RPC queries as followup in the correct execution order.
         var rpc_query_buf: [MAX_QUERY_SIZE]u8 = undefined;
-        ctx.*.query_len = if (rpc_returns_table_like(metadata)) blk: {
+        if (rpc_returns_table_like(metadata)) {
             var where_buf: [MAX_QUERY_SIZE]u8 = undefined;
             var read_args_buf: [MAX_QUERY_SIZE]u8 = undefined;
             const read_args = filter_rpc_query_args_by_metadata(r.*.args, &metadata, false, &read_args_buf);
@@ -8416,13 +8425,6 @@ fn finalize_pg_response(ctx: *PgRequestCtx) void {
                 pagination_info.pagination,
             );
             if (read_count_requested(opts)) {
-                if (!queue_followup_query(ctx, rpc_query_buf[0..data_query_len])) {
-                    const rc = http.NGX_HTTP_INTERNAL_SERVER_ERROR;
-                    ctx.*.request = null;
-                    release_pooled_ctx(ctx, true);
-                    http.ngx_http_finalize_request(r, rc);
-                    return;
-                }
                 var count_query_buf: [MAX_QUERY_SIZE]u8 = undefined;
                 const count_query_len = build_rpc_table_count_query(
                     &count_query_buf,
@@ -8432,53 +8434,35 @@ fn finalize_pg_response(ctx: *PgRequestCtx) void {
                     &rpc_call,
                     where_buf[0..where_result.len],
                 );
-                if (!set_active_query(ctx, count_query_buf[0..count_query_len])) {
+                if (!queue_followup_query(ctx, count_query_buf[0..count_query_len])) {
                     const rc = http.NGX_HTTP_INTERNAL_SERVER_ERROR;
                     ctx.*.request = null;
                     release_pooled_ctx(ctx, true);
                     http.ngx_http_finalize_request(r, rc);
                     return;
                 }
-                break :blk count_query_len;
+                ctx.*.rpc_phase = .count;
+            } else {
+                ctx.*.rpc_phase = .call;
             }
-            if (!set_active_query(ctx, rpc_query_buf[0..data_query_len])) {
+            if (!queue_followup_query(ctx, rpc_query_buf[0..data_query_len])) {
                 const rc = http.NGX_HTTP_INTERNAL_SERVER_ERROR;
                 ctx.*.request = null;
                 release_pooled_ctx(ctx, true);
                 http.ngx_http_finalize_request(r, rc);
                 return;
             }
-            break :blk data_query_len;
-        } else build_rpc_call_query(&rpc_query_buf, resolved_schema.name, function_name, &rpc_call);
-
-        if (!rpc_returns_table_like(metadata)) {
-            if (!set_active_query(ctx, rpc_query_buf[0..ctx.*.query_len])) {
+        } else {
+            const call_len = build_rpc_call_query(&rpc_query_buf, resolved_schema.name, function_name, &rpc_call);
+            if (!queue_followup_query(ctx, rpc_query_buf[0..call_len])) {
                 const rc = http.NGX_HTTP_INTERNAL_SERVER_ERROR;
                 ctx.*.request = null;
                 release_pooled_ctx(ctx, true);
                 http.ngx_http_finalize_request(r, rc);
                 return;
             }
+            ctx.*.rpc_phase = .call;
         }
-
-        if (has_setup_queries) {
-            if (!queue_followup_query(ctx, ctx.*.query[0..ctx.*.query_len])) {
-                const rc = http.NGX_HTTP_INTERNAL_SERVER_ERROR;
-                ctx.*.request = null;
-                release_pooled_ctx(ctx, true);
-                http.ngx_http_finalize_request(r, rc);
-                return;
-            }
-            if (!promote_followup_query(ctx)) {
-                const rc = http.NGX_HTTP_INTERNAL_SERVER_ERROR;
-                ctx.*.request = null;
-                release_pooled_ctx(ctx, true);
-                http.ngx_http_finalize_request(r, rc);
-                return;
-            }
-        }
-
-        ctx.*.rpc_phase = if (read_count_requested(opts) and rpc_returns_table_like(metadata)) .count else .call;
 
         if (ctx.*.pool_conn) |pool_conn| {
             if (!start_pooled_query(ctx, pool_conn)) {

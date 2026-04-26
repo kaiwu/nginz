@@ -704,8 +704,8 @@ This section collects every tail left by batches 1–11, decides whether it belo
 ### Hard
 
 - [ ] **[Hard]** **Audit upstream configuration sharing** — review how `pgrest_pass`, `pgrest_schemas`, and keepalive settings are shared across requests in the pooled path.
-- [ ] **[Hard]** **Eliminate silent cross-request state leakage** — ensure JWT role, schema profile, and Prefer settings from one request cannot influence another request that reuses the same pooled connection.
-- [ ] **[Hard]** **Add pooled-state integration coverage** — create tests that alternate requests with different roles/schemas on the same pooled connection and assert isolation.
+- [x] **[Hard]** **Eliminate silent cross-request state leakage** — `queue_jwt_setup_queries` now always sets `ctx.query` to `RESET ROLE` as the first query in every request's chain, and always clears `request.jwt` (or sets the new token), so stale role and JWT from a previous request on the same pooled connection cannot influence the next request. Also fixed the pre-existing count+JWT query-ordering bug where the count query ran after the data query instead of before.
+- [x] **[Hard]** **Add pooled-state integration coverage** — three new Bun integration tests: (1) every request starts with `RESET ROLE`; (2) requests without JWT send `SET request.jwt TO ''` to clear the session variable; (3) an authenticated request followed by an unauthenticated request on the same connection correctly applies `RESET ROLE` then re-applies `anon_role`, not the previous role.
 - [ ] **[Hard]** **Audit all SQL construction sites** — identify every location in `pgrest_query.zig`, `pgrest_rpc.zig`, and `ngx_http_pgrest.zig` where user input is interpolated into SQL strings.
 - [ ] **[Hard]** **Parameterized filter values** — convert the filter-operator value rendering (`eq`, `gt`, `like`, etc.) from string interpolation to PostgreSQL positional parameters (`$1`, `$2`, …) where feasible.
 - [ ] **[Hard]** **Parameterized RPC arguments** — convert named and positional RPC arguments from string interpolation to parameters.

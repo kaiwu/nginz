@@ -12,6 +12,7 @@ export class PostgresMock {
     this.lastSetRole = null; // Track last SET ROLE command
     this.lastSetJwt = null; // Track last SET request.jwt command
     this.queryLog = []; // Log of all queries received
+    this.resetRoleCount = 0; // Count of RESET ROLE commands received
   }
 
   start() {
@@ -47,6 +48,11 @@ export class PostgresMock {
     this.lastSetRole = null;
     this.lastSetJwt = null;
     this.queryLog = [];
+    this.resetRoleCount = 0;
+  }
+
+  getResetRoleCount() {
+    return this.resetRoleCount;
   }
 
   // Get the last SET ROLE value
@@ -179,6 +185,16 @@ export class PostgresMock {
     // Log all queries for debugging
     this.queryLog.push(query);
 
+    // Track RESET ROLE commands (always first in every request's query chain)
+    if (/^RESET\s+ROLE\s*$/i.test(query.trim())) {
+      this.resetRoleCount += 1;
+      // RESET ROLE clears the tracked role to simulate a clean session state
+      this.lastSetRole = null;
+      this.sendCommandComplete(socket, "RESET");
+      socket.write(Buffer.from([0x5a, 0, 0, 0, 5, 0x49]));
+      return;
+    }
+
     // Track SET ROLE commands
     const roleMatch = query.match(/SET\s+ROLE\s+'([^']+)'/i);
     if (roleMatch) {
@@ -188,10 +204,10 @@ export class PostgresMock {
       return;
     }
 
-    // Track SET request.jwt commands
-    const jwtMatch = query.match(/SET\s+request\.jwt\s+TO\s+'([^']+)'/i);
+    // Track SET request.jwt commands (including the empty-string clear)
+    const jwtMatch = query.match(/SET\s+request\.jwt\s+TO\s+'([^']*)'/i);
     if (jwtMatch) {
-      this.lastSetJwt = jwtMatch[1];
+      this.lastSetJwt = jwtMatch[1]; // empty string when clearing
       this.sendCommandComplete(socket, "SET");
       socket.write(Buffer.from([0x5a, 0, 0, 0, 5, 0x49]));
       return;
