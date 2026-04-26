@@ -14,17 +14,21 @@ $ zig build test
 $ bun test
 ```
 
+### Build strategy
+
+The build has three tiers optimised for different goals:
+
+| Command | Use case | Notes |
+|---------|----------|-------|
+| `zig build` | Development | Debug mode, fastest compile, safety checks on |
+| `zig build -Doptimize=ReleaseSmall` | Release | Recommended — safety checks on, compact binary, LLVM-friendly |
+| `zig build -Doptimize=ReleaseSafe` | **Avoid** | Safety checks on but full `-O2` — see below |
+
 > [!WARNING]
-> **`-Doptimize=ReleaseSafe` is likely to OOM on machines with less than ~32 GB RAM** and may
-> produce a segfault even with `-j1`. ReleaseSafe runs full LLVM optimisation (`-O2`) across a
-> large number of independent compilation units (the Zig binding layer is ~51 k lines), and the
-> combined peak memory easily exceeds 16 GB. Use `ReleaseSmall` (`-Os`) instead — it produces a
-> comparably sized binary with a fraction of the compiler memory:
->
-> ```bash
-> zig build -Doptimize=ReleaseSmall   # recommended for release builds
-> zig build                            # Debug — fastest compile, no optimisation
-> ```
+> **`-Doptimize=ReleaseSafe` will segfault on some developer machines.** The build combines all
+> modules into a single LLVM compilation unit, and ReleaseSafe's `-O2` pass over that unit
+> exceeds 16 GB peak memory even with `-j1`. `ReleaseSmall` uses `-Os` and compiles successfully;
+> it preserves all runtime safety checks and produces a comparably sized binary. Use it instead.
 
 Nginx development requires some system library dependencies, which shall be addressed first.
 A Dockerfile is provided as reference so that one can build their own dev image.

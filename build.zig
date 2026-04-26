@@ -1,5 +1,6 @@
 const std = @import("std");
 const builtin = @import("builtin");
+const common = @import("project/build_common.zig");
 const exe = @import("project//build_exe.zig");
 const njs = @import("project//build_njs.zig");
 const core = @import("project/build_core.zig");
@@ -165,7 +166,7 @@ pub fn build(b: *std.Build) void {
             .pic = true,
             .root_source_file = b.path("src/ngz_zig_modules.zig"),
             .target = target,
-            .optimize = optimize,
+            .optimize = common.cap_optimize(optimize),
             .link_libc = true,
         }),
     });
