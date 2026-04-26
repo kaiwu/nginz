@@ -41,7 +41,9 @@
       "WebFetch(domain:nginx-extras.getpagespeed.com)",
       "Bash(git *)",
       "Bash(sudo docker *)",
-      "Bash(python3 *)"
+      "Bash(python3 *)",
+      "Bash(awk -F: 'NR==1{prev=$1; next} $1-prev>200{print prev\"-\"$1\": gap \"$1-prev\" lines\"} {prev=$1}')",
+      "Bash(awk *)"
     ]
   }
 }
