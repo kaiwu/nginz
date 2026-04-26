@@ -2303,6 +2303,17 @@ describe("pgrest module", () => {
       // It should appear escaped inside single-quoted literal or as a param
       pgMock.queryHandlers.delete(/FROM users/);
     });
+
+    test("parameter overflow returns 400 instead of sending mixed placeholder SQL", async () => {
+      pgMock.clearTracking();
+      const values = Array.from({ length: 65 }, (_, i) => `v${i}`).join(",");
+      const res = await fetch(`${TEST_URL}/api/users?name=in.(${values})`);
+      expect(res.status).toBe(400);
+      expect(await res.json()).toEqual({ message: "Too many SQL parameters" });
+
+      const log = pgMock.getQueryLog();
+      expect(log.find((q) => q.includes("FROM users"))).toBeUndefined();
+    });
   });
 
   describe("malformed payload handling", () => {

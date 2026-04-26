@@ -100,6 +100,7 @@ const ngx_pgrest_loc_conf_t = extern struct {
     jwt_secret: ngx_str_t,
     anon_role: ngx_str_t,
     jwt_role_claim: ngx_str_t,
+    jwt_role_claim_explicit: ngx_flag_t,
 };
 
 // ============================================================================
@@ -400,9 +401,15 @@ fn append_param_or_quoted(buf_out: []u8, pos_in: usize, value: []const u8, param
         if (params_add_text(ctx, value)) {
             return write_param_placeholder(ctx, buf_out, pos_in);
         }
-        // Overflow: fall back to safe quoting so the query is still correct.
+        // Overflow: fall back to safe quoting for this value only. Callers must
+        // reject execution if earlier placeholders were already emitted.
     }
     return append_sql_quoted(buf_out, pos_in, value);
+}
+
+fn has_unsafe_param_overflow(ctx: *const PgRequestCtx, query: []const u8) bool {
+    return ctx.*.param_overflow and ctx.*.param_count > 0 and
+        std.mem.indexOfScalar(u8, query, '$') != null;
 }
 
 /// Parse JSON object into field array for INSERT/UPDATE
@@ -2176,6 +2183,7 @@ fn format_result_as_json_smart(
 fn pgrest_create_loc_conf(cf: [*c]ngx_conf_t) callconv(.c) ?*anyopaque {
     if (core.ngz_pcalloc_c(ngx_pgrest_loc_conf_t, cf.*.pool)) |loc| {
         loc.*.jwt_role_claim = ngx_string("role");
+        loc.*.jwt_role_claim_explicit = 0;
         loc.*.pool_size = NGX_CONF_UNSET;
         return loc;
     }
@@ -2195,10 +2203,9 @@ fn pgrest_merge_loc_conf(
     if (cur.*.schemas_raw.len == 0) cur.*.schemas_raw = prev.*.schemas_raw;
     if (cur.*.jwt_secret.len == 0) cur.*.jwt_secret = prev.*.jwt_secret;
     if (cur.*.anon_role.len == 0) cur.*.anon_role = prev.*.anon_role;
-    if (std.mem.eql(u8, core.slicify(u8, cur.*.jwt_role_claim.data, cur.*.jwt_role_claim.len), "role") and
-        prev.*.jwt_role_claim.len > 0)
-    {
+    if (cur.*.jwt_role_claim_explicit == 0 and prev.*.jwt_role_claim.len > 0) {
         cur.*.jwt_role_claim = prev.*.jwt_role_claim;
+        cur.*.jwt_role_claim_explicit = prev.*.jwt_role_claim_explicit;
     }
     if (cur.*.pool_size == NGX_CONF_UNSET) cur.*.pool_size = prev.*.pool_size;
     return NGX_CONF_OK;
@@ -2271,6 +2278,7 @@ fn ngx_conf_set_pgrest_jwt_role_claim(
         var i: ngx_uint_t = 1;
         if (ngx.array.ngx_array_next(ngx_str_t, cf.*.args, &i)) |arg| {
             loc.*.jwt_role_claim = arg.*;
+            loc.*.jwt_role_claim_explicit = 1;
             return NGX_CONF_OK;
         }
     }
@@ -8002,6 +8010,10 @@ fn ngx_http_pgrest_upstream_handler(r: [*c]ngx_http_request_t) callconv(.c) ngx_
         ctx,
     ) orelse return send_json_error(r, http.NGX_HTTP_BAD_REQUEST, "{\"message\":\"Invalid write payload\"}");
 
+    if (has_unsafe_param_overflow(ctx, table_query_buf[0..table_query.len])) {
+        return send_json_error(r, http.NGX_HTTP_BAD_REQUEST, "{\"message\":\"Too many SQL parameters\"}");
+    }
+
     if (ctx.*.table_embed_metadata) {
         // Metadata phase runs as the connection user; JWT/role setup happens
         // in the second phase after the metadata result arrives.
@@ -8348,6 +8360,14 @@ fn finalize_pg_response(ctx: *PgRequestCtx) void {
             return;
         };
 
+        if (has_unsafe_param_overflow(ctx, data_query_buf[0..data_query_len])) {
+            const rc = send_json_error(r, http.NGX_HTTP_BAD_REQUEST, "{\"message\":\"Too many SQL parameters\"}");
+            ctx.*.request = null;
+            release_pooled_ctx(ctx, false);
+            http.ngx_http_finalize_request(r, rc);
+            return;
+        }
+
         ctx.*.next_query_len = 0;
         ctx.*.followup_query_count = 0;
         const jwt_result = queue_jwt_setup_queries(ctx, loc_conf);
@@ -8524,6 +8544,13 @@ fn finalize_pg_response(ctx: *PgRequestCtx) void {
                 pagination_info.pagination,
                 ctx,
             );
+            if (has_unsafe_param_overflow(ctx, rpc_query_buf[0..data_query_len])) {
+                const rc = send_json_error(r, http.NGX_HTTP_BAD_REQUEST, "{\"message\":\"Too many SQL parameters\"}");
+                ctx.*.request = null;
+                release_pooled_ctx(ctx, false);
+                http.ngx_http_finalize_request(r, rc);
+                return;
+            }
             if (read_count_requested(opts)) {
                 var count_query_buf: [MAX_QUERY_SIZE]u8 = undefined;
                 const count_query_len = build_rpc_table_count_query(
@@ -8554,6 +8581,13 @@ fn finalize_pg_response(ctx: *PgRequestCtx) void {
             }
         } else {
             const call_len = build_rpc_call_query(&rpc_query_buf, resolved_schema.name, function_name, &rpc_call, ctx);
+            if (has_unsafe_param_overflow(ctx, rpc_query_buf[0..call_len])) {
+                const rc = send_json_error(r, http.NGX_HTTP_BAD_REQUEST, "{\"message\":\"Too many SQL parameters\"}");
+                ctx.*.request = null;
+                release_pooled_ctx(ctx, false);
+                http.ngx_http_finalize_request(r, rc);
+                return;
+            }
             if (!queue_followup_query(ctx, rpc_query_buf[0..call_len])) {
                 const rc = http.NGX_HTTP_INTERNAL_SERVER_ERROR;
                 ctx.*.request = null;
@@ -8917,6 +8951,50 @@ test "build_insert_rows_query emits $N for string scalars when ctx supplied" {
     try expectEqualStrings("INSERT INTO users (id,name) VALUES (1,$1)", query_buf[0..len]);
     try expectEqual(@as(usize, 1), ctx.param_count);
     try expectEqualStrings("Injected'; DROP TABLE users--", std.mem.sliceTo(ctx.param_ptrs[0].?, 0));
+}
+
+test "unsafe parameter overflow is detected when earlier placeholders already exist" {
+    var ctx = std.mem.zeroes(PgRequestCtx);
+    params_reset(&ctx);
+
+    var where_buf: [4096]u8 = undefined;
+    var args_buf: [1024]u8 = undefined;
+    var pos: usize = 0;
+    const prefix = "name=in.(";
+    @memcpy(args_buf[pos..][0..prefix.len], prefix);
+    pos += prefix.len;
+    for (0..65) |i| {
+        if (i > 0) {
+            args_buf[pos] = ',';
+            pos += 1;
+        }
+        const item = std.fmt.bufPrint(args_buf[pos..], "v{d}", .{i}) catch return error.TestUnexpectedResult;
+        pos += item.len;
+    }
+    args_buf[pos] = ')';
+    pos += 1;
+
+    const result = build_where_clause_from_args(&where_buf, ngx_str_t{ .data = &args_buf, .len = pos }, &ctx);
+    try expect(!result.invalid);
+    try expect(ctx.param_overflow);
+    try expect(ctx.param_count > 0);
+    try expect(has_unsafe_param_overflow(&ctx, where_buf[0..result.len]));
+}
+
+test "pgrest_merge_loc_conf preserves explicit child jwt_role_claim role" {
+    var parent = std.mem.zeroes(ngx_pgrest_loc_conf_t);
+    var child = std.mem.zeroes(ngx_pgrest_loc_conf_t);
+
+    parent.jwt_role_claim = ngx_string("custom_role");
+    parent.jwt_role_claim_explicit = 1;
+
+    child.jwt_role_claim = ngx_string("role");
+    child.jwt_role_claim_explicit = 1;
+
+    _ = pgrest_merge_loc_conf(null, &parent, &child);
+
+    try expectEqualStrings("role", core.slicify(u8, child.jwt_role_claim.data, child.jwt_role_claim.len));
+    try expectEqual(@as(ngx_flag_t, 1), child.jwt_role_claim_explicit);
 }
 
 test "build_select_clause_from_args supports aliases and casts" {

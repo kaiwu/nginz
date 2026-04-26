@@ -1298,7 +1298,7 @@ Error responses:
 | Aggregates / computed fields | Partial | `sum`, `avg`, `min`, `max`, `count`, grouped queries, computed field select/filter/order supported. Aggregate ordering and `HAVING` are out of scope. |
 | OPTIONS / CORS / OpenAPI | Partial | Basic `OPTIONS`, CORS simple/preflight, minimal OpenAPI root documents supported. Full OpenAPI customization is out of scope. |
 | JWT auth | Implemented | Signature validation, `exp`/`iat`/`nbf` enforcement, role claim extraction, passthrough to PostgreSQL. |
-| Execution-path parity | Partial | The active implementation is the pooled/nonblocking path. Connection/runtime failure coverage is in place; parameterized queries and pooled-state isolation remain hardening work. |
+| Execution-path parity | Partial | The active implementation is the pooled/nonblocking path. Connection/runtime failure coverage, pooled-state isolation, and bounded parameterized-query execution are in place on the active path. |
 
 ## Batch 12 Changes
 
@@ -1315,7 +1315,7 @@ This section documents the Batch 12 hardening fixes that are now in place.
 
 ## Limitations
 
-- **Basic SQL injection prevention** - Values are quoted but not fully parameterized
+- **Parameterized-query limits** - String filter/RPC/write values use bounded positional parameters on the active path. Requests that exceed the current parameter budget fail with `400 Bad Request` instead of degrading into mixed placeholder/raw SQL execution.
 - **Single table operations** - CRUD on single tables only (use RPC for JOINs/complex queries)
 - **Simple query building** - Complex filters use AND logic only
 - **Binary format** - application/octet-stream currently requires exactly one row and one column on output
@@ -1323,7 +1323,6 @@ This section documents the Batch 12 hardening fixes that are now in place.
 
 ## Future Improvements
 
-- Parameterized queries for SQL injection prevention
 - Relationship handling (embedded resources, foreign key expansion)
 - Bulk operations (multiple INSERT/UPDATE/DELETE)
 - Materialized view support
