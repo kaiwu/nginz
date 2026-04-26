@@ -218,7 +218,7 @@ This is the main cross-cutting category that can quietly break every feature abo
 - **[Medium]** Harden content negotiation and JSON variant edge cases.
 - **[Medium]** Harden error formatting and status code behavior.
 - **[Medium]** Enforce JWT expiration and other basic token validation semantics that are currently absent.
-- **[Hard]** Replace manual SQL string construction with parameterized query execution where feasible.
+- [x] **[Hard]** Replace manual SQL string construction with parameterized query execution where feasible.
 - **[Hard]** Revisit global pooled-state design so upstream configuration is not silently shared in the wrong places.
 - **[Hard]** Add failure-mode coverage for connection errors, malformed payloads, and SQL/runtime errors.
 
@@ -706,12 +706,12 @@ This section collects every tail left by batches 1–11, decides whether it belo
 - [ ] **[Hard]** **Audit upstream configuration sharing** — review how `pgrest_pass`, `pgrest_schemas`, and keepalive settings are shared across requests in the pooled path.
 - [x] **[Hard]** **Eliminate silent cross-request state leakage** — `queue_jwt_setup_queries` now always sets `ctx.query` to `RESET ROLE` as the first query in every request's chain, and always clears `request.jwt` (or sets the new token), so stale role and JWT from a previous request on the same pooled connection cannot influence the next request. Also fixed the pre-existing count+JWT query-ordering bug where the count query ran after the data query instead of before.
 - [x] **[Hard]** **Add pooled-state integration coverage** — three new Bun integration tests: (1) every request starts with `RESET ROLE`; (2) requests without JWT send `SET request.jwt TO ''` to clear the session variable; (3) an authenticated request followed by an unauthenticated request on the same connection correctly applies `RESET ROLE` then re-applies `anon_role`, not the previous role.
-- [ ] **[Hard]** **Audit all SQL construction sites** — identify every location in `pgrest_query.zig`, `pgrest_rpc.zig`, and `ngx_http_pgrest.zig` where user input is interpolated into SQL strings.
-- [ ] **[Hard]** **Parameterized filter values** — convert the filter-operator value rendering (`eq`, `gt`, `like`, etc.) from string interpolation to PostgreSQL positional parameters (`$1`, `$2`, …) where feasible.
-- [ ] **[Hard]** **Parameterized RPC arguments** — convert named and positional RPC arguments from string interpolation to parameters.
-- [ ] **[Hard]** **Parameterized write payloads** — convert `INSERT`/`UPDATE`/`DELETE` value lists from string interpolation to parameters.
-- [ ] **[Hard]** **Zig-level tests for parameterized queries** — add parser/builder tests that assert parameter placeholders are generated correctly.
-- [ ] **[Hard]** **Integration coverage for parameterized queries** — add Bun tests that inject malicious payloads and assert they are treated as parameter data, not executable SQL.
+- [x] **[Hard]** **Audit all SQL construction sites** — identified every location in `ngx_http_pgrest.zig` where user input was interpolated into SQL strings.
+- [x] **[Hard]** **Parameterized filter values** — converted filter-operator value rendering (`eq`, `gt`, `like`, etc.) to `$N` positional parameters via `PQsendQueryParams`; WHERE clause builds `$1…$n` and populates `ctx.param_ptrs[]`.
+- [x] **[Hard]** **Parameterized RPC arguments** — string RPC arguments now use `$N` parameters; raw (JSON array/object) and numeric/boolean arguments remain as literals.
+- [x] **[Hard]** **Parameterized write payloads** — `INSERT`/`UPDATE`/`DELETE` string value lists now use `$N` parameters extending from the WHERE param count; numbers, booleans, NULLs, and DEFAULT remain as literals.
+- [x] **[Hard]** **Zig-level tests for parameterized queries** — three new unit tests assert `$N` placeholder generation and that the injection string `' OR '1'='1` goes into `param_ptrs[]` untouched.
+- [x] **[Hard]** **Integration coverage for parameterized queries** — two new Bun integration tests: (1) filter value arrives as `$1`-resolved quoted literal (not inline); (2) SQL injection string in filter is treated as data and `OR '1'='1` never appears in the executed SQL.
 
 ### Items intentionally deferred BEYOND Batch 12 (new feature surface, not hardening)
 

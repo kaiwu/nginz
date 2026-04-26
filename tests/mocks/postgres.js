@@ -81,7 +81,16 @@ export class PostgresMock {
     if (socket.pgState === "startup") {
       this.handleStartup(socket, buf);
     } else {
-      this.handleMessage(socket, buf);
+      // Process all messages in the buffer (libpq may pipeline multiple)
+      let offset = 0;
+      while (offset < buf.length) {
+        if (offset + 5 > buf.length) break; // incomplete header
+        const msgLen = buf.readInt32BE(offset + 1); // length includes itself (4 bytes)
+        const totalLen = 1 + msgLen; // type byte + length+body
+        if (offset + totalLen > buf.length) break; // incomplete message
+        this.handleMessage(socket, buf.slice(offset, offset + totalLen));
+        offset += totalLen;
+      }
     }
   }
 
@@ -149,25 +158,65 @@ export class PostgresMock {
         socket.end();
         break;
 
-      case "P": // Parse (extended query)
+      case "P": { // Parse (extended query) — extract and save query text
+        // body: statement_name\0 query\0 [param types]
+        const body = buf.slice(5, 5 + len - 4);
+        const stmtEnd = body.indexOf(0);
+        const queryEnd = body.indexOf(0, stmtEnd + 1);
+        socket.extendedQuery = body.toString("utf8", stmtEnd + 1, queryEnd);
+        socket.extendedParams = [];
         // Send ParseComplete
         socket.write(Buffer.from([0x31, 0, 0, 0, 4]));
         break;
+      }
 
-      case "B": // Bind
+      case "B": { // Bind — extract parameter values
+        // body: portal\0 statement\0 nParamFormats(i16) [formats] nParams(i16) [len(i32)+bytes ...]
+        let off = 5;
+        while (off < buf.length && buf[off] !== 0) off++; // skip portal name
+        off++; // skip null
+        while (off < buf.length && buf[off] !== 0) off++; // skip statement name
+        off++; // skip null
+        const nFormats = buf.readInt16BE(off); off += 2;
+        off += nFormats * 2; // skip format codes
+        const nParams = buf.readInt16BE(off); off += 2;
+        const params = [];
+        for (let i = 0; i < nParams; i++) {
+          const pLen = buf.readInt32BE(off); off += 4;
+          if (pLen === -1) {
+            params.push(null);
+          } else {
+            params.push(buf.toString("utf8", off, off + pLen));
+            off += pLen;
+          }
+        }
+        socket.extendedParams = params;
         // Send BindComplete
         socket.write(Buffer.from([0x32, 0, 0, 0, 4]));
         break;
+      }
 
       case "D": // Describe
         // Send NoData
         socket.write(Buffer.from([0x6e, 0, 0, 0, 4]));
         break;
 
-      case "E": // Execute
-        // Send EmptyQueryResponse
-        socket.write(Buffer.from([0x49, 0, 0, 0, 4]));
+      case "E": { // Execute — run the bound query with substituted parameters
+        const rawQuery = socket.extendedQuery || "";
+        const params = socket.extendedParams || [];
+        // Substitute $N placeholders with the actual parameter values (quoted)
+        const resolved = rawQuery.replace(/\$(\d+)/g, (_, n) => {
+          const val = params[parseInt(n, 10) - 1];
+          if (val === null) return "NULL";
+          // Re-quote the value so handleQuery sees it as a quoted literal
+          return "'" + val.replace(/'/g, "''") + "'";
+        });
+        // Pass sendReady=false; Sync sends ReadyForQuery after the full pipeline
+        this.handleQuery(socket, resolved, false);
+        socket.extendedQuery = null;
+        socket.extendedParams = [];
         break;
+      }
 
       case "S": // Sync
         // Send ReadyForQuery
@@ -179,8 +228,9 @@ export class PostgresMock {
     }
   }
 
-  handleQuery(socket, query) {
+  handleQuery(socket, query, sendReady = true) {
     const upperQuery = query.toUpperCase().trim();
+    const rfq = () => { if (sendReady) socket.write(Buffer.from([0x5a, 0, 0, 0, 5, 0x49])); };
 
     // Log all queries for debugging
     this.queryLog.push(query);
@@ -191,7 +241,7 @@ export class PostgresMock {
       // RESET ROLE clears the tracked role to simulate a clean session state
       this.lastSetRole = null;
       this.sendCommandComplete(socket, "RESET");
-      socket.write(Buffer.from([0x5a, 0, 0, 0, 5, 0x49]));
+      rfq();
       return;
     }
 
@@ -200,7 +250,7 @@ export class PostgresMock {
     if (roleMatch) {
       this.lastSetRole = roleMatch[1];
       this.sendCommandComplete(socket, "SET");
-      socket.write(Buffer.from([0x5a, 0, 0, 0, 5, 0x49]));
+      rfq();
       return;
     }
 
@@ -209,7 +259,7 @@ export class PostgresMock {
     if (jwtMatch) {
       this.lastSetJwt = jwtMatch[1]; // empty string when clearing
       this.sendCommandComplete(socket, "SET");
-      socket.write(Buffer.from([0x5a, 0, 0, 0, 5, 0x49]));
+      rfq();
       return;
     }
 
@@ -223,12 +273,11 @@ export class PostgresMock {
         }
         if (result?.error) {
           this.sendError(socket, result.error);
-          socket.write(Buffer.from([0x5a, 0, 0, 0, 5, 0x49]));
+          rfq();
           return;
         }
         this.sendQueryResult(socket, result.columns, result.rows);
-        // Send ReadyForQuery after custom handler
-        socket.write(Buffer.from([0x5a, 0, 0, 0, 5, 0x49]));
+        rfq();
         return;
       }
     }
@@ -257,8 +306,7 @@ export class PostgresMock {
       this.sendCommandComplete(socket, "OK");
     }
 
-    // Send ReadyForQuery
-    socket.write(Buffer.from([0x5a, 0, 0, 0, 5, 0x49]));
+    rfq();
   }
 
   handleSelect(socket, query) {

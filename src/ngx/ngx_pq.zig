@@ -82,6 +82,7 @@ pub const pgFlush = pq.PQflush;
 
 // Non-blocking query functions
 pub const pgSendQuery = pq.PQsendQuery;
+pub const pgSendQueryParams = pq.PQsendQueryParams;
 pub const pgConsumeInput = pq.PQconsumeInput;
 pub const pgIsBusy = pq.PQisBusy;
 pub const pgGetResult = pq.PQgetResult;

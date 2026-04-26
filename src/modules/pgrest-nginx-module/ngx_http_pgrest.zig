@@ -40,6 +40,7 @@ const pgSetnonblocking = pq.pgSetnonblocking;
 const pgSocket = pq.pgSocket;
 const pgFlush = pq.pgFlush;
 const pgSendQuery = pq.pgSendQuery;
+const pgSendQueryParams = pq.pgSendQueryParams;
 const pgConsumeInput = pq.pgConsumeInput;
 const pgIsBusy = pq.pgIsBusy;
 const pgGetResult = pq.pgGetResult;
@@ -47,6 +48,9 @@ const PGRES_POLLING_FAILED = pq.PGRES_POLLING_FAILED;
 const PGRES_POLLING_READING = pq.PGRES_POLLING_READING;
 const PGRES_POLLING_WRITING = pq.PGRES_POLLING_WRITING;
 const PGRES_POLLING_OK = pq.PGRES_POLLING_OK;
+
+const MAX_PARAMS = 64;
+const PARAM_ARENA_SIZE = 8192;
 
 const NGX_OK = core.NGX_OK;
 const NGX_ERROR = core.NGX_ERROR;
@@ -250,6 +254,13 @@ const PgRequestCtx = extern struct {
     write_status: ngx_uint_t,
     write_send_body: bool,
     is_write_request: bool,
+    // Parameterized query state: values collected during query building are
+    // bound via PQsendQueryParams instead of inline SQL quoting.
+    param_count: usize,
+    param_overflow: bool,
+    param_arena_used: usize,
+    param_arena: [PARAM_ARENA_SIZE]u8,
+    param_ptrs: [MAX_PARAMS][*c]const u8,
 };
 
 fn ensure_pool_conninfo(conninfo: []const u8) bool {
@@ -340,6 +351,61 @@ fn append_sql_quoted(buf_out: []u8, pos_in: usize, value: []const u8) usize {
     buf_out[pos] = '\'';
     pos += 1;
     return pos;
+}
+
+fn params_reset(ctx: *PgRequestCtx) void {
+    ctx.*.param_count = 0;
+    ctx.*.param_overflow = false;
+    ctx.*.param_arena_used = 0;
+}
+
+fn params_add_text(ctx: *PgRequestCtx, value: []const u8) bool {
+    if (ctx.*.param_overflow or ctx.*.param_count >= MAX_PARAMS) {
+        ctx.*.param_overflow = true;
+        return false;
+    }
+    const needed = value.len + 1;
+    if (ctx.*.param_arena_used + needed > PARAM_ARENA_SIZE) {
+        ctx.*.param_overflow = true;
+        return false;
+    }
+    const start = ctx.*.param_arena_used;
+    @memcpy(ctx.*.param_arena[start..][0..value.len], value);
+    ctx.*.param_arena[start + value.len] = 0;
+    ctx.*.param_ptrs[ctx.*.param_count] = @ptrCast(&ctx.*.param_arena[start]);
+    ctx.*.param_count += 1;
+    ctx.*.param_arena_used += needed;
+    return true;
+}
+
+fn params_add_null(ctx: *PgRequestCtx) bool {
+    if (ctx.*.param_overflow or ctx.*.param_count >= MAX_PARAMS) {
+        ctx.*.param_overflow = true;
+        return false;
+    }
+    ctx.*.param_ptrs[ctx.*.param_count] = null;
+    ctx.*.param_count += 1;
+    return true;
+}
+
+// Writes "$N" placeholder for the most recently added param.  Call only after
+// a successful params_add_text / params_add_null.
+fn write_param_placeholder(ctx: *const PgRequestCtx, out: []u8, pos: usize) usize {
+    const s = std.fmt.bufPrint(out[pos..], "${d}", .{ctx.*.param_count}) catch return pos;
+    return pos + s.len;
+}
+
+// Append a user-supplied string value.  When params != null, stores the value
+// as a positional parameter ($N) and writes the placeholder into buf_out.
+// Falls back to inline SQL quoting on overflow or when params is null.
+fn append_param_or_quoted(buf_out: []u8, pos_in: usize, value: []const u8, params: ?*PgRequestCtx) usize {
+    if (params) |ctx| {
+        if (params_add_text(ctx, value)) {
+            return write_param_placeholder(ctx, buf_out, pos_in);
+        }
+        // Overflow: fall back to safe quoting so the query is still correct.
+    }
+    return append_sql_quoted(buf_out, pos_in, value);
 }
 
 /// Parse JSON object into field array for INSERT/UPDATE
@@ -877,6 +943,7 @@ fn build_table_count_query(query_buf: []u8, table: []const u8, where_clause: []c
             &.{},
             .{ .limit = null, .offset = null },
             false,
+            null,
         );
         return build_explain_query(query_buf, inner_query_buf[0..inner_query_len]);
     }
@@ -892,6 +959,7 @@ fn build_table_count_query(query_buf: []u8, table: []const u8, where_clause: []c
         &.{},
         .{ .limit = null, .offset = null },
         false,
+        null,
     );
 }
 
@@ -915,6 +983,7 @@ fn build_rpc_table_count_query(
             "",
             &.{},
             .{ .limit = null, .offset = null },
+            null,
         );
         return build_explain_query(query_buf, inner_query_buf[0..inner_query_len]);
     }
@@ -929,6 +998,7 @@ fn build_rpc_table_count_query(
         "",
         &.{},
         .{ .limit = null, .offset = null },
+        null,
     );
 }
 
@@ -1666,7 +1736,14 @@ fn start_pooled_query(ctx: *PgRequestCtx, pool_conn: *PgPoolConn) bool {
         ctx.*.result = null;
     }
 
-    if (pgSendQuery(conn, &ctx.*.query) == 0) {
+    const query_slice = std.mem.sliceTo(&ctx.*.query, 0);
+    const use_params = ctx.*.param_count > 0 and !ctx.*.param_overflow and
+        std.mem.indexOfScalar(u8, query_slice, '$') != null;
+    const query_sent = if (use_params)
+        pgSendQueryParams(conn, &ctx.*.query, @intCast(ctx.*.param_count), null, @ptrCast(&ctx.*.param_ptrs), null, null, 0)
+    else
+        pgSendQuery(conn, &ctx.*.query);
+    if (query_sent == 0) {
         ctx.*.query_state = .failed;
         return false;
     }
@@ -2301,6 +2378,7 @@ fn build_sql_query(
     order_specs: []const OrderSpec,
     pagination: Pagination,
     include_returning: bool,
+    params: ?*PgRequestCtx,
 ) usize {
     var pos: usize = 0;
 
@@ -2374,7 +2452,7 @@ fn build_sql_query(
                         @memcpy(query_buf[pos..][0..field.value.len], field.value);
                         pos += field.value.len;
                     } else {
-                        pos = append_sql_quoted(query_buf, pos, field.value);
+                        pos = append_param_or_quoted(query_buf, pos, field.value, params);
                     }
                 }
 
@@ -2425,7 +2503,7 @@ fn build_sql_query(
                         @memcpy(query_buf[pos..][0..field.value.len], field.value);
                         pos += field.value.len;
                     } else {
-                        pos = append_sql_quoted(query_buf, pos, field.value);
+                        pos = append_param_or_quoted(query_buf, pos, field.value, params);
                     }
                 }
             } else {
@@ -3060,7 +3138,7 @@ fn parse_single_filter(param: []const u8) ?Filter {
     };
 }
 
-fn append_filter_value(buf_out: []u8, pos_in: usize, filter: Filter) usize {
+fn append_filter_value(buf_out: []u8, pos_in: usize, filter: Filter, params: ?*PgRequestCtx) usize {
     var pos = pos_in;
 
     switch (filter.op) {
@@ -3080,7 +3158,7 @@ fn append_filter_value(buf_out: []u8, pos_in: usize, filter: Filter) usize {
                 @memcpy(buf_out[pos..][0..false_str.len], false_str);
                 return pos + false_str.len;
             }
-            return append_sql_quoted(buf_out, pos, filter.value);
+            return append_param_or_quoted(buf_out, pos, filter.value, params);
         },
         .in_ => {
             if (filter.value.len >= 2 and filter.value[0] == '(' and filter.value[filter.value.len - 1] == ')') {
@@ -3109,7 +3187,7 @@ fn append_filter_value(buf_out: []u8, pos_in: usize, filter: Filter) usize {
                             @memcpy(buf_out[pos..][0..item.len], item);
                             pos += item.len;
                         } else {
-                            pos = append_sql_quoted(buf_out, pos, item);
+                            pos = append_param_or_quoted(buf_out, pos, item, params);
                         }
 
                         item_start = i + 1;
@@ -3121,13 +3199,13 @@ fn append_filter_value(buf_out: []u8, pos_in: usize, filter: Filter) usize {
                 return pos;
             }
 
-            return append_sql_quoted(buf_out, pos, filter.value);
+            return append_param_or_quoted(buf_out, pos, filter.value, params);
         },
-        else => return append_sql_quoted(buf_out, pos, filter.value),
+        else => return append_param_or_quoted(buf_out, pos, filter.value, params),
     }
 }
 
-fn build_where_clause_from_filters(buf_out: []u8, filters: []const Filter) usize {
+fn build_where_clause_from_filters(buf_out: []u8, filters: []const Filter, params: ?*PgRequestCtx) usize {
     var pos: usize = 0;
 
     for (filters, 0..) |filter, i| {
@@ -3148,7 +3226,7 @@ fn build_where_clause_from_filters(buf_out: []u8, filters: []const Filter) usize
         buf_out[pos] = ' ';
         pos += 1;
 
-        pos = append_filter_value(buf_out, pos, filter);
+        pos = append_filter_value(buf_out, pos, filter, params);
     }
 
     return pos;
@@ -4112,6 +4190,7 @@ fn append_list_items_sql(
     raw_value: []const u8,
     array_mode: bool,
     wildcard_mode: bool,
+    params: ?*PgRequestCtx,
 ) ?usize {
     if (raw_value.len < 2) return null;
     const open = raw_value[0];
@@ -4191,7 +4270,7 @@ fn append_list_items_sql(
                 for (item, 0..) |c, j| item_buf[j] = if (c == '*') '%' else c;
                 item_view = item_buf[0..item.len];
             }
-            pos = append_sql_quoted(buf_out, pos, item_view);
+            pos = append_param_or_quoted(buf_out, pos, item_view, params);
         }
 
         item_start = i + 1;
@@ -4206,7 +4285,7 @@ fn append_list_items_sql(
     return pos;
 }
 
-fn append_simple_filter_sql(buf_out: []u8, pos_in: usize, expr: []const u8) ?usize {
+fn append_simple_filter_sql(buf_out: []u8, pos_in: usize, expr: []const u8, params: ?*PgRequestCtx) ?usize {
     const first_dot = find_top_level_dot(expr) orelse return null;
     const column_raw = trim_ascii_spaces(expr[0..first_dot]);
     if (column_raw.len == 0) return null;
@@ -4266,6 +4345,7 @@ fn append_simple_filter_sql(buf_out: []u8, pos_in: usize, expr: []const u8) ?usi
             buf_out[pos] = '(';
             pos += 1;
             if (fts_language) |lang| {
+                // FTS language is from the URL operator syntax like fts(english), treated as trusted identifier
                 pos = append_sql_quoted(buf_out, pos, lang);
                 const sep = ", ";
                 @memcpy(buf_out[pos..][0..sep.len], sep);
@@ -4273,7 +4353,7 @@ fn append_simple_filter_sql(buf_out: []u8, pos_in: usize, expr: []const u8) ?usi
             }
             var scratch: [512]u8 = undefined;
             const value = unescape_wrapped_quotes_into(&scratch, value_raw) orelse return null;
-            pos = append_sql_quoted(buf_out, pos, value);
+            pos = append_param_or_quoted(buf_out, pos, value, params);
             buf_out[pos] = ')';
             pos += 1;
         },
@@ -4291,7 +4371,7 @@ fn append_simple_filter_sql(buf_out: []u8, pos_in: usize, expr: []const u8) ?usi
                 const any_all = if (std.mem.eql(u8, mod, "any")) "ANY (" else if (std.mem.eql(u8, mod, "all")) "ALL (" else return null;
                 @memcpy(buf_out[pos..][0..any_all.len], any_all);
                 pos += any_all.len;
-                pos = append_list_items_sql(buf_out, pos, value_raw, true, wildcard_mode) orelse return null;
+                pos = append_list_items_sql(buf_out, pos, value_raw, true, wildcard_mode, params) orelse return null;
                 buf_out[pos] = ')';
                 pos += 1;
             } else switch (op) {
@@ -4315,7 +4395,7 @@ fn append_simple_filter_sql(buf_out: []u8, pos_in: usize, expr: []const u8) ?usi
                         @memcpy(buf_out[pos..][0..unknown_str.len], unknown_str);
                         pos += unknown_str.len;
                     } else {
-                        pos = append_sql_quoted(buf_out, pos, value);
+                        pos = append_param_or_quoted(buf_out, pos, value, params);
                     }
                 },
                 .isdistinct => {
@@ -4329,19 +4409,19 @@ fn append_simple_filter_sql(buf_out: []u8, pos_in: usize, expr: []const u8) ?usi
                         @memcpy(buf_out[pos..][0..value.len], value);
                         pos += value.len;
                     } else {
-                        pos = append_sql_quoted(buf_out, pos, value);
+                        pos = append_param_or_quoted(buf_out, pos, value, params);
                     }
                 },
-                .in_ => pos = append_list_items_sql(buf_out, pos, value_raw, false, false) orelse return null,
+                .in_ => pos = append_list_items_sql(buf_out, pos, value_raw, false, false, params) orelse return null,
                 .cs, .cd, .ov, .sl, .sr, .nxr, .nxl, .adj => {
                     var scratch: [512]u8 = undefined;
                     const value = unescape_wrapped_quotes_into(&scratch, value_raw) orelse return null;
-                    pos = append_sql_quoted(buf_out, pos, value);
+                    pos = append_param_or_quoted(buf_out, pos, value, params);
                 },
                 .match, .imatch => {
                     var scratch: [512]u8 = undefined;
                     const value = unescape_wrapped_quotes_into(&scratch, value_raw) orelse return null;
-                    pos = append_sql_quoted(buf_out, pos, value);
+                    pos = append_param_or_quoted(buf_out, pos, value, params);
                 },
                 .like, .ilike => {
                     var scratch: [512]u8 = undefined;
@@ -4349,7 +4429,7 @@ fn append_simple_filter_sql(buf_out: []u8, pos_in: usize, expr: []const u8) ?usi
                     var pattern_buf: [512]u8 = undefined;
                     if (value.len > pattern_buf.len) return null;
                     for (value, 0..) |c, i| pattern_buf[i] = if (c == '*') '%' else c;
-                    pos = append_sql_quoted(buf_out, pos, pattern_buf[0..value.len]);
+                    pos = append_param_or_quoted(buf_out, pos, pattern_buf[0..value.len], params);
                 },
                 else => {
                     var scratch: [512]u8 = undefined;
@@ -4359,7 +4439,7 @@ fn append_simple_filter_sql(buf_out: []u8, pos_in: usize, expr: []const u8) ?usi
                         @memcpy(buf_out[pos..][0..value.len], value);
                         pos += value.len;
                     } else {
-                        pos = append_sql_quoted(buf_out, pos, value);
+                        pos = append_param_or_quoted(buf_out, pos, value, params);
                     }
                 },
             }
@@ -4374,7 +4454,7 @@ fn append_simple_filter_sql(buf_out: []u8, pos_in: usize, expr: []const u8) ?usi
     return pos;
 }
 
-fn append_filter_expression_sql(buf_out: []u8, pos_in: usize, raw_expr: []const u8) ?usize {
+fn append_filter_expression_sql(buf_out: []u8, pos_in: usize, raw_expr: []const u8, params: ?*PgRequestCtx) ?usize {
     const expr = trim_ascii_spaces(raw_expr);
     if (expr.len == 0) return null;
 
@@ -4445,7 +4525,7 @@ fn append_filter_expression_sql(buf_out: []u8, pos_in: usize, raw_expr: []const 
                 pos += joiner.len;
             }
             first = false;
-            pos = append_filter_expression_sql(buf_out, pos, item) orelse return null;
+            pos = append_filter_expression_sql(buf_out, pos, item, params) orelse return null;
             start = i + 1;
         }
 
@@ -4454,10 +4534,10 @@ fn append_filter_expression_sql(buf_out: []u8, pos_in: usize, raw_expr: []const 
         return pos;
     }
 
-    return append_simple_filter_sql(buf_out, pos_in, expr);
+    return append_simple_filter_sql(buf_out, pos_in, expr, params);
 }
 
-fn build_where_clause_from_args(buf_out: []u8, args: ngx_str_t) WhereClauseResult {
+fn build_where_clause_from_args(buf_out: []u8, args: ngx_str_t, params: ?*PgRequestCtx) WhereClauseResult {
     if (args.len == 0 or args.data == core.nullptr(u8)) {
         return .{ .len = 0, .invalid = false };
     }
@@ -4502,7 +4582,7 @@ fn build_where_clause_from_args(buf_out: []u8, args: ngx_str_t) WhereClauseResul
                     @memcpy(buf_out[out_pos..][0..and_str.len], and_str);
                     out_pos += and_str.len;
                 }
-                out_pos = append_filter_expression_sql(buf_out, out_pos, expr_buf[0..expr_len]) orelse return .{ .len = 0, .invalid = true };
+                out_pos = append_filter_expression_sql(buf_out, out_pos, expr_buf[0..expr_len], params) orelse return .{ .len = 0, .invalid = true };
                 first = false;
             }
         }
@@ -5488,6 +5568,7 @@ fn build_rpc_table_query(
     group_by_clause: []const u8,
     order_specs: []const OrderSpec,
     pagination: Pagination,
+    params: ?*PgRequestCtx,
 ) usize {
     var pos: usize = 0;
     const select_prefix = "SELECT ";
@@ -5549,7 +5630,7 @@ fn build_rpc_table_query(
             @memcpy(query_buf[pos..][0..param.value.len], param.value);
             pos += param.value.len;
         } else {
-            pos = append_sql_quoted(query_buf, pos, param.value);
+            pos = append_param_or_quoted(query_buf, pos, param.value, params);
         }
     }
 
@@ -5974,6 +6055,7 @@ fn build_rpc_call_query(
     schema_name: ?[]const u8,
     function_name: []const u8,
     rpc_params: *const RpcCall,
+    params: ?*PgRequestCtx,
 ) usize {
     var pos: usize = 0;
 
@@ -6036,7 +6118,7 @@ fn build_rpc_call_query(
             @memcpy(query_buf[pos..][0..param.value.len], param.value);
             pos += param.value.len;
         } else {
-            pos = append_sql_quoted(query_buf, pos, param.value);
+            pos = append_param_or_quoted(query_buf, pos, param.value, params);
         }
     }
 
@@ -6380,7 +6462,7 @@ fn parse_csv_bulk_rows(
     return row_count;
 }
 
-fn append_write_scalar(buf_out: []u8, pos_in: usize, scalar: WriteScalar) usize {
+fn append_write_scalar(buf_out: []u8, pos_in: usize, scalar: WriteScalar, params: ?*PgRequestCtx) usize {
     if (scalar.use_default) {
         const token = "DEFAULT";
         @memcpy(buf_out[pos_in..][0..token.len], token);
@@ -6395,7 +6477,7 @@ fn append_write_scalar(buf_out: []u8, pos_in: usize, scalar: WriteScalar) usize 
         @memcpy(buf_out[pos_in..][0..scalar.value.len], scalar.value);
         return pos_in + scalar.value.len;
     }
-    return append_sql_quoted(buf_out, pos_in, scalar.value);
+    return append_param_or_quoted(buf_out, pos_in, scalar.value, params);
 }
 
 fn json_field_to_scalar(field: JsonField) WriteScalar {
@@ -6525,6 +6607,7 @@ fn build_limited_write_query(
     pagination: Pagination,
     json_fields: []const JsonField,
     include_returning: bool,
+    params: ?*PgRequestCtx,
 ) ?usize {
     if (!(sql_op == .update or sql_op == .delete)) return null;
     const limit = pagination.limit orelse return null;
@@ -6629,7 +6712,7 @@ fn build_limited_write_query(
                     @memcpy(query_buf[pos..][0..field.value.len], field.value);
                     pos += field.value.len;
                 } else {
-                    pos = append_sql_quoted(query_buf, pos, field.value);
+                    pos = append_param_or_quoted(query_buf, pos, field.value, params);
                 }
             }
         },
@@ -6664,6 +6747,7 @@ fn build_insert_rows_query(
     on_conflict_columns: []const []const u8,
     prefer_resolution: PreferResolution,
     include_returning: bool,
+    params: ?*PgRequestCtx,
 ) usize {
     var pos: usize = 0;
 
@@ -6704,7 +6788,7 @@ fn build_insert_rows_query(
                 query_buf[pos] = ',';
                 pos += 1;
             }
-            pos = append_write_scalar(query_buf, pos, scalar);
+            pos = append_write_scalar(query_buf, pos, scalar, params);
         }
         query_buf[pos] = ')';
         pos += 1;
@@ -6976,7 +7060,7 @@ fn build_embed_projection_sql(
     var scoped_args_buf: [2048]u8 = undefined;
     const scoped_args = build_scoped_args(request_args, node.path(), true, &scoped_args_buf);
     var where_buf: [1024]u8 = undefined;
-    const where_result = build_where_clause_from_args(&where_buf, scoped_args);
+    const where_result = build_where_clause_from_args(&where_buf, scoped_args, null);
     if (where_result.invalid) return null;
     if (where_result.len > 0) {
         const and_sep = " AND ";
@@ -7134,7 +7218,7 @@ fn build_embed_exists_sql(
     var scoped_args_buf: [2048]u8 = undefined;
     const scoped_args = build_scoped_args(request_args, node.path(), true, &scoped_args_buf);
     var where_buf: [1024]u8 = undefined;
-    const where_result = build_where_clause_from_args(&where_buf, scoped_args);
+    const where_result = build_where_clause_from_args(&where_buf, scoped_args, null);
     if (where_result.invalid) return null;
     if (where_result.len > 0) {
         const and_sep = " AND ";
@@ -7264,6 +7348,7 @@ fn build_table_query(
     order_specs: []const OrderSpec,
     pagination: Pagination,
     include_returning: bool,
+    params: ?*PgRequestCtx,
 ) ?TableQueryBuildResult {
     var result_fields: [MAX_COLUMNS]JsonField = undefined;
     var result_field_count: usize = 0;
@@ -7336,6 +7421,7 @@ fn build_table_query(
                         conflict_columns[0..filter_count],
                         .merge_duplicates,
                         include_returning,
+                        params,
                     ),
                     .json_fields = result_fields,
                     .json_field_count = result_field_count,
@@ -7410,6 +7496,7 @@ fn build_table_query(
                             on_conflict_columns[0..on_conflict_count],
                             if (on_conflict_count > 0) opts.prefer.resolution else .none,
                             include_returning,
+                            params,
                         ),
                         .json_fields = result_fields,
                         .json_field_count = result_field_count,
@@ -7457,6 +7544,7 @@ fn build_table_query(
                             on_conflict_columns[0..on_conflict_count],
                             if (on_conflict_count > 0) opts.prefer.resolution else .none,
                             include_returning,
+                            params,
                         ),
                         .json_fields = result_fields,
                         .json_field_count = result_field_count,
@@ -7503,6 +7591,7 @@ fn build_table_query(
                         on_conflict_columns[0..on_conflict_count],
                         opts.prefer.resolution,
                         include_returning,
+                        params,
                     ),
                     .json_fields = result_fields,
                     .json_field_count = result_field_count,
@@ -7521,6 +7610,7 @@ fn build_table_query(
             pagination,
             result_fields[0..result_field_count],
             include_returning,
+            params,
         ) orelse return null;
         return .{
             .len = limited,
@@ -7541,6 +7631,7 @@ fn build_table_query(
             order_specs,
             pagination,
             include_returning,
+            params,
         ),
         .json_fields = result_fields,
         .json_field_count = result_field_count,
@@ -7793,9 +7884,19 @@ fn ngx_http_pgrest_upstream_handler(r: [*c]ngx_http_request_t) callconv(.c) ngx_
     const is_write_request = sql_op == .insert or sql_op == .update or sql_op == .delete;
     const write_contract = write_response_contract(sql_op, opts.prefer);
 
-    // Parse query string filters
+    // Allocate request context before WHERE clause building so params can be collected
+    const ctx = core.ngz_pcalloc_c(PgRequestCtx, r.*.pool) orelse {
+        return http.NGX_HTTP_INTERNAL_SERVER_ERROR;
+    };
+    params_reset(ctx);
+
+    // Parse query string filters.
+    // For PUT, the WHERE clause is used only to derive conflict key columns; it
+    // is never embedded in the INSERT ON CONFLICT SQL, so don't accumulate
+    // params here — they would be unreferenced in the final query.
     var where_buf: [MAX_QUERY_SIZE]u8 = undefined;
-    const where_result = build_where_clause_from_args(&where_buf, r.*.args);
+    const where_result = build_where_clause_from_args(&where_buf, r.*.args,
+        if (r.*.method == http.NGX_HTTP_PUT) null else ctx);
     if (where_result.invalid) {
         return send_json_error(r, http.NGX_HTTP_BAD_REQUEST, "{\"message\":\"Invalid filter parameter\"}");
     }
@@ -7839,11 +7940,6 @@ fn ngx_http_pgrest_upstream_handler(r: [*c]ngx_http_request_t) callconv(.c) ngx_
     // Parse pagination
     const pagination_info = effective_read_pagination(r.*.args, opts);
     const pagination = pagination_info.pagination;
-
-    // Allocate request context
-    const ctx = core.ngz_pcalloc_c(PgRequestCtx, r.*.pool) orelse {
-        return http.NGX_HTTP_INTERNAL_SERVER_ERROR;
-    };
 
     var table_query_buf: [MAX_QUERY_SIZE]u8 = undefined;
 
@@ -7910,6 +8006,7 @@ fn ngx_http_pgrest_upstream_handler(r: [*c]ngx_http_request_t) callconv(.c) ngx_
         order_specs[0..order_count],
         pagination,
         if (is_write_request) write_contract.include_returning else true,
+        ctx,
     ) orelse return send_json_error(r, http.NGX_HTTP_BAD_REQUEST, "{\"message\":\"Invalid write payload\"}");
 
     if (ctx.*.table_embed_metadata) {
@@ -8037,7 +8134,14 @@ fn poll_pg_connection(ctx: *PgRequestCtx, pool_conn: *PgPoolConn) void {
 
             // If we have a pending query, send it now
             if (ctx.*.query_len > 0) {
-                if (pgSendQuery(conn, &ctx.*.query) != 0) {
+                const q_slice = std.mem.sliceTo(&ctx.*.query, 0);
+                const do_params = ctx.*.param_count > 0 and !ctx.*.param_overflow and
+                    std.mem.indexOfScalar(u8, q_slice, '$') != null;
+                const sent = if (do_params)
+                    pgSendQueryParams(conn, &ctx.*.query, @intCast(ctx.*.param_count), null, @ptrCast(&ctx.*.param_ptrs), null, null, 0)
+                else
+                    pgSendQuery(conn, &ctx.*.query);
+                if (sent != 0) {
                     ctx.*.query_state = .sending;
                     pool_conn.state = .busy;
 
@@ -8172,8 +8276,9 @@ fn finalize_pg_response(ctx: *PgRequestCtx) void {
         const qualified_table_len = build_qualified_table_name(qualified_table_buf[0..], resolved_schema.name, table_name);
         const qualified_table = qualified_table_buf[0..qualified_table_len];
 
+        params_reset(ctx);
         var where_buf: [MAX_QUERY_SIZE]u8 = undefined;
-        const where_result = build_where_clause_from_args(&where_buf, r.*.args);
+        const where_result = build_where_clause_from_args(&where_buf, r.*.args, ctx);
         if (where_result.invalid) {
             const rc = send_json_error(r, http.NGX_HTTP_BAD_REQUEST, "{\"message\":\"Invalid filter parameter\"}");
             ctx.*.request = null;
@@ -8350,6 +8455,7 @@ fn finalize_pg_response(ctx: *PgRequestCtx) void {
 
         ctx.*.next_query_len = 0;
         ctx.*.followup_query_count = 0;
+        params_reset(ctx);
         const jwt_result2 = queue_jwt_setup_queries(ctx, loc_conf);
         if (jwt_result2 == .unauthorized) {
             ctx.*.request = null;
@@ -8371,7 +8477,7 @@ fn finalize_pg_response(ctx: *PgRequestCtx) void {
             var where_buf: [MAX_QUERY_SIZE]u8 = undefined;
             var read_args_buf: [MAX_QUERY_SIZE]u8 = undefined;
             const read_args = filter_rpc_query_args_by_metadata(r.*.args, &metadata, false, &read_args_buf);
-            const where_result = build_where_clause_from_args(&where_buf, read_args);
+            const where_result = build_where_clause_from_args(&where_buf, read_args, ctx);
             if (where_result.invalid) {
                 const rc = send_json_error(r, http.NGX_HTTP_BAD_REQUEST, "{\"message\":\"Invalid filter parameter\"}");
                 ctx.*.request = null;
@@ -8423,6 +8529,7 @@ fn finalize_pg_response(ctx: *PgRequestCtx) void {
                 group_by_buf[0..group_by_result.len],
                 order_specs[0..order_parse.count],
                 pagination_info.pagination,
+                ctx,
             );
             if (read_count_requested(opts)) {
                 var count_query_buf: [MAX_QUERY_SIZE]u8 = undefined;
@@ -8453,7 +8560,7 @@ fn finalize_pg_response(ctx: *PgRequestCtx) void {
                 return;
             }
         } else {
-            const call_len = build_rpc_call_query(&rpc_query_buf, resolved_schema.name, function_name, &rpc_call);
+            const call_len = build_rpc_call_query(&rpc_query_buf, resolved_schema.name, function_name, &rpc_call, ctx);
             if (!queue_followup_query(ctx, rpc_query_buf[0..call_len])) {
                 const rc = http.NGX_HTTP_INTERNAL_SERVER_ERROR;
                 ctx.*.request = null;
@@ -9032,14 +9139,14 @@ test "build_where_clause_from_filters preserves current filter semantics" {
         .{ .column = "deleted_at", .op = .is_, .value = "null" },
     };
     var buf_out: [256]u8 = undefined;
-    const len = build_where_clause_from_filters(&buf_out, &filters);
+    const len = build_where_clause_from_filters(&buf_out, &filters, null);
 
     try expectEqualStrings("status = 'active' AND deleted_at IS NULL", buf_out[0..len]);
 }
 
 test "build_where_clause_from_args supports logical operators and not" {
     var buf_out: [512]u8 = undefined;
-    const result = build_where_clause_from_args(&buf_out, ngx_string("or=(age.lt.18,not.and(age.gte.11,age.lte.17))"));
+    const result = build_where_clause_from_args(&buf_out, ngx_string("or=(age.lt.18,not.and(age.gte.11,age.lte.17))"), null);
 
     try expect(!result.invalid);
     try expectEqualStrings("(age < '18' OR NOT (age >= '11' AND age <= '17'))" , buf_out[0..result.len]);
@@ -9047,7 +9154,7 @@ test "build_where_clause_from_args supports logical operators and not" {
 
 test "build_where_clause_from_args supports any modifier and wildcard like" {
     var buf_out: [512]u8 = undefined;
-    const result = build_where_clause_from_args(&buf_out, ngx_string("last_name=like(any).{O*,P*}"));
+    const result = build_where_clause_from_args(&buf_out, ngx_string("last_name=like(any).{O*,P*}"), null);
 
     try expect(!result.invalid);
     try expectEqualStrings("last_name LIKE ANY (ARRAY['O%','P%'])", buf_out[0..result.len]);
@@ -9055,7 +9162,7 @@ test "build_where_clause_from_args supports any modifier and wildcard like" {
 
 test "build_where_clause_from_args supports all modifier and advanced operators" {
     var buf_out: [1024]u8 = undefined;
-    const result = build_where_clause_from_args(&buf_out, ngx_string("last_name=like(all).{O*,*n}&name=match.^J.*n$&headline=fts(french).amusant&meta=isdistinct.null&tags=cs.{example,new}&range=adj.(1,10)"));
+    const result = build_where_clause_from_args(&buf_out, ngx_string("last_name=like(all).{O*,*n}&name=match.^J.*n$&headline=fts(french).amusant&meta=isdistinct.null&tags=cs.{example,new}&range=adj.(1,10)"), null);
 
     try expect(!result.invalid);
     try expectEqualStrings("last_name LIKE ALL (ARRAY['O%','%n']) AND name ~ '^J.*n$' AND headline @@ to_tsquery('french', 'amusant') AND meta IS DISTINCT FROM NULL AND tags @> '{example,new}' AND range -|- '(1,10)'", buf_out[0..result.len]);
@@ -9063,7 +9170,7 @@ test "build_where_clause_from_args supports all modifier and advanced operators"
 
 test "build_where_clause_from_args supports quoted identifiers and quoted in values" {
     var buf_out: [512]u8 = undefined;
-    const result = build_where_clause_from_args(&buf_out, ngx_string("%22information.cpe%22=like.*MS*&name=in.(%22Hebdon,John%22,%22Williams,Mary%22)"));
+    const result = build_where_clause_from_args(&buf_out, ngx_string("%22information.cpe%22=like.*MS*&name=in.(%22Hebdon,John%22,%22Williams,Mary%22)"), null);
 
     try expect(!result.invalid);
     try expectEqualStrings("\"information.cpe\" LIKE '%MS%' AND name IN ('Hebdon,John','Williams,Mary')", buf_out[0..result.len]);
@@ -9071,10 +9178,54 @@ test "build_where_clause_from_args supports quoted identifiers and quoted in val
 
 test "build_where_clause_from_args supports json path filters" {
     var buf_out: [512]u8 = undefined;
-    const result = build_where_clause_from_args(&buf_out, ngx_string("json_data->>blood_type=eq.A-&json_data->age=gt.20"));
+    const result = build_where_clause_from_args(&buf_out, ngx_string("json_data->>blood_type=eq.A-&json_data->age=gt.20"), null);
 
     try expect(!result.invalid);
     try expectEqualStrings("to_jsonb(json_data)->>'blood_type' = 'A-' AND to_jsonb(json_data)->'age' > 20", buf_out[0..result.len]);
+}
+
+test "build_where_clause_from_args emits $N placeholders when ctx supplied" {
+    var ctx = std.mem.zeroes(PgRequestCtx);
+    params_reset(&ctx);
+    var buf_out: [512]u8 = undefined;
+    const result = build_where_clause_from_args(&buf_out, ngx_string("name=eq.Alice&age=gt.30"), &ctx);
+
+    try expect(!result.invalid);
+    try expectEqualStrings("name = $1 AND age > $2", buf_out[0..result.len]);
+    try expectEqual(@as(usize, 2), ctx.param_count);
+    try expectEqualStrings("Alice", std.mem.sliceTo(ctx.param_ptrs[0].?, 0));
+    try expectEqualStrings("30", std.mem.sliceTo(ctx.param_ptrs[1].?, 0));
+}
+
+test "build_sql_query INSERT emits $N for string values when ctx supplied" {
+    var ctx = std.mem.zeroes(PgRequestCtx);
+    params_reset(&ctx);
+    var query_buf: [512]u8 = undefined;
+    const fields = [_]JsonField{
+        .{ .name = "id", .value = "1", .name_buf = std.mem.zeroes([256]u8), .value_buf = std.mem.zeroes([1024]u8), .is_null = false, .is_number = true, .is_boolean = false, .is_missing = false },
+        .{ .name = "name", .value = "Bob", .name_buf = std.mem.zeroes([256]u8), .value_buf = std.mem.zeroes([1024]u8), .is_null = false, .is_number = false, .is_boolean = false, .is_missing = false },
+    };
+    const len = build_sql_query(&query_buf, .insert, "users", "", &fields, "", "", &.{}, .{ .limit = null, .offset = null }, false, &ctx);
+
+    try expectEqualStrings("INSERT INTO users (id,name) VALUES (1,$1)", query_buf[0..len]);
+    try expectEqual(@as(usize, 1), ctx.param_count);
+    try expectEqualStrings("Bob", std.mem.sliceTo(ctx.param_ptrs[0].?, 0));
+}
+
+test "build_insert_rows_query emits $N for string scalars when ctx supplied" {
+    var ctx = std.mem.zeroes(PgRequestCtx);
+    params_reset(&ctx);
+    var query_buf: [512]u8 = undefined;
+    const row = [_]WriteScalar{
+        .{ .value = "1", .is_null = false, .is_number = true, .is_boolean = false, .use_default = false },
+        .{ .value = "Injected'; DROP TABLE users--", .is_null = false, .is_number = false, .is_boolean = false, .use_default = false },
+    };
+    const rows = [_][]const WriteScalar{row[0..]};
+    const len = build_insert_rows_query(&query_buf, "users", &.{ "id", "name" }, rows[0..], &.{}, .none, false, &ctx);
+
+    try expectEqualStrings("INSERT INTO users (id,name) VALUES (1,$1)", query_buf[0..len]);
+    try expectEqual(@as(usize, 1), ctx.param_count);
+    try expectEqualStrings("Injected'; DROP TABLE users--", std.mem.sliceTo(ctx.param_ptrs[0].?, 0));
 }
 
 test "build_select_clause_from_args supports aliases and casts" {
@@ -9104,7 +9255,7 @@ test "build_select_clause_from_args decodes encoded path operators" {
 test "build_sql_query renders json path ordering" {
     var query_buf: [1024]u8 = undefined;
     const spec = parse_order_spec("location->>lat.desc.nullslast") orelse return error.TestUnexpectedResult;
-    const len = build_sql_query(&query_buf, .select, "countries", "", &.{}, "*", "", &.{spec}, .{ .limit = null, .offset = null }, false);
+    const len = build_sql_query(&query_buf, .select, "countries", "", &.{}, "*", "", &.{spec}, .{ .limit = null, .offset = null }, false, null);
 
     try expectEqualStrings("SELECT * FROM countries ORDER BY to_jsonb(location)->>'lat' DESC NULLS LAST", query_buf[0..len]);
 }
@@ -9127,7 +9278,7 @@ test "build_group_by_clause_from_args groups by non aggregate select items" {
 
 test "build_sql_query renders grouped aggregate query" {
     var query_buf: [1024]u8 = undefined;
-    const len = build_sql_query(&query_buf, .select, "orders", "status = 'paid'", &.{}, "sum(amount) AS sum,order_date", "order_date", &.{}, .{ .limit = null, .offset = null }, false);
+    const len = build_sql_query(&query_buf, .select, "orders", "status = 'paid'", &.{}, "sum(amount) AS sum,order_date", "order_date", &.{}, .{ .limit = null, .offset = null }, false, null);
 
     try expectEqualStrings("SELECT sum(amount) AS sum,order_date FROM orders WHERE status = 'paid' GROUP BY order_date", query_buf[0..len]);
 }
@@ -9148,7 +9299,7 @@ test "build_insert_rows_query renders merge duplicates upsert" {
         .{ .value = "Sara B.", .is_null = false, .is_number = false, .is_boolean = false, .use_default = false },
     };
     const rows = [_][]const WriteScalar{row[0..]};
-    const len = build_insert_rows_query(&query_buf, "users", &.{ "id", "name" }, rows[0..], &.{ "id" }, .merge_duplicates, true);
+    const len = build_insert_rows_query(&query_buf, "users", &.{ "id", "name" }, rows[0..], &.{ "id" }, .merge_duplicates, true, null);
 
     try expectEqualStrings(
         "INSERT INTO users (id,name) VALUES (1,'Sara B.') ON CONFLICT (id) DO UPDATE SET id=EXCLUDED.id,name=EXCLUDED.name RETURNING *",
@@ -9169,7 +9320,7 @@ test "build_limited_write_query renders update with limit and order" {
         .is_boolean = false,
         .is_missing = false,
     }};
-    const len = build_limited_write_query(&query_buf, .update, "users", "last_login < '2020-01-01'", &.{spec}, .{ .limit = 10, .offset = null }, &fields, true) orelse return error.TestUnexpectedResult;
+    const len = build_limited_write_query(&query_buf, .update, "users", "last_login < '2020-01-01'", &.{spec}, .{ .limit = 10, .offset = null }, &fields, true, null) orelse return error.TestUnexpectedResult;
 
     try expectEqualStrings(
         "WITH pgrest_limited AS (SELECT ctid FROM users WHERE last_login < '2020-01-01' ORDER BY id ASC LIMIT 10) UPDATE users SET status='inactive' WHERE ctid IN (SELECT ctid FROM pgrest_limited) RETURNING *",

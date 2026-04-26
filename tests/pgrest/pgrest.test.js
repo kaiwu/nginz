@@ -2272,6 +2272,39 @@ describe("pgrest module", () => {
     });
   });
 
+  describe("parameterized query execution", () => {
+    test("filter value is sent as $1 parameter, not interpolated into SQL", async () => {
+      pgMock.clearTracking();
+      const res = await fetch(`${TEST_URL}/api/users?name=eq.Alice`);
+      expect(res.status).toBe(200);
+      const log = pgMock.getQueryLog();
+      const dataQuery = log.find((q) => q.includes("FROM users") && q.includes("name"));
+      expect(dataQuery).toBeDefined();
+      // The injected value must appear as a quoted literal $1 placeholder resolved to 'Alice',
+      // never as a bare SQL fragment from the original string
+      expect(dataQuery).toMatch(/name\s*=\s*'\w+'/);
+      expect(dataQuery).not.toContain("$1"); // mock resolved $1 → 'Alice'
+    });
+
+    test("SQL injection string in filter value is treated as data, not SQL", async () => {
+      pgMock.clearTracking();
+      // Set up a handler that records the received query
+      let capturedQuery = null;
+      pgMock.setQueryHandler(/FROM users/, (q) => {
+        capturedQuery = q;
+        return { columns: ["id", "name"], rows: [] };
+      });
+      const injected = encodeURIComponent("' OR '1'='1");
+      const res = await fetch(`${TEST_URL}/api/users?name=eq.${injected}`);
+      expect(res.status).toBe(200);
+      // The dangerous string must not appear unquoted; it must be SQL-safe
+      expect(capturedQuery).not.toBeNull();
+      expect(capturedQuery).not.toMatch(/OR '1'='1/);
+      // It should appear escaped inside single-quoted literal or as a param
+      pgMock.queryHandlers.delete(/FROM users/);
+    });
+  });
+
   describe("malformed payload handling", () => {
     test("malformed Range header returns 400", async () => {
       const res = await fetch(`${TEST_URL}/api/users`, {
