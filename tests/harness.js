@@ -5,9 +5,12 @@ import { join, dirname, isAbsolute } from "path";
 let nginzProcess = null;
 const NGINZ_BIN = "./zig-out/bin/nginz";
 const TEST_PORT = 8888;
+export const DEFAULT_PERF_OPTIMIZE = "ReleaseSmall";
 
 // Build nginz before running tests
-// Set ZIG_OPTIMIZE=ReleaseSafe (or ReleaseFast, ReleaseSmall) for optimized builds
+// For performance-oriented runs, prefer ZIG_OPTIMIZE=ReleaseSmall.
+// ReleaseSmall is the project-recommended release-grade mode: it keeps safety
+// checks on and avoids the ReleaseSafe LLVM/memory issues documented in the repo.
 export function ensureBuild() {
   const optimize = process.env.ZIG_OPTIMIZE;
   const args = ["zig", "build"];

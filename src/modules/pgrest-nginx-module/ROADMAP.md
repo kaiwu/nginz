@@ -805,28 +805,42 @@ These are planning bands only, not measured results.
 
 ### Perf Batch P0: Benchmark and attribution baseline
 
-- [ ] Add repeatable benchmark scenarios for common JSON table reads: small payload, medium payload, filtered+ordered+paged read, and count-enabled read.
+- [x] Add repeatable benchmark scenarios for common JSON table reads: small payload, medium payload, filtered+ordered+paged read, and count-enabled read.
 - [ ] Run the same benchmark matrix against pgrest and the local PostgREST checkout so ratio claims compare equivalent query shapes and payload sizes.
-- [ ] Add lightweight timing attribution for request parse/build time, PostgreSQL wait time, JSON formatting time, and response-send/copy time.
+- [x] Add lightweight timing attribution for request parse/build time, PostgreSQL wait time, JSON formatting time, and response-send/copy time.
 - [ ] Capture baseline metrics for each scenario: throughput, p50/p95/p99 latency, CPU usage, response size, and connection-wait behavior.
 - [ ] Document the measured baseline before any optimization batch claims are treated as validated.
 
+Progress note:
+
+- ✅ Landed benchmark tooling under `perf/pgrest/benchmark/` with real-PostgreSQL fixtures, explicit pgrest/PostgREST scenario validation, JSON result output, a dedicated `perf/pgrest/nginx.conf`, and reusable shared helpers under `perf/common/`.
+- ✅ Landed a shared non-intrusive profiling and artifact layer under `perf/common/` so pgrest benchmark runs now have standardized per-run directories, manifest/environment/command artifacts, copied nginx logs, `/proc`-based snapshot profiling, and optional `perf stat` capture when available.
+- ℹ️ Still pending: actually running the benchmark matrix and recording validated baseline numbers.
+
 ### Perf Batch P1: JSON hot-path optimization
 
-- [ ] Optimize `format_row_as_json_object_impl` in `ngx_http_pgrest.zig` first; it is the highest-confidence hot function for common table reads.
-- [ ] Cache per-column metadata that is currently re-read inside the row loop where correctness allows.
-- [ ] Add a fast path for values that do not need JSON escaping instead of always paying the full character-by-character escape path.
-- [ ] Reduce inner-loop branching and repeated bounds bookkeeping in `format_result_as_json_with_options` / `format_row_as_json_object_impl` without changing output semantics.
+- [x] Optimize `format_row_as_json_object_impl` in `ngx_http_pgrest.zig` first; it is the highest-confidence hot function for common table reads.
+- [x] Cache per-column metadata that is currently re-read inside the row loop where correctness allows.
+- [x] Add a fast path for values that do not need JSON escaping instead of always paying the full character-by-character escape path.
+- [x] Reduce inner-loop branching and repeated bounds bookkeeping in `format_result_as_json_with_options` / `format_row_as_json_object_impl` without changing output semantics.
 - [ ] Add focused tests for escaping, stripped-nulls behavior, mixed scalar/text rows, and wide-row stability.
 - [ ] Re-run the P0 benchmark matrix and record the delta before starting the next perf batch.
 
+Progress note:
+
+- ✅ Landed length-aware value handling, cached column metadata, and a no-escape fast path on the JSON row formatter.
+
 ### Perf Batch P2: Response-copy and buffering reduction
 
-- [ ] Audit the response assembly path from `finalize_pg_response` to `finalize_response_send` and identify every full-buffer copy.
-- [ ] Reduce or eliminate avoidable copies between the JSON formatting buffer and nginx output buffers where ownership/lifetime rules permit.
+- [x] Audit the response assembly path from `finalize_pg_response` to `finalize_response_send` and identify every full-buffer copy.
+- [x] Reduce or eliminate avoidable copies between the JSON formatting buffer and nginx output buffers where ownership/lifetime rules permit.
 - [ ] Improve response-buffer sizing discipline so the common path does not overpay in extra copying or conservative rework.
 - [ ] Add regression coverage for response completeness, content length, and boundary-sized payloads while changing send/buffer logic.
 - [ ] Re-run the P0 benchmark matrix and record whether copy reduction materially helps small reads, medium reads, or only larger payloads.
+
+Progress note:
+
+- ✅ The pooled response path now formats directly into the nginx temp buffer and reuses that buffer for output instead of copying the full body from a temporary stack buffer into nginx storage.
 
 ### Perf Batch P3: Pool-envelope and concurrency tuning
 
