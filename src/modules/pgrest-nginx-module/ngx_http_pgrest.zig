@@ -10,6 +10,7 @@ const core = ngx.core;
 const conf = ngx.conf;
 const http = ngx.http;
 const file = ngx.file;
+const log = ngx.log;
 const cjson = ngx.cjson;
 const CJSON = cjson.CJSON;
 
@@ -88,6 +89,7 @@ const NChain = ngx.buf.NChain;
 
 extern var ngx_http_core_module: ngx_module_t;
 extern var ngx_pagesize: ngx_uint_t;
+extern var ngx_current_msec: ngx_msec_t;
 
 const NGX_CONF_UNSET: ngx_int_t = -1;
 
@@ -110,6 +112,7 @@ const ngx_pgrest_loc_conf_t = extern struct {
 /// Maximum connections in the pool
 const POOL_MAX_CONNECTIONS = 16;
 const PGREST_POOL_TIMEOUT_MS: ngx_msec_t = 5000;
+const PGREST_READ_DRAIN_LIMIT: usize = 8;
 
 /// Connection state in the pool
 const PgConnState = enum(c_int) {
@@ -206,6 +209,34 @@ const PgConnPool = struct {
     }
 };
 
+fn is_pool_conn_reusable(pool_conn: *PgPoolConn) bool {
+    const conn = pool_conn.conn orelse return false;
+    if (pgStatus(conn) != pq.CONNECTION_OK) return false;
+    if (pool_conn.fd < 0) return false;
+    if (pgConsumeInput(conn) == 0) return false;
+    return true;
+}
+
+fn discard_pool_conn(pool_conn: *PgPoolConn) void {
+    pool_conn.state = .conn_error;
+    pool_conn.request_ctx = null;
+    if (pool_conn.ngx_conn) |ngx_conn| {
+        if (ngx_conn.*.read != core.nullptr(core.ngx_event_t) and ngx_conn.*.read.*.flags.timer_set) {
+            event.ngx_event_del_timer(ngx_conn.*.read);
+        }
+        if (ngx_conn.*.write != core.nullptr(core.ngx_event_t) and ngx_conn.*.write.*.flags.timer_set) {
+            event.ngx_event_del_timer(ngx_conn.*.write);
+        }
+        ngx_conn.*.data = null;
+        pool_conn.ngx_conn = null;
+    }
+    g_conn_pool.releaseConn(pool_conn);
+}
+
+fn pool_slot_index(pool_conn: *PgPoolConn) usize {
+    return @intCast((@intFromPtr(pool_conn) - @intFromPtr(&g_conn_pool.connections[0])) / @sizeOf(PgPoolConn));
+}
+
 /// Per-request context for PostgreSQL operations
 const PgRequestCtx = extern struct {
     pool_conn: ?*PgPoolConn, // Assigned connection from pool
@@ -253,7 +284,61 @@ const PgRequestCtx = extern struct {
     param_arena_used: usize,
     param_arena: [PARAM_ARENA_SIZE]u8,
     param_ptrs: [MAX_PARAMS][*c]const u8,
+    trace_req_seq: usize,
+    trace_query_seq: usize,
+    trace_started_msec: ngx_msec_t,
+    trace_last_progress_msec: ngx_msec_t,
+    trace_last_flush_result: c_int,
+    trace_last_poll_status: c_int,
+    trace_read_calls: usize,
+    trace_write_calls: usize,
+    trace_finalize_calls: usize,
+    trace_release_calls: usize,
+    trace_last_event_len: usize,
+    trace_last_event: [32]u8,
 };
+
+var g_pgrest_trace_seq: usize = 0;
+
+fn trace_set_last_event(ctx: *PgRequestCtx, event_name: []const u8) void {
+    const copy_len = @min(event_name.len, ctx.*.trace_last_event.len);
+    @memcpy(ctx.*.trace_last_event[0..copy_len], event_name[0..copy_len]);
+    ctx.*.trace_last_event_len = copy_len;
+    ctx.*.trace_last_progress_msec = ngx_current_msec;
+}
+
+fn trace_pool_event(ctx: *PgRequestCtx, pool_conn: ?*PgPoolConn, event_name: []const u8) void {
+    const r = ctx.*.request orelse return;
+    trace_set_last_event(ctx, event_name);
+    const slot: usize = if (pool_conn) |pc| pool_slot_index(pc) else 9999;
+    const fd: c_int = if (pool_conn) |pc| pc.fd else -1;
+    const pool_state: c_int = if (pool_conn) |pc| @intFromEnum(pc.state) else -1;
+    log.ngz_log_error(log.NGX_LOG_WARN, r.*.connection.*.log, 0,
+        "pgrest-trace req=%uz slot=%uz fd=%d event=%*s qstate=%d pstate=%d qseq=%uz",
+        .{ ctx.*.trace_req_seq, slot, fd, @as(c_int, @intCast(ctx.*.trace_last_event_len)), &ctx.*.trace_last_event, @intFromEnum(ctx.*.query_state), pool_state, ctx.*.trace_query_seq });
+}
+
+fn dump_pooled_timeout(ctx: *PgRequestCtx) void {
+    const r = ctx.*.request orelse return;
+    const pool_conn = ctx.*.pool_conn;
+    const slot: usize = if (pool_conn) |pc| pool_slot_index(pc) else 9999;
+    const fd: c_int = if (pool_conn) |pc| pc.fd else -1;
+    const pool_state: c_int = if (pool_conn) |pc| @intFromEnum(pc.state) else -1;
+    const age = ngx_current_msec - ctx.*.trace_started_msec;
+    const stalled = ngx_current_msec - ctx.*.trace_last_progress_msec;
+    log.ngz_log_error(log.NGX_LOG_WARN, r.*.connection.*.log, 0,
+        "pgrest-timeout req=%uz slot=%uz fd=%d age=%M stalled=%M",
+        .{ ctx.*.trace_req_seq, slot, fd, age, stalled });
+    log.ngz_log_error(log.NGX_LOG_WARN, r.*.connection.*.log, 0,
+        "pgrest-timeout-last req=%uz last=%*s qstate=%d pstate=%d",
+        .{ ctx.*.trace_req_seq, @as(c_int, @intCast(ctx.*.trace_last_event_len)), &ctx.*.trace_last_event, @intFromEnum(ctx.*.query_state), pool_state });
+    log.ngz_log_error(log.NGX_LOG_WARN, r.*.connection.*.log, 0,
+        "pgrest-timeout-stats req=%uz qseq=%uz flush=%d poll=%d rcalls=%uz wcalls=%uz",
+        .{ ctx.*.trace_req_seq, ctx.*.trace_query_seq, ctx.*.trace_last_flush_result, ctx.*.trace_last_poll_status, ctx.*.trace_read_calls, ctx.*.trace_write_calls });
+    log.ngz_log_error(log.NGX_LOG_WARN, r.*.connection.*.log, 0,
+        "pgrest-timeout-end req=%uz finals=%uz releases=%uz",
+        .{ ctx.*.trace_req_seq, ctx.*.trace_finalize_calls, ctx.*.trace_release_calls });
+}
 
 fn ensure_pool_conninfo(conninfo: []const u8, max_conn: usize) bool {
     if (!g_pool_initialized) {
@@ -1459,6 +1544,8 @@ fn format_result_for_response(
 }
 
 fn release_pooled_ctx(ctx: *PgRequestCtx, failed: bool) void {
+    ctx.*.trace_release_calls += 1;
+    trace_pool_event(ctx, ctx.*.pool_conn, if (failed) "release-failed" else "release");
     if (ctx.*.result != null) {
         pgClear(ctx.*.result);
         ctx.*.result = null;
@@ -1484,10 +1571,90 @@ fn release_pooled_ctx(ctx: *PgRequestCtx, failed: bool) void {
 
 fn finalize_pooled_timeout(ctx: *PgRequestCtx) void {
     const r = ctx.*.request orelse return;
+    dump_pooled_timeout(ctx);
     const rc = send_json_error(r, 504, "{\"message\":\"PostgreSQL connection timed out\"}");
     ctx.*.request = null;
     release_pooled_ctx(ctx, true);
     http.ngx_http_finalize_request(r, rc);
+}
+
+fn log_pooled_event_watch_state(ctx: *PgRequestCtx, pool_conn: *PgPoolConn, label: []const u8) void {
+    _ = label;
+    const r = ctx.*.request orelse return;
+    const ngx_conn = pool_conn.ngx_conn orelse return;
+    if (ngx_conn.*.read == core.nullptr(core.ngx_event_t)) return;
+
+    const rev = ngx_conn.*.read;
+    log.ngz_log_error(log.NGX_LOG_WARN, r.*.connection.*.log, 0,
+        "pgrest-watch req=%uz slot=%uz fd=%d active=%d ready=%d timer=%d avail=%d",
+        .{
+            ctx.*.trace_req_seq,
+            pool_slot_index(pool_conn),
+            pool_conn.fd,
+            @as(c_int, if (rev.*.flags.active) 1 else 0),
+            @as(c_int, if (rev.*.flags.ready) 1 else 0),
+            @as(c_int, if (rev.*.flags.timer_set) 1 else 0),
+            rev.*.available,
+        });
+}
+
+fn set_pooled_timer_mode(ctx: *PgRequestCtx, pool_conn: *PgPoolConn, want_read: bool, want_write: bool) bool {
+    const ngx_conn = pool_conn.ngx_conn orelse return false;
+
+    if (ngx_conn.*.read != core.nullptr(core.ngx_event_t)) {
+        if (ngx_conn.*.read.*.flags.timer_set) {
+            event.ngx_event_del_timer(ngx_conn.*.read);
+        }
+        if (want_read and http.ngx_handle_read_event(ngx_conn.*.read, 0) != NGX_OK) {
+            trace_pool_event(ctx, pool_conn, "rearm-read-fail");
+            return false;
+        }
+        if (want_read) {
+            event.ngx_event_add_timer(ngx_conn.*.read, PGREST_POOL_TIMEOUT_MS);
+        }
+    }
+
+    if (ngx_conn.*.write != core.nullptr(core.ngx_event_t)) {
+        if (ngx_conn.*.write.*.flags.timer_set) {
+            event.ngx_event_del_timer(ngx_conn.*.write);
+        }
+        if (want_write and http.ngx_handle_write_event(ngx_conn.*.write, 0) != NGX_OK) {
+            trace_pool_event(ctx, pool_conn, "rearm-write-fail");
+            return false;
+        }
+        if (want_write) {
+            event.ngx_event_add_timer(ngx_conn.*.write, PGREST_POOL_TIMEOUT_MS);
+        }
+    }
+
+    return true;
+}
+
+fn apply_query_flush_state(ctx: *PgRequestCtx, pool_conn: *PgPoolConn, flush_result: c_int) bool {
+    ctx.*.trace_last_flush_result = flush_result;
+    if (flush_result == 0) {
+        ctx.*.query_state = .waiting;
+        if (!set_pooled_timer_mode(ctx, pool_conn, true, false)) {
+            ctx.*.query_state = .failed;
+            return false;
+        }
+        trace_pool_event(ctx, pool_conn, "wait-read");
+        return true;
+    }
+    if (flush_result > 0) {
+        ctx.*.query_state = .sending;
+        if (!set_pooled_timer_mode(ctx, pool_conn, false, true)) {
+            ctx.*.query_state = .failed;
+            return false;
+        }
+        trace_pool_event(ctx, pool_conn, "wait-write");
+        return true;
+    }
+
+    ctx.*.query_state = .failed;
+    _ = set_pooled_timer_mode(ctx, pool_conn, false, false);
+    trace_pool_event(ctx, pool_conn, "flush-fail");
+    return false;
 }
 
 const FailureResponse = struct {
@@ -1724,15 +1891,6 @@ fn queue_jwt_setup_queries(ctx: *PgRequestCtx, loc_conf: *ngx_pgrest_loc_conf_t)
 fn start_pooled_query(ctx: *PgRequestCtx, pool_conn: *PgPoolConn) bool {
     const conn = pool_conn.conn orelse return false;
 
-    if (pool_conn.ngx_conn) |ngx_conn| {
-        if (ngx_conn.*.read != core.nullptr(core.ngx_event_t)) {
-            event.ngx_event_add_timer(ngx_conn.*.read, PGREST_POOL_TIMEOUT_MS);
-        }
-        if (ngx_conn.*.write != core.nullptr(core.ngx_event_t)) {
-            event.ngx_event_add_timer(ngx_conn.*.write, PGREST_POOL_TIMEOUT_MS);
-        }
-    }
-
     if (ctx.*.result != null) {
         pgClear(ctx.*.result);
         ctx.*.result = null;
@@ -1752,12 +1910,11 @@ fn start_pooled_query(ctx: *PgRequestCtx, pool_conn: *PgPoolConn) bool {
 
     ctx.*.query_state = .sending;
     pool_conn.state = .busy;
+    ctx.*.trace_query_seq += 1;
+    trace_pool_event(ctx, pool_conn, "query-start");
 
     const flush_result = pgFlush(conn);
-    if (flush_result == 0) {
-        ctx.*.query_state = .waiting;
-    } else if (flush_result < 0) {
-        ctx.*.query_state = .failed;
+    if (!apply_query_flush_state(ctx, pool_conn, flush_result)) {
         return false;
     }
 
@@ -1774,7 +1931,23 @@ fn start_pooled_request(ctx: *PgRequestCtx, loc_conf: *ngx_pgrest_loc_conf_t) ng
         return http.NGX_HTTP_INTERNAL_SERVER_ERROR;
     }
 
-    if (g_conn_pool.getIdleConn()) |pool_conn| {
+    g_pgrest_trace_seq += 1;
+    ctx.*.trace_req_seq = g_pgrest_trace_seq;
+    ctx.*.trace_started_msec = ngx_current_msec;
+    ctx.*.trace_last_progress_msec = ngx_current_msec;
+    ctx.*.trace_last_flush_result = -999;
+    ctx.*.trace_last_poll_status = -999;
+    ctx.*.trace_last_event_len = 0;
+    trace_pool_event(ctx, null, "request-start");
+
+    while (g_conn_pool.getIdleConn()) |pool_conn| {
+        trace_pool_event(ctx, pool_conn, "idle-found");
+        if (!is_pool_conn_reusable(pool_conn)) {
+            trace_pool_event(ctx, pool_conn, "idle-reject");
+            discard_pool_conn(pool_conn);
+            continue;
+        }
+        trace_pool_event(ctx, pool_conn, "idle-reuse");
         ctx.*.pool_conn = pool_conn;
         pool_conn.request_ctx = ctx;
         pool_conn.state = .busy;
@@ -1792,6 +1965,7 @@ fn start_pooled_request(ctx: *PgRequestCtx, loc_conf: *ngx_pgrest_loc_conf_t) ng
     }
 
     const pool_conn = g_conn_pool.getFreeSlot() orelse return http.NGX_HTTP_SERVICE_UNAVAILABLE;
+    trace_pool_event(ctx, pool_conn, "free-slot");
     const conn = pgConnectStart(&g_conn_pool.conninfo);
     if (conn == null) return http.NGX_HTTP_INTERNAL_SERVER_ERROR;
     if (pgStatus(conn) == pq.CONNECTION_BAD) {
@@ -1837,7 +2011,6 @@ fn start_pooled_request(ctx: *PgRequestCtx, loc_conf: *ngx_pgrest_loc_conf_t) ng
             ctx.*.pool_conn = null;
             return http.NGX_HTTP_INTERNAL_SERVER_ERROR;
         }
-        event.ngx_event_add_timer(ngx_conn.*.read, PGREST_POOL_TIMEOUT_MS);
     }
     if (ngx_conn.*.write != core.nullptr(core.ngx_event_t)) {
         ngx_conn.*.write.*.log = ngx_conn.*.log;
@@ -1848,10 +2021,10 @@ fn start_pooled_request(ctx: *PgRequestCtx, loc_conf: *ngx_pgrest_loc_conf_t) ng
             ctx.*.pool_conn = null;
             return http.NGX_HTTP_INTERNAL_SERVER_ERROR;
         }
-        event.ngx_event_add_timer(ngx_conn.*.write, PGREST_POOL_TIMEOUT_MS);
     }
 
     ctx.*.request.?.*.main.*.flags0.count += 1;
+    trace_pool_event(ctx, pool_conn, "connect-start");
     poll_pg_connection(ctx, pool_conn);
     return core.NGX_DONE;
 }
@@ -1867,6 +2040,8 @@ const JsonColumnMeta = struct {
     name: []const u8,
     emit_raw_json: bool,
 };
+
+const MIN_RESPONSE_BUFFER_SIZE: usize = 512;
 
 fn build_json_column_meta(
     result: ?*PGresult,
@@ -1957,6 +2132,109 @@ fn append_json_quoted_string(json_buf: []u8, pos_in: usize, value: []const u8) u
         pos += 1;
     }
     return pos;
+}
+
+fn estimated_json_string_size(value: []const u8) usize {
+    var size: usize = 2;
+    for (value) |c| {
+        size += switch (c) {
+            '"', '\\', '\n', '\r', '\t' => 2,
+            else => 1,
+        };
+    }
+    return size;
+}
+
+fn estimate_json_row_size(
+    result: ?*PGresult,
+    row: i32,
+    nfields: i32,
+    strip_nulls: bool,
+    column_meta: ?[]const JsonColumnMeta,
+) usize {
+    if (result == null) return 2;
+
+    var size: usize = 2;
+    var emitted_fields: usize = 0;
+    var col: i32 = 0;
+    while (col < nfields) : (col += 1) {
+        const is_null = pgGetisnull(result, row, col) != 0;
+        if (strip_nulls and is_null) continue;
+
+        if (emitted_fields > 0) size += 1;
+        emitted_fields += 1;
+
+        const meta = if (column_meta) |items| items[@intCast(col)] else JsonColumnMeta{
+            .name = blk: {
+                const fname = pgFname(result, col);
+                break :blk if (fname != null) std.mem.span(fname) else "";
+            },
+            .emit_raw_json = false,
+        };
+
+        size += meta.name.len + 3;
+        if (is_null) {
+            size += 4;
+            continue;
+        }
+
+        const value = pgGetvalue(result, row, col) orelse {
+            size += 4;
+            continue;
+        };
+        const value_len: usize = @intCast(pgGetlength(result, row, col));
+        const value_slice = value[0..value_len];
+        size += if (meta.emit_raw_json)
+            value_slice.len
+        else
+            estimated_json_string_size(value_slice);
+    }
+
+    return size;
+}
+
+fn estimate_response_buffer_size(
+    result: ?*PGresult,
+    ntuples: i32,
+    nfields: i32,
+    opts: RequestOptions,
+    raw_json_fields: []const [64]u8,
+    raw_json_field_lens: []const usize,
+    raw_json_field_count: usize,
+) usize {
+    const clamped_min = MIN_RESPONSE_BUFFER_SIZE;
+    const clamped_max = MAX_JSON_SIZE;
+
+    switch (opts.response_format) {
+        .json => {
+            var column_metas: [MAX_COLUMNS]JsonColumnMeta = undefined;
+            const column_meta = build_json_column_meta(result, nfields, raw_json_fields, raw_json_field_lens, raw_json_field_count, &column_metas);
+            var estimated: usize = 0;
+            if (opts.singular_object) {
+                estimated = if (ntuples >= 1)
+                    estimate_json_row_size(result, 0, nfields, opts.strip_nulls, column_meta)
+                else
+                    2;
+            } else {
+                estimated = 2;
+                var row: i32 = 0;
+                while (row < ntuples) : (row += 1) {
+                    if (row > 0) estimated += 1;
+                    estimated += estimate_json_row_size(result, row, nfields, opts.strip_nulls, column_meta);
+                    if (estimated >= clamped_max) return clamped_max;
+                }
+            }
+            return @max(clamped_min, @min(estimated, clamped_max));
+        },
+        .binary => {
+            if (result != null and ntuples == 1 and nfields == 1 and pgGetisnull(result, 0, 0) == 0) {
+                const value_len: usize = @intCast(pgGetlength(result, 0, 0));
+                return @max(clamped_min, @min(value_len, clamped_max));
+            }
+            return clamped_min;
+        },
+        else => return clamped_max,
+    }
 }
 
 /// Format a single row as a JSON object
@@ -8129,6 +8407,7 @@ fn ngx_pgrest_conn_write_handler(ev: [*c]core.ngx_event_t) callconv(.c) void {
     const c = core.castPtr(core.ngx_connection_t, ev.*.data) orelse return;
     const pool_conn = core.castPtr(PgPoolConn, c.*.data) orelse return;
     const ctx = pool_conn.*.request_ctx orelse return;
+    ctx.*.trace_write_calls += 1;
 
     if (ev.*.flags.timedout) {
         if (ev.*.flags.timer_set) event.ngx_event_del_timer(ev);
@@ -8139,17 +8418,21 @@ fn ngx_pgrest_conn_write_handler(ev: [*c]core.ngx_event_t) callconv(.c) void {
 
     if (pool_conn.*.state == .connecting) {
         // Continue connection polling
+        trace_pool_event(ctx, pool_conn, "write-connect");
         poll_pg_connection(ctx, pool_conn);
     } else if (pool_conn.*.state == .busy and ctx.*.query_state == .sending) {
         // Continue sending query
         if (pool_conn.*.conn != null) {
+            trace_pool_event(ctx, pool_conn, "write-flush");
             const flush_result = pgFlush(pool_conn.*.conn);
             if (flush_result == 0) {
                 // Flushed successfully, wait for result
-                ctx.*.query_state = .waiting;
+                _ = apply_query_flush_state(ctx, pool_conn, flush_result);
+            } else if (flush_result > 0) {
+                _ = apply_query_flush_state(ctx, pool_conn, flush_result);
             } else if (flush_result < 0) {
                 // Error
-                ctx.*.query_state = .failed;
+                _ = apply_query_flush_state(ctx, pool_conn, flush_result);
                 finalize_pooled_failure(ctx);
             }
             // flush_result > 0 means more data to write, wait for next event
@@ -8163,6 +8446,7 @@ fn ngx_pgrest_conn_read_handler(ev: [*c]core.ngx_event_t) callconv(.c) void {
     const c = core.castPtr(core.ngx_connection_t, ev.*.data) orelse return;
     const pool_conn = core.castPtr(PgPoolConn, c.*.data) orelse return;
     const ctx = pool_conn.*.request_ctx orelse return;
+    ctx.*.trace_read_calls += 1;
 
     if (ev.*.flags.timedout) {
         if (ev.*.flags.timer_set) event.ngx_event_del_timer(ev);
@@ -8173,28 +8457,44 @@ fn ngx_pgrest_conn_read_handler(ev: [*c]core.ngx_event_t) callconv(.c) void {
 
     if (pool_conn.*.state == .connecting) {
         // Continue connection polling
+        trace_pool_event(ctx, pool_conn, "read-connect");
         poll_pg_connection(ctx, pool_conn);
     } else if (pool_conn.*.state == .busy and ctx.*.query_state == .waiting) {
         // Read query result
         if (pool_conn.*.conn != null) {
-            // Consume input from socket
-            if (pgConsumeInput(pool_conn.*.conn) == 0) {
-                ctx.*.query_state = .failed;
-                finalize_pooled_failure(ctx);
-                return;
-            }
+            const conn = pool_conn.*.conn.?;
+            var drain_iters: usize = 0;
+            while (true) {
+                trace_pool_event(ctx, pool_conn, "read-consume");
+                if (pgConsumeInput(conn) == 0) {
+                    ctx.*.query_state = .failed;
+                    finalize_pooled_failure(ctx);
+                    return;
+                }
 
-            // Check if we can get a result
-            if (pgIsBusy(pool_conn.*.conn) == 0) {
-                // Get the result
-                ctx.*.result = pgGetResult(pool_conn.*.conn);
-                ctx.*.query_state = .done;
+                if (pgIsBusy(conn) == 0) {
+                    ctx.*.result = pgGetResult(conn);
+                    ctx.*.query_state = .done;
+                    _ = set_pooled_timer_mode(ctx, pool_conn, false, false);
+                    trace_pool_event(ctx, pool_conn, "result-ready");
 
-                // Need to drain remaining NULL results
-                while (pgGetResult(pool_conn.*.conn) != null) {}
+                    while (pgGetResult(conn) != null) {}
 
-                // Now we can finalize the response
-                finalize_pg_response(ctx);
+                    finalize_pg_response(ctx);
+                    return;
+                }
+
+                drain_iters += 1;
+                if (!ev.*.flags.ready or drain_iters >= PGREST_READ_DRAIN_LIMIT) {
+                    if (!set_pooled_timer_mode(ctx, pool_conn, true, false)) {
+                        ctx.*.query_state = .failed;
+                        finalize_pooled_failure(ctx);
+                        return;
+                    }
+                    log_pooled_event_watch_state(ctx, pool_conn, "read-busy");
+                    trace_pool_event(ctx, pool_conn, "read-busy");
+                    return;
+                }
             }
         }
     }
@@ -8205,11 +8505,14 @@ fn poll_pg_connection(ctx: *PgRequestCtx, pool_conn: *PgPoolConn) void {
     const conn = pool_conn.conn orelse return;
 
     const poll_status = pgConnectPoll(conn);
+    ctx.*.trace_last_poll_status = @intCast(poll_status);
 
     switch (poll_status) {
         PGRES_POLLING_OK => {
             // Connection established!
             pool_conn.state = .idle;
+            _ = set_pooled_timer_mode(ctx, pool_conn, false, false);
+            trace_pool_event(ctx, pool_conn, "poll-ok");
 
             // If we have a pending query, send it now
             if (ctx.*.query_len > 0) {
@@ -8223,12 +8526,12 @@ fn poll_pg_connection(ctx: *PgRequestCtx, pool_conn: *PgPoolConn) void {
                 if (sent != 0) {
                     ctx.*.query_state = .sending;
                     pool_conn.state = .busy;
+                    ctx.*.trace_query_seq += 1;
+                    trace_pool_event(ctx, pool_conn, "poll-send");
 
                     // Try to flush immediately
                     const flush_result = pgFlush(conn);
-                    if (flush_result == 0) {
-                        ctx.*.query_state = .waiting;
-                    } else if (flush_result < 0) {
+                    if (!apply_query_flush_state(ctx, pool_conn, flush_result)) {
                         ctx.*.query_state = .failed;
                     }
                 } else {
@@ -8240,10 +8543,18 @@ fn poll_pg_connection(ctx: *PgRequestCtx, pool_conn: *PgPoolConn) void {
             // Connection failed
             pool_conn.state = .conn_error;
             ctx.*.query_state = .failed;
+            trace_pool_event(ctx, pool_conn, "poll-failed");
             finalize_pooled_failure(ctx);
         },
         PGRES_POLLING_READING, PGRES_POLLING_WRITING => {
             // Still connecting, wait for next event
+            if (!set_pooled_timer_mode(ctx, pool_conn, poll_status == PGRES_POLLING_READING, poll_status == PGRES_POLLING_WRITING)) {
+                pool_conn.state = .conn_error;
+                ctx.*.query_state = .failed;
+                finalize_pooled_failure(ctx);
+                return;
+            }
+            trace_pool_event(ctx, pool_conn, if (poll_status == PGRES_POLLING_READING) "poll-read" else "poll-write");
         },
         else => {},
     }
@@ -8252,6 +8563,8 @@ fn poll_pg_connection(ctx: *PgRequestCtx, pool_conn: *PgPoolConn) void {
 /// Finalize the PostgreSQL response and send to client
 fn finalize_pg_response(ctx: *PgRequestCtx) void {
     const r = ctx.*.request orelse return;
+    ctx.*.trace_finalize_calls += 1;
+    trace_pool_event(ctx, ctx.*.pool_conn, "finalize-enter");
     const opts = RequestOptions{
         .response_format = ctx.*.response_format,
         .singular_object = ctx.*.singular_object,
@@ -8707,13 +9020,22 @@ fn finalize_pg_response(ctx: *PgRequestCtx) void {
 
     var response_len: usize = 0;
     var content_type: [*:0]const u8 = "application/json";
-    const response_body_buf = buf.ngx_create_temp_buf(r.*.pool, MAX_JSON_SIZE) orelse {
+    const response_buffer_size = estimate_response_buffer_size(
+        result,
+        ntuples,
+        nfields,
+        opts,
+        &ctx.*.raw_json_fields,
+        &ctx.*.raw_json_field_lens,
+        ctx.*.raw_json_field_count,
+    );
+    const response_body_buf = buf.ngx_create_temp_buf(r.*.pool, response_buffer_size) orelse {
         ctx.*.request = null;
         release_pooled_ctx(ctx, true);
         http.ngx_http_finalize_request(r, http.NGX_HTTP_INTERNAL_SERVER_ERROR);
         return;
     };
-    const response_storage = response_body_buf.*.last[0..MAX_JSON_SIZE];
+    const response_storage = response_body_buf.*.last[0..response_buffer_size];
 
     response_len = format_result_for_response(
         result,
@@ -9225,4 +9547,23 @@ test "read_response_status returns partial content for partial counted reads" {
     const opts = RequestOptions{ .emit_range_headers = true };
     try expectEqual(@as(ngx_uint_t, NGX_HTTP_PARTIAL_CONTENT), read_response_status(http.NGX_HTTP_OK, 0, 2, 3, opts));
     try expectEqual(@as(ngx_uint_t, http.NGX_HTTP_OK), read_response_status(http.NGX_HTTP_OK, 0, 3, 3, opts));
+}
+
+test "estimate_response_buffer_size respects min and max bounds" {
+    const opts = RequestOptions{ .response_format = .json };
+    try expectEqual(@as(usize, MIN_RESPONSE_BUFFER_SIZE), estimate_response_buffer_size(null, 0, 0, opts, &.{}, &.{}, 0));
+}
+
+test "estimated_json_string_size accounts for escaping overhead" {
+    try expectEqual(@as(usize, 2), estimated_json_string_size(""));
+    try expectEqual(@as(usize, 5), estimated_json_string_size("abc"));
+    try expectEqual(@as(usize, 6), estimated_json_string_size("A\"B"));
+    try expectEqual(@as(usize, 8), estimated_json_string_size("A\nB\t"));
+}
+
+test "estimate_response_buffer_size keeps non-json formats conservative" {
+    const csv_opts = RequestOptions{ .response_format = .csv };
+    const xml_opts = RequestOptions{ .response_format = .xml };
+    try expectEqual(@as(usize, MAX_JSON_SIZE), estimate_response_buffer_size(null, 0, 0, csv_opts, &.{}, &.{}, 0));
+    try expectEqual(@as(usize, MAX_JSON_SIZE), estimate_response_buffer_size(null, 0, 0, xml_opts, &.{}, &.{}, 0));
 }

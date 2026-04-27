@@ -834,13 +834,20 @@ Progress note:
 
 - [x] Audit the response assembly path from `finalize_pg_response` to `finalize_response_send` and identify every full-buffer copy.
 - [x] Reduce or eliminate avoidable copies between the JSON formatting buffer and nginx output buffers where ownership/lifetime rules permit.
-- [ ] Improve response-buffer sizing discipline so the common path does not overpay in extra copying or conservative rework.
-- [ ] Add regression coverage for response completeness, content length, and boundary-sized payloads while changing send/buffer logic.
-- [ ] Re-run the P0 benchmark matrix and record whether copy reduction materially helps small reads, medium reads, or only larger payloads.
+- [x] Improve response-buffer sizing discipline so the common path does not overpay in extra copying or conservative rework.
+- [x] Add regression coverage for response completeness, content length, and boundary-sized payloads while changing send/buffer logic.
+- [ ] Re-run the P0 benchmark matrix and record whether copy reduction materially helps small reads, medium reads, or only larger payloads, using the existing pgrest baseline artifacts as the comparison target.
 
 Progress note:
 
 - ✅ The pooled response path now formats directly into the nginx temp buffer and reuses that buffer for output instead of copying the full body from a temporary stack buffer into nginx storage.
+- ✅ The pooled response path now sizes its nginx temp buffer from a bounded response estimate instead of always allocating `MAX_JSON_SIZE`, while preserving the `MAX_JSON_SIZE` cap and `ResponseTooLarge` behavior.
+- ✅ Added helper-level regression coverage around response-size estimation bounds and escaping-sensitive sizing, and kept the existing pgrest JS suite green.
+- 📊 Measured result so far: on the isolated `small-page` scenario (`200` requests, warmup `20`), concurrency `1` improved from about `682.60 rps` to `732.61 rps` (~`+7.3%`), while concurrency `8` was mixed (`1206.41 rps` → `1187.05 rps`) with no broad throughput win yet.
+- ✅ `medium-page` is no longer blocked by the pooled timeout path on pgrest-only runs. After the bounded drain-loop fix, the resumed pgrest matrix slice (`perf/pgrest/benchmark/output/2026-04-27T09-33-21.043Z-pgrest-releasesmall-medium-matrix-pgrest/`) completed cleanly at both standard comparison concurrencies:
+  - concurrency `1` → `345.27 rps`, `p50 1.94 ms`, `p95 5.26 ms`, `p99 12.60 ms`, `200/200`
+  - concurrency `8` → `715.05 rps`, `p50 5.69 ms`, `p95 25.52 ms`, `p99 98.23 ms`, `200/200`
+- ⚠️ Full P2 interpretation is still incomplete because only part of the pgrest baseline matrix has been re-run after the pooled read-path fixes; the remaining comparison is baseline-vs-current pgrest, not pgrest-vs-PostgREST.
 
 ### Perf Batch P3: Pool-envelope and concurrency tuning
 
@@ -849,6 +856,20 @@ Progress note:
 - [ ] Tune pool-size/configuration behavior only after measurements show that connection wait time, not JSON formatting, is the dominant limiter.
 - [ ] Add concurrency-focused perf runs that track throughput, p95/p99 latency, and connection-wait time across both pgrest and PostgREST.
 - [ ] Avoid micro-optimizing the linear slot scan unless profiling proves it matters relative to pool exhaustion itself.
+
+Progress note:
+
+- ✅ Deeper pooled-path tracing confirmed the first follow-up hypothesis was wrong: explicit watcher rearm alone did not fix the stall. The traced `rearmfix` run still hit warmup `504`, while the read watcher remained armed and ready at the stall point (`active=1 ready=1 timer=1`).
+- ✅ The next fix changed the pooled read callback from a single `PQconsumeInput` / `PQisBusy` pass into a bounded same-callback drain loop (`PGREST_READ_DRAIN_LIMIT = 8`) so ready sockets keep draining libpq input before yielding back to nginx.
+- ✅ Strict repeated isolated `medium-page` verification at concurrency `1` is now clean across three consecutive runs: `200/200` success with no `pgrest-timeout` entries in nginx `error.log`.
+- 📊 Verified artifacts after the drain-loop fix:
+  - `perf/pgrest/benchmark/output/2026-04-27T08-48-35.565Z-pgrest-releasesmall-drainfix-run1/` → `345.17 rps`, `p50 1.99 ms`, `p95 5.30 ms`, `p99 10.82 ms`, `200/200`
+  - `perf/pgrest/benchmark/output/2026-04-27T08-48-45.498Z-pgrest-releasesmall-drainfix-run2/` → `317.43 rps`, `p50 1.95 ms`, `p95 5.76 ms`, `p99 13.78 ms`, `200/200`
+  - `perf/pgrest/benchmark/output/2026-04-27T08-48-46.142Z-pgrest-releasesmall-drainfix-run3/` → `310.30 rps`, `p50 1.99 ms`, `p95 6.91 ms`, `p99 15.26 ms`, `200/200`
+- ℹ️ Latest failed rearm-only evidence retained for comparison: `perf/pgrest/benchmark/output/2026-04-27T08-44-50.602Z-pgrest-releasesmall-rearmfix-run1/`.
+- ▶️ With the concurrency-1 correctness gate restored for `medium-page`, the blocker has shifted from pooled-path correctness triage back to broader P3 tuning and re-running the remaining perf matrix.
+- 📊 The next pgrest-only matrix slice is now in place: `perf/pgrest/benchmark/output/2026-04-27T09-33-21.043Z-pgrest-releasesmall-medium-matrix-pgrest/` verified `medium-page` at both `c1` and `c8` without `504`s.
+- ▶️ The next measurement step is to continue the pgrest-only rerun against the existing baseline artifacts so each fix is judged by before-vs-after pgrest numbers on the same scenario/concurrency matrix.
 
 ### Perf Batch P4: Structural large-response improvements
 
@@ -860,6 +881,6 @@ Progress note:
 ### Perf execution rules
 
 - [ ] Keep perf work scoped to the current pooled hot path unless benchmarks show another path dominates.
-- [ ] Do not merge perf claims without benchmark numbers from the same workload matrix on both pgrest and PostgREST.
+- [ ] Do not merge perf claims without benchmark numbers from the same workload matrix against the recorded pgrest baseline artifacts.
 - [ ] Preserve current response semantics unless a documented contract change is intentional.
 - [ ] Re-run `zig build test && KEEP_LOGS=1 bun test tests/pgrest/ && zig build` after every perf batch.
