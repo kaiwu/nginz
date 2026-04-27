@@ -787,3 +787,65 @@ If we want steady wins without painting ourselves into a corner, the most practi
 12. **Batch 12: execution-path parity gap closure and hardening**
 
 That order keeps foundational protocol behavior and path consistency ahead of parser growth, then delays introspection-heavy relationship work until after schema and query semantics are stable, and leaves final parity-proof hardening to the end.
+
+---
+
+## Performance Follow-up Action Points
+
+These are post-parity optimization batches for the pgrest hot path. They stay separate from the feature-parity batches above so we can improve common pooled JSON-read performance without reopening already-closed API-surface work.
+
+Planning note for **small-to-medium JSON table reads**, expressed as **`pgrest : PostgREST`**:
+
+- current architecture-only estimate: **~0.8–1.4x**, with central expectation closer to **~1.0–1.2x**
+- plausible first-hot-path-batch uplift over current pgrest: **~1.2–1.8x**
+- implied post-batch planning band: **~1.0–2.3x**
+- anything above roughly **~2.5x** should be treated as an outlier until benchmarked
+
+These are planning bands only, not measured results.
+
+### Perf Batch P0: Benchmark and attribution baseline
+
+- [ ] Add repeatable benchmark scenarios for common JSON table reads: small payload, medium payload, filtered+ordered+paged read, and count-enabled read.
+- [ ] Run the same benchmark matrix against pgrest and the local PostgREST checkout so ratio claims compare equivalent query shapes and payload sizes.
+- [ ] Add lightweight timing attribution for request parse/build time, PostgreSQL wait time, JSON formatting time, and response-send/copy time.
+- [ ] Capture baseline metrics for each scenario: throughput, p50/p95/p99 latency, CPU usage, response size, and connection-wait behavior.
+- [ ] Document the measured baseline before any optimization batch claims are treated as validated.
+
+### Perf Batch P1: JSON hot-path optimization
+
+- [ ] Optimize `format_row_as_json_object_impl` in `ngx_http_pgrest.zig` first; it is the highest-confidence hot function for common table reads.
+- [ ] Cache per-column metadata that is currently re-read inside the row loop where correctness allows.
+- [ ] Add a fast path for values that do not need JSON escaping instead of always paying the full character-by-character escape path.
+- [ ] Reduce inner-loop branching and repeated bounds bookkeeping in `format_result_as_json_with_options` / `format_row_as_json_object_impl` without changing output semantics.
+- [ ] Add focused tests for escaping, stripped-nulls behavior, mixed scalar/text rows, and wide-row stability.
+- [ ] Re-run the P0 benchmark matrix and record the delta before starting the next perf batch.
+
+### Perf Batch P2: Response-copy and buffering reduction
+
+- [ ] Audit the response assembly path from `finalize_pg_response` to `finalize_response_send` and identify every full-buffer copy.
+- [ ] Reduce or eliminate avoidable copies between the JSON formatting buffer and nginx output buffers where ownership/lifetime rules permit.
+- [ ] Improve response-buffer sizing discipline so the common path does not overpay in extra copying or conservative rework.
+- [ ] Add regression coverage for response completeness, content length, and boundary-sized payloads while changing send/buffer logic.
+- [ ] Re-run the P0 benchmark matrix and record whether copy reduction materially helps small reads, medium reads, or only larger payloads.
+
+### Perf Batch P3: Pool-envelope and concurrency tuning
+
+- [ ] Measure queueing and saturation behavior around `start_pooled_request`, `getIdleConn`, and `getFreeSlot` before changing pool policy.
+- [ ] Decide whether the current per-worker connection cap is too conservative for the expected deployment profile.
+- [ ] Tune pool-size/configuration behavior only after measurements show that connection wait time, not JSON formatting, is the dominant limiter.
+- [ ] Add concurrency-focused perf runs that track throughput, p95/p99 latency, and connection-wait time across both pgrest and PostgREST.
+- [ ] Avoid micro-optimizing the linear slot scan unless profiling proves it matters relative to pool exhaustion itself.
+
+### Perf Batch P4: Structural large-response improvements
+
+- [ ] Evaluate whether incremental/streaming JSON response generation is worth the complexity for large-result workloads.
+- [ ] Prototype larger-payload response handling separately from the common paginated-read path so the small-read fast path stays simple.
+- [ ] Treat this batch as high risk: do not start it until P1 and P2 have been measured and shown insufficient.
+- [ ] Add explicit large-payload and backpressure validation before any streamed-response path is considered complete.
+
+### Perf execution rules
+
+- [ ] Keep perf work scoped to the current pooled hot path unless benchmarks show another path dominates.
+- [ ] Do not merge perf claims without benchmark numbers from the same workload matrix on both pgrest and PostgREST.
+- [ ] Preserve current response semantics unless a documented contract change is intentional.
+- [ ] Re-run `zig build test && KEEP_LOGS=1 bun test tests/pgrest/ && zig build` after every perf batch.

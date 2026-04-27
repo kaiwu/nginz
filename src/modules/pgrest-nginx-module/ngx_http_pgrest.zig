@@ -1340,7 +1340,8 @@ fn enforce_max_affected(r: [*c]ngx_http_request_t, opts: RequestOptions, ntuples
 
 fn finalize_response_send(
     r: [*c]ngx_http_request_t,
-    response_data: []const u8,
+    response_buf: ?*ngx_buf_t,
+    response_len: usize,
     content_type: [*:0]const u8,
     ntuples: i32,
     range_start: usize,
@@ -1353,7 +1354,7 @@ fn finalize_response_send(
     const len = std.mem.len(content_type);
     r.*.headers_out.content_type = ngx_str_t{ .data = @constCast(content_type), .len = len };
     r.*.headers_out.content_type_len = len;
-    r.*.headers_out.content_length_n = if (send_body and !opts.is_head) @intCast(response_data.len) else 0;
+    r.*.headers_out.content_length_n = if (send_body and !opts.is_head) @intCast(response_len) else 0;
 
     append_preference_applied_header(r, opts);
     append_range_headers(r, range_start, ntuples, total_count, opts);
@@ -1368,11 +1369,8 @@ fn finalize_response_send(
         return http.ngx_http_send_special(r, http.NGX_HTTP_LAST);
     }
 
-    const b = buf.ngx_create_temp_buf(r.*.pool, response_data.len) orelse {
-        return http.NGX_HTTP_INTERNAL_SERVER_ERROR;
-    };
-    @memcpy(b.*.last[0..response_data.len], response_data);
-    b.*.last += response_data.len;
+    const b = response_buf orelse return http.NGX_HTTP_INTERNAL_SERVER_ERROR;
+    b.*.last = b.*.pos + response_len;
     b.*.flags.last_buf = true;
     b.*.flags.last_in_chain = true;
 
@@ -1865,6 +1863,102 @@ fn column_is_raw_json(raw_json_fields: []const [64]u8, raw_json_field_lens: []co
     return false;
 }
 
+const JsonColumnMeta = struct {
+    name: []const u8,
+    emit_raw_json: bool,
+};
+
+fn build_json_column_meta(
+    result: ?*PGresult,
+    nfields: i32,
+    raw_json_fields: []const [64]u8,
+    raw_json_field_lens: []const usize,
+    raw_json_field_count: usize,
+    metas: *[MAX_COLUMNS]JsonColumnMeta,
+) ?[]const JsonColumnMeta {
+    if (result == null or nfields < 0 or nfields > MAX_COLUMNS) return null;
+
+    var col: i32 = 0;
+    while (col < nfields) : (col += 1) {
+        const idx: usize = @intCast(col);
+        const fname = pgFname(result, col);
+        const name = if (fname != null) std.mem.span(fname) else "";
+        metas[idx] = .{
+            .name = name,
+            .emit_raw_json = column_is_raw_json(raw_json_fields, raw_json_field_lens, raw_json_field_count, name),
+        };
+    }
+
+    return metas[0..@intCast(nfields)];
+}
+
+fn needs_json_escape(value: []const u8) bool {
+    for (value) |c| {
+        if (c == '"' or c == '\\' or c == '\n' or c == '\r' or c == '\t') return true;
+    }
+    return false;
+}
+
+fn append_json_quoted_string(json_buf: []u8, pos_in: usize, value: []const u8) usize {
+    if (pos_in >= json_buf.len) return pos_in;
+
+    var pos = pos_in;
+    json_buf[pos] = '"';
+    pos += 1;
+
+    if (!needs_json_escape(value)) {
+        const remaining = json_buf.len - pos;
+        const copy_len = @min(value.len, remaining);
+        @memcpy(json_buf[pos..][0..copy_len], value[0..copy_len]);
+        pos += copy_len;
+        if (pos < json_buf.len) {
+            json_buf[pos] = '"';
+            pos += 1;
+        }
+        return pos;
+    }
+
+    for (value) |c| {
+        switch (c) {
+            '"', '\\' => {
+                if (pos + 2 > json_buf.len) break;
+                json_buf[pos] = '\\';
+                json_buf[pos + 1] = c;
+                pos += 2;
+            },
+            '\n' => {
+                if (pos + 2 > json_buf.len) break;
+                json_buf[pos] = '\\';
+                json_buf[pos + 1] = 'n';
+                pos += 2;
+            },
+            '\r' => {
+                if (pos + 2 > json_buf.len) break;
+                json_buf[pos] = '\\';
+                json_buf[pos + 1] = 'r';
+                pos += 2;
+            },
+            '\t' => {
+                if (pos + 2 > json_buf.len) break;
+                json_buf[pos] = '\\';
+                json_buf[pos + 1] = 't';
+                pos += 2;
+            },
+            else => {
+                if (pos >= json_buf.len) break;
+                json_buf[pos] = c;
+                pos += 1;
+            },
+        }
+    }
+
+    if (pos < json_buf.len) {
+        json_buf[pos] = '"';
+        pos += 1;
+    }
+    return pos;
+}
+
 /// Format a single row as a JSON object
 /// Used when singular object format is requested
 /// If strip_nulls is true, skips null values
@@ -1877,6 +1971,7 @@ fn format_row_as_json_object_impl(
     raw_json_fields: []const [64]u8,
     raw_json_field_lens: []const usize,
     raw_json_field_count: usize,
+    column_meta: ?[]const JsonColumnMeta,
 ) usize {
     if (result == null) return 0;
 
@@ -1903,20 +1998,25 @@ fn format_row_as_json_object_impl(
         first_field = false;
 
         // Get column name
-        const fname = pgFname(result, col);
-        var emit_raw_json = false;
-        if (fname != null) {
-            // "column_name":
-            const field_name = std.mem.span(fname);
-            emit_raw_json = column_is_raw_json(raw_json_fields, raw_json_field_lens, raw_json_field_count, field_name);
+        const meta = if (column_meta) |items| items[@intCast(col)] else JsonColumnMeta{
+            .name = blk: {
+                const fname = pgFname(result, col);
+                break :blk if (fname != null) std.mem.span(fname) else "";
+            },
+            .emit_raw_json = blk: {
+                const fname = pgFname(result, col);
+                const field_name = if (fname != null) std.mem.span(fname) else "";
+                break :blk column_is_raw_json(raw_json_fields, raw_json_field_lens, raw_json_field_count, field_name);
+            },
+        };
+        if (meta.name.len != 0) {
             json_buf[pos] = '"';
             pos += 1;
 
-            var i: usize = 0;
-            while (fname[i] != 0 and pos < json_buf.len - 10) : (i += 1) {
-                json_buf[pos] = fname[i];
-                pos += 1;
-            }
+            const remaining_for_name = if (pos <= json_buf.len) json_buf.len - pos else 0;
+            const name_copy_len = @min(meta.name.len, remaining_for_name);
+            @memcpy(json_buf[pos..][0..name_copy_len], meta.name[0..name_copy_len]);
+            pos += name_copy_len;
 
             json_buf[pos] = '"';
             pos += 1;
@@ -1933,45 +2033,15 @@ fn format_row_as_json_object_impl(
             // Get value
             const value = pgGetvalue(result, row, col);
             if (value != null) {
-                if (emit_raw_json) {
-                    const value_slice = std.mem.span(value);
-                    @memcpy(json_buf[pos..][0..value_slice.len], value_slice);
-                    pos += value_slice.len;
+                const value_len: usize = @intCast(pgGetlength(result, row, col));
+                const value_slice = value[0..value_len];
+                if (meta.emit_raw_json) {
+                    const remaining_for_value = if (pos <= json_buf.len) json_buf.len - pos else 0;
+                    const copy_len = @min(value_slice.len, remaining_for_value);
+                    @memcpy(json_buf[pos..][0..copy_len], value_slice[0..copy_len]);
+                    pos += copy_len;
                 } else {
-                    // Quote string values
-                    json_buf[pos] = '"';
-                    pos += 1;
-
-                    var i: usize = 0;
-                    while (value[i] != 0 and pos < json_buf.len - 10) : (i += 1) {
-                        const c = value[i];
-                        // Escape special JSON characters
-                        if (c == '"' or c == '\\') {
-                            json_buf[pos] = '\\';
-                            pos += 1;
-                        }
-                        if (c == '\n') {
-                            json_buf[pos] = '\\';
-                            pos += 1;
-                            json_buf[pos] = 'n';
-                            pos += 1;
-                        } else if (c == '\r') {
-                            json_buf[pos] = '\\';
-                            pos += 1;
-                            json_buf[pos] = 'r';
-                            pos += 1;
-                        } else if (c == '\t') {
-                            json_buf[pos] = '\\';
-                            pos += 1;
-                            json_buf[pos] = 't';
-                            pos += 1;
-                        } else {
-                            json_buf[pos] = c;
-                            pos += 1;
-                        }
-                    }
-                    json_buf[pos] = '"';
-                    pos += 1;
+                    pos = append_json_quoted_string(json_buf, pos, value_slice);
                 }
             } else {
                 const null_str = "null";
@@ -1996,7 +2066,7 @@ fn format_row_as_json_object(
     nfields: i32,
     json_buf: []u8,
 ) usize {
-    return format_row_as_json_object_impl(result, row, nfields, json_buf, false, &.{}, &.{}, 0);
+    return format_row_as_json_object_impl(result, row, nfields, json_buf, false, &.{}, &.{}, 0, null);
 }
 
 /// Returns the length of JSON written to buffer
@@ -2125,6 +2195,8 @@ fn format_result_as_json_with_options(
     raw_json_field_count: usize,
 ) usize {
     var pos: usize = 0;
+    var column_metas: [MAX_COLUMNS]JsonColumnMeta = undefined;
+    const column_meta = build_json_column_meta(result, nfields, raw_json_fields, raw_json_field_lens, raw_json_field_count, &column_metas);
 
     // Start array
     json_buf[pos] = '[';
@@ -2138,7 +2210,7 @@ fn format_result_as_json_with_options(
         }
 
         // Use the implementation with null stripping option
-        const row_len = format_row_as_json_object_impl(result, row, nfields, json_buf[pos..], strip_nulls, raw_json_fields, raw_json_field_lens, raw_json_field_count);
+        const row_len = format_row_as_json_object_impl(result, row, nfields, json_buf[pos..], strip_nulls, raw_json_fields, raw_json_field_lens, raw_json_field_count, column_meta);
         pos += row_len;
     }
 
@@ -2167,7 +2239,9 @@ fn format_result_as_json_smart(
     if (singular_object) {
         // For singular object format, return first row if it exists
         if (ntuples >= 1) {
-            return format_row_as_json_object_impl(result, 0, nfields, json_buf, strip_nulls, raw_json_fields, raw_json_field_lens, raw_json_field_count);
+            var column_metas: [MAX_COLUMNS]JsonColumnMeta = undefined;
+            const column_meta = build_json_column_meta(result, nfields, raw_json_fields, raw_json_field_lens, raw_json_field_count, &column_metas);
+            return format_row_as_json_object_impl(result, 0, nfields, json_buf, strip_nulls, raw_json_fields, raw_json_field_lens, raw_json_field_count, column_meta);
         }
         // If no rows, return empty object
         json_buf[0] = '{';
@@ -8631,16 +8705,22 @@ fn finalize_pg_response(ctx: *PgRequestCtx) void {
         }
     }
 
-    var response_buf: [MAX_JSON_SIZE]u8 = undefined;
     var response_len: usize = 0;
     var content_type: [*:0]const u8 = "application/json";
+    const response_body_buf = buf.ngx_create_temp_buf(r.*.pool, MAX_JSON_SIZE) orelse {
+        ctx.*.request = null;
+        release_pooled_ctx(ctx, true);
+        http.ngx_http_finalize_request(r, http.NGX_HTTP_INTERNAL_SERVER_ERROR);
+        return;
+    };
+    const response_storage = response_body_buf.*.last[0..MAX_JSON_SIZE];
 
     response_len = format_result_for_response(
         result,
         ntuples,
         nfields,
         opts,
-        &response_buf,
+        response_storage,
         &content_type,
         &ctx.*.raw_json_fields,
         &ctx.*.raw_json_field_lens,
@@ -8663,7 +8743,8 @@ fn finalize_pg_response(ctx: *PgRequestCtx) void {
 
     const rc = finalize_response_send(
         r,
-        response_buf[0..response_len],
+        response_body_buf,
+        response_len,
         content_type,
         ntuples,
         ctx.*.response_range_start,

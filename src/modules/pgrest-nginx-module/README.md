@@ -1352,3 +1352,181 @@ This section documents the Batch 12 hardening fixes that are now in place.
   - 10. Execution-path correctness / hardening → `tests/pgrest/pgrest.test.js`, `tests/pgrest/pgrest.connection.test.js`, `tests/pgrest/pgrest.container.test.js`
   - 11. Documentation / coverage alignment → this checklist plus the pgrest Bun suites under `tests/pgrest/`
 - [x] No additional documentation gaps were identified in this audit pass.
+
+## Performance Study Notes
+
+This section records a code-reading performance study of the current pgrest implementation and a design comparison against the local PostgREST checkout at `/home/kaiwu/Documents/github/postgrest`. This is not yet a benchmark report. The goal is to identify the likely hot path, the most credible bottlenecks, and the optimization order that has the best chance of improving common general-query scenarios.
+
+### Scope and workload assumption
+
+The analysis is centered on the most common table-read path:
+
+- `GET /api/<table>`
+- optional `select=`, filters, ordering, limit/offset, and count preferences
+- JSON responses
+- warm pooled PostgreSQL connections
+- no unusual RPC, embedding-heavy, CSV/XML, or large binary-response edge paths
+
+That matters because the dominant costs for these requests are different from write-heavy flows, RPC metadata lookups, or large relationship-embedding responses.
+
+### Confirmed pgrest hot path
+
+For a normal table read, the current execution path is:
+
+1. `ngx_http_pgrest_upstream_handler`
+2. request parsing, JWT/profile/prefer/range handling, and SQL-shaping setup
+3. `start_pooled_request`
+4. `start_pooled_query`
+5. nginx event-driven libpq read/write handlers
+6. `finalize_pg_response`
+7. `format_result_for_response`
+8. `format_result_as_json_with_options`
+9. `format_row_as_json_object_impl`
+10. `finalize_response_send`
+
+For common reads, the hottest CPU path is very likely the last third of that chain, especially row/column iteration and JSON formatting after PostgreSQL has already returned the result.
+
+### Code-level bottleneck hypotheses
+
+These are the highest-confidence bottlenecks from the current code structure.
+
+#### 1. Per-cell JSON formatting is likely the main CPU hot spot
+
+`format_row_as_json_object_impl` sits inside the row loop and performs repeated per-column work:
+
+- `pgGetvalue`, `pgGetisnull`, and `pgFname` calls per cell
+- character-by-character JSON escaping
+- repeated output-buffer bookkeeping and bounds checks
+
+This is the strongest candidate for CPU time on successful read requests. If the result set is modest and the database query itself is already fast, this formatting path can easily dominate request cost.
+
+#### 2. There is at least one unavoidable full response copy
+
+The module builds the response body in its own buffer and then copies it into nginx output storage before sending. That means the common path includes at least:
+
+- PostgreSQL result memory read
+- copy/encode into the JSON response buffer
+- copy into the nginx output buffer
+
+Even before deeper optimization, the current structure suggests that bytes moved per response matters almost as much as instructions executed per row.
+
+#### 3. Query parsing and SQL shaping are meaningful front-half costs
+
+`pgrest_query.zig` does a non-trivial amount of request-time string processing for filters, select grammar, ordering, pagination, and parameter shaping. For tiny queries returning few rows, this front-half work may be a noticeable fraction of total request cost.
+
+This is probably not the first bottleneck for medium result sets, but it can matter for small high-RPS reads where the database is already warm and selective.
+
+#### 4. The connection-pool policy is simple and probably fine until concurrency rises
+
+The pool is worker-local, capped at a small fixed size, and scanned linearly. The linear scan itself is not the primary concern; the small maximum pool size is. Under heavier concurrency, the bigger risk is not the scan cost but:
+
+- requests waiting for a free pooled connection
+- insufficient DB parallelism per worker
+- tail-latency spikes once the worker saturates its connection budget
+
+In other words, this is more likely to be a throughput and p95/p99 limiter than a per-request CPU limiter.
+
+#### 5. Fixed-size eager buffering limits large-response behavior
+
+The current design eagerly formats the whole response into a bounded in-memory buffer instead of streaming rows progressively. That is friendly to simple control flow, but it has two performance consequences:
+
+- large payloads have a hard implementation ceiling
+- medium payloads pay the latency of complete formatting before the first byte is sent
+
+This is a likely area where PostgREST keeps an architectural advantage on bigger reads.
+
+### Comparison with PostgREST
+
+PostgREST and this module solve similar problems, but the performance tradeoffs are different.
+
+#### Where pgrest should be able to win
+
+For simple general queries, pgrest has some structural advantages:
+
+- no separate application server hop beyond nginx itself
+- a shorter, more direct request path for straightforward CRUD reads
+- no Haskell runtime or GC behavior in the request path
+- predictable worker-local state and event-loop integration with nginx
+
+That means pgrest has a real chance to beat PostgREST on low-latency simple reads if the result set is not large and if JSON formatting is made materially cheaper.
+
+#### Where PostgREST is still advantaged
+
+PostgREST appears stronger on architectural breadth and sustained concurrency:
+
+- richer schema-cache-driven planning
+- more mature connection-pool behavior and observability
+- streaming-friendly response handling for larger bodies
+- less risk from fixed response buffers
+
+That means pgrest should not expect a blanket win everywhere. The realistic target is to outperform PostgREST on common small-to-medium JSON reads, not necessarily on large streamed responses or more feature-heavy query shapes.
+
+### Most credible optimization order
+
+The likely winning order is:
+
+1. **Prove time split first** with end-to-end benchmarking and profiling.
+2. **Optimize JSON serialization and copy count** before touching minor parsing code.
+3. **Re-evaluate pool size and wait behavior** under concurrency.
+4. **Only then** chase smaller effects such as FFI call granularity or SQL-builder micro-optimizations.
+
+This order matters because gateway-style systems usually lose more time in database work, serialization, and buffering than in language-boundary overhead.
+
+### Optimization opportunities with the best payoff potential
+
+#### A. Reduce JSON formatting overhead
+
+This is the clearest place to look first.
+
+Possible directions:
+
+- reduce repeated per-cell libpq metadata calls where values can be cached per column
+- special-case common safe strings to avoid fully generic escaping work
+- reduce branchiness and repeated bounds checks in the row formatter
+- investigate a faster escaping strategy for the hot JSON path
+
+If pgrest is going to “edge” PostgREST on general queries, this is the most plausible breakthrough area.
+
+#### B. Reduce copies on the response path
+
+If the JSON body is already built in one contiguous buffer, any extra copy becomes visible at higher throughput. A lower-copy or streaming-friendly response path is likely more valuable than small parser cleanups.
+
+#### C. Make concurrency scaling less pool-bound
+
+The current pool cap looks conservative. If common deployments run multiple busy workers, a small per-worker cap can become the first throughput wall. Raising configurability and understanding queueing behavior is likely more important than trying to optimize the connection-slot scan itself.
+
+#### D. Cache or precompute cheap repeated shape information
+
+For hot repeated endpoints, repeated parsing of the same select/filter/order grammar may become visible. This is a second-tier optimization, but it becomes worthwhile once serialization and response-copy costs are under control.
+
+### What is probably *not* the first breakthrough
+
+The code structure does not suggest that the primary win will come from exotic Zig-level tricks or generic “FFI is slow” assumptions. Zig↔C boundary cost exists, but for a REST-to-Postgres gateway it is usually not the dominant factor unless the system is doing extremely fine-grained calls in tight loops. Here, the more credible first-order costs are:
+
+- database time
+- per-row/per-cell serialization cost
+- copying and buffering behavior
+- pool/backpressure behavior under concurrency
+
+### Recommended benchmark matrix
+
+Before claiming performance wins over PostgREST, run both systems through the same workload matrix and compare cost decomposition, not only raw RPS:
+
+- single-table reads with small payloads
+- single-table reads with medium payloads
+- filtered reads with ordering and pagination
+- count-enabled reads (`Prefer: count=*`)
+- concurrency ramps to identify the latency knee
+
+For each workload, record at least:
+
+- p50 / p95 / p99 latency
+- throughput
+- CPU usage
+- response size
+- PostgreSQL CPU/time share
+- connection wait behavior
+
+### Current conclusion
+
+The current pgrest module already has the right broad shape for strong simple-query performance: direct nginx integration, non-blocking pooled PostgreSQL access, and no heavyweight application runtime in the middle. The clearest obstacles to beating PostgREST on common general queries are the current eager-buffered response path, per-cell JSON formatting cost, and the small pool/concurrency envelope. If those three areas improve materially, pgrest has a credible path to outperform PostgREST on the narrow but important class of small-to-medium JSON table reads.
