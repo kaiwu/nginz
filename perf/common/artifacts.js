@@ -7,6 +7,10 @@ function sanitizeTag(value) {
   return value.replace(/[^a-zA-Z0-9._-]+/g, "-").replace(/-+/g, "-").replace(/^-|-$/g, "");
 }
 
+export function sanitizeArtifactTag(value) {
+  return sanitizeTag(value);
+}
+
 function readFirstLine(path) {
   try {
     return readFileSync(path, "utf8").split("\n")[0].trim();
@@ -62,6 +66,7 @@ export function createRunArtifacts(baseOutputDir, moduleName, optimizeMode, tag 
     environmentPath: join(runDir, "environment.json"),
     commandPath: join(runDir, "command.json"),
     manifestPath: join(runDir, "manifest.json"),
+    failurePath: join(runDir, "failure.json"),
   };
 }
 
@@ -111,14 +116,28 @@ export function writeManifest(artifacts, metadata = {}) {
     schema_version: 1,
     generated_at: new Date().toISOString(),
     run_id: artifacts.runId,
+    status: metadata.status ?? "initialized",
     paths: {
       benchmark: "benchmark.json",
       environment: "environment.json",
       command: "command.json",
+      failure: "failure.json",
       profiling: "profiling",
       logs: "logs",
       runtime: "runtime",
     },
     ...metadata,
+  });
+}
+
+export function updateManifest(artifacts, patch = {}) {
+  const current = existsSync(artifacts.manifestPath)
+    ? JSON.parse(readFileSync(artifacts.manifestPath, "utf8"))
+    : { schema_version: 1, run_id: artifacts.runId, paths: {} };
+
+  writeJsonArtifact(artifacts.manifestPath, {
+    ...current,
+    ...patch,
+    updated_at: new Date().toISOString(),
   });
 }

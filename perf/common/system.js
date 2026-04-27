@@ -1,4 +1,5 @@
 import { spawnSync } from "bun";
+import net from "net";
 
 export function runResult(command, stdin) {
   const result = spawnSync(command, {
@@ -56,4 +57,24 @@ export async function waitForHttp(url, timeout = 10000) {
     }
   }
   throw new Error(`Timeout waiting for ${url}`);
+}
+
+export async function getFreePort() {
+  return await new Promise((resolve, reject) => {
+    const server = net.createServer();
+    server.unref();
+    server.on("error", reject);
+    server.listen(0, "127.0.0.1", () => {
+      const address = server.address();
+      if (!address || typeof address === "string") {
+        server.close(() => reject(new Error("Failed to allocate free port")));
+        return;
+      }
+      const { port } = address;
+      server.close((error) => {
+        if (error) reject(error);
+        else resolve(port);
+      });
+    });
+  });
 }

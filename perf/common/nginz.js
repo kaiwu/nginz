@@ -47,8 +47,10 @@ async function waitForPort(port, timeout = 10000) {
   throw new Error(`Timeout waiting for port ${port}`);
 }
 
-export async function startNginz(configPath, runtimeDir, port = 8888) {
-  resetRuntimeDir(runtimeDir);
+export async function startNginz(configPath, runtimeDir, port, options = {}) {
+  if (options.resetRuntime !== false) {
+    resetRuntimeDir(runtimeDir);
+  }
   const absConfig = isAbsolute(configPath) ? configPath : join(process.cwd(), configPath);
 
   nginzProcess = spawn([NGINZ_BIN, "-c", absConfig, "-p", runtimeDir], {
@@ -57,10 +59,12 @@ export async function startNginz(configPath, runtimeDir, port = 8888) {
     cwd: process.cwd(),
   });
 
-  await waitForPort(port);
+  const readyPort = port ?? 8888;
+  await waitForPort(readyPort);
   return {
     runtimeDir,
     pid: nginzProcess?.pid ?? null,
+    port: readyPort,
   };
 }
 

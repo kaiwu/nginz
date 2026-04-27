@@ -48,6 +48,36 @@ export function normalizeProfileMode(requestedMode) {
   return { requested: requestedMode, effective: "snapshot", reason: `unknown profiling mode '${requestedMode}', fell back to snapshot` };
 }
 
+export function captureSnapshotSummary({ mode, pids, reason = null }) {
+  const normalized = normalizeProfileMode(mode);
+  return {
+    requested_mode: normalized.requested,
+    effective_mode: normalized.effective === "perf-stat" ? "snapshot" : normalized.effective,
+    fallback_reason: normalized.effective === "perf-stat"
+      ? "perf-stat capture not started; recorded snapshot only"
+      : normalized.reason,
+    reason,
+    started_at: new Date().toISOString(),
+    finished_at: new Date().toISOString(),
+    pids: pids.filter(Boolean),
+    before: {
+      system: snapshotSystem(),
+      processes: pids.map(snapshotPid).filter(Boolean),
+    },
+    after: {
+      system: snapshotSystem(),
+      processes: pids.map(snapshotPid).filter(Boolean),
+    },
+    perf_stat_path: null,
+  };
+}
+
+export function writeSnapshotSummary(profilingDir, summary) {
+  const summaryPath = join(profilingDir, "summary.json");
+  writeFileSync(summaryPath, JSON.stringify(summary, null, 2));
+  return summaryPath;
+}
+
 export async function startProfiling({ mode, pids, profilingDir }) {
   const normalized = normalizeProfileMode(mode);
   const session = {

@@ -2,11 +2,11 @@ import { existsSync, readFileSync, rmSync, writeFileSync } from "fs";
 import { join } from "path";
 import { spawn } from "bun";
 import { parseBenchmarkArgs, printBenchmarkHelp } from "../../common/benchmark_cli.js";
-import { ensureBuild, startNginz, stopNginz } from "../../common/nginz.js";
+import { ensureBuild, resetRuntimeDir, startNginz, stopNginz } from "../../common/nginz.js";
 import { summarizeSamples, printSummary } from "../../common/report.js";
-import { run, runResult, ensureDockerContainerRunning, ensureHostPortOpen, waitForHttp } from "../../common/system.js";
-import { captureCommandArtifact, captureEnvironmentArtifact, copyRuntimeLogs, createRunArtifacts, writeJsonArtifact, writeManifest } from "../../common/artifacts.js";
-import { startProfiling, stopProfiling } from "../../common/profiling.js";
+import { getFreePort, run, runResult, ensureDockerContainerRunning, ensureHostPortOpen, waitForHttp } from "../../common/system.js";
+import { captureCommandArtifact, captureEnvironmentArtifact, copyRuntimeLogs, createRunArtifacts, sanitizeArtifactTag, updateManifest, writeJsonArtifact, writeManifest } from "../../common/artifacts.js";
+import { captureSnapshotSummary, startProfiling, stopProfiling, writeSnapshotSummary } from "../../common/profiling.js";
 import { SCENARIOS, getScenario } from "./scenarios.js";
 import { validateScenarioPair } from "./validate.js";
 
@@ -14,10 +14,6 @@ const MODULE = "pgrest";
 const PG_CONTAINER = "pg18";
 const PG_USER = "nginz_test";
 const PG_PASSWORD = "nginz_test_pass";
-const PG_DB = process.env.PGREST_BENCH_DB || "nginz_bench";
-const PGREST_BASE_URL = "http://127.0.0.1:8888/api";
-const POSTGREST_PORT = Number(process.env.POSTGREST_PORT || 3000);
-const POSTGREST_BASE_URL = `http://127.0.0.1:${POSTGREST_PORT}`;
 const PERF_DIR = join(process.cwd(), "perf", "pgrest");
 const BENCH_DIR = join(PERF_DIR, "benchmark");
 const OUTPUT_DIR = join(BENCH_DIR, "output");
@@ -28,20 +24,20 @@ function psqlAdmin(sql) {
 }
 
 function psqlDb(sql) {
-  run(["sudo", "docker", "exec", "-i", PG_CONTAINER, "psql", "-U", PG_USER, "-d", PG_DB], Buffer.from(sql));
+  run(["sudo", "docker", "exec", "-i", PG_CONTAINER, "psql", "-U", PG_USER, "-d", activeRuntime.database], Buffer.from(sql));
 }
 
 function ensureBenchmarkDatabase() {
   psqlAdmin(`DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = '${PG_USER}') THEN CREATE USER ${PG_USER} WITH PASSWORD '${PG_PASSWORD}'; END IF; END $$;`);
-  run(["sudo", "docker", "exec", PG_CONTAINER, "dropdb", "-U", "postgres", "--if-exists", PG_DB]);
-  run(["sudo", "docker", "exec", PG_CONTAINER, "createdb", "-U", "postgres", `--owner=${PG_USER}`, PG_DB]);
+  run(["sudo", "docker", "exec", PG_CONTAINER, "dropdb", "-U", "postgres", "--if-exists", activeRuntime.database]);
+  run(["sudo", "docker", "exec", PG_CONTAINER, "createdb", "-U", "postgres", `--owner=${PG_USER}`, activeRuntime.database]);
   psqlDb(FIXTURES_SQL);
 }
 
 function cleanupBenchmarkDatabase() {
   if (process.env.PGREST_BENCH_KEEP_DB) return;
   try {
-    run(["sudo", "docker", "exec", PG_CONTAINER, "dropdb", "-U", "postgres", "--if-exists", PG_DB]);
+    run(["sudo", "docker", "exec", PG_CONTAINER, "dropdb", "-U", "postgres", "--if-exists", activeRuntime.database]);
   } catch {
     // ignore cleanup failure
   }
@@ -51,15 +47,30 @@ function resolvePostgrestBin() {
   return process.env.POSTGREST_BIN || "postgrest";
 }
 
+function buildPgrestBaseUrl() {
+  return `http://127.0.0.1:${activeRuntime.nginzPort}/api`;
+}
+
+function buildPostgrestBaseUrl() {
+  return `http://127.0.0.1:${activeRuntime.postgrestPort}`;
+}
+
+function buildNginzConfig() {
+  const configPath = join(activeArtifacts.runtimeDir, "nginx.conf");
+  const config = `daemon off;\nerror_log logs/error.log notice;\npid logs/nginx.pid;\n\nevents {\n    worker_connections 256;\n}\n\nhttp {\n    access_log logs/access.log;\n\n    server {\n        listen ${activeRuntime.nginzPort};\n\n        location /api/ {\n            pgrest_pass \"host=127.0.0.1 port=5432 dbname=${activeRuntime.database} user=${PG_USER} password=${PG_PASSWORD}\";\n            pgrest_schemas \"public\";\n            pgrest_pool_size 16;\n        }\n    }\n}\n`;
+  writeFileSync(configPath, config);
+  return configPath;
+}
+
 function buildPostgrestConfig() {
   const configPath = join(activeArtifacts.runtimeDir, "postgrest.conf");
   const config = [
-    `db-uri = "postgresql://${PG_USER}:${PG_PASSWORD}@127.0.0.1:5432/${PG_DB}"`,
+    `db-uri = "postgresql://${PG_USER}:${PG_PASSWORD}@127.0.0.1:5432/${activeRuntime.database}"`,
     `db-schemas = "public"`,
     `db-anon-role = "${PG_USER}"`,
     `server-host = "127.0.0.1"`,
-    `server-port = ${POSTGREST_PORT}`,
-    `admin-server-port = ${POSTGREST_PORT + 1}`,
+    `server-port = ${activeRuntime.postgrestPort}`,
+    `admin-server-port = ${activeRuntime.postgrestAdminPort}`,
     `log-level = "warn"`,
   ].join("\n");
   writeFileSync(configPath, `${config}\n`);
@@ -67,6 +78,7 @@ function buildPostgrestConfig() {
 }
 
 let activeArtifacts = null;
+let activeRuntime = null;
 
 async function startPostgrest() {
   const bin = resolvePostgrestBin();
@@ -82,7 +94,7 @@ async function startPostgrest() {
     cwd: process.cwd(),
     env: process.env,
   });
-  await waitForHttp(`${POSTGREST_BASE_URL}/`);
+  await waitForHttp(`${buildPostgrestBaseUrl()}/`);
   return processRef;
 }
 
@@ -97,7 +109,7 @@ async function stopProcess(processRef) {
 }
 
 function serviceBaseUrl(service) {
-  return service === "pgrest" ? PGREST_BASE_URL : POSTGREST_BASE_URL;
+  return service === "pgrest" ? buildPgrestBaseUrl() : buildPostgrestBaseUrl();
 }
 
 function buildScenarioUrl(service, scenario) {
@@ -186,45 +198,73 @@ async function main() {
 
   const enabledServices = options.service === "both" ? ["pgrest", "postgrest"] : [options.service];
   const optimizeMode = process.env.ZIG_OPTIMIZE || "ReleaseSmall";
+  let currentPhase = "setup";
+  let currentScenario = null;
+  let currentService = null;
+  let currentConcurrency = null;
+  let runStatus = "initialized";
+  const results = [];
 
   ensureDockerContainerRunning(PG_CONTAINER);
   ensureHostPortOpen("127.0.0.1", 5432);
   ensureBuild();
   activeArtifacts = createRunArtifacts(OUTPUT_DIR, MODULE, optimizeMode, options.artifactTag);
+  resetRuntimeDir(activeArtifacts.runtimeDir);
+  const derivedDb = process.env.PGREST_BENCH_DB || `nginz_bench_${sanitizeArtifactTag(activeArtifacts.runId.toLowerCase())}`;
+  const nginzPort = Number(process.env.PGREST_BENCH_PORT || await getFreePort());
+  const postgrestPort = Number(process.env.POSTGREST_PORT || await getFreePort());
+  const postgrestAdminPort = Number(process.env.POSTGREST_ADMIN_PORT || await getFreePort());
+  activeRuntime = {
+    database: derivedDb,
+    nginzPort,
+    postgrestPort,
+    postgrestAdminPort,
+  };
   writeJsonArtifact(activeArtifacts.environmentPath, captureEnvironmentArtifact(MODULE, { optimizeMode }));
   writeJsonArtifact(activeArtifacts.commandPath, captureCommandArtifact("perf/pgrest/benchmark/run.js", options));
   writeManifest(activeArtifacts, {
     module: MODULE,
     profiling_mode: options.profile,
+    status: runStatus,
+    runtime: activeRuntime,
   });
   ensureBenchmarkDatabase();
 
   let postgrestProcess = null;
   let nginzRuntime = null;
   try {
-    nginzRuntime = await startNginz("perf/pgrest/nginx.conf", activeArtifacts.runtimeDir);
+    currentPhase = "runtime-start";
+    const nginzConfigPath = buildNginzConfig();
+    nginzRuntime = await startNginz(nginzConfigPath, activeArtifacts.runtimeDir, activeRuntime.nginzPort, { resetRuntime: false });
     if (enabledServices.includes("postgrest")) {
       postgrestProcess = await startPostgrest();
     }
 
+    currentPhase = "validation";
     for (const scenario of scenarios) {
+      currentScenario = scenario.name;
       await validateScenario(scenario, enabledServices);
+      currentPhase = "warmup";
       for (const service of enabledServices) {
+        currentService = service;
         await warmupService(service, scenario, options.warmup);
       }
     }
 
+    currentPhase = "timed-run";
     const profilingSession = await startProfiling({
       mode: options.profile,
       pids: [nginzRuntime?.pid, postgrestProcess?.pid],
       profilingDir: activeArtifacts.profilingDir,
     });
 
-    const results = [];
     try {
       for (const scenario of scenarios) {
+        currentScenario = scenario.name;
         for (const concurrency of options.concurrency) {
+          currentConcurrency = concurrency;
           for (const service of enabledServices) {
+            currentService = service;
             const runResultData = await benchmarkScenario(service, scenario, options.requests, concurrency);
             results.push({
               service,
@@ -245,16 +285,54 @@ async function main() {
     writeJsonArtifact(activeArtifacts.benchmarkPath, {
       generated_at: new Date().toISOString(),
       module: MODULE,
-      database: PG_DB,
+      database: activeRuntime.database,
+      runtime: activeRuntime,
       services: enabledServices,
       requests: options.requests,
       warmup: options.warmup,
       concurrency: options.concurrency,
       results,
     });
+    runStatus = "completed";
+    updateManifest(activeArtifacts, {
+      status: runStatus,
+      completed_at: new Date().toISOString(),
+      result_count: results.length,
+    });
 
     console.log(`Benchmark results written to ${activeArtifacts.runDir}`);
     printSummary(results);
+  } catch (error) {
+    runStatus = results.length > 0 ? "partial" : "failed";
+    if (!existsSync(join(activeArtifacts.profilingDir, "summary.json"))) {
+      const snapshot = captureSnapshotSummary({
+        mode: options.profile,
+        pids: [nginzRuntime?.pid, postgrestProcess?.pid],
+        reason: `captured during ${currentPhase} failure`,
+      });
+      writeSnapshotSummary(activeArtifacts.profilingDir, snapshot);
+    }
+    writeJsonArtifact(activeArtifacts.failurePath, {
+      generated_at: new Date().toISOString(),
+      module: MODULE,
+      status: runStatus,
+      phase: currentPhase,
+      scenario: currentScenario,
+      service: currentService,
+      concurrency: currentConcurrency,
+      message: error instanceof Error ? error.message : String(error),
+      stack: error instanceof Error ? error.stack ?? null : null,
+      partial_results_count: results.length,
+      partial_results: results,
+    });
+    updateManifest(activeArtifacts, {
+      status: runStatus,
+      failed_at: new Date().toISOString(),
+      failure_phase: currentPhase,
+      result_count: results.length,
+      runtime: activeRuntime,
+    });
+    throw error;
   } finally {
     await stopProcess(postgrestProcess);
     copyRuntimeLogs(activeArtifacts.runtimeDir, activeArtifacts.logsDir);

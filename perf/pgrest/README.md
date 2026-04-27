@@ -6,7 +6,7 @@ Shared perf helpers live under `perf/common/`.
 
 ## Contents
 
-- `nginx.conf` - benchmark-specific nginz config for pgrest
+- `nginx.conf` - reference benchmark config shape for pgrest
 - `benchmark/` - pgrest vs PostgREST benchmark runner, fixtures, scenarios, and validation logic
 
 ## Artifact layout
@@ -44,6 +44,13 @@ bun perf/pgrest/benchmark/run.js --profile=perf-stat --scenario=small-page --ser
 Default profiling mode is `snapshot`. When `perf` is installed and the user asks for `--profile=perf-stat`, the runner adds system-counter capture without requiring module instrumentation.
 
 Results are written to `perf/pgrest/benchmark/output/`.
+
+The runner now isolates each invocation with:
+
+- a per-run benchmark database name
+- a per-run nginz listen port
+- a per-run PostgREST port/admin port when PostgREST is enabled
+- a generated runtime nginx config written into the run artifact tree
 
 ## Schema cache note
 
