@@ -806,16 +806,22 @@ These are planning bands only, not measured results.
 ### Perf Batch P0: Benchmark and attribution baseline
 
 - [x] Add repeatable benchmark scenarios for common JSON table reads: small payload, medium payload, filtered+ordered+paged read, and count-enabled read.
-- [ ] Run the same benchmark matrix against pgrest and the local PostgREST checkout so ratio claims compare equivalent query shapes and payload sizes.
+- [x] Run the same benchmark matrix against pgrest and the local PostgREST checkout so ratio claims compare equivalent query shapes and payload sizes.
 - [x] Add lightweight timing attribution for request parse/build time, PostgreSQL wait time, JSON formatting time, and response-send/copy time.
 - [ ] Capture baseline metrics for each scenario: throughput, p50/p95/p99 latency, CPU usage, response size, and connection-wait behavior.
-- [ ] Document the measured baseline before any optimization batch claims are treated as validated.
+- [x] Document the measured baseline before any optimization batch claims are treated as validated.
 
 Progress note:
 
 - ✅ Landed benchmark tooling under `perf/pgrest/benchmark/` with real-PostgreSQL fixtures, explicit pgrest/PostgREST scenario validation, JSON result output, a dedicated `perf/pgrest/nginx.conf`, and reusable shared helpers under `perf/common/`.
 - ✅ Landed a shared non-intrusive profiling and artifact layer under `perf/common/` so pgrest benchmark runs now have standardized per-run directories, manifest/environment/command artifacts, copied nginx logs, `/proc`-based snapshot profiling, and optional `perf stat` capture when available.
-- ℹ️ Still pending: actually running the benchmark matrix and recording validated baseline numbers.
+- ✅ Fixed two benchmark-harness false negatives before trusting the first pgrest-vs-PostgREST ratio: PostgREST startup now waits for admin `/ready` plus one real API `200`, and scenario validation now compares first/last rows semantically for the currently proven formatting-only differences (numeric strings vs numbers, and equivalent timestamp text vs ISO timestamp forms).
+- ✅ First validated representative `medium-page` compare baseline is now recorded in `perf/pgrest/benchmark/output/2026-04-27T11-32-15.811Z-pgrest-releasesmall-medium-baseline-compare-fixed/` after eliminating the prior false-negative runs (`...medium-baseline-compare/` first-row mismatch and `...medium-compare-debug/` `200` vs `503`).
+- 📊 Measured `medium-page` baseline (`200` requests, warmup `20`):
+  - concurrency `1`: `pgrest 314.54 rps` vs `PostgREST 182.49 rps` → pgrest is about `1.72x`
+  - concurrency `8`: `pgrest 654.64 rps` vs `PostgREST 640.28 rps` → pgrest is about `1.02x`
+  - latency snapshot: pgrest leads at `c1` (`p50 2.07 ms` vs `4.10 ms`) and is close on throughput at `c8`, but PostgREST currently has the better `p99` tail there (`69.46 ms` vs `121.29 ms`).
+- ℹ️ P0 is still incomplete as a full matrix because only one representative PostgREST comparison scenario is captured so far; the remaining scenarios still need the same validated paired run treatment before we treat the whole baseline set as complete.
 
 ### Perf Batch P1: JSON hot-path optimization
 

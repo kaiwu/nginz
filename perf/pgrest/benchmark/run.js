@@ -55,6 +55,10 @@ function buildPostgrestBaseUrl() {
   return `http://127.0.0.1:${activeRuntime.postgrestPort}`;
 }
 
+function buildPostgrestAdminBaseUrl() {
+  return `http://127.0.0.1:${activeRuntime.postgrestAdminPort}`;
+}
+
 function buildNginzConfig() {
   const configPath = join(activeArtifacts.runtimeDir, "nginx.conf");
   const config = `daemon off;\nerror_log logs/error.log notice;\npid logs/nginx.pid;\n\nevents {\n    worker_connections 256;\n}\n\nhttp {\n    access_log logs/access.log;\n\n    server {\n        listen ${activeRuntime.nginzPort};\n\n        location /api/ {\n            pgrest_pass \"host=127.0.0.1 port=5432 dbname=${activeRuntime.database} user=${PG_USER} password=${PG_PASSWORD}\";\n            pgrest_schemas \"public\";\n            pgrest_pool_size 16;\n        }\n    }\n}\n`;
@@ -94,8 +98,44 @@ async function startPostgrest() {
     cwd: process.cwd(),
     env: process.env,
   });
-  await waitForHttp(`${buildPostgrestBaseUrl()}/`);
+  await waitForPostgrestReady(processRef);
   return processRef;
+}
+
+async function waitForPostgrestReady(processRef, timeout = 10000) {
+  const start = Date.now();
+  const readyUrl = `${buildPostgrestAdminBaseUrl()}/ready`;
+  const probeUrl = `${buildPostgrestBaseUrl()}/bench_users?select=id,org_id,name,email,status,created_at&order=id.asc&limit=1`;
+
+  while (Date.now() - start < timeout) {
+    if (processRef.exitCode != null) {
+      throw new Error(`PostgREST exited before readiness completed (exit ${processRef.exitCode})`);
+    }
+
+    const ready = await fetchIfHttp200(readyUrl);
+    if (ready.ok) {
+      const probe = await fetchIfHttp200(probeUrl);
+      if (probe.ok) {
+        return;
+      }
+    }
+
+    await Bun.sleep(50);
+  }
+
+  throw new Error(`Timeout waiting for PostgREST readiness via ${readyUrl} and ${probeUrl}`);
+}
+
+async function fetchIfHttp200(url) {
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 200);
+    const response = await fetch(url, { signal: controller.signal });
+    clearTimeout(timeoutId);
+    return { ok: response.status === 200, status: response.status };
+  } catch {
+    return { ok: false, status: null };
+  }
 }
 
 async function stopProcess(processRef) {
