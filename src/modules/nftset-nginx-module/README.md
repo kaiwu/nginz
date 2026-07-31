@@ -437,7 +437,7 @@ The current implementation uses raw Netlink syscalls from Zig and does **not** l
 The nftset test directory now contains two layers of coverage:
 
 - `tests/nftset/nftset.test.js` validates directive parsing, inheritance, fail-open / fail-closed handling, and `$nftset_result` behavior without needing live nftables state.
-- `tests/nftset/nftset.container.test.js` provisions real nftables tables/sets inside a disposable Docker container and verifies hit/miss behavior there, including cache TTL expiry, `cache_ttl 0` live-refresh behavior, shared-cache invalidation after definitive auto-add / auto-ban writes, write-failure no-refresh behavior, auto-add insertion/expiry/cache interaction, rate-limit overflow with optional auto-ban, missing-set error handling via the `GETSET` slow path, multi-set OR matching, IPv6 hit/miss, and interval/CIDR set matching, so no host nftables rules are modified.
+- `tests/nftset/nftset.container.test.js` builds and runs `nginz` entirely inside a disposable Docker image (Zig 0.16.0 + toolchain baked into `tests/nftset/Dockerfile`; host Zig is not used). The suite provisions real nftables tables/sets in that container and verifies hit/miss behavior there, including cache TTL expiry, `cache_ttl 0` live-refresh behavior, shared-cache invalidation after definitive auto-add / auto-ban writes, write-failure no-refresh behavior, auto-add insertion/expiry/cache interaction, rate-limit overflow with optional auto-ban, missing-set error handling via the `GETSET` slow path, multi-set OR matching, IPv6 hit/miss, and interval/CIDR set matching, so no host nftables rules or host build tree are modified. Rebuild the image with `NFTSET_DOCKER_REBUILD=1` when the Dockerfile changes.
 
 ---
 

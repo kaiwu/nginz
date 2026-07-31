@@ -1,21 +1,18 @@
 import { describe, test, expect, beforeAll, afterAll } from "bun:test";
-import { ensureBuild } from "../harness.js";
-const IMAGE = "nginz-nftset-test:local";
+
+// Host role is orchestration only (Bun + Docker). Build, nginz, nft, and curl all
+// run inside the container so host Zig/glibc/nftables do not affect results.
+const IMAGE = "nginz-nftset-test:zig-0.16.0";
 const CONTAINER = `nginz-nftset-${Date.now()}`;
-const NGINX_CONF = "/workdir/tests/nftset/nginx.container.conf";
-const NFT_CONF = "/workdir/tests/nftset/nftables.conf";
+// All build + runtime paths live on the container filesystem. The host tree is
+// mounted read-only at /src and copied to /workdir so patches/build never touch the host.
+const SRC_MOUNT = "/src";
+const BUILD_ROOT = "/workdir";
+const NGINX_CONF = `${BUILD_ROOT}/tests/nftset/nginx.container.conf`;
+const NFT_CONF = `${BUILD_ROOT}/tests/nftset/nftables.conf`;
 const NGINX_RUNTIME = "/tmp/nginz-runtime";
-
-function hostZigRoot() {
-  const out = run(["zig", "env"]).stdout;
-  const match = out.match(/\.lib_dir = "([^"]+)"/);
-  if (!match) {
-    throw new Error(`Unable to determine Zig lib_dir from: ${out}`);
-  }
-  return match[1].replace(/\/lib\/?$/, "");
-}
-
-const ZIG_ROOT = hostZigRoot();
+const NGINX_PREFIX = "/tmp/nginz-prefix";
+const NGINX_BIN = `${NGINX_PREFIX}/bin/nginz`;
 
 function run(command, options = {}) {
   const result = Bun.spawnSync(command, {
@@ -37,20 +34,6 @@ function run(command, options = {}) {
   };
 }
 
-function createRuntimeDir() {
-  // Container runtime stays inside the container filesystem.
-}
-
-function cleanupRuntime() {
-  // Remove root-owned cache entries left by the in-container zig build.
-  try {
-    console.log("Cleaning root-owned .zig-cache artifacts left by the nftset container build...");
-    run(["sudo", "find", ".zig-cache", "-user", "root", "-delete"]);
-  } catch {
-    // best-effort; non-fatal if nothing to remove
-  }
-}
-
 function docker(...args) {
   return run(["sudo", "docker", ...args]);
 }
@@ -63,6 +46,21 @@ function dockerExec(command) {
   return docker("exec", CONTAINER, "bash", "-lc", command);
 }
 
+function imageHasZig() {
+  const result = Bun.spawnSync(
+    ["sudo", "docker", "run", "--rm", IMAGE, "zig", "version"],
+    {
+      stdout: "pipe",
+      stderr: "pipe",
+      cwd: process.cwd(),
+      env: process.env,
+    },
+  );
+  if (result.exitCode !== 0) return false;
+  const out = result.stdout ? Buffer.from(result.stdout).toString() : "";
+  return out.includes("0.16.0");
+}
+
 function ensureImage() {
   if (!process.env.NFTSET_DOCKER_REBUILD) {
     const inspect = Bun.spawnSync(["sudo", "docker", "image", "inspect", IMAGE], {
@@ -72,7 +70,7 @@ function ensureImage() {
       env: process.env,
     });
 
-    if (inspect.exitCode === 0) {
+    if (inspect.exitCode === 0 && imageHasZig()) {
       return;
     }
   }
@@ -91,13 +89,26 @@ function startContainer() {
     "NET_ADMIN",
     "--cap-add",
     "NET_RAW",
+    // Host tree is read-only. Build copies it into the container FS.
     "-v",
-    `${process.cwd()}:/workdir`,
-    "-v",
-    `${ZIG_ROOT}:/opt/zig:ro`,
+    `${process.cwd()}:${SRC_MOUNT}:ro`,
     "-w",
-    "/workdir",
+    BUILD_ROOT,
     IMAGE,
+  );
+}
+
+function materializeBuildTree() {
+  // Copy sources into a writable container path so make/patch/zig cannot mutate the host.
+  dockerExec(
+    [
+      "set -euo pipefail",
+      `rm -rf ${BUILD_ROOT}`,
+      `mkdir -p ${BUILD_ROOT}`,
+      `tar -C ${SRC_MOUNT} --exclude=.zig-cache --exclude=zig-out --exclude=.git -cf - . | tar -C ${BUILD_ROOT} -xf -`,
+      `cd ${BUILD_ROOT}`,
+      "test -f build.zig",
+    ].join(" && "),
   );
 }
 
@@ -109,17 +120,35 @@ function stopContainer() {
   }
 }
 
-function startNginzInContainer() {
-  dockerExec(`mkdir -p ${NGINX_RUNTIME}/logs && nohup ./zig-out/bin/nginz -c ${NGINX_CONF} -p ${NGINX_RUNTIME} > ${NGINX_RUNTIME}/logs/stdout.log 2>&1 < /dev/null &`);
+function buildNginzInContainer() {
+  const optimize = process.env.ZIG_OPTIMIZE;
+  const optimizeFlag = optimize ? ` -Doptimize=${optimize}` : "";
+  dockerExec(
+    [
+      "set -euo pipefail",
+      `cd ${BUILD_ROOT}`,
+      "export ZIG_LOCAL_CACHE_DIR=/tmp/zig-local-cache",
+      "export ZIG_GLOBAL_CACHE_DIR=/tmp/zig-global-cache",
+      "mkdir -p \"$ZIG_LOCAL_CACHE_DIR\" \"$ZIG_GLOBAL_CACHE_DIR\"",
+      `echo "Building nginz inside container${optimize ? ` with -Doptimize=${optimize}` : ""}..."`,
+      `zig build${optimizeFlag} -p ${NGINX_PREFIX} --cache-dir /tmp/zig-cache`,
+      `test -x ${NGINX_BIN}`,
+      "echo Build successful",
+    ].join(" && "),
+  );
 }
 
-function buildNginzInContainer() {
-  dockerExec("/opt/zig/zig build");
+function startNginzInContainer() {
+  dockerExec(
+    `mkdir -p ${NGINX_RUNTIME}/logs && nohup ${NGINX_BIN} -c ${NGINX_CONF} -p ${NGINX_RUNTIME} > ${NGINX_RUNTIME}/logs/stdout.log 2>&1 < /dev/null &`,
+  );
 }
 
 function stopNginzInContainer() {
   try {
-    dockerExec(`if [ -f ${NGINX_RUNTIME}/logs/nginx.pid ]; then kill -QUIT "$(cat ${NGINX_RUNTIME}/logs/nginx.pid)" || true; fi`);
+    dockerExec(
+      `if [ -f ${NGINX_RUNTIME}/logs/nginx.pid ]; then kill -QUIT "$(cat ${NGINX_RUNTIME}/logs/nginx.pid)" || true; fi`,
+    );
   } catch {
     // container teardown is the final fallback
   }
@@ -180,12 +209,16 @@ function requestIpv6(path) {
 }
 
 function requestBurst(path, count) {
-  const res = dockerExec(`statuses=""; i=0; while [ "$i" -lt ${count} ]; do code=$(curl -sS -o /dev/null -w '%{http_code}' http://127.0.0.1:8888${path}); statuses="$statuses $code"; i=$((i + 1)); done; printf '%s\n' "$statuses"`);
+  const res = dockerExec(
+    `statuses=""; i=0; while [ "$i" -lt ${count} ]; do code=$(curl -sS -o /dev/null -w '%{http_code}' http://127.0.0.1:8888${path}); statuses="$statuses $code"; i=$((i + 1)); done; printf '%s\n' "$statuses"`,
+  );
   return res.stdout.trim().split(/\s+/).filter(Boolean).map(Number);
 }
 
 function requestConcurrent(path, count) {
-  const res = dockerExec(`seq 1 ${count} | xargs -n1 -P${count} -I{} bash -lc "curl -sS -o /dev/null -w '%{http_code}\n' http://127.0.0.1:8888${path}"`);
+  const res = dockerExec(
+    `seq 1 ${count} | xargs -n1 -P${count} -I{} bash -lc "curl -sS -o /dev/null -w '%{http_code}\\n' http://127.0.0.1:8888${path}"`,
+  );
   return res.stdout.trim().split(/\s+/).filter(Boolean).map(Number);
 }
 
@@ -197,21 +230,18 @@ ensureImage();
 
 describe("nftset-nginx-module container integration", () => {
   beforeAll(async () => {
-    createRuntimeDir();
     startContainer();
+    materializeBuildTree();
     buildNginzInContainer();
     applyNftRules();
     startNginzInContainer();
     await waitForReady();
-  }, 300000);
+  }, 600000);
 
   afterAll(async () => {
     stopNginzInContainer();
     stopContainer();
-    cleanupRuntime();
-    console.log("Rebuilding nginz on the host after cleaning nftset container artifacts...");
-    ensureBuild();
-  }, 180000);
+  }, 60000);
 
   test("blocklist denies when client IP is present in the set", () => {
     const res = request("/block-hit");
