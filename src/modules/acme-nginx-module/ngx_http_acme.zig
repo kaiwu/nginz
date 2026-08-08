@@ -840,7 +840,7 @@ pub const AcmeStorage = struct {
         return std.fmt.bufPrint(buf, "{s}/account.key", .{self.storage_path}) catch return error.PathTooLong;
     }
 
-    fn writeFileAtomic(path: []const u8, pem: []const u8, mode: u32) !void {
+    fn writeFileAtomic(path: []const u8, pem: []const u8, mode: std.posix.mode_t) !void {
         const io = localIo();
         var tmp_buf: [1024]u8 = undefined;
         const tmp_path = std.fmt.bufPrint(&tmp_buf, "{s}.tmp", .{path}) catch return error.PathTooLong;
