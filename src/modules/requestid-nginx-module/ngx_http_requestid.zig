@@ -53,9 +53,9 @@ const hex_chars = "0123456789abcdef";
 // UUID4 format: xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx
 // where x is random hex and y is 8, 9, a, or b
 fn generate_uuid4(buf: [*]u8) bool {
-    // Use Zig's crypto random for high-quality randomness
+    // Use Io.random for cryptographic randomness (Zig 0.16 Entropy API)
     var random_bytes: [16]u8 = undefined;
-    if (std.c.getrandom(&random_bytes, random_bytes.len, 0) != random_bytes.len) return false;
+    std.Io.Threaded.global_single_threaded.io().random(&random_bytes);
 
     // Set version (4) in byte 6 (bits 4-7)
     random_bytes[6] = (random_bytes[6] & 0x0f) | 0x40;

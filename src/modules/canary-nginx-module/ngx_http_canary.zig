@@ -97,11 +97,8 @@ fn should_route_to_canary(r: [*c]ngx_http_request_t, lccf: *canary_loc_conf) boo
     if (lccf.percentage > 0) {
         // Generate random number 0-99
         var random_byte: [1]u8 = undefined;
-        if (std.c.getrandom(&random_byte, random_byte.len, 0) != random_byte.len) {
-            ngx.log.ngz_log_error(ngx.log.NGX_LOG_ERR, r.*.connection.*.log, 0,
-                "canary: entropy acquisition failed; routing to stable", .{});
-            return false;
-        }
+        std.Io.Threaded.global_single_threaded.io().random(&random_byte);
+
         const random_value: u32 = @as(u32, random_byte[0]) * 100 / 256;
 
         if (random_value < lccf.percentage) {
