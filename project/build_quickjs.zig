@@ -1,10 +1,12 @@
 const std = @import("std");
 const common = @import("build_common.zig");
 
+const quickjs_version = std.mem.trim(u8, @embedFile("../submodules/quickjs/VERSION"), &std.ascii.whitespace);
+
 pub const QUICKJS_C_FLAGS = [_][]const u8{
     "-std=gnu11",
     "-D_GNU_SOURCE",
-    "-DCONFIG_VERSION=\"2024-02-14\"",
+    std.fmt.comptimePrint("-DCONFIG_VERSION=\"{s}\"", .{quickjs_version}),
     "-DCONFIG_BIGNUM",
     "-DHAVE_CLOSEFROM",
     "-Wall",
